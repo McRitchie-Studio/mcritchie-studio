@@ -18,17 +18,12 @@ require "time"
 
 class GhTokenTest < Minitest::Test
   BIN = File.expand_path("../../bin/gh-token", __dir__)
-  # Anything shaped like a GitHub credential. The leak this file exists to prevent
-  # was a token printed by a flag whose entire job is NOT printing one.
-  #
-  # THE CHARACTER CLASS INCLUDES `.` AND `-` ON PURPOSE. It used to be `[A-Za-z0-9_]+`,
-  # which is safe in the `refute_match` DETECTOR role this file uses it in — a dotted
-  # installation token still trips it on the prefix — but it is the shape
-  # docs/agents/modules/credentials.md now warns against, because a modern token is a
-  # dotted JWT (`ghs_<base64>.<base64>.<sig>`) and the same class used for REDACTION
-  # stops at the first dot and passes the signature through. That is not hypothetical:
-  # it turned a redaction into a leak on 2026-08-13. Aligned here so nobody copies the
-  # narrow version out of a test file into a context where it has to be right.
+  # Anything shaped like a GitHub credential. THE CHARACTER CLASS INCLUDES `.` AND `-` ON PURPOSE.
+  # A narrower `[A-Za-z0-9_]+` is safe in this `refute_match` DETECTOR role, but a modern token is
+  # a dotted JWT (`ghs_<base64>.<base64>.<sig>`), and that class used for REDACTION stops at the
+  # first dot and passes the signature through (docs/agents/modules/credentials.md). Aligned so
+  # nobody copies it.
+  # History: task detect-engine-migration-content-drift.
   TOKEN_SHAPED = /gh[psou]_[A-Za-z0-9_.-]{8,}|github_pat_[A-Za-z0-9_.-]{8,}/
   DOTTED_TOKEN = "ghs_16C7e42F292c6912E7710c838347Ae178B4a.eyJhbGciOiJIUzI1NiJ9.q-3sT_signature"
 
@@ -75,16 +70,11 @@ class GhTokenTest < Minitest::Test
     File.write(store_path(dir), content, perm: 0o600)
     File.chmod(0o600, store_path(dir))
   end
-  # A MISSING FILE IS A VALID STATE, not an error. A deployer-only run caches no
-  # token since `never-cache-deployer-token`, so this file may never be created —
-  # "nothing was cached" is precisely what several assertions here mean to check.
-  #
-  # NO TOKEN, not "nothing at all" — which this comment claimed until the meter
-  # landed and quietly falsified it. The run still writes a sibling INTO THE SAME
-  # .agents DIRECTORY: bin/lib/op_meter.rb records the 1Password read to
-  # op-reads.log. That file is spend telemetry and says nothing about the cache,
-  # so a directory that exists is not evidence a token was stored. Only
-  # store_path is.
+  # A MISSING FILE IS A VALID STATE: a deployer-only run caches no token, so "nothing was cached"
+  # is what several assertions mean to check. NO TOKEN, not "nothing at all": the run still writes
+  # bin/lib/op_meter.rb's op-reads.log INTO THE SAME .agents DIRECTORY, so a directory that exists
+  # is not evidence a token was stored. Only store_path is.
+  # History: task never-cache-deployer-token.
   def store(dir)
     File.exist?(store_path(dir)) ? JSON.parse(File.read(store_path(dir))) : {}
   end
@@ -349,15 +339,11 @@ class GhTokenTest < Minitest::Test
     end
   end
 
-  # A corrupt cache is a cache MISS, never a failure — we can always mint again.
-  #
-  # ASSERTED AS A PROPERTY, NOT A SPELLING. This case used to pin only `{not json`,
-  # which raises inside JSON.parse and so exercised only the rescue. Every OTHER
-  # corruption below parses CLEANLY and then blew up downstream — `[]` with a
-  # TypeError, `null` with a NoMethodError, a scalar entry with an IndexError — so
-  # the command that every `gh` call depends on died on an unhandled stack trace and
-  # wedged every agent until a human deleted the file. One spelling green while four
-  # shapes crashed is exactly the gap a property closes.
+  # A corrupt cache is a cache MISS, never a failure: we can always mint again. ASSERTED AS A
+  # PROPERTY, NOT A SPELLING: `{not json` only exercises the rescue, while `[]`, `null` and a
+  # scalar entry parse CLEANLY and blow up downstream, killing the command every `gh` call depends
+  # on.
+  # History: task detect-engine-migration-content-drift.
   CORRUPT_CACHES = {
     "unparseable" => "{not json",
     "a JSON array" => "[]",
@@ -474,14 +460,11 @@ class GhTokenTest < Minitest::Test
   end
 
   # ── RETIRING A REJECTED SESSION (--reject) ──────────────────────────────────
-  #
-  # PROVEN AGAINST GIT, not assumed (2026-08-30, local server answering every
-  # request with 401): git calls the credential helper with `get`, and when that
-  # credential is rejected it calls it a SECOND time with `erase`, handing the
-  # failed password back on stdin. bin/gh-app-git-credential's erase branch turns
-  # that into this flag. Without it a cached-but-revoked token is re-served on
-  # every subsequent git operation until it ages out on the clock alone — the
-  # helper never sees the 401 itself, so nothing else can notice.
+  # Git calls the credential helper with `get`, and on rejection a SECOND time with `erase`,
+  # handing the failed password back on stdin. bin/gh-app-git-credential's erase branch turns that
+  # into this flag. Without it a revoked token is re-served until it ages out: the helper never
+  # sees the 401 itself.
+  # History: task self-healing-token-sessions.
 
   def test_a_rejected_session_is_purged_from_the_cache
     Dir.mktmpdir do |dir|

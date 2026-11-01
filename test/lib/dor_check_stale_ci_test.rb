@@ -1,30 +1,13 @@
 # frozen_string_literal: true
 
-# bin/dor-check's review gate-zero must not credit a GREEN CI whose base has moved.
-# Standalone (no Rails — it shells out to the script with --file fixtures):
-#   ruby -Itest test/lib/dor_check_stale_ci_test.rb
-#
-# THE DEFECT. `gh pr checks` answers for the HEAD COMMIT, and .github/workflows/ci.yml
-# triggers on pull_request and on pushes to main, release AND `accepted`. A merge into
-# `accepted` therefore DOES start a run — but that run grades the `accepted` TIP, a tree
-# this PR is not in, and nothing re-runs THIS PR against the moved base.
-# The green stays green while the
-# tree it described stops being the tree the merge would produce. On 2026-08-13 the
-# review gate advanced on a green dated three days earlier against a base 30+ commits
-# ahead, and twice more the same day a green predated the change on `accepted` it was
-# implicitly claiming to cover.
-#
-# WHY :unknown MUST NOT REFUSE, and why that is the subtle half. GitHub computes
-# mergeability asynchronously and lags, so a review that races the computation reads
-# UNKNOWN through no fault of the branch. Refusing there would wedge the review lane
-# on a fact nobody asserted — the mirror-image bug of the one above. So the rule is
-# "refuse on an ASSERTED drift", never "refuse on the absence of a reassurance", and
-# `test_an_unknown_mergeability_does_not_refuse` is what holds that line.
-#
-# THE ROLE SPLIT IS ALSO LOAD-BEARING. The builder's submit-side run is provisional
-# by construction (the CI wait moved to the review handoff), so staleness there is
-# not its business — review re-reads it. A fix that refused in BOTH roles would block
-# every handoff on a base that moves several times a day.
+# bin/dor-check's review gate-zero must not credit a GREEN CI whose base has moved. `gh pr
+# checks` answers for the HEAD COMMIT; a merge into `accepted` starts a run grading the
+# `accepted` TIP, a tree this PR is not in (.github/workflows/ci.yml).
+# :unknown MUST NOT REFUSE: GitHub computes mergeability asynchronously, so refusing would wedge
+# review. Refuse on an ASSERTED drift, never on the absence of a reassurance;
+# `test_an_unknown_mergeability_does_not_refuse` holds that. THE ROLE SPLIT IS LOAD-BEARING: the
+# builder's submit-side run is provisional, so refusing in BOTH roles blocks every handoff.
+# History: task gate-accepts-stale-ci-verdict.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -38,25 +21,13 @@ class DorCheckStaleCiTest < Minitest::Test
 
   STALE = /STALE/
 
-  # THE TWO-SIDED GUARD (/tasks/audit-vanishes-when-git-fails).
-  #
-  # This assertion used to be a single `assert_match` over the alternation
-  # /pushes to main\/release only|BEHIND its base/ — and its FIRST ARM IS THE FALSE
-  # WORDING THIS GATE ONCE SHIPPED, kept alive beside the corrected one. A regression all
-  # the way back to the retracted claim therefore stayed GREEN: a guard that accepts
-  # exactly what it was written to reject.
-  #
-  # The fact, checkable in one `sed -n 26,27p .github/workflows/ci.yml`:
-  #   push: branches: [ main, release, accepted ]
-  # `accepted` has been in that list since 2026-08-14 (ecd0ffe8). A merge into `accepted`
-  # DOES start a run. The gate's argument is NOT "no run exists" — it is that the run
-  # which exists graded the `accepted` TIP, a tree this PR is not in, and that the true
-  # argument is strictly STRONGER because it survives the objection "but I can see the
-  # run".
-  #
-  # So the guard is now TWO-SIDED, and both halves are load-bearing: an `assert_match`
-  # alone cannot notice a message that makes the true claim AND the false one, and a
-  # `refute_match` alone cannot notice a message that makes neither.
+  # THE TWO-SIDED GUARD. A single `assert_match` over /pushes to main\/release only|BEHIND its
+  # base/ stays GREEN on the retracted false wording. The fact (.github/workflows/ci.yml): push
+  # branches [ main, release, accepted ], so a merge into `accepted` DOES start a run. The gate's
+  # argument is that the run graded the `accepted` TIP, a tree this PR is not in. Both halves are
+  # load-bearing: `assert_match` alone cannot notice a message making the true claim AND the false
+  # one, and `refute_match` alone cannot notice a message making neither.
+  # History: task audit-vanishes-when-git-fails.
   RUNS_ON_BASE = /DOES run on pushes to/i
   RETRACTED    = /pushes to main\/release only/i
 
@@ -168,15 +139,12 @@ class DorCheckStaleCiTest < Minitest::Test
   end
 
   # ── [unit] the hardcoded trigger list cannot go stale in silence ────────────
-  #
-  # bin/dor-check keeps its own copy of ci.yml's push branches, because the refusal has to
-  # decide WHICH true sentence it is entitled to make about the base it just named. A
-  # second copy of a fact is a drift risk, and the fact in question is the one this whole
-  # file exists because the gate once got wrong — so the copy is pinned to the source.
-  #
-  # ci_workflow_triggers_test.rb asserts ci.yml INCLUDES each ladder rung. That is a
-  # floor, not an equality: a fourth push branch added there would leave this list short
-  # and dor-check would tell a reviewer on that branch that no run exists when one does.
+  # bin/dor-check keeps its own copy of ci.yml's push branches, to decide WHICH true sentence it
+  # may say about the base it named, so the copy is pinned to the source.
+  # ci_workflow_triggers_test.rb asserts ci.yml INCLUDES each ladder rung: a floor, not an
+  # equality. A fourth push branch would leave this list short, and dor-check would tell a
+  # reviewer no run exists when one does.
+  # History: task audit-vanishes-when-git-fails.
   def test_dor_check_s_trigger_list_matches_ci_yml
     source = File.read(File.expand_path("../../bin/dor-check", __dir__))
     literal = source[/^CI_PUSH_BRANCHES = %w\[([^\]]*)\]/, 1]

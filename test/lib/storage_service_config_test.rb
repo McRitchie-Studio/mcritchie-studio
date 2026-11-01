@@ -5,21 +5,13 @@ require "test_helper"
 # not defined unless we ask for it.
 require "active_storage/service/disk_service"
 
-# The config/storage.yml half of the QA/production bucket separation guard —
-# the mcritchie-studio sibling of mcritchie-industries'
-# test/lib/storage_service_config_test.rb, where the pattern (and each
-# hard-won assertion style below) was first proven.
-#
-# mcritchie-studio-qa boots RAILS_ENV=production, so it loads the :amazon
-# service. Before this guard the bucket was the hardcoded production name; the
-# misresolution was MASKED only by QA carrying no storage key. The day QA gets a
-# key, uploads SUCCEED into production storage — worse than a refusal.
-#
-# The store is Cloudflare R2 (AWS was retired 2026-10-10); the service keeps the
-# name `amazon` because blob rows record it.
-#
-# These assertions run against the service OBJECT Active Storage builds, not
-# the YAML text, so a typo or a fallback cannot pass them.
+# The config/storage.yml half of the QA/production bucket separation guard, sibling of
+# mcritchie-industries' test/lib/storage_service_config_test.rb. mcritchie-studio-qa boots
+# RAILS_ENV=production and loads the :amazon service; with a hardcoded bucket, QA holding a key
+# would upload SUCCESSFULLY into production storage, worse than a refusal. The store is
+# Cloudflare R2; the name `amazon` stays because blob rows record it. Assert against the service
+# OBJECT Active Storage builds, not the YAML text, so a typo or a fallback cannot pass.
+# History: task qa-apps-hardcode-production-bucket.
 class StorageServiceConfigTest < ActiveSupport::TestCase
   DURABLE_SERVICE = :amazon
   EXPECTED_REGION = "auto".freeze # R2's region string

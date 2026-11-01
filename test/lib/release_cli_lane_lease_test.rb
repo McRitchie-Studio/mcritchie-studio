@@ -1,15 +1,11 @@
 # frozen_string_literal: true
 
-# The release lane in the bin/release CLI: `bin/release status` prints the lane
-# sentences the board serves (who is assembling, who is shipping, what the
-# production grant covers), and a second session's prepare seam prints the holder
-# before it stands down. The sentences are the Next Release card's own
-# (Release::LaneLease); test/integration/release_status_lane_test.rb runs the loop
-# against a real board.
-#
-# Part of the bin/release CLI suite; the shared subprocess harness lives in
-# test/lib/release_cli_harness.rb. Run directly:
-#   ruby -Itest test/lib/release_cli_lane_lease_test.rb
+# The release lane in the bin/release CLI: `bin/release status` prints the lane sentences the
+# board serves (assembling, shipping, the production grant), and a second session's prepare
+# seam prints the holder before it stands down. The sentences are the Next Release card's
+# (Release::LaneLease); test/integration/release_status_lane_test.rb runs the loop against a
+# real board. Harness: test/lib/release_cli_harness.rb.
+# History: task release-lane-lease-visible.
 
 require_relative "release_cli_harness"
 

@@ -1,27 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] ReviewerSelectSkip — the classifier that tells bin/reviewer-select's TWO
-# exit-10 refusals apart so bin/pr-review can name the right remedy for each.
-#
-# THE DEFECT THIS PINS (measured 2026-09-22, PR #1537). bin/pr-review raised ONE
-# hard-coded sentence for exit 10 — "another live session already holds this review …
-# take the next reviewable task instead". That is the HELD arm's remedy. The other arm
-# is a SELF-REVIEW refusal: nobody holds the task, the picked primary is simply in its
-# AUTHOR SET, and taking the next task fixes nothing — the same refusal recurs on every
-# re-run. The correct text was already on screen (the raise appends reviewer-select's
-# own stderr); it sat under a lead sentence contradicting it.
-#
-# WHY THE DECISION LIVES IN A MODULE AND NOT IN THE SCRIPT. bin/pr-review has no
-# execution harness, so every test of it reads its SOURCE — and a source test cannot see
-# a DISABLED branch (test/lib/pr_review_stacked_base_test.rb records a mutant that put
-# the refusal in dead code and left every assertion green). So the arm decision lives
-# here, where it can be DRIVEN. The script keeps only the wiring, pinned below.
-#
-# THE OTHER HALF OF THE COVERAGE is test/lib/reviewer_select_test.rb, which drives the
-# REAL bin/reviewer-select into BOTH refusals and asserts the skip code it prints
-# classifies as the right arm (guard catalog row 6.2: each arm carries its own code).
-#
-# Run directly:  ruby -Itest test/lib/reviewer_select_skip_test.rb
+# [unit] ReviewerSelectSkip tells bin/reviewer-select's TWO exit-10 refusals apart so
+# bin/pr-review names the right remedy. HELD arm: take the next reviewable task. SELF-REVIEW
+# arm: the primary is in its AUTHOR SET, and the next task fixes nothing.
+# It is a module because bin/pr-review has no execution harness and a source test cannot see a
+# DISABLED branch. The script keeps only the wiring, pinned below.
+# Other half: test/lib/reviewer_select_test.rb drives the REAL bin/reviewer-select into BOTH
+# refusals (guard catalog row 6.2).
+# History: task name-both-exit-10-arms.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/reviewer_select_skip"

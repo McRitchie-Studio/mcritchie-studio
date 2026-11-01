@@ -1,18 +1,13 @@
 # frozen_string_literal: true
 
-# Standalone test for bin/conductor — the deterministic Build-and-Deploy cycle
-# driver. No Rails needed: conductor shells out to bin/task / bin/release /
-# bin/reviewer-select, so the test stubs those as fake binaries on a tmpdir and
-# injects them via TASK_BIN / RELEASE_BIN / REVIEWER_SELECT_BIN (the same
-# fake-binary-via-env pattern as test/lib/pr_status_test.rb's GH_BIN).
-#
-# Run directly:   ruby -Itest test/lib/conductor_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# The load-bearing assertion: conductor never ships implicitly. The fake
-# `release` appends every call to RELEASE_CALL_LOG, so the tests can prove
-# survey/plan/plain ship are dry while `ship --run` is the explicit autonomous
-# production path.
+# Standalone test for bin/conductor, the deterministic Build-and-Deploy cycle driver. No
+# Rails: conductor shells out to bin/task / bin/release / bin/reviewer-select, stubbed as fake
+# binaries via TASK_BIN / RELEASE_BIN / REVIEWER_SELECT_BIN (test/lib/pr_status_test.rb's
+# GH_BIN pattern).
+# The load-bearing assertion: conductor never ships implicitly. The fake `release` appends
+# every call to RELEASE_CALL_LOG, proving survey/plan/plain ship are dry while `ship --run` is
+# the explicit autonomous production path.
+# History: task detect-engine-migration-content-drift.
 require "minitest/autorun"
 require "json"
 require "open3"
@@ -393,15 +388,10 @@ class ConductorTest < Minitest::Test
   end
 
   # --- A FAILED READ IS NOT AN EMPTY ONE -----------------------------------
-  #
-  # THE DEFECT THESE PIN (filed 2026-09-20, verified at its lines 2026-09-22).
-  # Every read here was `out, ok = run_bin(...)` + `return [] unless ok`, and
-  # run_bin discarded the child's stderr. bin/task exits 1 on ANY non-2xx, so a
-  # 301, a 401 or an outage turned every stage into an empty array: the survey
-  # printed "(none)" under every stage, "Active release candidate: none" and
-  # "blocked (0)", EXITED 0, and never mentioned the board. This is the false
-  # all-clear bin/task's own archived-scan alarm exists to remove, rendered by
-  # the tool an operator opens Step 0 with.
+  # `return [] unless ok` on a run_bin that discards stderr turns a 301, a 401 or an outage into
+  # empty stages: "(none)", "blocked (0)", exit 0. That is the false all-clear bin/task's own
+  # archived-scan alarm exists to remove.
+  # History: task conductor-survey-false-clear.
 
   def test_a_failed_stage_list_exits_non_zero
     _out, _err, status = run_conductor("survey", "--no-health", env: { "TASK_LIST_EXIT" => "1" })

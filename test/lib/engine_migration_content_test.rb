@@ -6,70 +6,21 @@ require "ripper"
 require "tmpdir"
 require "fileutils"
 
-# [unit] The CONTENT half of the engine-migration contract.
-#
-# `test/lib/engine_pin_contract_test.rb` asks which engine migrations are
-# installed here, BY NAME. That catches a migration this app never copied. It is
-# blind to a migration whose BODY changed in the gem, because the name never
-# moved — and engine migrations are install-COPIED
-# (`bin/rails studio_engine:install:migrations`), never referenced. Every
-# consumer holds a FORK, `bin/rails db:migrate` runs the file in THIS repo, and a
-# gem bump delivers nothing. So a rewritten migration leaves every unsynced
-# consumer green forever.
-#
-# THAT IS NOT HYPOTHETICAL. On 2026-08-13 studio-engine rewrote
-# AddStandardUserProfileColumns so its `down` REFUSES instead of dropping
-# host-owned columns (studio-engine commit 4c18516). Three consumers had to
-# hand-sync their copies in three separate PRs. Had one been forgotten, no gate
-# anywhere would have gone red, and that app would have kept the destructive
-# rollback the engine had just removed — the fix silently un-fixed, in
-# production. `test/lib/standard_profile_rollback_guard_test.rb` pins the
-# BEHAVIOUR of that one migration; the engine ships nine, and this file asks the
-# general question about all of them.
-#
-# WHAT IS COMPARED, AND WHY IT IS NOT BYTES.
-#
-# The digest is over the migration's CODE TOKENS — Ripper's lexer with
-# whitespace and comments dropped — not over its bytes. Two measured reasons:
-#
-#   1. The installer PREPENDS a provenance line
-#      (`# This migration comes from studio_engine (originally <ts>)`), so an
-#      installed copy is never byte-equal to its source. That line is also the
-#      only record of WHICH gem migration this file is a copy of — the installer
-#      renumbers the filename to the install time — so it is read for identity
-#      and then excluded from the digest.
-#   2. Consumers run rubocop over db/migrate and it rewrites the copies in
-#      place. MEASURED 2026-08-14 on mcritchie-industries'
-#      `create_studio_enumerals` copy: it differs from studio-engine 0.47.1's
-#      file only as `[ :category, :key ]` against `[:category, :key]`. A byte
-#      gate reds there on the day rubocop runs, in an app that has drifted in no
-#      way that matters — and a guard that reds on formatting is a guard
-#      somebody switches off.
-#
-# Dropping COMMENTS is the deliberate half of that choice. A comment-only
-# divergence cannot change what a migration does, and the property defended here
-# is behavioural. The 2026-08-13 rewrite moved both halves — `def change` became
-# `def up` plus a refusing `def down` — so the code alone is enough to bite,
-# which the mutation test below PROVES rather than assumes.
-#
-# WHAT TO DO WHEN THIS FAILS, because the obvious move does not work.
-# `ActiveRecord::Migration.copy` SKIPS any migration whose name is already
-# installed, so re-running `studio_engine:install:migrations` will not refresh a
-# drifted copy. And for a migration that has already RUN, deleting the file and
-# reinstalling is worse than useless: the copy comes back under a NEW timestamp,
-# arrives PENDING, while the old version stays stamped in schema_migrations.
-# Hand-sync the body into the EXISTING file, keeping its filename and timestamp.
-# That is exactly what the three consumer PRs did on 2026-08-13.
+# [unit] The CONTENT half of the engine-migration contract
+# (test/lib/engine_pin_contract_test.rb checks names). Engine migrations are install-COPIED,
+# so a rewritten gem body leaves consumers green. THE DIGEST IS OVER CODE TOKENS, NOT BYTES:
+# the installer's provenance line and rubocop both change bytes. WHEN THIS FAILS:
+# `ActiveRecord::Migration.copy` SKIPS installed names, so `studio_engine:install:migrations`
+# will not refresh a copy, and deleting a run migration brings it back PENDING under a new
+# timestamp. Hand-sync the body into the EXISTING file, keeping its filename and timestamp.
+# History: task detect-engine-migration-content-drift.
 class EngineMigrationContentTest < ActiveSupport::TestCase
-  # Divergences this app has LOOKED AT and accepted, as bare migration name =>
-  # the reason it stands. An entry is a decision, not a mute button: the last
-  # test in this file fails when an entry stops describing anything real, so the
-  # list cannot rot into a blanket exemption.
-  #
-  # Re-syncing an already-run migration is normally the WRONG move — you do not
-  # rewrite history — and this is where that judgement gets recorded. The
-  # 2026-08-13 rewrite was re-synced only because the change was confined to the
-  # `down` path, which has never executed anywhere.
+  # Divergences this app has LOOKED AT and accepted, as bare migration name => the reason it
+  # stands. An entry is a decision, not a mute button: the last test in this file fails when an
+  # entry stops describing anything real. Re-syncing an already-run migration is normally the
+  # WRONG move; record that judgement here. The 2026-08-13 rewrite was re-synced only because
+  # the change was confined to the `down` path, which has never executed anywhere.
+  # History: task detect-engine-migration-content-drift.
   ACKNOWLEDGED_DRIFT = {}.freeze
 
   # The installed filename the fixture tests below build in tmp.
@@ -103,27 +54,14 @@ class EngineMigrationContentTest < ActiveSupport::TestCase
       @gem_dirs = Array(gem_dirs).map { |dir| Pathname.new(dir.to_s) }
     end
 
-    # Every file in db/migrate that is RECOGNISABLY a copy of an engine
-    # migration: it carries the installer's scope suffix, OR its provenance
-    # header, and either is enough.
-    #
-    # Requiring both would be an escape hatch twice over — renaming the engine's
-    # scope stops the suffix matching, and deleting the header line stops the
-    # file being locatable — so a file with EITHER mark is in scope, and a file
-    # that has the suffix but lost its header is REPORTED rather than skipped.
-    #
-    # Migrations with neither mark are out of scope on purpose. mcritchie-studio
-    # wrote create_studio_links, create_studio_enumerals and
-    # create_studio_email_deliveries HERE first and still carries them as native,
-    # un-suffixed files; the engine later lifted them. Their divergence from the
-    # gem's version is history, not drift.
-    #
-    # So are OTHER engines' copies. `install:migrations` is a Rails mechanism,
-    # not a studio-engine one — mcritchie-industries carries
-    # `create_active_storage_tables.active_storage.rb`, a copy with the same
-    # header in a different scope. Matching the header alone would drag it in
-    # here and report it as unlocatable, which is why the scope is read and
-    # checked rather than ignored.
+    # Every file in db/migrate RECOGNISABLY a copy of an engine migration: the installer's scope
+    # suffix OR its provenance header. Requiring both is an escape hatch twice over, so a file
+    # with the suffix but no header is REPORTED rather than skipped.
+    # Out of scope on purpose: files with neither mark (native create_studio_links,
+    # create_studio_enumerals, create_studio_email_deliveries; their divergence is history, not
+    # drift), and OTHER engines' copies (`create_active_storage_tables.active_storage.rb`: same
+    # header, different scope), which is why the scope is read and checked.
+    # History: task detect-engine-migration-content-drift.
     def installed
       @installed ||= @installed_dir.children
                                    .select { |path| path.file? && path.extname == ".rb" }

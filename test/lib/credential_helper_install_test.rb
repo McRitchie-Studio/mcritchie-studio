@@ -9,15 +9,11 @@ require "securerandom"
 
 require Rails.root.join("bin/lib/credential_helper_install").to_s
 
-# [unit] CredentialHelperInstall — the snapshot that takes the git credential
-# helper out of the moving hub primary.
-#
-# The behavioural proof (a tree actually moving under a running helper) lives in
-# test/integration/credential_helper_survives_tree_move_test.rb. What is guarded
-# HERE is the property that makes that fix trustworthy over time: the snapshot
-# must be the helper's WHOLE closure, derived from the source rather than
-# hand-listed, so a dependency added to bin/gh-token next month is copied
-# without anyone remembering to edit a list.
+# [unit] CredentialHelperInstall: the snapshot that takes the git credential helper out of the
+# moving hub primary. Behavioural proof:
+# test/integration/credential_helper_survives_tree_move_test.rb. HERE: the snapshot must be
+# the helper's WHOLE closure, derived from source, not hand-listed.
+# History: task desk-tools-read-hub-primary.
 class CredentialHelperInstallTest < ActiveSupport::TestCase
   SOURCE = Rails.root.to_s
 
@@ -62,17 +58,12 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
     assert_empty missing, "the manifest names files that do not exist: #{missing.join(', ')}"
   end
 
-  # The shell half is DECLARED (a bash script's siblings cannot be found by
-  # walking `require_relative`), so it is the half that can rot. This re-reads
-  # the helper's own source and fails if it reaches a sibling the snapshot would
-  # not carry.
-  # WHAT THIS USED TO MISS (measured 2026-09-13, credential-snapshot-guards-overclaim).
-  # It scanned `$SCRIPT_DIR` only, and the helper reaches op-meter.sh by the
-  # INLINE form — `$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/op-meter.sh`.
-  # So deleting `bin/lib/op-meter.sh` from SHELL_FILES left all 13 tests GREEN
-  # (exit 0) while the module's comment claimed this guard made that impossible.
-  # Both forms are normalised to one marker below, so the scan sees every sibling
-  # the helper resolves against its own directory however it spells it.
+  # The shell half is DECLARED (a bash script's siblings cannot be found by walking
+  # `require_relative`), so it can rot. This re-reads the helper's source and fails if it
+  # reaches a sibling the snapshot would not carry. The scan must see BOTH forms, `$SCRIPT_DIR`
+  # and the inline `$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)`, normalised to one marker
+  # below. Deleting `bin/lib/op-meter.sh` from SHELL_FILES must fail here.
+  # History: task credential-snapshot-guards-overclaim.
   SIBLING_DIR_IDIOM = /\$\(cd\s+"\$\(dirname\s+"\$\{BASH_SOURCE\[0\]\}"\)"\s*&&\s*pwd\)/
 
   # Written INTO the snapshot by the installer rather than copied from source, so
@@ -323,16 +314,11 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
                  "the generic helper was touched; this command must only rewrite one URL's value"
   end
 
-  # THE RE-RUN. `--replace-all <key> <value> <value-pattern>` replaces the lines
-  # that MATCH and ADDS one when nothing does. So a pattern naming only the
-  # in-tree path is correct exactly once: after the first run that line is gone,
-  # every re-run matches nothing, and git appends another stable-path line. Three
-  # runs, three helpers — measured on an isolated copy, never the real config.
-  #
-  # It is not cosmetic. `--check` cannot see it (`--get` returns only the LAST
-  # value), and the runbook tells the operator to re-run after a rebuild, so the
-  # duplicates accumulate silently under the one command that is supposed to be
-  # the safe one.
+  # THE RE-RUN. `--replace-all <key> <value> <value-pattern>` replaces lines that MATCH and ADDS
+  # one when nothing does, so a pattern naming only the in-tree path is correct once; every
+  # re-run appends another stable-path line. `--check` cannot see it through `--get` (it returns
+  # only the LAST value), and the runbook tells the operator to re-run after a rebuild.
+  # History: task credential-helper-claims-overclaim.
   test "running the printed command three times leaves ONE helper, not three" do
     config = File.join(@root, "gitconfig")
     File.write(config, <<~INI)
@@ -353,15 +339,12 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
                  "the helper once per value, and --check cannot see it because --get reads only the last."
   end
 
-  # REWORDED, not tightened (credential-snapshot-guards-overclaim, 2026-09-13).
-  # The old name said the revert "restores the path it replaces", which is true
-  # only on a machine whose credential.helper WAS that in-tree path. Where it was
-  # unset, running the printed revert INSTALLS the helper by the path that
-  # vanishes on checkout — the defect. Naming the true prior value is a change to
-  # the CLI's contract (its --check arm already reads it) and belongs with the
-  # source-control.md symptom-table gap Carl filed separately; what this guard
-  # checks is only that the printed revert names the in-tree path, so that is
-  # what it now claims.
+  # "The revert restores the path it replaces" is true only where credential.helper WAS that
+  # in-tree path; where unset, the printed revert INSTALLS the helper by the path that vanishes
+  # on checkout. This guard checks only that the printed revert names the in-tree path, so that
+  # is what it claims. Naming the true prior value is a change to the CLI's contract, not this
+  # test's.
+  # History: task credential-snapshot-guards-overclaim.
   test "the revert command names the in-tree path this install replaces" do
     assert_includes CredentialHelperInstall.git_config_revert_command,
                     "/Users/alex/projects/mcritchie-studio/bin/gh-app-git-credential"
@@ -432,15 +415,11 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
   end
 
   # ── --check reads the whole key, not the last line ──────────────────────────
-  #
-  # WHY THIS EXISTS. The duplication above went unseen because `--check` read the
-  # wiring with `git config --get`, which returns only the LAST value. A config
-  # holding three helpers and a config holding one printed the identical line and
-  # the identical OK. So the check is now `--get-all`, and more than one value is
-  # a FAIL naming the count.
-  #
-  # GIT_CONFIG_GLOBAL redirects `--global` at a file, so this runs the REAL CLI
-  # against an isolated config. Nothing writes to ~/.gitconfig.
+  # `git config --get` returns only the LAST value, so three helpers and one look identical.
+  # `--check` uses `--get-all`, and more than one value is a FAIL naming the count.
+  # GIT_CONFIG_GLOBAL redirects `--global` at a file, so this runs the REAL CLI against an
+  # isolated config; nothing writes to ~/.gitconfig.
+  # History: task credential-helper-claims-overclaim.
   def check_cli(config)
     Open3.capture2e(
       { "GIT_CONFIG_GLOBAL" => config },
@@ -471,21 +450,13 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
   end
 
   # ── two installs at once ────────────────────────────────────────────────────
-  #
-  # THE RACE (credential-snapshot-guards-overclaim, 2026-09-13). `install!` took
-  # no lock, and its "already installed?" test sat outside one. Two installs of
-  # the same NEW digest could both pass that test; A then renamed its staging
-  # into place and pointed `current` at it, and B's `rm_rf(target)` deleted the
-  # directory `current` was now pointing into — ENOENT to any concurrent
-  # `git push`, which is the defect's own signature. Narrow (an install is an
-  # explicit, rare command) but free to close.
-  #
-  # WHAT IS PROVEN HERE, exactly: that the critical section is serialised by a
-  # real lock (a child blocks while this process holds it), and that a serialised
-  # second install of the same digest rebuilds nothing. The original interleaving
-  # cannot be REPLAYED without an injection point inside install!, so the
-  # placement of the check is graded structurally instead — said plainly rather
-  # than dressed up as a behavioural proof.
+  # `install!`'s "already installed?" test belongs inside a lock: two installs of one NEW digest
+  # could both pass it, and B's `rm_rf(target)` deletes the directory `current` points into.
+  # PROVEN here: a real lock serialises the critical section (a child blocks while this process
+  # holds it), and a serialised second install of the same digest rebuilds nothing. The
+  # interleaving cannot be REPLAYED without an injection point, so the check's placement is
+  # graded structurally, not behaviourally.
+  # History: task credential-snapshot-guards-overclaim.
 
   def install_in_child(root)
     lib = Rails.root.join("bin/lib/credential_helper_install").to_s
@@ -576,30 +547,14 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
                     "the stamp names a path inside the snapshot — that is the defect, written down"
   end
 
-  # WHICH METER LOSES WHAT — pinned, because NINE sites said the wrong thing
-  # (credential-helper-claims-overclaim). The claim that bin/op-reads sees nothing
-  # at all from the installed helper was measured false: there are two meters and
-  # only one of them drifts.
-  #
-  #   BASH  bin/lib/op-meter.sh   ${CLAUDE_PROJECTS_DIR:-$HOME/projects}  →  the REAL log, from a snapshot too
-  #   RUBY  bin/lib/op_meter.rb   ProjectsRoot.default_projects_dir       →  inside the snapshot
-  #
-  # So the helper's own `op item get` was never lost; what was lost is every read
-  # its Ruby child bin/gh-token makes, which is where the shared token session
-  # spends its quota.
-  #
-  # WHY THE PATTERN LOOKS LIKE THIS. A first version scanned line by line with
-  # `[^.\n]` between the words, and the reviewer measured it at 7 of 9 against
-  # the pre-fix tree: it missed a PAST-tense form ("showed none") and every site
-  # where a comment WRAPPED between the words, which is most of them. So the text
-  # is flattened first — every newline becomes a space, and line numbers are kept
-  # alongside — the verbs allow their tenses, and the gap between words allows the
-  # comment markers a wrap inserts. The `[^.]` bound stays: it stops a match
-  # running across a sentence boundary into an unrelated claim.
-  #
-  # And it is BUILT from parts rather than written out, so this guard can never
-  # match itself. The earlier version needed two `# …-ok` exemption markers, and
-  # the reviewer found both were dead — neither line could have matched anyway.
+  # WHICH METER LOSES WHAT, from a snapshot: BASH bin/lib/op-meter.sh,
+  # ${CLAUDE_PROJECTS_DIR:-$HOME/projects}, reaches the REAL log; RUBY bin/lib/op_meter.rb,
+  # ProjectsRoot.default_projects_dir, stays inside the snapshot. The helper's own `op item get`
+  # is never lost; every read by its Ruby child bin/gh-token is. THE PATTERN: text is flattened
+  # first (newlines to spaces, line numbers kept), verbs allow their tenses, the word gap allows
+  # the comment markers a wrap inserts, and `[^.]` stops a match crossing a sentence. It is
+  # BUILT from parts so this guard can never match itself.
+  # History: task credential-helper-claims-overclaim.
   WRAP_GAP = '[\s#*\/>]*'
   ZERO_READS_WORDING = Regexp.new(
     "op-reads[^.]{0,140}?(?:" \
@@ -658,18 +613,13 @@ class CredentialHelperInstallTest < ActiveSupport::TestCase
                  "from a snapshot. Name what is actually lost: every read bin/gh-token makes."
   end
 
-  # The guard's own floor: run it against the tree BEFORE this sweep and it must
-  # find every site the sweep corrected. A pattern that catches some of them is
-  # how the ninth survived eleven lines from one that was fixed.
-  #
-  # PINNED TO A SHA, never `origin/accepted` (zap, in review). The baseline must be
-  # the tree that CARRIED the nine sites, and `origin/accepted` is the branch this
-  # very sweep merges INTO — so the moment it lands, that ref holds the CORRECTED
-  # files, `found` falls to 0, and this assertion reddens every later rails shard.
-  # Measured both sides in review: 9 at the pin, 0 at the fix. The pin is an
-  # ancestor of accepted forever and the rails job checks out `fetch-depth: 0`, so
-  # CI always resolves it; an unresolvable one yields 0 and FAILS here rather than
-  # passing, so the degradation stays closed.
+  # The guard's own floor: against the tree BEFORE this sweep it must find every site the sweep
+  # corrected.
+  # PINNED TO A SHA, never `origin/accepted`: once this lands that ref holds the CORRECTED
+  # files, `found` falls to 0, and this assertion reddens every later rails shard. The pin is an
+  # ancestor of accepted forever and the rails job checks out `fetch-depth: 0`, so CI resolves
+  # it; an unresolvable one yields 0 and FAILS here, so the degradation stays closed.
+  # History: task credential-helper-claims-overclaim.
   PRE_FIX_TREE = "ca4c5fda5fbad32f48a3b036e79c909aa0932a09"
 
   test "the pattern finds every site the pre-fix tree carried" do

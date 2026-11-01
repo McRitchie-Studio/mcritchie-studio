@@ -1,19 +1,12 @@
 # frozen_string_literal: true
 
 # Unit tests for the machine-owned evidence namespace inside devops.checks_run
-# (lib/cert_evidence.rb) — the write rule BOTH the CLI (bin/task) and the board
-# (Task#preserve_cert_evidence) enforce, so an author's `--checks` update cannot
-# destroy the `test-only` shape's fingerprint-bound control stamp.
-#
-# ONE LANE IS LEFT. Until DevOps v3 phase 2b (/tasks/retire-local-cert-evidence)
-# this namespace also carried the local cert receipts (`[full-suite@fp]`,
-# `[rubocop@fp]`, `[fast-cert@fp]`, `[cert-deferred@fp]`). Those writers are gone
-# and a leftover line is author prose to this module, which the last tests pin.
-#
-# Pure functions over string lists — nothing shells out, nothing boots Rails.
-#
-#   ruby -Itest test/lib/cert_evidence_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# (lib/cert_evidence.rb): the write rule BOTH bin/task and Task#preserve_cert_evidence enforce,
+# so an author's `--checks` update cannot destroy the `test-only` shape's fingerprint-bound
+# control stamp. ONE LANE IS LEFT: a leftover local cert receipt line (`[full-suite@fp]`,
+# `[rubocop@fp]`, ...) is author prose, as the last tests pin. Pure functions over string lists:
+# nothing shells out, nothing boots Rails.
+# History: task retire-local-cert-evidence.
 
 require "minitest/autorun"
 require_relative "../../lib/cert_evidence"

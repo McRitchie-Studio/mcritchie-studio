@@ -1,16 +1,12 @@
 # frozen_string_literal: true
 
-# Tests for bin/atomic-event — the agent's self-narration CLI (start/end an activity).
-#
-#   ruby -Itest test/lib/agent_activity_cli_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# Two tiers (backend shape):
-#   [unit]        the pure helpers — argv parsing, session resolution, the local
-#                 category guard — loaded in process (main is guarded so `load`
-#                 is side-effect free).
-#   [integration] the real script, shelled out against a localhost stub HTTP
-#                 server, mints a token then POSTs the right open/close shape.
+# Tests for bin/atomic-event, the agent's self-narration CLI (start/end an activity). Two tiers
+# (backend shape):
+#   [unit] pure helpers (argv parsing, session resolution, the local category guard), loaded in
+#     process (main is guarded so `load` is side-effect free).
+#   [integration] the real script, shelled against a localhost stub HTTP server, mints a token
+#     then POSTs the right open/close shape.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "minitest/mock"
@@ -979,18 +975,14 @@ class AgentActivityCliTest < Minitest::Test
   # still covers the helpers it was written for.
   public
 
-  # --- [integration] the narration-marker sandbox (spawned-child vector) --------
-  #
-  # bin/atomic-event writes four markers into <projects>/.agents/sessions —
-  # .acting-agent, .open-activity, .open-span, .activity-usage.json — and resolved
-  # each by the CLAUDE_PROJECTS_DIR-else-real-projects-root FALLBACK. The tests in
-  # this file pin the root, but that pinning is a CONVENTION: nothing failed
-  # closed when a spawned child forgot. This is the assertion that it now does.
-  #
-  # `heartbeat` is the probe because it is LOCAL-only (no HTTP) — it writes
-  # .acting-agent straight to disk, so the guard is the only thing between the
-  # child and the operator's store. The unpinned case ABORTS before any IO, so
-  # this never writes the real store even when it goes red.
+  # --- [integration] the narration-marker sandbox (spawned-child vector) ---
+  # bin/atomic-event writes four markers into <projects>/.agents/sessions (.acting-agent,
+  # .open-activity, .open-span, .activity-usage.json); a spawned child that forgot the pin must
+  # fail closed.
+  # `heartbeat` is the probe because it is LOCAL-only: it writes .acting-agent straight to disk,
+  # so the guard is all that stands between child and store. The unpinned case ABORTS before any
+  # IO, so this never writes the real store even when red.
+  # History: task detect-engine-migration-content-drift.
   def spawn_unpinned(*argv)
     env = SessionEnv.neutralized(
       "CLAUDE_CODE_SESSION_ID" => SESSION,
@@ -1000,19 +992,13 @@ class AgentActivityCliTest < Minitest::Test
     Open3.capture3(env, RbConfig.ruby, BIN, *argv)
   end
 
-  # ── [unit] the CLOSE path — the one no guarded-API test could see ─────────────
-  #
-  # THE BUG THIS FILE SHIPPED. Every violation shape above drives the guarded API, so
-  # every one of them was blind to a caller that never ENTERS it — and
-  # clear_activity_usage_baselines was exactly that: it took SessionMarkers' pure path
-  # BUILDER and raw-File.deleted the result. Unguarded, and on the COMMON path — it
-  # fires on effectively every `end`/`next` (whenever the closing activity was the last
-  # one open), so a sandboxed-but-unpinned child DELETED
-  # <real projects>/.agents/sessions/<sid>.activity-usage.json where every guarded
-  # sibling aborts. The WRITE path was covered; the CLOSE path was not. It is now.
-  #
-  # Safe against the real store: the guard aborts BEFORE any IO, so this asserts the
-  # refusal without ever attempting the delete it forbids.
+  # --- [unit] the CLOSE path, the one no guarded-API test could see ---
+  # Tests driving the guarded API are blind to a caller that never ENTERS it.
+  # clear_activity_usage_baselines takes SessionMarkers' pure path BUILDER, on the COMMON path
+  # (effectively every `end`/`next`), so a sandboxed-but-unpinned child deleting <real
+  # projects>/.agents/sessions/<sid>.activity-usage.json must abort like its guarded siblings. The
+  # guard aborts BEFORE any IO, so this asserts the refusal without attempting the delete.
+  # History: task detect-engine-migration-content-drift.
   def test_unit_an_unpinned_activity_usage_clear_aborts_instead_of_deleting_the_real_store
     real = File.join(TaskUsageSandbox.real_state_dir, "sessions", "#{SESSION}.activity-usage.json")
     existed = File.exist?(real)
@@ -1093,47 +1079,19 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
-  # --- [integration] the ARGUMENT GUARD, proven by HTTP + marker RECEIPT -------
-  #
-  # THE DEFECT (/tasks/atomic-event-help-mutates). `run` did `command = argv.shift`
-  # and handed the REST to a parse_flags that had no notion of an argument it did
-  # not recognize: an unknown `--token` simply became `flags["token"] = true` and
-  # was never read. There was no help arm and no unknown-flag arm anywhere in the
-  # file, so `--help` — the universal safe probe — fell onto the floor and the
-  # subcommand RAN ITS REAL ACTION. Measured at source, each of these mutated:
-  #
-  #   grade 42 --disposition good --help        POST /api/v1/agent_activities/42/grade
-  #   start --category Edit --reason x --help   POST /api/v1/agent_activities
-  #   close-open --help                         POST .../close_all + three marker deletes
-  #   heartbeat avi --help                      the .acting-agent marker write
-  #
-  # AGGRAVATED by this CLI's own non-fatal contract: `run` swallows every
-  # StandardError and the script always exits 0, so a probe that mutated reported
-  # NOTHING and returned success. And bin/agent-activity — an 8-line shim that
-  # `load`s this file and calls the same `run` — is shelled by the SessionEnd hook
-  # and by bin/task, bin/submit, bin/release and
-  # bin/ci-scope-capture, which makes this the highest-frequency member of the class.
-  #
-  # WHY A RECEIPT AND NOT AN ABSENCE. An empty request log also describes a spy that
-  # was never wired — the failure mode that makes a green guard test worthless. So
-  # every probe below is paired with a CONTROL: the SAME command line with `--help`
-  # removed, which must record the POST (or write the marker) for real. The refusal
-  # is only meaningful because the control fires.
-  #
-  # These run the REAL script through the stub server, which is safe HERE and is
-  # NOT safe by hand: run_cli pins ATOMIC_CAPTURE_URL at 127.0.0.1 and HOME at a
-  # tmpdir, so the grade lands on the stub instead of the production board. Never
-  # type these probes at a shell.
+  # --- [integration] the ARGUMENT GUARD, proven by HTTP + marker RECEIPT ---
+  # An unknown flag must not fall through to the subcommand: `run` exits 0, so a mutating `--help`
+  # probe reports nothing. WHY A RECEIPT AND NOT AN ABSENCE: an empty request log also describes
+  # an unwired spy, so every probe pairs with a CONTROL, the SAME command without `--help`, which
+  # must record the POST or write the marker. Safe HERE only: run_cli pins ATOMIC_CAPTURE_URL at
+  # 127.0.0.1 and HOME at a tmpdir. Never type these probes at a shell.
+  # History: task atomic-event-help-mutates.
 
-  # bin/atomic-event with whole-line comments removed.
-  #
-  # NOT INTERCHANGEABLE with the raw file, and this file proved it: the source
-  # assertions below first ran on File.read(BIN) and went RED on `--token`, a flag
-  # that appears NOWHERE in the code — it is quoted in the doctrinal comment above
-  # COMMANDS, which explains that an unknown `--token` used to become
-  # `flags["token"] = true`. A substring assertion that can match a comment is
-  # asserting about documentation, not about code. Same reasoning, and the same
-  # remedy, as BinHelpFlagClassTest#code_only.
+  # bin/atomic-event with whole-line comments removed. NOT INTERCHANGEABLE with the raw file:
+  # `--token` appears only in the doctrinal comment above COMMANDS, and a substring assertion that
+  # can match a comment asserts about documentation, not code. Same remedy as
+  # BinHelpFlagClassTest#code_only.
+  # History: task atomic-event-help-mutates.
   def bin_code_only
     File.read(BIN).lines.reject { |line| line.lstrip.start_with?("#") }.join
   end
@@ -1192,26 +1150,14 @@ class AgentActivityCliTest < Minitest::Test
     end
   end
 
-  # Help answers on the line the old parser dropped, and exits 0.
-  #
-  # 0 IS DELIBERATE HERE, and it is the opposite of the sibling guards' choice
-  # (bin/release, bin/qa-server and bin/agent-worktree all exit 1, because a caller
-  # reads THEIR 0 as a verdict). Traced through every caller of this CLI: bin/task,
-  # bin/submit, bin/release.rb and bin/ci-scope-capture ALL
-  # invoke it as `system(..., out: File::NULL, err: File::NULL)` with the return
-  # value DISCARDED inside `rescue StandardError; nil`, and three of them carry a
-  # comment asserting "the verb always exits 0". Nothing reads it. See the rationale
-  # on AgentActivityCli::HELP_EXIT.
-  # ONE fix retires BOTH manifest entries — asserted, not asserted-about.
-  #
-  # bin/agent-activity is an 8-line shim that `load`s bin/atomic-event and calls the
-  # SAME AgentActivityCli#run, which is why the guard was placed inside `run` rather
-  # than under this file's `$PROGRAM_NAME == __FILE__` block. That inheritance is the
-  # whole argument for classifying the shim :delegates instead of giving it a second
-  # guard, and an argument is not a test — so this runs the REAL shim binary. It is
-  # also the higher-frequency of the two names: the SessionEnd hook, bin/task,
-  # bin/submit, bin/release and bin/ci-scope-capture all shell
-  # `bin/agent-activity`, never `bin/atomic-event`.
+  # Help answers on the line the old parser dropped, and exits 0. 0 IS DELIBERATE, unlike the
+  # sibling guards (bin/release, bin/qa-server, bin/agent-worktree exit 1 because a caller reads
+  # THEIR 0 as a verdict): bin/task, bin/submit, bin/release.rb and bin/ci-scope-capture discard
+  # it. See AgentActivityCli::HELP_EXIT.
+  # ONE fix retires BOTH manifest entries. bin/agent-activity is an 8-line shim that `load`s
+  # bin/atomic-event and calls the SAME AgentActivityCli#run, so the guard sits inside `run`. That
+  # is why the shim is :delegates, so this runs the REAL shim binary.
+  # History: task atomic-event-help-mutates.
   def test_integration_the_agent_activity_shim_inherits_the_same_guard
     shim = File.expand_path("../../bin/agent-activity", __dir__)
     Dir.mktmpdir do |proj|

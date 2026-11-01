@@ -1,32 +1,13 @@
 # frozen_string_literal: true
 
-# Unit tests for bin/lib/desk_guard.rb — the desk guard both G1 cert runners
-# (bin/fast-check) consults before running a test lane, and that
-# bin/agent-worktree's bringup asserts the desk with.
-#
-# THE BUG THESE VECTORS EXIST FOR (live, 2026-07-14). The first cut of this guard allowed on
-# the PRESENCE OF A STRING — a non-empty TEST_DATABASE_URL — and all ten of its tests were
-# studio-shaped, so a green suite said NOTHING about either satellite:
-#
-#   * turf-monster IGNORED the pin (bare `database: turf_monster_test`, no `url:` key), so
-#     the guard ALLOWED desks that resolved to the SHARED turf_monster_test — and the cert's
-#     next lane purged it. It reported an isolation it had never proven: worse than no guard.
-#   * rolio is SQLite and has NO pin BY DESIGN (its test DB is a file inside the desk), so a
-#     guard demanding the string refuses a perfectly isolated tree — and bringup's rollback
-#     then deleted it.
-#
-# ONE root cause — a POSTGRES-SHAPED, DECLARATION-TRUSTING model — wrong in BOTH directions.
-# The missing vector WAS the blocker, so these vectors are organised by the two ADAPTER
-# SHAPES and both directions of each. The guard is driven through its `resolver:` seam: each
-# test states what the BOOTED APP would answer and asserts the verdict that follows. What a
-# desk DECLARES is varied INDEPENDENTLY of what it RESOLVES to, because the whole lesson of
-# this file is that those are not the same thing.
-#
-#   ruby -Itest test/lib/desk_guard_test.rb
-# Also picked up by the normal `bin/rails test` sweep. The resolver's own plumbing (env
-# pass-through, chdir, boot failure) is proven against a shimmed `bin/rails` at the bottom.
-# The shelled end-to-end refusals live in test/lib/fast_check_test.rb and
-# test/lib/fast_check_test.rb.
+# Unit tests for bin/lib/desk_guard.rb, consulted by bin/fast-check and bin/agent-worktree's
+# bringup.
+# Never allow on a non-empty TEST_DATABASE_URL: turf-monster ignores the pin and would reach the
+# SHARED DB; rolio is SQLite with NO pin BY DESIGN and would be refused.
+# So vectors follow the two ADAPTER SHAPES, both directions, through the `resolver:` seam: each
+# test states what the BOOTED APP would answer. What a desk DECLARES varies INDEPENDENTLY of
+# what it RESOLVES to.
+# History: task harvest-desk-guard-work.
 
 # Under `bin/rails test`, boot the app BEFORE desk_guard's path-load of
 # app/models/release/gate_workspace.rb. That file opens `class Release` with no

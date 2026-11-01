@@ -1,14 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] The hub's favicon fills its tile (task stacked-rule-of-three; Alex McRitchie 2026-10-14 12:14: the favicon "looks
-# small": 32 px empty at the top and 10 at the sides of 256). script/brand_png.cjs draws public/favicon.png from the
-# kit icon, whose box is its ink (Logos::IconInk), with no margin of its own, so the ink's alpha bounding box must
-# touch two opposite edges of the PNG. The PWA app icon (public/icon.png) is the exception: the manifest serves it as
-# "purpose": "maskable", and Android crops a maskable icon to a circle, so its artwork keeps a 0.16 safe zone on every
-# edge (review of PR 2101). The favicon draws the SMALL-SIZE MARK (Logos::SmallMark, public/favicon-mark.svg; task
-# footer-stacked-logo): the icon without the sparkles, side dashes and loose coins that a 16-32 px tab shows only as
-# specks, and that set the full icon's box, so the chest filled about 70% of the tab. It is fit, never cropped. Alex McRitchie 2026-10-15 08:10, of the
-# old chest-only favicon: "That is the correct size". Read with Zlib alone: the PNG is 8-bit RGBA, not interlaced, as Chromium writes it.
+# [unit] The hub's favicon fills its tile: script/brand_png.cjs draws public/favicon.png with no
+# margin, so the ink's alpha bounding box must touch two opposite edges. The PWA app icon
+# (public/icon.png) is the exception: the manifest serves it "purpose": "maskable", so its
+# artwork keeps a 0.16 safe zone on every edge. The favicon draws the SMALL-SIZE MARK
+# (Logos::SmallMark, public/favicon-mark.svg), fit, never cropped. Read with Zlib alone: 8-bit
+# RGBA, not interlaced.
+# History: task stacked-rule-of-three.
 
 require "minitest/autorun"
 require "zlib"

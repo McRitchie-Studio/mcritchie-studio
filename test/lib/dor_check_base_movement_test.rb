@@ -1,55 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] THE GREEN THAT COULD NOT HAVE COVERED THE MERGE
-# (/tasks/gate-credits-a-stale-green).
-#   ruby -Itest test/lib/dor_check_base_movement_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# test/lib/base_movement_audit_test.rb proves the CLASSIFIER answers correctly. This
-# file proves bin/dor-check ASKS it and ACTS on the answer — the same split as
-# review_tree_guard_test.rb (classifier) vs dor_check_zap_seams_test.rb (gate), and for
-# the same reason: a correct guard wired to nothing is the failure mode worth more than
-# either half.
-#
-# ── THE HOLE ────────────────────────────────────────────────────────────────────
-#
-# A PR's CI runs against the base AS IT STOOD when the run started, and ci.yml triggers
-# on pull_request and on pushes to main, release AND `accepted` — so a merge into
-# `accepted` DOES start a run. That run grades the `accepted` TIP, a tree this PR is not
-# in, and nothing re-runs THIS PR against the moved base, so the combination that ships
-# is never executed. If `accepted` advances after the run, THE GREEN NEVER COVERED THE
-# MERGE, and `--gate-role review` credited it anyway.
-#
-# MEASURED, not theorised (Carl, PR #1258, 2026-09-07): the `accepted` tip was committed
-# at 07:59:02Z, THREE POINT THREE MINUTES AFTER that PR's CI completed at 07:55:44Z. The
-# commit it carried changed test/lib/dor_check_exempt_ci_test.rb by +117/-17 — the very
-# guard that PR's design depended on. A 12/12 green said nothing whatever about that
-# combination. It came out safe only because a reviewer built the merge preview by hand
-# and ran the family: 24 green / 0 red.
-#
-# ── WHY SEAM 2 IS NOT ALREADY THIS ──────────────────────────────────────────────
-#
-# dor-check already REPORTS that the base moved (ReviewTreeGuard.base_assessment), and
-# reviewers satisfy that report by arguing FILE DISJOINTNESS — "the N commits `accepted`
-# gained touch none of my files." That argument is cheap and usually right. It is NOT
-# the claim "the merged tree is green", and it fails in exactly one shape: when a base
-# commit changes a SHARED GUARD rather than a shared source file. Disjointness is then
-# TRUE and IRRELEVANT — the base touched no file this PR changes, and still changed a
-# test that grades it.
-#
-# THE TWO CLAIMS ARE KEPT APART ON PURPOSE, here and in the verdict text. Collapsing
-# them is the defect one level down.
-#
-# ── THE THREE CASES THIS FILE PINS ──────────────────────────────────────────────
-#
-#   shared guard, base commit AFTER the run   REFUSES  — disjointness cannot settle it
-#   disjoint,     base commit AFTER the run   REPORTS  — the busy-night case, unharmed
-#   shared guard, base commit BEFORE the run  REPORTS  — the run DID cover it
-#
-# The third is the control: it differs from the first ONLY in the commit's timestamp, so
-# a gate that ignored the clock (or never read it) would refuse it too and go red here.
-# Without that row the refusal could be firing on the guard overlap alone and this file
-# would never notice.
+# [integration] THE GREEN THAT COULD NOT HAVE COVERED THE MERGE. Proves bin/dor-check ASKS the
+# classifier (test/lib/base_movement_audit_test.rb) and ACTS on it.
+# Disjointness is not "the merged tree is green": a base commit changing a SHARED GUARD leaves
+# it TRUE and IRRELEVANT. THE TWO CLAIMS ARE KEPT APART ON PURPOSE.
+#   shared guard, base commit AFTER the run   REFUSES: disjointness cannot settle it
+#   disjoint,     base commit AFTER the run   REPORTS
+#   shared guard, base commit BEFORE the run  REPORTS: the control, only the clock differs
+# History: task gate-credits-a-stale-green.
 
 require "minitest/autorun"
 require "json"
@@ -217,17 +175,11 @@ class DorCheckBaseMovementTest < Minitest::Test
                    "the refusal must say WHY the file-disjointness argument does not settle it — " \
                    "that argument is what reviewers reach for here, and it is true and irrelevant")
 
-      # THE DURABLE ROW, not just the exit code. `ci_gate_result` is what the gates
-      # card renders and what the GateRun sop records, and it is the half a reader
-      # meets LATER — after the terminal output that carried the refusal is gone.
-      #
-      # It said "pass" here until 2026-09-07. The refusal set `ci_review_refused =
-      # true`, but CiGate.gate_row read that flag only in its `else` branch, and this
-      # path's precondition IS `ci[:state] == :green` — so the assignment was inert and
-      # the board recorded a passing CI row for a review the same run had refused. That
-      # is precisely this task's defect (a green credited for a tree nobody ran) leaking
-      # into the record, and deleting the assignment left all six integration tests
-      # green because nothing ever asserted on this field.
+      # THE DURABLE ROW, not just the exit code. `ci_gate_result` is what the gates card renders and
+      # the GateRun sop records: the half a reader meets after the terminal output is gone.
+      # CiGate.gate_row must honour `ci_review_refused` on this path, whose precondition IS
+      # `ci[:state] == :green`, or the board records a passing CI row for a refused review.
+      # History: task gate-credits-a-stale-green.
       assert_equal "fail", verdict["ci_gate_result"],
                    "the gates-card CI row recorded PASS on a run that REFUSED the review — the durable " \
                    "record contradicts the verdict that produced it\nverdict: #{verdict.inspect}"
@@ -242,15 +194,11 @@ class DorCheckBaseMovementTest < Minitest::Test
                    "the report half asserted a negative the refusal half disproved — one verdict named the " \
                    "same file as both a guard and not-a-guard\n#{all_of(verdict)}")
 
-      # ON THE SUGGESTIONS LANE SPECIFICALLY, and that is the point of these three.
-      # The contradiction lived in the REPORT, which lands in `suggestions`; the refusal
-      # lands in `errors`. Asserting the repair over all_of (errors + suggestions joined)
-      # cannot tell those apart, so it is satisfied by the refusal's own text and says
-      # NOTHING about the half that was wrong. Concretely: move the withheld-claim
-      # sentence into the refusal and let the report go silent, and an all_of assertion
-      # still passes — which is exactly the "simply going quiet" outcome it claims to
-      # forbid. The original test asserted only on errors_of and never on suggestions_of,
-      # which is why the contradiction shipped green in the first place.
+      # ON THE SUGGESTIONS LANE SPECIFICALLY. The contradiction lived in the REPORT (`suggestions`);
+      # the refusal lands in `errors`. all_of (errors + suggestions joined) cannot tell them apart:
+      # move the withheld-claim sentence into the refusal, let the report go silent, and an all_of
+      # assertion still passes.
+      # History: task gate-credits-a-stale-green.
       assert_match(/DISJOINTNESS IS NOT AVAILABLE HERE/, suggestions_of(verdict),
                    "…and having withheld the disjointness claim, the REPORT must say WHY it is withheld " \
                    "rather than simply going quiet\nsuggestions: #{suggestions_of(verdict)}")
@@ -307,23 +255,14 @@ class DorCheckBaseMovementTest < Minitest::Test
     end
   end
 
-  # THE CONTROL — and the proof the clock is actually read. Identical to the refusal
-  # case in every way EXCEPT the base commit's timestamp: same guard file, same
-  # overlap, same disjointness. The run finished AFTER it landed, so the green DID
-  # cover this tree and there is nothing to refuse.
-  #
-  # A gate that refused on guard overlap alone — never comparing the timestamps — would
-  # go red here. A gate whose timestamp read silently returned nil would fail closed and
-  # also go red here. So this row is what stops the refusal above from being credited to
-  # a comparison that never happened.
-  # ── THE MID-RUN WINDOW (/tasks/stale-merge-ref-passes-freshness) ─────────────────
-  #
-  # CI tests the merge ref GitHub built when the run was TRIGGERED, and the run then
-  # takes many minutes. A base commit landing inside that window predates the run's
-  # COMPLETION, so a completion clock calls it covered — while the tree CI tested never
-  # held it. The exact question is ancestry, not time: is the commit in the base the
-  # merge ref was built from? DOR_CHECK_CI_TESTED_BASE injects that base, as
-  # DOR_CHECK_CI_COMPLETED_AT injects the clock.
+  # THE CONTROL, proof the clock is read. Identical to the refusal case EXCEPT the base commit's
+  # timestamp; the run finished AFTER it landed, so nothing to refuse. A gate refusing on overlap
+  # alone, or whose timestamp read returned nil and failed closed, goes red here.
+  # THE MID-RUN WINDOW: CI tests the merge ref built when the run was TRIGGERED, so a base commit
+  # landing during the run predates COMPLETION yet was never tested. The exact question is
+  # ancestry, not time: is the commit in the base the merge ref was built from?
+  # DOR_CHECK_CI_TESTED_BASE injects that base, as DOR_CHECK_CI_COMPLETED_AT injects the clock.
+  # History: task stale-merge-ref-passes-freshness.
   def test_integration_a_guard_change_landing_mid_run_is_refused
     with_desk(base_change: "test/lib/widget_tool_exempt_test.rb", at: MID_RUN) do |dir, head, base_sha|
       tested = IO.popen(["git", "-C", dir, "rev-parse", "#{base_sha}^"], &:read).to_s.strip
@@ -459,25 +398,14 @@ class DorCheckBaseMovementTest < Minitest::Test
     end
   end
 
-  # ==== THE AUDIT'S OWN SILENCE (/tasks/audit-vanishes-when-git-fails) ===========
-  #
-  # Every row above consumes :moved. `assess` also answers :unobservable — from FOUR
-  # paths (:no_ref, :no_merge_base, :no_log, :git_unreadable) — and NOTHING outside the
-  # module consumed it. Grepped on `accepted` at c92f8d73: the only other :unobservable
-  # reads in bin/ are a DIFFERENT audit (head_check/:no_pr_head). So any failed git read
-  # made gate-zero's deepest check report nothing at all, and the review proceeded
-  # exactly as though the base had not moved.
-  #
-  # THAT IS THE DEFECT CLASS THIS SEAM EXISTS TO CLOSE, reproduced inside the check
-  # itself: a check that silently does not run. It fails toward the status quo, which is
-  # the safe direction — and it fails SILENTLY, which is the direction that costs a
-  # reviewer the one fact they needed.
-  #
-  # THE FIXTURE IS THE REAL SHAPE, not an injected state. It strips BOTH refs the audit
-  # resolves the base through (the remote-tracking ref AND the local branch its fallback
-  # reaches for), which is the :no_ref path — and :no_ref is the one a live desk actually
-  # hits, because THIS GATE NEVER FETCHES. Everything else about the desk is the REFUSING
-  # row: same late guard change, same overlap. Only the readability of the ref differs.
+  # ==== THE AUDIT'S OWN SILENCE (/tasks/audit-vanishes-when-git-fails) ====
+  # `assess` also answers :unobservable from FOUR paths (:no_ref, :no_merge_base, :no_log,
+  # :git_unreadable). A failed git read must not make gate-zero's deepest check report nothing: a
+  # check that silently does not run costs a reviewer the one fact they needed.
+  # THE FIXTURE IS THE REAL SHAPE: it strips BOTH refs the audit resolves the base through
+  # (remote-tracking ref AND local branch fallback), the :no_ref path a live desk hits, because
+  # THIS GATE NEVER FETCHES. All else is the REFUSING row.
+  # History: task audit-vanishes-when-git-fails.
 
   def strip_base_refs!(dir)
     git!(dir, "update-ref", "-d", "refs/remotes/origin/accepted")

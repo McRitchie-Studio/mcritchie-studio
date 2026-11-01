@@ -1,23 +1,12 @@
 # frozen_string_literal: true
 
-# Unit tests for bin/lib/e2e_executed_set.rb — THE RECEIPT GATE.
-#
-# The gate itself is proved END-TO-END against real Playwright runs (see the PR's mutation
-# table: a `testInfo.skip()` and a widened `--grep-invert` both go RED against genuinely
-# emitted reports). These tests prove its LOGIC over synthetic receipts, so the failure modes
-# can be exercised in milliseconds instead of six minutes of CI — including the ones that are
-# expensive or impossible to stage for real, like a corrupt report or a shard that never
-# uploaded.
-#
-# The property under test, on every axis at once:
-#
-#     THE LANE EXECUTED EXACTLY THE SPECS IT IS SUPPOSED TO EXECUTE.
-#
-# Run directly:
-#   ruby -Itest test/lib/e2e_executed_set_test.rb
-#
-# One tier (backend shape):
-#   [unit] the gate's verdict over hand-built Playwright JSON reports.
+# Unit tests for bin/lib/e2e_executed_set.rb, THE RECEIPT GATE. The gate itself is proved
+# END-TO-END against real Playwright runs; these prove its LOGIC over synthetic receipts,
+# including modes costly to stage, like a corrupt report or a shard that never uploaded.
+# The property, on every axis at once: THE LANE EXECUTED EXACTLY THE SPECS IT IS SUPPOSED TO
+# EXECUTE.
+# One tier (backend shape): [unit] the gate's verdict over hand-built Playwright JSON reports.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "tmpdir"

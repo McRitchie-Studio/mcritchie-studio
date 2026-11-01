@@ -1,19 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] publish_gem's TAG PUSH, when it fails (/tasks/untagged-gem-publish-strands-work).
-#
-# publish_gem pushes the gem, then tags and pushes the tag. The gem is live by then,
-# so a failed tag push stays NON-FATAL: aborting would strand the sweep's consumer
-# lock bumps and QA for a publish that succeeded. What changed is that it is no
-# longer quiet. The old line, "push it manually if needed", read as optional
-# housekeeping while every later sweep from a clone without the tag skipped the gem
-# for good. Allocation now refuses that state; this pins the moment it is created.
-#
-# Drives the REAL publish_gem in a subprocess that has `load`ed bin/release.rb (its
-# dispatch is guarded on __FILE__ == $PROGRAM_NAME). `sh` is stubbed because gem
-# build/push and the tag push are network; the stub fails ONLY the tag push.
-#
-#   ruby -Itest test/lib/release_publish_tag_push_test.rb
+# [integration] publish_gem's TAG PUSH, when it fails. The gem is live by then, so a failed
+# tag push stays NON-FATAL: aborting would strand the sweep's consumer lock bumps and QA.
+# But it must not be quiet: later sweeps from a clone without the tag skip the gem for good.
+# Allocation refuses that state; this pins the moment it is created. Drives the REAL
+# publish_gem in a subprocess that `load`ed bin/release.rb; the `sh` stub fails ONLY the tag
+# push.
+# History: task untagged-gem-publish-strands-work.
 
 require "minitest/autorun"
 require "open3"

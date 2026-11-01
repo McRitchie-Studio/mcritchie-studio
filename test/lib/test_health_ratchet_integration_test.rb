@@ -1,16 +1,11 @@
 # frozen_string_literal: true
 
-# [integration] Does the ratchet actually FAIL A BUILD? Standalone (no Rails):
-#   ruby -Itest test/lib/test_health_ratchet_integration_test.rb
-#
-# The unit tests next door prove the detector flags the right shapes. This drives the
-# REAL guard file as a subprocess against a throwaway git tree and watches the exit
-# status: the file has to load, the YAML has to parse, the merge base has to be read,
-# the comparison has to run, and the process has to exit non-zero.
-#
-# HERMETIC ON PURPOSE. TEST_HEALTH_ROOT points the guard at a tmpdir holding its own
-# git repository, config/test_health.yml and test/; TEST_HEALTH_BASE names the commit
-# that stands in for the merge base. Nothing here writes into the repo under test.
+# [integration] Does the ratchet actually FAIL A BUILD? This drives the REAL guard file as a
+# subprocess against a throwaway git tree and watches the exit status. HERMETIC ON PURPOSE:
+# TEST_HEALTH_ROOT points at a tmpdir with its own git repository, config/test_health.yml and
+# test/; TEST_HEALTH_BASE names the commit standing in for the merge base. Nothing here writes
+# into the repo under test.
+# History: task test-health-ratchet-gate.
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"

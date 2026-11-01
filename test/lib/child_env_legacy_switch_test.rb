@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] ChildEnv.renewer keeps AgentApi's shared-token OFF switch and nothing else
-# under that name (secrets-scrub-review-notes).
-#
-# ChildEnv copies AgentApi::LEGACY_ENV and LEGACY_OFF so child_env.rb stays
-# loadable on its own (bin/dev execs it as a script). This test pins the copies
-# equal, so a new OFF spelling added to AgentApi cannot silently fall back to the
-# shared token in every detached renewer.
-#
-#   ruby -Itest test/lib/child_env_legacy_switch_test.rb
+# [unit] ChildEnv.renewer keeps AgentApi's shared-token OFF switch and nothing else under
+# that name (secrets-scrub-review-notes). ChildEnv copies AgentApi::LEGACY_ENV and
+# LEGACY_OFF so child_env.rb stays loadable alone; this pins the copies equal, so a new OFF
+# spelling cannot silently fall back to the shared token in every detached renewer.
+# History: task secrets-scrub-review-notes.
 require "minitest/autorun"
 require_relative "../../bin/lib/child_env"
 require_relative "../../bin/lib/agent_api"

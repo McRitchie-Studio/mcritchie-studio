@@ -1,19 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] CliArgGuard — the shared "account for every argument" guard for flat bin/ scripts.
-#
-# The behavioural proof that this guard stops a real mutation lives one tier up, in
-# test/lib/archive_docs_help_guard_test.rb, which spawns the real CLI against a real
-# git repo and asserts the tree and index are byte-identical. THIS file pins the
-# decision table underneath it: what counts as accounted-for, what refuses, and — the
-# half that is easy to get wrong and expensive to get wrong — what must STILL DISPATCH.
-#
-# A guard that refuses everything is indistinguishable from a guard that works, and it
-# fails silently and expensively: refuse bin/release's own line and the archive beat
-# aborts every release. So the dispatch cases below carry as much weight as the
+# [unit] CliArgGuard, the shared "account for every argument" guard for flat bin/ scripts.
+# test/lib/archive_docs_help_guard_test.rb proves it stops a real mutation. THIS file pins
+# the decision table: what is accounted-for, what refuses, and what must STILL DISPATCH. A
+# guard that refuses everything looks like one that works: refuse bin/release's own line and
+# the archive beat aborts every release. So the dispatch cases carry as much weight as the
 # refusals.
-#
-#   ruby -Itest test/lib/cli_arg_guard_test.rb
+# History: task archive-docs-help-mutates.
 
 require "minitest/autorun"
 require "stringio"

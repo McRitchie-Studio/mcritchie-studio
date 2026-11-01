@@ -1,39 +1,13 @@
 # frozen_string_literal: true
 
-# bin/release.rb's DISPATCH → RUN window: the gap between `gh workflow run`
-# returning 0 and GitHub actually creating a run. Standalone:
-#   ruby -Itest test/lib/release_cli_dispatch_run_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# THE INCIDENT, 2026-09-07 (rel-20260907-14cff2, measured during a real sweep).
-# `bin/release prepare` printed `gh workflow run qa-deploy.yml -f sha=0a0cc23`,
-# GitHub created NO run, `gh` printed no error and exited 0, and the conductor fell
-# through to polling a QA app that was still serving the OLD tree. The poll timed
-# out, and prepare reported the plausible and entirely wrong conclusion
-# "mcritchie-studio never returned /up 200 — QA is NOT green", remedy "retry
-# `bin/qa-server deploy`". The app was healthy the whole time; it had simply never
-# been redeployed. An identical manual dispatch of the same workflow and SHA worked
-# immediately. Cost: the sweep exited 0 with 0 members assembled and the release
-# stuck `assembling`, and re-running it superseded an already-published
-# studio-engine version.
-#
-# WHY THE SUITE DID NOT CATCH IT. Every existing dispatch_and_watch case gave the
-# poll a run to find (the release CLI deploy tests: the strictly-greater run, the
-# watcher 500, the protection pause, the unobservable run). None exercised a
-# dispatch that creates NO run, so the one silent `return false` in the method was
-# never driven. A suite that only covers a successful dispatch certifies nothing
-# about the failure the operator actually met.
-#
-# THE FIX THIS PINS. A dispatch whose run never registers ABORTS, naming the
-# workflow, the SHA, and the dispatch command — instead of degrading into a
-# boot-timeout diagnosis about a system that was never at fault. Emphatically NOT a
-# longer boot poll: the app booted, and a wider window would poll the same stale
-# tree for longer and then tell the same lie.
-#
-# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
-# config/test_health.yml precisely so new work lands somewhere else. The harness
-# below is deliberately the small one (load the script, stub `sh`, drive one
-# method) rather than the shared release CLI harness.
+# bin/release.rb's DISPATCH → RUN window: the gap between `gh workflow run` returning 0 and
+# GitHub creating a run. A dispatch whose run never registers ABORTS, naming the workflow, the
+# SHA and the dispatch command, instead of degrading into a boot-timeout diagnosis. Emphatically
+# NOT a longer boot poll: that polls the same stale tree for longer. A suite covering only
+# successful dispatches certifies nothing here. A FILE OF ITS OWN: the release CLI files are
+# frozen by config/test_health.yml; this harness is deliberately the small one (load, stub `sh`,
+# drive one method).
+# History: release rel-20260907-14cff2.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
@@ -125,22 +99,14 @@ class ReleaseCliDispatchRunTest < Minitest::Test
     end
   RUBY
 
-  # THE THIRD SHAPE, and the one that separates "did ANY read answer" from "did the
-  # LAST read answer". The pre-dispatch snapshot ANSWERS (call 1), the dispatch is
-  # accepted, the FIRST post-dispatch read ANSWERS (call 2) and reports 100 — the
-  # same id as the snapshot, because GitHub has not registered the run YET — and
-  # reads 3..N then FAIL. That is the token-expiry window, not an exotic shape: App
-  # installation tokens expire ~hourly BY DESIGN and this poll is only ~60s wide, so
-  # "one read lands, the rest fail" is this house's most ordinary `gh` failure.
-  #
-  # WHY THE COUNT IS THE WHOLE POINT. LIST_UNREADABLE fails reads 2..N, so no
-  # post-dispatch read ever answers; this one lets exactly one answer FIRST. That
-  # single read carries NO evidence that no run exists — it was taken before
-  # registration could have happened — yet it is enough to flip an ACCUMULATING
-  # discriminator true for the remainder of the poll, routing the abort to the
-  # message that asserts "the deploy NEVER RAN" and hands over a re-dispatch
-  # command. On prod-deploy.yml that orders a SECOND PRODUCTION DEPLOY while the
-  # first may be in flight.
+  # THE THIRD SHAPE separates "did ANY read answer" from "did the LAST read answer". The
+  # snapshot answers (call 1), the dispatch is accepted, the FIRST post-dispatch read answers
+  # 100 (the same id, run not registered YET), and reads 3..N FAIL: the token-expiry window. WHY
+  # THE COUNT: LIST_UNREADABLE fails reads 2..N; this lets exactly one answer FIRST. That read
+  # carries NO evidence that no run exists, yet can flip an ACCUMULATING discriminator onto "the
+  # deploy NEVER RAN" and a re-dispatch command, which on prod-deploy.yml orders a SECOND
+  # PRODUCTION DEPLOY.
+  # History: task abort-trusts-stale-read.
   READ_THEN_UNREADABLE = <<~RUBY
     def sleep(*) = nil
     $watched = false
@@ -241,17 +207,12 @@ class ReleaseCliDispatchRunTest < Minitest::Test
                  out, "the dispatch command is named, so the operator can reproduce it by hand")
   end
 
-  # THE LOOP CLOSED: the command the message hands the operator is the command the
-  # shell ACTUALLY RAN. Both come from Release::ShipSequence.dispatch_argv, and this
-  # drives the real dispatch through the stub to prove it. A message quoting a command
-  # that differs from the real one is worse than no command at all — the operator
-  # pastes it, GitHub creates a run, and they conclude the workflow is healthy.
-  #
-  # THE ONE DIFFERENCE IS THE CORRELATION PAIR. The conductor appends its own
-  # `-f correlation_id=<id>` so its poll can find its run by name; that id is the
-  # conductor's, and a hand re-run neither needs it (the input is optional) nor
-  # should reuse it. So the dispatched argv is the quoted command plus exactly that
-  # one trailing pair, and nothing else may differ.
+  # THE LOOP CLOSED: the command the message hands the operator is the command the shell
+  # ACTUALLY RAN. Both come from Release::ShipSequence.dispatch_argv; this drives the real
+  # dispatch through the stub. THE ONE DIFFERENCE IS THE CORRELATION PAIR: the conductor appends
+  # `-f correlation_id=<id>`, so the dispatched argv is the quoted command plus exactly that
+  # trailing pair. Nothing else may differ.
+  # History: task prepare-drops-qa-dispatch.
   def test_the_quoted_command_is_the_command_the_shell_dispatched
     pinned = %(def dispatch_correlation_id = "dw-pinned")
     out = run_release("#{NO_RUN_CREATED}\n#{pinned}", guarded(DISPATCH) + %(; p($dispatched)))
@@ -340,24 +301,11 @@ class ReleaseCliDispatchRunTest < Minitest::Test
   end
 
   # ── [integration] the discriminator must read the LAST observation ───────────
-  #
-  # THE DEFECT THIS PINS. The two messages above are only ever as good as the
-  # predicate that chooses between them, and that predicate ACCUMULATED:
-  # `saw_a_read = true unless latest_id.nil?`, evaluated inside the poll, records
-  # whether ANY read ever answered rather than whether the LAST one did. So one
-  # early read — taken ~0s after the dispatch, before GitHub could have registered
-  # anything — licensed the "no run exists" claim for the whole remaining poll, no
-  # matter how completely `gh` failed afterwards.
-  #
-  # WHY THE LAST READ IS THE ONLY HONEST ONE. "GitHub registered NO run" is a claim
-  # about the run list's state NOW. An observation from before registration was
-  # possible cannot support it; only the most recent one can. Accumulation quietly
-  # substitutes "we managed to talk to GitHub at some point" for "we can see that no
-  # run is there", and those are different facts.
-  #
-  # This is the same harm the two-message split exists to prevent, surviving at a
-  # narrower trigger — it needs one read to land before the failures begin, which is
-  # exactly what a token expiring mid-poll produces.
+  # The predicate choosing between the two messages must not ACCUMULATE (`saw_a_read = true
+  # unless latest_id.nil?`). "GitHub registered NO run" is a claim about the run list NOW; only
+  # the most recent read supports it, and one read before registration cannot. A token expiring
+  # mid-poll produces exactly this.
+  # History: task abort-trusts-stale-read.
   def test_a_read_that_succeeds_before_the_list_goes_unreadable_does_not_claim_never_ran
     out = run_release(READ_THEN_UNREADABLE, guarded(DISPATCH) + %(; puts("WATCHED \#{$watched}")))
 

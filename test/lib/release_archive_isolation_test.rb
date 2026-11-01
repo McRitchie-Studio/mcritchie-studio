@@ -1,25 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] `bin/release archive` must reach the machine ONLY through stubbed seams.
-#
-# THE DEFECT THIS EXISTS TO CATCH. The release CLI's two
-# archive tests once stubbed the conductor and the worktree reclaim, but not
-# sweep_artifacts, sweep_docs or commit_artifact_to_accepted — and `archive` calls
-# all three with `apply: true`. So `bin/rails test` ran bin/clean-artifacts and
-# bin/archive-docs FOR REAL: 32.9 MB reclaimed across 9 repos and 32 worktrees,
-# and a `git mv` in the PRIMARY checkout that the next run then died on. The
-# rationale, and why commit_artifact_to_accepted was the sharpest of the three,
-# is recorded in test/support/release_archive_seams.rb.
-#
-# WHY A POISON RATHER THAN A DIFF. The obvious guard — capture `git status`
-# either side of the run and assert it is unchanged — can only report a mutation
-# that has ALREADY happened, and the mutation is the thing being prevented. This
-# raises on the attempt instead, before anything runs, and names the command so
-# the fix is obvious. Nothing here writes to disk.
-#
-# WHEN THIS FAILS, the remedy is to add the named seam to
-# ReleaseArchiveSeams::ISOLATION_STUB. Never to delete the assertion, and never
-# to let the test shell out "just this once".
+# [unit] `bin/release archive` must reach the machine ONLY through stubbed seams: it calls
+# sweep_artifacts, sweep_docs and commit_artifact_to_accepted with `apply: true`. The rationale
+# is in test/support/release_archive_seams.rb. A POISON, NOT A DIFF: `git status` either side
+# only reports a mutation that already happened; this raises on the attempt and names the
+# command. Nothing here writes to disk. WHEN THIS FAILS, add the named seam to
+# ReleaseArchiveSeams::ISOLATION_STUB. Never delete the assertion, and never let the test shell
+# out "just this once".
+# History: task suite-must-not-mutate-repos.
 
 require "bundler/setup"
 require "minitest/autorun"
@@ -61,17 +49,13 @@ class ReleaseArchiveIsolationTest < Minitest::Test
                     "would satisfy the refute above while proving nothing.\n\n#{out}"
   end
 
-  # The stubs return the tools' REAL tagged JSON, and these assertions are what
-  # make that fidelity load-bearing: they prove sweep_summary and docs_summary
-  # actually PARSED it. Without them a stub could drift to any shape and the
-  # parsers would be uncovered — they were, before this file existed.
-  # POISONED TOO, though it asserts nothing about the poison. Under the very
-  # regression the guard above exists to catch — a new seam in `archive` that
-  # ISOLATION_STUB does not yet cover — an UNPOISONED run of this test would
-  # shell out to the real bin/clean-artifacts with apply: true and sweep the
-  # machine, which is the exact harm this file was written to prevent. Minitest
-  # runs both tests whichever way the guard lands, so the guard alone does not
-  # protect this one. Costs nothing when the stubs are complete.
+  # The stubs return the tools' REAL tagged JSON; these assertions prove sweep_summary and
+  # docs_summary PARSED it, so a stub cannot drift to any shape uncovered. POISONED TOO, though it
+  # asserts nothing about the poison: under a new seam in `archive` that ISOLATION_STUB does not
+  # cover, an unpoisoned run would shell out to the real bin/clean-artifacts with apply: true.
+  # Minitest runs both tests whichever way the guard lands, so the guard alone cannot protect this
+  # one.
+  # History: task suite-must-not-mutate-repos.
   def test_the_stubbed_seams_still_feed_the_real_summary_parsers
     out = run_archive("#{BOARD_STUB}; #{ReleaseArchiveSeams::ISOLATION_STUB}; " \
                       "#{ReleaseArchiveSeams::SHELL_POISON}")
@@ -82,19 +66,12 @@ class ReleaseArchiveIsolationTest < Minitest::Test
     assert_includes out, "rolled 2 ledger row(s)", out
   end
 
-  # [integration] THE EXIT SEAM MUST NEVER GO QUIET ABOUT THE LOG CAP.
-  #
-  # ISOLATION_STUB's payload carries `rotation_missing: [], rotation_unknown: [],
-  # audited_envs: []` — a sweep that audited NOTHING, which is what --skip-audit
-  # and an unparseable summary line both look like from here (sweep_summary
-  # returns {} on purpose so a sweep hiccup cannot abort a run whose board work
-  # already landed). The Exit Seam's two rotation warnings each fired only on a
-  # non-empty list, so this run printed exactly what a fully capped machine
-  # printed: nothing. That is how five loose apps stayed unnamed.
-  #
-  # The stub is deliberately left as it was. Asserting against the UNAUDITED
-  # payload is the point — a fixture rewritten to carry loose apps would prove
-  # only that a non-empty list prints, which was never broken.
+  # [integration] THE EXIT SEAM MUST NEVER GO QUIET ABOUT THE LOG CAP. ISOLATION_STUB's payload
+  # carries `rotation_missing: [], rotation_unknown: [], audited_envs: []`, a sweep that audited
+  # NOTHING, as --skip-audit and an unparseable summary line both look (sweep_summary returns {}
+  # on purpose). The stub is deliberately left as it was: asserting against the UNAUDITED payload
+  # is the point. A fixture carrying loose apps proves only that a non-empty list prints.
+  # History: task cap-loose-app-logs.
   def test_the_exit_seam_names_an_unaudited_sweep_rather_than_reading_as_capped
     out = run_archive("#{BOARD_STUB}; #{ReleaseArchiveSeams::ISOLATION_STUB}; " \
                       "#{ReleaseArchiveSeams::SHELL_POISON}")

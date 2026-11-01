@@ -1,35 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] What the G3 pre-QA gate tells an operator when it CANNOT READ GitHub CI.
-#
-#   ruby -Itest test/lib/release_pre_qa_remedy_test.rb
-#
-# THE DEFECT (/tasks/release-offers-retired-cert). pre_qa_ci_abort's :unreadable
-# branch called CiStatus.unreadable_remedy with NO cert_route:, so it took the
-# default — `true` — and ended a RELEASE-grain refusal with "certify in full instead:
-# bin/full-suite-check <task>". Two things wrong in one sentence, and only one of them
-# was about wording:
-#
-#   * THE ROUTE IS RETIRED HERE. DevOps v2 Phase 3 DEMOTED the local pre-QA suite:
-#     GitHub's verdict for origin/release's tip IS the gate (pre_qa_gate's
-#     `ok = ci_pass?(ci)`, and :green is ci_pass?'s only true). bin/release.rb names
-#     no certification mechanism anywhere — re-derived at source, and pinned below —
-#     so an operator who ran the full suite would spend ~30 minutes and change this
-#     verdict by nothing at all.
-#   * THE PLACEHOLDER IS UNFILLABLE. `<task>` asks for a task slug; the subject of
-#     this gate is a release SHA carrying MANY tasks. There is no value the reader
-#     could have typed.
-#
-# Same family as /tasks/exempt-refusal-prints-dead-remedy (PR #1221): a gate printing
-# a remedy it cannot honour. A refusal that names the wrong remedy is worse than one
-# that names none, because the reader ACTS on it.
-#
-# WHY THIS FILE EXISTS SEPARATELY. The release CLI pre-QA gate tests own the
-# integration coverage of pre_qa_gate, and they are an APPEND hotspot, frozen at their
-# ceiling in config/test_health.yml by design. The ratchet's stated out is a new file
-# named for its concern, which is what this is; test/lib/release_auth_remedy_message_test.rb
-# is the same move for the ship lane's auth message, and `eval_helper` is
-# re-implemented from it rather than shared for the reason that file gives.
+# [unit] What the G3 pre-QA gate says when it CANNOT READ GitHub CI: pre_qa_ci_abort's
+# :unreadable branch must not take CiStatus.unreadable_remedy's default cert_route: `true`,
+# which offers `bin/full-suite-check <task>`. GitHub's verdict for origin/release's tip IS the
+# gate, and `<task>` is unfillable: the subject is a release SHA carrying MANY tasks. A refusal
+# naming the wrong remedy is worse than none, because the reader ACTS on it. Lives in its own
+# file: the release CLI pre-QA gate tests are frozen in config/test_health.yml. `eval_helper` is
+# re-implemented, not shared: see test/lib/release_auth_remedy_message_test.rb.
+# History: task release-offers-retired-cert.
 require "minitest/autorun"
 require "open3"
 require_relative "../support/session_env"
@@ -102,17 +80,11 @@ class ReleasePreQaRemedyTest < Minitest::Test
   end
 
   # ── the premise, pinned ─────────────────────────────────────────────────────
-  #
-  # THE DENIAL IS ONLY HONEST IF IT IS TRUE, and its truth is a property of
-  # bin/release.rb rather than of any string: the pre-QA suite was DEMOTED at Phase 3
-  # and nothing replaced it, so there is no certification this file would consult.
-  # Asserted against the SOURCE with comments stripped — this file's whole subject is
-  # prose outrunning behaviour, and a scan fooled by a comment (including the ones the
-  # fix itself added, which name bin/full-suite-check while explaining why it is not
-  # named to the operator) would be the joke writing itself.
-  #
-  # If a future change gives G3 a real cert path, this fails and sends the author back
-  # to the sentence — which is the whole point of pinning a premise instead of a text.
+  # THE DENIAL IS ONLY HONEST IF IT IS TRUE, and that is a property of bin/release.rb: nothing
+  # replaced the DEMOTED pre-QA suite, so there is no certification to consult. Asserted against
+  # the SOURCE with comments stripped, since the fix's own comments name bin/full-suite-check. If
+  # G3 gets a real cert path, this fails and sends the author back to the sentence.
+  # History: task release-offers-retired-cert.
   def test_the_release_gate_holds_no_certification_the_remedy_could_have_named
     code = File.readlines(BIN).reject { |line| line.strip.start_with?("#") }.join
 

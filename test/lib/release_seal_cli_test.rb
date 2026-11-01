@@ -1,16 +1,10 @@
 # frozen_string_literal: true
 
-# bin/release's post-ship production smoke SEAL (step 5c) and `bin/release reseal`.
-# Standalone:
-#   ruby -Itest test/lib/release_seal_cli_test.rb
-#
-# It drives the REAL bin/release.rb in a subprocess (like the release CLI tests) and
-# uses real git fixtures to prove WHICH tree's specs the seal runs: the ship
-# workspace pinned at the frozen SHA, never the primary (rel-20260925-3b1f5c sealed
-# a false red from the primary's PRE-ship specs).
-#
-# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
-# the suite's test-health ratchet, so the seal's cases live here, named for their concern.
+# bin/release's post-ship production smoke SEAL (step 5c) and `bin/release reseal`. Drives the
+# REAL bin/release.rb in a subprocess, with real git fixtures to prove WHICH tree's specs the
+# seal runs: the ship workspace pinned at the frozen SHA, never the primary. A FILE OF ITS
+# OWN: release CLI files are frozen at their size by the suite's test-health ratchet.
+# History: release rel-20260925-3b1f5c.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
@@ -61,20 +55,13 @@ class ReleaseSealCliTest < Minitest::Test
   end
 
   # --- production smoke seal: cwd-anchored + genuinely NON-BLOCKING ------------
-  # rel-20260705-8fe04b partial ship: `bin/release ship` run from the projects
-  # root (not the hub checkout) reached step 5c, where the seal invoked a bare
-  # CWD-RELATIVE `bin/prod-smoke` — Open3.capture2e RAISES Errno::ENOENT on an
-  # unresolvable path (it never returns ok=false), so the "non-blocking SEAL"
-  # aborted the ship AFTER the prod deploy but BEFORE step 6's Conductor.ship!,
-  # stranding the board at `assembled`. Two guarantees under test:
-  #   1. the smoke invocation is ANCHORED to a resolved tree — cwd-independent,
-  #      like every other repo-scoped command in this CLI. Since
-  #      rel-20260925-3b1f5c that tree is the SHIP WORKSPACE pinned at the
-  #      frozen SHA, never the primary (see the git-fixture cases below);
-  #   2. an unresolvable/missing script never raises out of the seal — the
-  #      documented "alerts but never aborts the ship" contract. It records
-  #      UNSEALED (the shipped specs never ran), not a red seal: a red seal says
-  #      prod is broken, and specs that never ran say nothing about prod.
+  # Open3.capture2e RAISES Errno::ENOENT on an unresolvable path (never ok=false), so a bare
+  # CWD-RELATIVE `bin/prod-smoke` can abort a ship AFTER the prod deploy and BEFORE step 6's
+  # Conductor.ship!, stranding the board at `assembled`. (1) The smoke invocation is ANCHORED to
+  # the SHIP WORKSPACE pinned at the frozen SHA, never the primary. (2) A missing script never
+  # raises out of the seal ("alerts but never aborts the ship"): it records UNSEALED, not a red
+  # seal, since specs that never ran say nothing about prod.
+  # History: release rel-20260705-8fe04b.
 
   # Inert record seam: seal/board writes are observed (SEAL-WRITE), never run
   # heroku. The REAL Release::SmokeSeal model is exercised (bin/release.rb

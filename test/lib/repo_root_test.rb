@@ -20,17 +20,11 @@ class RepoRootTest < Minitest::Test
       system("git", "-C", real, "init", "-q", out: File::NULL, err: File::NULL)
       system("git", "-C", real, "config", "user.email", "t@t.co")
       system("git", "-C", real, "config", "user.name", "T")
-      # Disarm git's BACKGROUND maintenance in the throwaway repo. `git commit`
-      # triggers `gc --auto`, which can create and delete
-      # `.git/objects/maintenance.lock` asynchronously — and Dir.mktmpdir's block
-      # form deletes this tree the moment the block ends. FileUtils then walks a
-      # file that git removes underneath it and raises
-      #   Errno::ENOENT @ apply2files - <tmp>/.git/objects/maintenance.lock
-      # out of `with_git_repo` itself, so the failure is attributed to whichever
-      # test happened to be running. It reddened three separate CI runs on
-      # 2026-08-19/20 — once inside a Rails shard, once in a consumer lane where
-      # it blocked a gem publish — always as "1 errors" among thousands of green
-      # runs. Nothing about the code under test is involved.
+      # Disarm git's BACKGROUND maintenance in the throwaway repo. `git commit` triggers `gc
+      # --auto`, which creates and deletes `.git/objects/maintenance.lock` while Dir.mktmpdir's
+      # block cleanup walks the tree. FileUtils then raises Errno::ENOENT out of
+      # `with_git_repo`, attributed to whichever test happened to be running.
+      # History: commit cef05033a.
       system("git", "-C", real, "config", "gc.auto", "0")
       system("git", "-C", real, "config", "maintenance.auto", "false")
       File.write(File.join(real, "a.txt"), "x")
@@ -41,20 +35,12 @@ class RepoRootTest < Minitest::Test
   end
 
   # ── [unit] the fixture's OWN contract ──────────────────────────────────────
-  #
-  # The two `git config` lines above are a FIX, and until this test they were only a
-  # comment. Delete them and nothing goes red — the flake simply comes back: `git commit`
-  # resumes triggering `gc --auto`, which creates and removes
-  # `.git/objects/maintenance.lock` while Dir.mktmpdir's cleanup walks the tree, and
-  # Errno::ENOENT surfaces out of whichever test happened to be running. It reddened three
-  # CI runs on 2026-08-19/20, one of them a `rails` shard on ACCEPTED — which is the branch
-  # Ci::BranchGate reads, so a flake in a test fixture stalled a release.
-  #
-  # A race that fires once in thousands of runs cannot be caught by re-running the suite,
-  # so the guard is on the PRECONDITION instead: does a repo this fixture builds actually
-  # have git's background maintenance disarmed? That asserts the EFFECT rather than the
-  # spelling — rewrite the config calls however you like and this still passes; remove
-  # them and it fails immediately, on every run, locally.
+  # The two `git config` lines above are a FIX: delete them and nothing goes red, the flake just
+  # comes back, and on ACCEPTED, the branch Ci::BranchGate reads, it stalls a release. A rare
+  # race cannot be caught by re-running, so the guard is on the PRECONDITION: does a repo this
+  # fixture builds have git's background maintenance disarmed? That asserts the EFFECT rather
+  # than the spelling.
+  # History: task fix-repo-root-tmpdir-race.
   def test_unit_the_throwaway_repo_disarms_gits_background_maintenance
     with_git_repo do |repo|
       %w[gc.auto maintenance.auto].each do |key|

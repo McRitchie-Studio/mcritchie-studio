@@ -28,26 +28,14 @@ class StatuslineTest < Minitest::Test
     provider == :codex ? "CODEX_THREAD_ID" : "CLAUDE_CODE_SESSION_ID"
   end
 
-  # Run statusline pointed at a temp worktree context (cwd via the stdin JSON, the
-  # real Claude Code shape) so render() runs from a known context file. The
-  # context carries ALL fields a real worktree context has (sparse ones trip
-  # bash's IFS-whitespace tab collapsing). `session` nil deletes the env var.
-  #
-  # PINNED (this used to be the leak). The context below says stage "building", so
-  # every render here also fires heartbeat_claim — and this helper pinned NEITHER
-  # CLAUDE_PROJECTS_DIR nor HOME, so `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`
-  # resolved to the OPERATOR'S REAL store: each suite run re-wrote a 0-byte
-  # `<session>.heartbeat` into ~/projects/.agents/sessions and shelled the REAL
-  # bin/task heartbeat at the production board, detached. Now the roots are pinned
-  # at a tmpdir (TaskUsageSandboxEnv.child_env) and TASK_BIN is a no-op stub, so
-  # these render assertions can never reach the operator's state or the board.
-  #
-  # AND THE SLUG IS FICTIONAL. It used to name a REAL production task
-  # ("session-resume-on-tasks"), so for the ~3 weeks the leak was live every unpinned
-  # render fired `bin/task heartbeat` at that real task on the real board. A fixture
-  # that names a live record turns any escape into a targeted write. The pins above
-  # are what CONTAIN the blast; a fictional slug is what makes the blast harmless if a
-  # pin is ever missed again. Keep it fictional — belt and braces, deliberately.
+  # Run statusline at a temp worktree context (cwd via the stdin JSON, the real Claude Code
+  # shape) carrying ALL fields of a real one: sparse ones trip bash's IFS-whitespace tab
+  # collapsing. `session` nil deletes the env var. PINNED: stage "building" fires
+  # heartbeat_claim on every render, so roots are pinned at a tmpdir
+  # (TaskUsageSandboxEnv.child_env) and TASK_BIN is a no-op stub. THE SLUG IS FICTIONAL: a
+  # fixture naming a live record turns any escape into a targeted write. The pins contain the
+  # blast; the fictional slug makes it harmless if a pin is missed. Keep it fictional.
+  # History: task detect-engine-migration-content-drift.
   def render_in(session:, extra: {}, provider: :claude)
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, ".agent-context.json"), JSON.generate({
@@ -402,24 +390,14 @@ class StatuslineTest < Minitest::Test
 
   # --- Session-mascot self-heal ------------------------------------------------
 
-  # The SessionStart hook draws the mascot by POSTing the board, and bin/task wraps
-  # that draw in `rescue SystemExit, StandardError` so a session never fails to
-  # start. A board that is briefly unreachable therefore writes NO marker, logs
-  # nothing, and leaves the status line on its repo/branch fallback — the operator
-  # is the only detector. The render heals it: no mascot yet → redraw, throttled and
-  # detached exactly like the two heartbeats above.
-  #
-  # Run statusline with a stub `task` and return the recorded invocations. `marker:`
-  # is the sessions/<id>.json payload (nil writes none at all — the hook-failed
-  # case); `desk: true` also drops a worktree .agent-context.json in the cwd. The
-  # fixtures deliberately carry NO task slug, so heartbeat_claim returns early and
-  # every recorded call belongs to the heal.
-  # A `stat` that behaves like GNU coreutils, so the macOS-only throttle clock can be
-  # exercised here on the shape CI actually runs. GNU reads `-f` as `--file-system`,
-  # so `%m` is not a format — it is a second FILE OPERAND. GNU errors on it (stderr,
-  # nonzero exit) and still prints a MULTI-LINE filesystem block for the real path on
-  # stdout, which is the junk that reaches $(( )) as a fatal expansion error.
-  # Returns the dir to prepend to PATH.
+  # The SessionStart hook's mascot draw rescues SystemExit and StandardError, so an unreachable
+  # board writes NO marker and logs nothing. The render heals it: no mascot yet means redraw,
+  # throttled and detached like the two heartbeats above. Run statusline with a stub `task`,
+  # return the invocations. `marker:` is the sessions/<id>.json payload (nil writes none);
+  # `desk: true` also drops .agent-context.json. Fixtures carry NO task slug, so every call is
+  # the heal's. A `stat` shim like GNU's: `-f` is `--file-system`, so `%m` is a FILE OPERAND and
+  # its MULTI-LINE output is a fatal $(( )) error. Returns the dir to prepend to PATH.
+  # History: task detect-engine-migration-content-drift.
   def gnu_stat_shim(dir)
     bin = File.join(dir, "shim")
     FileUtils.mkdir_p(bin)
@@ -526,17 +504,11 @@ class StatuslineTest < Minitest::Test
                  "a heal that wrote no mascot must try again — one shot is not a heal"
   end
 
-  # The throttle clock was macOS-only (`stat -f %m`), and its Linux failure was not
-  # "the throttle misbehaves" — the junk GNU prints for that spelling reaches
-  # $(( )) as a FATAL expansion error, so the whole render dies. On CI the heal
-  # therefore fired exactly once (the first render, before any throttle marker
-  # existed) and every later render was killed before reaching it: PR #734's `test`
-  # job, expected 3, got 1.
-  #
-  # Note what this means for the throttle tests ABOVE: a crashed render produces the
-  # same call count as a working throttle, so they stayed green on Linux for three
-  # weeks while the script was aborting. Counting calls cannot tell those apart —
-  # only forcing the window OPEN can, because then the count and the crash disagree.
+  # The throttle clock must read an mtime on GNU too: the junk `stat -f %m` prints there reaches
+  # $(( )) as a FATAL expansion error, so the whole render dies. A crashed render produces the
+  # same call count as a working throttle, so the throttle tests ABOVE cannot tell them apart.
+  # Only forcing the window OPEN can, because then the count and the crash disagree.
+  # History: task detect-engine-migration-content-drift.
   def test_heal_survives_a_gnu_stat_and_still_retries
     assert_equal 3, mascot_heal_calls(runs: 3, throttle: "0", gnu_stat: true).size,
                  "the throttle clock must read an mtime on GNU too — not kill the render"
@@ -656,19 +628,13 @@ class StatuslineTest < Minitest::Test
   end
 
   # --- [integration] the narration-marker sandbox (bash half) ------------------
-  #
-  # THE ESCAPE THIS PINS, exactly as it happened. bin/statusline resolves its
-  # marker root as `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`. A test process arms
-  # TASK_USAGE_SANDBOX (test/support/task_usage_sandbox.rb, inherited by every
-  # child) but pinned NEITHER var here — so the fallback landed in the OPERATOR'S
-  # REAL ~/projects/.agents/sessions, where a 0-byte `<session>.heartbeat` was
-  # re-written on every suite run, and the REAL `bin/task heartbeat` fired at the
-  # production board behind it. Cross-session marker pollution mis-attributes
-  # activities to the wrong task — the narration timeline the learning loop reads.
-  #
-  # The vector is reproduced SAFELY: HOME is pinned at a tmpdir, so an unguarded
-  # statusline writes THERE (provably — the guarded one writes nowhere) instead of
-  # in the operator's store. Assert on the fallback root, never on the real one.
+  # bin/statusline resolves its marker root as `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`. Under
+  # TASK_USAGE_SANDBOX (test/support/task_usage_sandbox.rb), an unpinned run must not land in
+  # the OPERATOR'S ~/projects/.agents/sessions or fire `bin/task heartbeat` at the production
+  # board: marker pollution mis-attributes activities on the timeline the learning loop reads.
+  # Reproduced SAFELY: HOME is pinned at a tmpdir, so an unguarded statusline writes THERE.
+  # Assert on the fallback root, never on the real one.
+  # History: task detect-engine-migration-content-drift.
   def unpinned_sandboxed_run(stage: "building", armed: "1")
     Dir.mktmpdir do |dir|
       home = File.join(dir, "home")

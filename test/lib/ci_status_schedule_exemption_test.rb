@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] + [integration] CiStatus's schedule exemption (task
-# ui-budget-report-never-gates). The SHA verdict leaves out a check-run it can
-# PROVE was triggered by a `schedule` event, by joining the check-run's
-# check_suite.id to the SHA's workflow runs, and keeps every run it cannot prove.
-# The nightly UI Budget run went red on main's head and blocked a cleared
-# production ship; these pin that it cannot, and that a red push run still does.
-#
-# Run directly:
-#   ruby -Itest test/lib/ci_status_schedule_exemption_test.rb
+# [unit] + [integration] CiStatus's schedule exemption. The SHA verdict leaves out a check-run
+# it can PROVE was triggered by a `schedule` event, by joining check_suite.id to the SHA's
+# workflow runs, and keeps every run it cannot prove. A red nightly UI Budget run cannot block
+# a ship; a red push run still does.
+# History: task ui-budget-report-never-gates.
 require "minitest/autorun"
 require "json"
 require_relative "../../bin/lib/ci_status"

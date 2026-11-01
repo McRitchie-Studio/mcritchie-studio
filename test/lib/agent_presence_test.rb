@@ -1,23 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] bin/lib/agent_presence.rb — the presence READER's grader, backstop and copy.
-#
-# Slice 1 of docs/agents/system/agent-presence.md. What this tier is for: `grade`
-# reads no clock, no process table and no disk — it takes a SNAPSHOT — so every
-# vector below is provable without spawning anything. The claims that can only be
-# made against real processes (a killed writer grades dead with no wait; an IDLE
-# live process does not grade dead) are made in the integration tier, by kill:
-#   test/lib/agent_presence_integration_test.rb
-#
-# THE BUG CLASS THIS FILE EXISTS FOR. `ps aux | grep -E "fast-check|rails test"` is
-# the check this reader replaces, and it is correct BY COINCIDENCE of naming. It
-# has already cost: two idle `bin/submit` processes in a CI wait read as competing
-# certs and nearly held off a launch, and a 45-minute run was lost to a sweep that
-# no status command reports. So the assertions here are about the two directions of
-# error separately — a corpse must never be counted, and a live thing must never be
-# missed — because a reader that gets only one of those right starves someone.
-#
-#   ruby -Itest test/lib/agent_presence_test.rb
+# [unit] bin/lib/agent_presence.rb: the presence READER's grader, backstop and copy (slice 1
+# of docs/agents/system/agent-presence.md). `grade` takes a SNAPSHOT and reads no clock,
+# process table or disk, so every vector is provable without spawning. Claims needing real
+# processes are in test/lib/agent_presence_integration_test.rb.
+# `ps aux | grep -E "fast-check|rails test"` is correct BY COINCIDENCE of naming, so the two
+# directions of error are asserted separately: a corpse must never be counted, a live thing
+# must never be missed.
+# History: task agent-presence-reader.
 
 require "minitest/autorun"
 require "json"
@@ -476,20 +466,13 @@ class AgentPresenceTest < Minitest::Test
 
   # --- an in-flight publish must not read as a second claim -------------------------
 
-  # THE FLAKE THIS EXISTS FOR — CI on PR #1259, attempt 1, 2026-09-07:
-  # ReleasePresenceIntegrationTest#test_two_live_conductors_are_both_published_and_both_counted
-  # died on `JSON::ParserError: unexpected end of input at line 1 column 1`.
-  #
-  # `SessionMarkers.write` publishes atomically — write a sibling, `rename(2)` over —
-  # and that is RIGHT: it closed a window measured at 4.6% torn reads. But the sibling
-  # was named "<marker path>.<pid>.tmp", the marker path PLUS A SUFFIX, and this
-  # reader's glob is `*.presence-*`. A suffix cannot escape a trailing `*`, so for the
-  # width of every publish the reader saw the published claim AND a zero-byte file it
-  # had to grade. The atomic write was never the bug; the NAME was.
-  #
-  # NOTHING HERE WAITS ON THE SCHEDULER. Both siblings are hand-made, at zero bytes,
-  # beside a real claim — the window is manufactured, not raced for, so no assertion
-  # below can pass because the timing happened to be kind.
+  # THE FLAKE THIS EXISTS FOR. `SessionMarkers.write` publishes atomically (write a sibling,
+  # `rename(2)` over), and that is RIGHT; the NAME was the bug. A sibling named "<marker
+  # path>.<pid>.tmp" matches this reader's `*.presence-*` glob, since a suffix cannot escape a
+  # trailing `*`, so the reader grades a zero-byte file.
+  # NOTHING HERE WAITS ON THE SCHEDULER: both siblings are hand-made at zero bytes beside a real
+  # claim, so the window is manufactured, not raced for.
+  # History: task presence-glob-catches-temp-sibling.
   def test_the_readers_glob_discriminates_an_in_flight_publishs_sibling
     Dir.mktmpdir do |root|
       dir = File.join(root, ".agents", "sessions")

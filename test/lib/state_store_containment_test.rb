@@ -114,16 +114,13 @@ require_relative "../support/session_env"
 class StateStoreContainmentTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
 
-  # Every file permitted to construct a path under the operator's real .agents, and
-  # WHY it is permitted. The value is the justification a reviewer reads when a diff
-  # adds a line here — adding an entry must be a deliberate, defensible act, not a
-  # way to make a red test green.
-  #
-  # :ruby     — held to LAYER 2. Every raw path it holds is laundered or listed.
-  # :guard    — the guard itself. It must name .agents to DEFINE the forbidden root;
-  #             asking it to launder its own definition is circular. Exactly one file
-  #             may carry this, and LAYER 2 asserts that.
-  # :bash     — LAYER 2 is structurally blind here. Held to LAYER 3 instead.
+  # Every file permitted to construct a path under the operator's real .agents, and WHY. Adding an
+  # entry must be a deliberate, defensible act, not a way to make a red test green.
+  # :ruby: held to LAYER 2. Every raw path it holds is laundered or listed.
+  # :guard: the guard itself; it must name .agents to DEFINE the forbidden root. Exactly one file
+  # may carry this, and LAYER 2 asserts that.
+  # :bash: LAYER 2 is structurally blind here. Held to LAYER 3 instead.
+  # History: task detect-engine-migration-content-drift.
   ALLOWED_CONSTRUCTORS = {
     "lib/task_usage_sandbox.rb" => [:guard, "the guard itself — it names .agents to DEFINE the forbidden root"],
     "bin/lib/session_markers.rb" => [:ruby, "narration-marker choke point: marker_path is PRIVATE; write/delete enforce"],
@@ -177,22 +174,14 @@ class StateStoreContainmentTest < Minitest::Test
                                                       "decides whether a write lands"]
   }.freeze
 
-  # THE ENTIRE EXEMPTION SURFACE of LAYER 2 — every method allowed to hold a raw store
-  # path WITHOUT laundering it, and the reason. Each entry is a claim, made in a diff a
-  # reviewer reads, that the method DOES NOT MUTATE the store. Two shapes qualify:
-  #
-  #   BUILDER — it RESOLVES the path and returns it, and does nothing else with it. Its
-  #             consumers are scanned like everything else, so exempting the builder
-  #             exempts nothing: the mutation still has to launder, wherever it happens.
-  #   READ    — it uses the path to read. A read cannot pollute.
-  #
-  # This list REPLACES the old SINK_RE, and the replacement is the whole point of the
-  # rewrite. SINK_RE enumerated the VERBS that were FORBIDDEN — an unbounded set, so it
-  # could only ever be a blacklist, and the verb you forget is the leak (it forgot
-  # system(), backticks, Pathname#delete, File.binwrite, FileUtils.rmtree…). This
-  # enumerates the METHODS that are PERMITTED — a bounded set a reviewer can read in
-  # full. Anything not on it is refused, whatever verb it reaches for, in whatever
-  # language it shells out to. There is no list left that can be incomplete.
+  # THE ENTIRE EXEMPTION SURFACE of LAYER 2: every method allowed to hold a raw store path WITHOUT
+  # laundering it. Each entry claims the method DOES NOT MUTATE the store. Two shapes qualify:
+  #   BUILDER: RESOLVES the path and returns it. Its consumers are scanned, so the mutation still
+  #     has to launder.
+  #   READ: uses the path to read. A read cannot pollute.
+  # This enumerates the METHODS PERMITTED, a bounded set, replacing SINK_RE's unbounded list of
+  # forbidden verbs. Anything not on it is refused, whatever verb or language it reaches for.
+  # History: task detect-engine-migration-content-drift.
   UNGUARDED_PATH_METHODS = {
     "bin/lib/agent_mailbox.rb" => {
       "mailbox_root" => "BUILDER — private; soul_folder, the only method that hands a folder out, launders it"
@@ -267,28 +256,14 @@ class StateStoreContainmentTest < Minitest::Test
       "timeouts_since" => "READ — counts the log tail's timeout rows for bin/release's abort hint; " \
                           "append is the only writer"
     },
-    # A THIRD shape, named rather than filed under one it does not fit. EMITS is
-    # not BUILDER (it returns no store path: it returns the env file's own path,
-    # under the install root) and not READ (it reads nothing). It serialises the
-    # path into a file the snapshot sources.
-    #
-    # WHAT MAKES IT SAFE, stated exactly, because an earlier version of this note
-    # claimed a protection that is not there (measured 2026-09-13): "a sandboxed
-    # process running the snapshot still aborts at the write seam" is FALSE both
-    # ways. The BASH meter's rule 1 (armed but unpinned → skip) is UNREACHABLE
-    # from a snapshot, because op-meter.sh:91 proceeds whenever MCR_OP_READS_LOG
-    # is set and the stamp sets it on every invocation. The RUBY meter's enforce!
-    # is rule 2 (pinned back INSIDE the real store → abort), and inside a snapshot
-    # TaskUsageSandbox.real_state_dir is ProjectsRoot-derived, so it names the
-    # SNAPSHOT rather than <projects>/.agents and does not recognise the stamped
-    # path as the real store either.
-    #
-    # So the containment that holds here is not the guard: it is that a sandboxed
-    # run does not execute the INSTALLED snapshot — tests run the repo copy, where
-    # no stamp exists and both rules apply as written. THOSE TWO FACTS ARE
-    # COUPLED: teaching ProjectsRoot a pin (consumer #2 in
-    # bin/lib/credential_helper_install.rb's header, deliberately not fixed) would
-    # make rule 2 see the stamped path and abort. Change one, re-read the other.
+    # A THIRD shape. EMITS is not BUILDER and not READ: it serialises the path into a file the
+    # snapshot sources. The guard is NOT the protection: BASH meter rule 1 is UNREACHABLE from a
+    # snapshot (op-meter.sh:91, the stamp sets MCR_OP_READS_LOG), and RUBY enforce! rule 2 misses
+    # since TaskUsageSandbox.real_state_dir is ProjectsRoot-derived and names the SNAPSHOT. What
+    # holds: a sandboxed run does not execute the INSTALLED snapshot; tests run the repo copy.
+    # COUPLED: a ProjectsRoot pin (consumer #2, bin/lib/credential_helper_install.rb) makes rule 2
+    # abort. Change one, re-read the other.
+    # History: task credential-snapshot-guards-overclaim.
     "bin/lib/credential_helper_install.rb" => {
       "stamp_snapshot_env!" => "EMITS — private; writes the resolved log path as a string into " \
                                "<install root>/bin/snapshot-env.sh and performs no IO on the store. It is the ONLY method here " \
@@ -301,31 +276,13 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/gh-token" => {}
   }.freeze
 
-  # NAMING the store — in ANY spelling. This is the precondition of every mutation, so
-  # this regex is the whole scan's foundation and it is deliberately BLUNT:
-  #
-  #   File.join(dir, ".agents", …)            the original — and the ONLY one the first
-  #                                           draft of this test could see
-  #   "#{projects_dir}/.agents/sessions/…"    ORDINARY INTERPOLATION — the spelling that
-  #                                           defeated it (a real bin/leaky-demo)
-  #   File.join(dir, ".agents/sessions")      a joined subpath
-  #   AGENTS = ".agents"                      a constant indirection
-  #   Pathname.new(dir).join(".agents")       a different receiver
-  #   "$PROJECTS/.agents/sessions/…"          bash
-  #
-  # All six must NAME the segment, and none of them can avoid it — which is why the
-  # match is on the SEGMENT and not on the syntax around it.
-  #
-  # The lookarounds make it a PATH segment rather than the letters: `block.agents` and
-  # `reviewed.agents` (app/helpers/stage_agents_helper.rb) are method calls, not paths,
-  # and `.agentsx` is a different name. Comments are stripped before the scan, so prose
-  # — "<projects>/.agents/locks" in a header — cannot match.
-  #
-  # `.secret-cache` is the SECOND real root (2026-10-27, bin/lib/secret_cache.rb): the
-  # expiring-credential cache lives beside .agents, not inside it, so the scan names both.
-  #
-  # The marker_path clauses are belt-and-braces for LAYER 2a: they catch a reach into
-  # the (private) builder even though 2a makes such a reach impossible to obtain.
+  # NAMING the store in ANY spelling is the precondition of every mutation, so this regex is
+  # deliberately BLUNT: File.join(dir, ".agents", ...), "#{projects_dir}/.agents/...",
+  # File.join(dir, ".agents/sessions"), AGENTS = ".agents", Pathname.new(dir).join(".agents"),
+  # "$PROJECTS/.agents/...". Lookarounds: `block.agents`, `reviewed.agents` are method calls,
+  # `.agentsx` is another name. Comments are stripped first. `.secret-cache` is the SECOND real
+  # root (bin/lib/secret_cache.rb). marker_path clauses back LAYER 2a.
+  # History: task detect-engine-migration-content-drift.
   PATH_RE = /(?<!\w)\.agents(?!\w)|(?<!\w)\.secret-cache(?!\w)|SessionMarkers\.marker_path\(|send\(:marker_path/
 
   # Only the TOP-LEVEL residual scan still uses this — an inert top-level enforce! line is
@@ -365,16 +322,11 @@ class StateStoreContainmentTest < Minitest::Test
     src.lines.map { |l| l.strip.start_with?("#") ? "\n" : l }.join
   end
 
-  # THE SOURCE EVERY LAYER SCANS: comments gone, and — the heart of the per-path rule —
-  # every LAUNDERED path expression BLANKED OUT. A launder excuses the expression the
-  # guard was HANDED and nothing else, so once enforce!'s argument is removed, what
-  # remains is exactly the paths the guard never saw. The old scan asked a METHOD-scoped
-  # question — "does the string TaskUsageSandbox.enforce! appear ANYWHERE in this body?"
-  # — and one launder, on any store, free-passed every other raw path beside it (and,
-  # via raw_producers, every caller downstream). That is a DECLARATION that some path was
-  # laundered, not EVIDENCE that THIS one was. Subtracting the laundered expression turns
-  # it into evidence: a second raw path in the same method survives into the residue and
-  # is judged on its own merit, by the same PATH_RE.
+  # THE SOURCE EVERY LAYER SCANS: comments gone and every LAUNDERED path expression BLANKED OUT. A
+  # launder excuses only the expression the guard was HANDED, so what remains is the paths the
+  # guard never saw. A METHOD-scoped question lets one launder free-pass every other raw path
+  # beside it and, via raw_producers, every caller downstream.
+  # History: task detect-engine-migration-content-drift.
   def scan_source(src)
     launder_stripped(strip_comments(src))
   end
@@ -439,29 +391,14 @@ class StateStoreContainmentTest < Minitest::Test
         .last.to_s
   end
 
-  # Names that RESOLVE a raw (unlaundered) store path — the footguns a later method can
-  # pick up without ever naming .agents itself.
-  #
-  # A producer RETURNS a raw path. That distinction is the whole correctness of this scan:
-  # `read_cached_token` CALLS the path builder but returns the token STRING, and an
-  # earlier draft that treated "calls a producer" as "is a producer" propagated taint
-  # through it into a method named `token` — after which the word "token" appearing in
-  # ANY body (`"token" => tok`) read as a store path. So: return-position only, fixpoint
-  # over indirection (snapshot_path → agent_registry_dir).
-  #
-  # LAUNDERED RETURNS ARE NOT PRODUCERS — and this must be judged PER PATH, not per method.
-  # +src+/+methods+ arrive from scan_source, so a method that RETURNS enforce!(raw) has
-  # that argument already blanked: its return line no longer names a path and it drops out
-  # here, which is correct — it hands back a GUARDED path. But a method that launders path
-  # A and RETURNS raw path B keeps B in its return line and IS a producer for B. The old
-  # code skipped any method whose body merely MENTIONED enforce! (`next if m.body =~
-  # LAUNDER_RE`), so a decoy launder on A killed taint for B and every caller of B went
-  # invisible. Deleting that skip is half the per-path fix; scan_source blanking the
-  # laundered argument is the other half.
-  #
-  # CONSTANTS are producers too (`SESSIONS = File.join(root, ".agents", "sessions")`),
-  # which is the constant-indirection vector: without this, the method that uses the
-  # constant names nothing and reads as clean.
+  # Names that RESOLVE a raw (unlaundered) store path, which a later method can use without naming
+  # .agents.
+  # A producer RETURNS a raw path: return-position only, fixpoint over indirection (snapshot_path
+  # -> agent_registry_dir). `read_cached_token` calls the builder but returns a token.
+  # LAUNDERED RETURNS ARE NOT PRODUCERS, PER PATH: returning enforce!(raw) drops out (scan_source
+  # blanked it), but laundering A and RETURNING raw B stays a producer for B. CONSTANTS are
+  # producers too (`SESSIONS = File.join(root, ".agents", "sessions")`).
+  # History: task detect-engine-migration-content-drift.
   def raw_producers(src, methods)
     producers = src.lines.filter_map do |l|
       next unless l =~ PATH_RE
@@ -484,19 +421,13 @@ class StateStoreContainmentTest < Minitest::Test
     producers
   end
 
-  # Which methods are PRIVATE — the fact LAYER 2a turns on.
-  #
-  # This started as `src.split(/^\s*private$/)` — "everything after the first bare
-  # `private`". It was WRONG, and it took a mutation to show it: bin/lib/agent_api.rb has
-  # a `private` at :38 inside the nested `module Presence`, so the naive split read the
-  # whole rest of the file as private. Hoisting token_cache_path to PUBLIC — the exact
-  # break 2a exists to catch — still passed. A guard that cannot fail is not a guard.
-  #
-  # So visibility is tracked PER SCOPE: a bare `private` binds only defs at its own
-  # indentation, and a `class`/`module`/`end` discards the visibility of every scope
-  # deeper than itself (which is what retires the `module Presence` private at its `end`).
-  # Erring here has a direction: reading a PUBLIC method as private would MISS a real
-  # export, so the scope reset is the safety-critical half.
+  # Which methods are PRIVATE, the fact LAYER 2a turns on. Never `src.split(/^\s*private$/)`: a
+  # `private` inside a nested module (bin/lib/agent_api.rb's `module Presence`) reads the rest of
+  # the file as private, and hoisting token_cache_path to PUBLIC still passes.
+  # Visibility is tracked PER SCOPE: a bare `private` binds only defs at its own indentation, and
+  # a `class`/`module`/`end` discards the visibility of every deeper scope. Reading a PUBLIC
+  # method as private MISSES a real export, so the scope reset is the safety-critical half.
+  # History: task detect-engine-migration-content-drift.
   def private_method_names(src)
     names = src.scan(/private_class_method\s+:(\w+)|private\s+:(\w+)/).flatten.compact.to_set
     visibility = {}
@@ -538,22 +469,14 @@ class StateStoreContainmentTest < Minitest::Test
         "was NOT handed (what it DOES with the path is irrelevant — holding an unlaundered path is the violation)"
     end
 
-    # TOP-LEVEL script code, outside any def — the region a method-only scan never looks
-    # at, and a bin/ script's main body can mutate the store from there as easily as any
-    # method can. It gets no exemption list, because it has no method NAME to declare and
-    # nothing for a reviewer to hang a justification on. The rule is simply:
-    #
-    #   Top-level code may not reach a store path in any form that could ACT on it.
-    #
-    # The only tolerated forms are INERT ones — an assignment (`X = File.join(…, ".agents")`,
-    # `dir ||= …`) and a hash-literal value (`registry: …`). Both merely NAME a path; a
-    # value cannot delete a file. Everything else at top level — a call, a block, a
-    # shell-out — is refused, and the fix is always the same: hoist it into a named
-    # method, where it becomes either laundered or declared. That is why bin/task grew
-    # `usage_audit!` in this PR: its store path used to sit inline in the dispatch.
-    #
-    # This grammar is THREE closed forms, checked positively — not a blacklist of the
-    # things a top-level statement might do, which would be the SINK_RE mistake again.
+    # TOP-LEVEL script code, outside any def. It gets no exemption list: it has no method NAME to
+    # declare. The rule: top-level code may not reach a store path in any form that could ACT on it.
+    # Only INERT forms are tolerated: an assignment (`X = File.join(..., ".agents")`, `dir ||= ...`)
+    # and a hash-literal value (`registry: ...`). A call, block or shell-out is refused; the fix is
+    # to hoist it into a named method, where it is laundered or declared.
+    # This grammar is THREE closed forms, checked positively, not a blacklist (the SINK_RE mistake
+    # again).
+    # History: task detect-engine-migration-content-drift.
     bodies = methods.map(&:body).join
     residual = code.lines.each_with_index.reject { |l, _| bodies.include?(l) }
     found + residual.filter_map do |line, i|
@@ -684,30 +607,14 @@ class StateStoreContainmentTest < Minitest::Test
                  "guarded seam:\n  " + exported.join("\n  ")
   end
 
-  # ── LAYER 3 — the BOUNDARY receipt, for what no source scan can read ───────────
-  # bin/statusline is bash. LAYER 2's Ruby method splitter cannot read one line of it,
-  # and neither could ANY Ruby sink scan see the shell-outs it is made of. So its
-  # containment is not asserted from source at all — it is OBSERVED. Run it armed and
-  # unpinned, then look at the filesystem. A bash write, a shell-out, a subprocess: none
-  # of them can hide from the store not changing.
-  #
-  # SAFE, AND NON-VACUOUS — and getting BOTH took two tries, which is the lesson.
-  #
-  # bin/statusline resolves its marker root as `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`.
-  # So "unpinned" does NOT mean it writes to the operator's real store from here: with
-  # HOME pinned at a tmpdir, an unguarded statusline writes into <tmp>/projects/.agents.
-  # That is what CONTAINS the blast — and it is also what made the first draft of this
-  # test WORTHLESS. It pinned HOME (safe) and then asserted on the REAL store (which the
-  # child could not reach anyway), so it passed with the guard DELETED. A test that
-  # cannot fail is not evidence — this file says so about other people's tests, and it
-  # was true of this one.
-  #
-  # So the observation is made where the write would actually LAND: the stand-in root is
-  # SEEDED with decoy markers and FINGERPRINTED (sha256 per file) before and after. Not
-  # "the path I predicted is absent" — statusline_test already asserts that, and it can
-  # only ever check the path someone thought of. This asserts NOTHING CHANGED: a write to
-  # an unforeseen name, a delete of a marker that was there (which an empty dir could not
-  # have shown), a shell-out, a spawned child. None of them can hide from the bytes.
+  # LAYER 3, the BOUNDARY receipt: bin/statusline is bash, so no Ruby scan can read it and its
+  # containment is OBSERVED. Run it armed and unpinned, then look at the filesystem.
+  # It resolves its marker root as `${CLAUDE_PROJECTS_DIR:-$HOME/projects}`, so with HOME at a
+  # tmpdir an unguarded run writes to <tmp>/projects/.agents. Asserting on the REAL store passes
+  # with the guard DELETED.
+  # So the stand-in root is SEEDED with decoy markers and FINGERPRINTED (sha256 per file) before
+  # and after, asserting NOTHING CHANGED, not that a predicted path is absent.
+  # History: task detect-engine-migration-content-drift.
   def test_integration_bash_statusline_cannot_touch_the_marker_store_when_unpinned
     id = "containment-#{SecureRandom.uuid}"
 
@@ -758,17 +665,14 @@ class StateStoreContainmentTest < Minitest::Test
                  "the child reached the operator's real state dir"
   end
 
-  # The SAME lane, on the cwd shape the fixture above cannot reach.
-  #
-  # bin/statusline has three throttle writers, and each one's sandbox check sits AFTER
-  # its own early returns. The sibling above puts a .agent-context.json in the cwd, so
-  # src_is_desk=1 and heal_session_mascot returns at its desk guard long before the
-  # check — delete the heal's marker_write_refused line and that fixture still passes.
-  # A desk is also the ONE shape the heal never runs in, so the only cwd that reaches
-  # its write is this one: no desk context, no session marker, nothing to render from.
-  #
-  # The lesson generalizes past this writer: registering a bash file in WRITERS buys
-  # coverage of the code paths a fixture's cwd actually walks, not of the file.
+  # The SAME lane, on the cwd shape the fixture above cannot reach. bin/statusline has three
+  # throttle writers, each with its sandbox check AFTER its early returns. The sibling's
+  # .agent-context.json makes src_is_desk=1, so heal_session_mascot returns at its desk guard
+  # before the check; only this cwd (no desk context, no session marker, nothing to render from)
+  # reaches its write.
+  # Registering a bash file in WRITERS buys coverage of the code paths a fixture's cwd walks, not
+  # of the file.
+  # History: task detect-engine-migration-content-drift.
   def test_integration_bash_statusline_mascot_heal_cannot_touch_the_marker_store_when_unpinned
     id = "containment-heal-#{SecureRandom.uuid}"
 

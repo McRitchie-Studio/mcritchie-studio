@@ -1,26 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] test for the test-only SHAPE NOTE that bin/session-preflight
-# PRINTS — the sentence a builder reads at the moment they decide what to run.
-#
-# WHY THIS EXISTS AS A RUN, not a source grep. The note is printed from inside a
-# `claimable_when == "test_only_diff"` branch, so a source that says the right
-# thing proves nothing about whether this shape reaches it. This drives the real
-# script with a real task record and reads what came out of the branch.
-#
-# WHAT IT IS GUARDING AGAINST, measured 2026-09-22. The script is NOT untested —
-# test/commands/session_preflight_test.rb has covered it for a long time, 36 cases
-# driving the same CLI seams this file drives. Not one of them reads the SHAPE
-# NOTE, which is why the script went on printing the falsified claim that
-# `test-only` owes the full suite outright long after the four agent docs had been
-# corrected. Coverage of a script is not coverage of every sentence it prints, and
-# an uncovered sentence is how prose outlives the thing it describes — here on the
-# one surface a docs-shaped correction could not reach, and the costliest one to be
-# wrong on. Add a case HERE when the note changes; add one THERE for the script's
+# [integration] test for the test-only SHAPE NOTE that bin/session-preflight PRINTS. A RUN,
+# not a source grep: the note prints inside a `claimable_when == "test_only_diff"` branch,
+# so a source that says the right thing proves nothing about whether this shape reaches it.
+# Coverage of a script is not coverage of every sentence it prints. Add a case HERE when the
+# note changes; add one in test/commands/session_preflight_test.rb for the script's
 # behaviour.
-#
-# Run directly:
-#   ruby -Itest test/lib/session_preflight_shape_note_test.rb
+# History: task feature-shapes-overstates-test-only.
 
 require "minitest/autorun"
 require "open3"
@@ -53,20 +39,14 @@ class SessionPreflightShapeNoteTest < Minitest::Test
     end
   end
 
-  # NAMED AWAY FROM `test_`, DELIBERATELY — do not rename this back. Minitest
-  # collects every public method matching /^test_/, so the obvious name for this
-  # fixture ("the devops hash for the test-only shape") is COLLECTED AS A TEST and
-  # runs asserting nothing. The repo's test-health ratchet declares `assertion_free`
-  # at zero as an EXACT contract, enforced by test/lib/test_health_ratchet_test.rb
-  # (whose failure names the config file); under that name this file defeated it by
-  # coincidence: the detector scans the method body for /assert\w*/ and found the
-  # word inside the fixture STRING below, "... assert red". Reword that string and
-  # the ratchet reds here, for a reason nobody editing a fixture would predict.
-  # THAT RATCHET'S CONFIG IS NAMED IN WORDS, NOT SPELLED AS A PATH, deliberately.
-  # A literal mention adds this file to that config's fast-cert mapped set and trips
-  # the exact-count clause in test/lib/fast_cert_subject_test.rb. Measured 2026-09-22:
-  # spelling it took that count 28 -> 29 and reddened CI shard 1 while the local fast
-  # cert stayed green, because the cap clause is not in the mapped lane.
+  # NAMED AWAY FROM `test_`, DELIBERATELY: do not rename this back. Minitest collects /^test_/
+  # methods, so this fixture would run asserting nothing against
+  # test/lib/test_health_ratchet_test.rb's zero `assertion_free`, passing only because the
+  # detector finds /assert\w*/ in the fixture STRING below, "... assert red". THAT RATCHET'S
+  # CONFIG IS NAMED IN WORDS, NOT SPELLED AS A PATH, deliberately: a literal mention adds this
+  # file to its fast-cert mapped set and trips the exact-count clause in
+  # test/lib/fast_cert_subject_test.rb, reddening CI while the local fast cert stays green.
+  # History: task feature-shapes-overstates-test-only.
   def devops_for_test_only
     {
       "shape" => "test-only", "repositories" => ["mcritchie-studio"], "risk_tags" => ["tests"],

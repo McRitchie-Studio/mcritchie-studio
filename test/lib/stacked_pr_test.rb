@@ -106,18 +106,14 @@ class StackedPrTest < Minitest::Test
     assert_empty sp[:said], "the ordinary case must be silent"
   end
 
-  # ── AT A MERGE, ANYTHING UNPROVEN REFUSES (/tasks/review-refuses-unread-base) ────
-  #
-  # These two INVERT the answers bin/submit gets, deliberately, and the inversion is the
-  # point. ship calls StackedPr.assess and repairs on a doubt: a wrongly-retargeted stack
-  # is loud and recoverable (`gh pr edit <n> --base <parent>`) and ship never merges, so
-  # guessing wrong costs a retarget. guard_base is REVIEW's caller, and there the retarget
-  # is followed one line later by a MERGE — so guessing wrong costs the parent's unmerged
-  # work on `accepted`, which `bin/release prepare` then promotes to QA and production.
-  # The cost asymmetry inverts at the merge, so the decision inverts with it.
-  #
-  # This deliberately contradicts ms#1391's bullet "Empty or unread base falls to the
-  # repair path". That bullet was written for bin/submit's arm and is still right there.
+  # --- AT A MERGE, ANYTHING UNPROVEN REFUSES (/tasks/review-refuses-unread-base) ---
+  # These INVERT bin/submit's answers, deliberately. StackedPr.assess (ship) repairs on a doubt: a
+  # wrong retarget is loud and recoverable (`gh pr edit <n> --base <parent>`) and ship never
+  # merges. guard_base is REVIEW's caller, with a MERGE one line later: a wrong guess puts the
+  # parent's unmerged work on `accepted`, which `bin/release prepare` promotes.
+  # ms#1391's bullet "Empty or unread base falls to the repair path" is for bin/submit's arm and
+  # stays right there.
+  # History: task review-refuses-unread-base.
   def test_an_unreadable_probe_REFUSES_rather_than_retargeting
     sp = spies("gh: 502 Bad Gateway", false)
 

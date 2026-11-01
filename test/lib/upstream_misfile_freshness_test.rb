@@ -1,34 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] THE TREE THE AUDIT READS — the freshness guard in front of the
-# upstream changelog detector (/tasks/audit-certifies-a-stale-tree), against real git.
-#
-# THE DEFECT THIS EXISTS FOR. bin/pr-review refreshed the gem's `accepted` before
-# auditing it and DISCARDED the fetch's status. A stale remote-tracking ref still
-# RESOLVES, so the audit never reached a skip branch: it read the PRE-merge tree,
-# found nothing, and printed a confident clean — carrying a real, non-zero `judged`.
-# That count is the detector's credibility device, the thing that makes "zero found"
-# a measurement rather than a vacuum, so the failure did not merely lose a finding:
-# it certified the WRONG TREE with a number. Every other give-up in the audit prints
-# a named sentence; this was the one that did not.
-#
-# THE TRIGGER IS ROUTINE, not exotic — HTTPS remotes and an hourly GitHub App token.
-# A stale token fails the fetch on an ordinary review.
-#
-# TWO CHECKS, AND EACH OWNS A FAILURE THE OTHER CANNOT SEE. Every test below names
-# which one is biting, because that division of labour is the whole design:
-#
-#   FETCH STATUS  — the refresh that never landed (exit 128), and the PARTIAL refresh
-#                   where a force-moved tag is refused (exit 1) while the branch
-#                   updates anyway. Stale tags are a wrong baseline, and the ancestor
-#                   check passes there, because the branch really did move.
-#   IS-ANCESTOR   — a tree that does not carry the merge though the fetch exited 0.
-#                   The property itself, rather than the mechanism that delivers it.
-#
-# REAL, not mocked: a local upstream, a clone taken before the merge, a real `git
-# merge`, a real force-moved tag, a real broken remote. No network.
-#
-#   ruby -Itest test/lib/upstream_misfile_freshness_test.rb
+# [integration] THE TREE THE AUDIT READS: the freshness guard before the upstream changelog
+# detector, real git, no network. A stale remote-tracking ref still RESOLVES, so
+# bin/pr-review with a discarded fetch status certifies the WRONG TREE with a real `judged`
+# count. TWO CHECKS, EACH OWNS A FAILURE THE OTHER CANNOT SEE; every test names which. FETCH
+# STATUS: the refresh that never landed (exit 128), and the PARTIAL refresh where a
+# force-moved tag is refused (exit 1) while the branch updates, so the ancestor check
+# passes. IS-ANCESTOR: a tree lacking the merge though the fetch exited 0.
+# History: task audit-certifies-a-stale-tree.
 
 require "minitest/autorun"
 require "open3"

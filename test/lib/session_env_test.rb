@@ -6,29 +6,14 @@ require "rbconfig"
 require "tmpdir"
 require_relative "../support/session_env"
 
-# The PRODUCTION counterpart, loaded for real so the drift guard below compares
-# against the LIVE list instead of a copy of it. Release::GateEnv is PURE and
-# Rails-free by construction (see its header) — bin/release.rb requires it exactly
-# this way, and so must the BARE run of this file (`ruby test/lib/session_env_test.rb`),
-# which has no autoloader.
-#
-# Gate on WHETHER ZEITWERK WILL OWN app/models — not on the constant being defined
-# yet. The `unless defined?(Release::GateEnv)` guard that used to stand here did NOT
-# save us. Under `bin/rails test` the runner requires the test files BEFORE any of
-# them boots the app (this one deliberately never requires test_helper), so when this
-# file loaded first the constant was undefined, the require_relative fired, and it
-# defined ::Release as a PLAIN MODULE. Zeitwerk could then never take the name back —
-# Ruby's `autoload` is a NO-OP on an already-defined constant — so the real Release AR
-# model stayed shadowed and every later test in the process died on Task#release with
-# "The Release model class ... is not an ActiveRecord::Base subclass". That is the
-# order-dependent false-red that the release gate (which collects all of test/lib)
-# tripped over, while GitHub CI stayed green on the same SHA.
-#
-# `defined?(Rails)` alone is NOT enough either: railties is loaded, so the constant
-# exists, but the app is not initialized and nothing is autoloadable yet. So BOOT the
-# app — exactly what test_helper does — and then let Zeitwerk resolve the constant.
-# Bare (`ruby test/lib/session_env_test.rb`, and the same load path bin/release.rb
-# uses) there is no Rails at all, and the require_relative is correct and load-bearing.
+# The PRODUCTION counterpart, loaded so the drift guard compares against the LIVE list.
+# Release::GateEnv is PURE; bin/release.rb requires it so, as must the BARE run of this file.
+# Gate on WHETHER ZEITWERK WILL OWN app/models, not on the constant being defined. Under
+# `bin/rails test` a pre-boot require_relative defines ::Release as a PLAIN MODULE, Ruby's
+# `autoload` is a NO-OP on it, and the Release AR model stays shadowed: an order-dependent red.
+# `defined?(Rails)` alone is NOT enough: nothing is autoloadable yet. So BOOT the app, as
+# test_helper does, then let Zeitwerk resolve it. Bare, the require_relative is correct.
+# History: task detect-engine-migration-content-drift.
 if defined?(Rails)
   require_relative "../../config/environment"
   Release::GateEnv.name # Zeitwerk resolves it — never require_relative an autoloadable path

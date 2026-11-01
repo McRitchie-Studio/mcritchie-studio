@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# `bin/release --train <slug>` (release-trains-design.md §2, task B): the dry-run
-# prepare on an app train sweeps only that train's tasks and promotes only its repos;
-# the hub run holds the app train's tasks; with no --train every snippet the CLI sends
-# the board is the hub's pre-train Ruby; and an app train refuses to promote a repo
-# whose `accepted` carries a hub-train task's merge.
-#
-# Part of the bin/release CLI suite, one file per subcommand. The shared subprocess
-# harness lives in test/lib/release_cli_harness.rb. Run directly:
-#   ruby -Itest test/lib/release_cli_train_test.rb
+# `bin/release --train <slug>` (release-trains-design.md §2, task B): an app train's dry-run
+# prepare sweeps only its tasks and promotes only its repos; the hub run holds them; with no
+# --train every board snippet is the hub's pre-train Ruby; an app train refuses a repo whose
+# `accepted` carries a hub-train merge. Harness: test/lib/release_cli_harness.rb.
+# History: task release-train-routing.
 
 require_relative "release_cli_harness"
 

@@ -1,55 +1,14 @@
 require "test_helper"
 require "rake"
 
-# [integration] THE BACKFILL TASK AS THE OPERATOR RUNS IT — and specifically its
-# EXIT CODE, which is the property a service-level test cannot reach.
-#
-# WHY THAT IS THE PROPERTY WORTH A TASK-LEVEL TEST. `nfl:upload_headshots` — the
-# sibling task that cached the very headshots this one reads — spent its whole life
-# reporting a total failure as a success: `candidates: 2048`, `cached: 0`, a clean
-# summary, exit 0. It found 2,048 athletes, declined every one of them over a
-# precondition nobody could satisfy, and said nothing was wrong. Nobody noticed until
-# somebody went looking for the avatars.
-#
-# THE RULES ARE GRADED PER LANE, and that is the whole design. Two sources answer
-# different columns at different prices: build comes off the recorded height and
-# weight and always succeeds, while skin tone and hair come from a paid call whose
-# describer degrades to a blank answer rather than raising. A rule that reads a
-# counter summing the two cannot tell "did the cheap half" from "did the job" — one
-# full pass with a dead credential fills 2,051 builds, describes nobody, and every
-# summed counter reads healthy.
-#
-#   1. THE PASS BROKE DOWN — more raises than writes. Its population is the WRITE
-#      path — a row that no longer satisfies a validation (a blank `sport` raises
-#      RecordInvalid, which is what the tests below use), a database error — because the
-#      describer never raises.
-#
-#      NOT AN ORPHANED ROW, and the reason is narrower than this comment used to give.
-#      It said "`belongs_to :person` is not required"; it IS required —
-#      `belongs_to_required_by_default` is true under `load_defaults 8.1` and a
-#      PresenceValidator is registered on `:person`. What spares the row is
-#      `belongs_to_required_validates_foreign_key`, false since the 7.1 defaults, which
-#      wraps that validation in an `:if` that runs only when the foreign key is NIL or
-#      CHANGED. An athlete whose `person` row was deleted has `person_slug` present and
-#      unchanged, so the validation never runs and the row is `valid?` with `person` nil.
-#      Measured 2026-09-27, all three cells: fk present and unchanged -> valid; fk
-#      repointed -> "Person must exist"; fk nil -> invalid. So deleting the person does
-#      not put a row in rule 1's population, but touching `person_slug` would.
-#   2. THE FREE LANE COULD DERIVE A BUILD AND WROTE NOTHING — graded on both
-#      measurements being on file AND inside the plausibility window, never on the
-#      deriver's own verdict. Graded on presence alone it aborted for ever on one
-#      unit-mix-up row (see the re-run test below).
-#   3. THE PAID LANE NEVER REACHED THE API — graded on whether a single call was
-#      billed a token, which rules 1 and 2 are both structurally blind to.
-#
-# AND THE TWO CASES THAT MUST STAY QUIET, because a rule that fires on either gets
-# disabled within a week:
-#
-#   * the warm re-run over a COMPLETE row, which legitimately does nothing; and
-#   * the re-run over a row NO SOURCE CAN EVER COMPLETE — an athlete with no cached
-#     headshot, whose skin tone and hair have no second source. Those 8 rows are found
-#     on every run for ever. Grading them as work declined is not a theoretical false
-#     positive: it is what the first cut of this task did, on every healthy re-run.
+# [integration] THE BACKFILL TASK AS THE OPERATOR RUNS IT: its EXIT CODE. RULES ARE GRADED PER
+# LANE: build is free, skin tone and hair are paid, so a summed counter cannot grade them.
+#   1. THE PASS BROKE DOWN: more raises than writes, from the WRITE path. NOT AN ORPHANED
+#      ROW: `belongs_to_required_validates_foreign_key` skips an unchanged `person_slug`.
+#   2. THE FREE LANE COULD DERIVE A BUILD AND WROTE NOTHING: measurements inside the window.
+#   3. THE PAID LANE NEVER REACHED THE API: whether a single call was billed a token.
+# QUIET: the warm re-run over a COMPLETE row, and a row NO SOURCE CAN EVER COMPLETE.
+# History: task describe-athletes-from-headshots.
 class AthletesDescribeRakeTest < ActiveSupport::TestCase
   DFH = Athletes::DescribeFromHeadshot
 
@@ -99,19 +58,12 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
     assert_match(/projected for the remaining 1:/, output)
   end
 
-  # RULE 1 — the pass itself broke down.
-  #
-  # THE RAISE COMES FROM THE WRITE, which is the only thing in this loop that raises
-  # in production. The describer rescues StandardError and returns a blank Result by
-  # contract, so a test that made IT explode would pin the rule against a shape
-  # production cannot produce — and rule 3 below exists precisely because it cannot.
-  #
-  # WHAT DOES RAISE: a row that does not satisfy a current validation. `save!` is the
-  # first thing to re-validate a record this pass only meant to add three fields to,
-  # and a pass over 2,051 rows accumulated by six importers — at least one of which
-  # writes through `update_column` (Pff::ImportCsv) — is exactly where such a row
-  # surfaces. A blank `sport` is one: the column is NOT NULL, so an empty string sits
-  # on disk happily and fails `validates :sport, presence: true` on the next save.
+  # RULE 1: the pass itself broke down. THE RAISE COMES FROM THE WRITE: the describer rescues
+  # StandardError and returns a blank Result by contract, so making IT explode pins a shape
+  # production cannot produce. What does raise is a row failing a current validation on `save!`.
+  # A blank `sport` is one: the column is NOT NULL, so an empty string sits on disk and fails
+  # `validates :sport, presence: true` on the next save.
+  # History: task describe-athletes-from-headshots.
   test "a run that raised on more athletes than it wrote exits non-zero" do
     athlete = athlete_with_headshot(height_inches: 72, weight_lbs: 197)
     athlete.update_column(:sport, "")
@@ -143,21 +95,11 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
     assert_match "athletes:description_coverage", output, "the abort must name the next read"
   end
 
-  # RULE 2'S OWN FALSE POSITIVE, which its comment used to declare impossible — "IT
-  # CANNOT CRY WOLF". It could, and this is the row that did it.
-  #
-  # `measured?` asked whether both COLUMNS were present; the deriver returns nil outside
-  # its plausibility window. So a unit mix-up (centimetres in an inches column: 180
-  # "inches") is measured-but-underivable. On the warm re-run it is the ONLY row still
-  # wanting a build, so the lane reported build_measured=1 build_filled=0 and aborted —
-  # on that run, and every run after it, with nothing wrong and nothing that fixing the
-  # lane could clear. Same defect class as the incompletable-athlete test above, in the
-  # other lane.
-  #
-  # NOT REACHABLE ON PRODUCTION TODAY — 2,051 athletes span 67..81in and 156..380lb with
-  # no out-of-window row, and the task is operator-run rather than scheduled — which is
-  # why it was a finding rather than a blocker. It becomes reachable on the first ingest
-  # that lands one bad row, which is the exact case the window exists for.
+  # RULE 2'S OWN FALSE POSITIVE. `measured?` asked whether both COLUMNS were present, but the
+  # deriver returns nil outside its plausibility window. A unit mix-up (180 "inches") is
+  # measured-but-underivable, so a warm re-run reports build_measured=1 build_filled=0 and
+  # aborts every run, with nothing that fixing the lane could clear. It must exit zero.
+  # History: task harden-description-verdict-rules.
   test "a re-run over an implausibly measured athlete exits zero, for ever" do
     athlete = athlete_with_headshot(height_inches: 180, weight_lbs: 200)
 
@@ -228,18 +170,13 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
                  "the free lane did its half, which is exactly what made the totals look healthy"
   end
 
-  # RULE 3 IS ALL-OR-NOTHING, AND THE PARTIAL FAILURE IS WARNED ABOUT RATHER THAN
-  # ABORTED ON. A credential revoked part way through a pass, or a sustained 429 from
-  # there, leaves asked high and billed low: rule 3 is false (something WAS billed) and
-  # rule 1 is false (the describer degrades, so `failed` stays 0). The run exits 0 over
-  # ErrorLog rows nobody was told to read.
-  #
-  # WHY NOT ABORT ON `billed < asked`. Because one unreadable S3 object on an otherwise
-  # perfect pass lands in exactly that gap — the next test is that case — so the abort
-  # would fire on a healthy run, which is how a rule gets switched off. The information
-  # belongs in the report, where a wrong reading costs a line of noise instead of a red
-  # run, and the pass is resumable so the next run catches a systemic failure one run
-  # late rather than never.
+  # RULE 3 IS ALL-OR-NOTHING, AND THE PARTIAL FAILURE IS WARNED ABOUT RATHER THAN ABORTED ON. A
+  # credential revoked mid-pass, or a sustained 429, leaves asked high and billed low; rules 1
+  # and 3 are both false, so the run exits 0. NOT an abort on `billed < asked`: one unreadable
+  # S3 object on a perfect pass lands in that gap (the next test), and a rule firing on a
+  # healthy run gets switched off. It belongs in the report; the pass is resumable, so the next
+  # run catches a systemic failure.
+  # History: task harden-description-verdict-rules.
   test "a partly billed vision lane warns, names the logs, and still exits zero" do
     sound = athlete_with_headshot(height_inches: 72, weight_lbs: 197)
     athlete_with_headshot(height_inches: 74, weight_lbs: 240)
@@ -298,15 +235,11 @@ class AthletesDescribeRakeTest < ActiveSupport::TestCase
     refute_match "WHAT IT WROTE", output
   end
 
-  # PART TWO, AND THE ONE THE FIRST CUT OF THIS TASK GOT WRONG: a row NO SOURCE CAN
-  # EVER COMPLETE. 8 of 2,051 production athletes have no cached headshot, and skin
-  # tone and hair have no second source, so those rows can never satisfy #complete?.
-  # They are found on every run for ever, and there is nothing to be done about them.
-  #
-  # The first cut counted them as `needed` and aborted with "found 8 athlete(s)
-  # needing a description and wrote none of them" on every healthy re-run — the exact
-  # false positive its own comment said could not happen. It passed its suite because
-  # the blessing test used a FULLY COMPLETE athlete, which is a different row.
+  # PART TWO: a row NO SOURCE CAN EVER COMPLETE. An athlete with no cached headshot has no
+  # second source for skin tone and hair, so it never satisfies #complete? and is found on every
+  # run for ever. Counting it as `needed` aborts every healthy re-run. A FULLY COMPLETE athlete
+  # is a different row and does not exercise this.
+  # History: task describe-athletes-from-headshots.
   test "a re-run over an athlete no source can complete exits zero, for ever" do
     athlete = bare_athlete(height_inches: 74, weight_lbs: 240)
 

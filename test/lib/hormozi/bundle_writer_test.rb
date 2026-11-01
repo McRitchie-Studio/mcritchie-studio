@@ -7,24 +7,14 @@ require "fileutils"
 require_relative "../../../lib/hormozi/bundle_writer"
 require_relative "../../../lib/hormozi/bundler"
 
-# [unit] THE ORDER OF "DECIDE" AND "DESTROY" IS THE WHOLE SAFETY PROPERTY, and
-# this is the lowest tier it can be driven at.
-#
-# THE SHAPE OF THE DEFECT. Clearing bundles/ ran BEFORE the --min-sources filter,
-# and the directory was recreated only per-bundle inside the write loop. So a
-# filter that selected nothing deleted every existing bundle, skipped the loop,
-# never recreated the directory, and died Errno::ENOENT writing the index into
-# the directory it had just removed — a half-applied destructive operation with
-# no index left to say what used to be there.
-#
-# WHY IT WAS REACHABLE. The smallest --min-sources that selects nothing is not a
-# constant: the source distribution is long-tailed and its top climbs as the
-# extraction wave adds files (measured 2026-09-20 over 12 files — 1305 ideas at 1
-# source, 25 at 2, one at 3, two at 4, so 5 selected nothing that day).
-#
-# BOTH DIRECTIONS ARE PINNED, because a safety fix is only as good as its
-# restraint: an empty selection must destroy NOTHING (below), and a real
-# selection must still be a full REBUILD rather than an accumulation.
+# [unit] THE ORDER OF "DECIDE" AND "DESTROY" IS THE WHOLE SAFETY PROPERTY. Clearing bundles/
+# must not run before the --min-sources filter: an empty selection would delete every bundle,
+# skip the write loop, and die Errno::ENOENT writing the index.
+# The smallest --min-sources that selects nothing is not a constant: the source distribution is
+# long-tailed and its top climbs.
+# BOTH DIRECTIONS ARE PINNED: an empty selection destroys NOTHING, and a real selection is a
+# full REBUILD, not an accumulation.
+# History: task harden-hormozi-corpus-scripts.
 class BundleWriterTest < Minitest::Test
   def test_an_empty_selection_writes_the_index_and_deletes_nothing
     Dir.mktmpdir do |dir|

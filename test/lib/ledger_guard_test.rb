@@ -1,40 +1,13 @@
 # frozen_string_literal: true
 
-# THE MOVE-NEVER-DELETE INVARIANT of the delete-later ledger, and the guard that holds it
-# when the writer that touched the ledger is a STALE COPY of bin/agent-worktree.
-#
-# WHAT HAPPENED. `docs/agents/maintenance/delete-later.md` states that rows are MOVED to
-# `docs/agents/archive/maintenance/delete-later-archive.md`, never deleted. On 2026-08-21
-# three rows left the pair entirely — readable at `git show origin/accepted:…` and absent
-# from BOTH files afterwards:
-#
-#   /Users/alex/projects/mcritchie-studio/.worktrees/_ship                     (HEAD d7ccca8d)
-#   /Users/alex/projects/turf-monster/.worktrees/_ship                         (HEAD 1ada513)
-#   /Users/alex/projects/mcritchie-studio/.worktrees/shrink-agent-portrait-assets (HEAD d4077fb0)
-#
-# All three are RECYCLED desk paths. A teardown overwrote their dated 08-20 rows IN PLACE
-# with 08-21 rows, so the archive roll never saw the originals and archived 40 of the 43
-# rows that left the file. bin/lib/docs_archive.rb is not at fault: split_ledger is pure
-# and has no drop path.
-#
-# WHY THE WRITER FIX IS NOT THE FIX. Commit 269e2db4 already taught
-# `open_ledger_row_index` to skip DATED rows, and test/lib/agent_worktree_test.rb pins
-# that behaviour. But `ledger_path` is anchored to HUB_DIR, so a teardown driven from ANY
-# desk mutates the HUB's ledger with whatever logic THAT DESK happens to carry — and 12 of
-# 18 hub worktrees were still carrying the pre-fix script when this was measured. The
-# fingerprint is in the data: the replacement `_ship` row records HEAD be798149, the hub
-# primary's own pre-fix commit. Fixing the writer a second time cannot protect a file that
-# stale copies can write.
-#
-# SO THE GUARD DOES NOT LIVE IN THE WRITER. It lives where the change becomes DURABLE —
-# the committed tree, read by this test in the `rails` CI lane on every PR and on every
-# push to accepted/release/main. Whichever desk produced the diff, the diff cannot land on
-# `accepted` while it destroys a resolved row: the lane goes red and NAMES the rows. The
-# rows are still recoverable from the base ref at exactly that moment, which is the whole
-# value of catching it here rather than by a reviewer who happened to run `comm`.
-#
-# Run directly:
-#   ruby -Itest test/lib/ledger_guard_test.rb
+# THE MOVE-NEVER-DELETE INVARIANT of the delete-later ledger: rows in
+# `docs/agents/maintenance/delete-later.md` are MOVED to
+# `docs/agents/archive/maintenance/delete-later-archive.md`, never deleted, even when the writer
+# is a STALE COPY of bin/agent-worktree. `ledger_path` is anchored to HUB_DIR, so a teardown
+# from ANY desk mutates the HUB's ledger with that desk's logic. SO THE GUARD DOES NOT LIVE IN
+# THE WRITER. It reads the committed tree in the `rails` CI lane on every PR and push to
+# accepted/release/main: the lane goes red and NAMES the rows while still recoverable.
+# History: task guard-ledger-against-stale-desks.
 
 require "minitest/autorun"
 require "fileutils"
@@ -208,17 +181,12 @@ class LedgerGuardTest < Minitest::Test
     run_guard("--repo=#{repo}", *args)
   end
 
-  # The CLI with NOTHING added — the argument-accounting tests below need to control the
-  # whole line, including whether --repo arrives as `--repo=x` or `--repo x`.
-  #
-  # `:out` MERGES both streams on purpose: a verdict line may be printed to either, and a
-  # test asserting the guard "said" something should not have to know which. But `--json`
-  # promises a PARSEABLE stdout, and merging makes that promise untestable — anything the
-  # subprocess writes to stderr lands in front of the document. Under `bin/rails test` the
-  # child inherits enough bundler environment to emit "already initialized constant"
-  # warnings, so JSON.parse(out) died on a gem path while the same test passed standalone.
-  # `:stdout` is therefore kept separate, and the JSON test parses THAT — which is also the
-  # stream a real machine caller would read.
+  # The CLI with NOTHING added: the argument-accounting tests below control the whole line,
+  # including whether --repo arrives as `--repo=x` or `--repo x`. `:out` MERGES both streams on
+  # purpose: a verdict line may be printed to either. But `--json` promises a PARSEABLE stdout and
+  # anything on stderr lands in front of the document (under `bin/rails test`, "already
+  # initialized constant" warnings). So `:stdout` is kept separate and the JSON test parses THAT.
+  # History: task honour-archive-docs-refusal.
   def run_guard(*args)
     out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", CLI, *args)
     { out: "#{out}#{err}", stdout: out, stderr: err, ok: status.success? }
@@ -310,20 +278,13 @@ class LedgerGuardTest < Minitest::Test
   end
 
   # ================================================================================
-  # [integration] SCOPE — what this guard covers, said out loud
+  # [integration] SCOPE: what this guard covers, said out loud
   # ================================================================================
-  #
-  # THIS REPLACES "the writer's own belt". bin/agent-worktree no longer writes these files
-  # at all: a teardown run from the PRIMARY checkout landed its row on `main`, a branch
-  # nobody may commit to, and 166 rows were stranded in stashes nobody ever restored. New
-  # desk records go to the board (DeskRecord); the belt test drove a writer that is gone.
-  #
-  # What replaces it is the thing that change insisted on — a guard that silently stops
-  # covering something is worse than no guard. So this guard still covers the FILES (tracked
-  # history, and `bin/archive-docs` still moves rows between them, which is the operation
-  # that destroyed three rows on 2026-08-21), and it SAYS SO in its verdict, in both the
-  # human and the machine rendering, so a green exit here can never be read as a verdict on
-  # the board's desk records.
+  # bin/agent-worktree no longer writes these files; new desk records go to the board. A guard
+  # that silently stops covering something is worse than none, so this still covers the FILES
+  # (`bin/archive-docs` still moves rows between them) and SAYS SO in its verdict, human and
+  # machine, so a green exit can never read as a verdict on the board's DeskRecord rows.
+  # History: task guard-ledger-against-stale-desks.
 
   def test_integration_the_green_verdict_names_its_own_scope
     with_repo do |repo|
@@ -370,15 +331,12 @@ class LedgerGuardTest < Minitest::Test
   end
 
   # ================================================================================
-  # [integration] ARGUMENT ACCOUNTING — the guard must answer the question it was ASKED
+  # [integration] ARGUMENT ACCOUNTING: the guard must answer the question it was ASKED
   # ================================================================================
-  #
-  # bin/ledger-guard parsed ONLY `--flag=value`. A bare `--base HEAD` therefore matched
-  # nothing, EXPLICIT came back empty, and the guard silently fell through to its three
-  # default bases — answering a question nobody asked. Unknown flags were swallowed the
-  # same way. This is the shape the house closed twice in one night (PRs #974, #980), and
-  # on a GUARD it is worse than on a claim CLI: the caller reads the exit code as a verdict
-  # on the base they named, and it is a verdict on three other refs instead.
+  # A bare `--base HEAD` that matches nothing leaves EXPLICIT empty, and the guard falls through
+  # to its three default bases; unknown flags get swallowed the same way. The caller reads the
+  # exit code as a verdict on the base they named, and it would be a verdict on three other refs.
+  # History: task honour-archive-docs-refusal.
 
   # THE DEFECT, in its cleanest form. A tmpdir repo has no `origin/*` refs at all, so the
   # two readings are trivially distinguishable: honouring `--base HEAD` is GREEN, while

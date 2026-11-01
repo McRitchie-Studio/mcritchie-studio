@@ -2,38 +2,14 @@
 
 require "test_helper"
 
-# A TEST HELPER THAT SHELLS OUT TO git MAY NOT DROP THE EXIT STATUS.
-#
-# This defect has now been repaired FIVE times across FOUR files, in three separate
-# passes, because each repair fixed a copy rather than the shape:
-#
-#   * PR 1505 (2026-09-21) repaired test/support/agent_worktree_fixture.rb#rev, after
-#     `refute_empty rev(...)` was found passing on a ref that did not exist.
-#   * Its G2 review found three more copies. /tasks/sweep-remaining-status-drops
-#     repaired them: `head_branch` four lines above the first repair, and byte-identical
-#     `rev` copies in test/commands/agent_worktree_port_isolation_test.rb and
-#     test/commands/agent_worktree_registry_scope_test.rb.
-#   * A fourth, unrecorded copy turned up in the same sweep — an endless-def
-#     `IO.popen` form in test/lib/base_movement_audit_test.rb, which the card's "three
-#     more copies" had not seen.
-#
-# WHY IT KEEPS COMING BACK. The dropping form is SHORTER and reads as correct, and a
-# test that calls it with a ref that resolves can never tell the difference. So the
-# copies are invisible until someone greps for them, which is what this file replaces.
-#
-# WHY IT IS DANGEROUS RATHER THAN MERELY SLOPPY. `git rev-parse <missing-ref>` prints
-# the REF NAME to stdout and exits 128, and `git rev-parse --abbrev-ref HEAD` in a repo
-# with no commits prints the literal "HEAD" and exits 128 (both measured 2026-09-22).
-# A dropped status therefore returns a PLAUSIBLE STRING, never nil and never empty — so
-# `refute_empty` cannot fail, and `rev(worktree, "HEAD")` fed to `update-ref` in the hub
-# SUCCEEDS at exit 0 while pointing the ref at the wrong commit.
-#
-# ITS LIMIT, STATED PLAINLY: this reads NAMES, not behaviour. A copy called
-# `resolve_ref` or `current_branch` is invisible here, and a body containing the word
-# `raise` in a comment satisfies it. It is a ratchet on the two names this defect has
-# actually used four times, not a proof about every git helper in the suite. The
-# per-helper `[control]` tests beside each repair are what prove the helpers themselves
-# bite; this only stops a fifth copy arriving unnoticed under the same names.
+# A TEST HELPER THAT SHELLS OUT TO git MAY NOT DROP THE EXIT STATUS. The dropping form is
+# SHORTER and a resolving ref cannot show the difference. `git rev-parse <missing-ref>` prints
+# the REF NAME, exit 128; `--abbrev-ref HEAD` with no commits prints "HEAD", exit 128. A dropped
+# status is a PLAUSIBLE STRING: `refute_empty` cannot fail; `update-ref` hits the wrong commit.
+# ITS LIMIT: this reads NAMES, not behaviour. A copy called `resolve_ref` or `current_branch` is
+# invisible, and `raise` in a comment satisfies it. The per-helper `[control]` tests prove the
+# helpers bite; this only stops another copy arriving under the same names.
+# History: task sweep-remaining-status-drops.
 class GitStatusDropGuardTest < ActiveSupport::TestCase
   # The two names this defect has worn. Deliberately short: a name that has never
   # carried the defect is a guess, and a guard built on guesses flags innocent code.

@@ -1,39 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] bin/lib/review_worker_pulse.rb — the WORKER-level half of "is this review
-# still being done", and the seam that tells a live reviewer from a dead one inside a
-# session that is alive either way.
-#
-# ═══ THE DEFECT, MEASURED TWICE ON 2026-09-22 ═══
-#
-# A harness watchdog ("no progress for 600s") killed reviewer subagents in two separate
-# events about four hours apart. Both times the dead reviewer's claim immediately read
-# RENEWING with a seconds-fresh heartbeat under the CONDUCTOR'S session — because the
-# conductor kept working, so the anchor stayed alive, so the detached renewer went on
-# renewing a claim for a worker that no longer existed.
-#
-# AnchorHeartbeat cannot reach this. It answers :working when the SESSION narrated
-# inside PROGRESS_QUIET_SECONDS, which here is a TRUE POSITIVE about the session and
-# says nothing whatever about the worker. Its two designed faces are "no anchor at all"
-# and "a dead anchor still resident"; this is neither.
-#
-# ═══ WHY THE FIX IS A SIGNAL AND NOT AN IDENTITY ═══
-#
-# The obvious design — record the SUBAGENT identity so liveness can ask about the
-# worker — was measured first and is NOT IMPLEMENTABLE. Running one probe from a parent
-# agent and the same probe from a subagent of it, same machine, seconds apart, every
-# identity-bearing fact was byte-identical: CLAUDE_CODE_SESSION_ID, CLAUDE_PID, the
-# shell's ppid (both the same `claude` process), SessionIdentity.nonce, and
-# SessionIdentity.agent_process. A subagent is not an OS process and carries nothing of
-# its own. There is nothing to record.
-#
-# What is actually missing is a SIGNAL. A review claim is touched in the FOREGROUND
-# exactly once in its life — the `acquire` — and everything after it is the detached
-# renewer. So the claim carries no worker-produced evidence at all, and the two states
-# are indistinguishable because there is nothing to distinguish them WITH. A signal can
-# be created where an identity cannot.
-#
-#   ruby -Itest test/lib/review_worker_pulse_test.rb
+# [unit] bin/lib/review_worker_pulse.rb: the WORKER-level half of "is this review still being
+# done", telling a live reviewer from a dead one inside a session alive either way. A dead
+# reviewer's claim reads RENEWING under the CONDUCTOR'S session, and AnchorHeartbeat's :working
+# is a TRUE POSITIVE about the session that says nothing about the worker. THE FIX IS A SIGNAL,
+# NOT AN IDENTITY. Recording the subagent identity is NOT IMPLEMENTABLE: parent and subagent
+# share CLAUDE_CODE_SESSION_ID, CLAUDE_PID, ppid, SessionIdentity.nonce and
+# SessionIdentity.agent_process. A review claim is touched in the FOREGROUND once, at `acquire`.
+# History: task live-session-masks-dead-subagent.
 
 require "minitest/autorun"
 require "json"
@@ -69,14 +43,10 @@ class ReviewWorkerPulseTest < Minitest::Test
   end
 
   # ── A BEAT IS NOT THE ACQUISITION ──────────────────────────────────────────
-  #
-  # MEASURED LIVE, 2026-09-22, against the real stuck claim on
-  # playwright-suite-flakes-repeatedly — a reviewer killed by the watchdog whose claim
-  # was still being renewed under the conductor's session. With only the pulse age this
-  # printed "worker: ACTIVE — …acted on this review 1.6h ago", which asserts a heartbeat
-  # that NEVER HAPPENED: the 1.6h-old touch WAS the acquire, and nothing had happened
-  # since. `acquire` writes the marker itself, so the seed must not be mistaken for a
-  # beat or every freshly-claimed review reads as one.
+  # `acquire` writes the marker itself, so the seed must not be mistaken for a beat, or every
+  # freshly claimed review reads as one. With only the pulse age, a claim whose one touch WAS the
+  # acquire prints "worker: ACTIVE", asserting a heartbeat that NEVER HAPPENED.
+  # History: task live-session-masks-dead-subagent.
 
   def test_unit_a_pulse_that_is_only_the_acquisition_is_not_a_beat
     verdict = ReviewWorkerPulse.verdict(pulse_age: 5800, beaten: false)
@@ -309,20 +279,13 @@ class ReviewWorkerPulseTest < Minitest::Test
   end
 
   # ═══════════════════════════════════════════════════════════════════════════
-  # THE CONTROLS — the two states, and the assertion that `status` tells them apart
+  # THE CONTROLS: the two states, and the assertion that `status` tells them apart
   # ═══════════════════════════════════════════════════════════════════════════
-  #
-  # THE EXACT READING FROM THE INCIDENT, and why a shorter TTL is not the fix. When
-  # the first dead reviewer RESUMED and re-acquired his claim, `review-claim status`
-  # printed a reading identical to the one it gave while he was dead — RENEWING, same
-  # holder, ~2s heartbeat. In his words: "nothing in that command's output could have
-  # told you which you had."
-  #
-  # So these two controls drive the REAL `status` path with a board that behaves
-  # IDENTICALLY in both — same holder, same session, same moving expiry — and differ in
-  # exactly one fact: whether a foreground command has touched the review. The lease
-  # half of the output must be identical (that is the defect, and it is not being
-  # papered over); the worker half must differ (that is the fix).
+  # These drive the REAL `status` path with a board behaving IDENTICALLY in both (same holder,
+  # session, moving expiry), differing in one fact: whether a foreground command has touched the
+  # review. The lease half of the output must be identical (that is the defect, not papered over);
+  # the worker half must differ (that is the fix). A shorter TTL is not the fix.
+  # History: task live-session-masks-dead-subagent.
 
   def test_control_a_live_worker_under_a_live_session_reads_as_active
     out = status_with_pulse(age: 12, beaten: true)

@@ -1,34 +1,13 @@
 # frozen_string_literal: true
 
-# The EXEMPT (doc-only) path must read CI. Standalone — no Rails; the integration
-# tier shells bin/dor-check with --file fixtures:
-#   ruby -Itest test/lib/dor_check_exempt_ci_test.rb
-#
-# THE BUG (/tasks/gate-zero-skips-docs-ci). bin/dor-check's exempt-kind branch ended
-# in a bare `exit 0`, and that `exit` sat ABOVE two things: the CI allow-list (whose
-# own comment says ":green is the ONLY state that PASSES") and the
-# gate-verdict emit. So `--gate-role review` — the run the pipeline calls THE
-# AUTHORITATIVE CI VERDICT — never evaluated CI on a doc-only diff. --json returned
-# ready=true, exempt=true, errors=[] with no `ci` key at all, and no `dor_review`
-# attempt was written. Three doc-shaped PRs cleared gate-zero that way (turf-vault
-# #9/#10, mcritchie-studio #1204); every one happened to be green, so the exposure
-# was the next one.
-#
-# THE NULL ATTEMPT WAS THE SAME FACT, TWICE MISREAD. `dor_review` reading null on
-# docs-shaped PRs was logged twice and filed as a cosmetic gap in the record. It was
-# not a missing record: the gate had not run. So test_the_exempt_verdict_records_a
-# _gate_attempt_in_both_directions is not a nicety — it pins the only observable the
-# defect ever produced.
-#
-# WHAT MUST *NOT* CHANGE, and why this is a split rather than a moved block. Two
-# unrelated guards lived below that `exit`, and only one of them should be skipped
-# here: the shape/TEST-TIER gate is correctly waived (a prose diff owes no unit
-# tier), while the CI allow-list never had any business being skipped — this repo's
-# CI GRADES PROSE (doc-link checks, generated-doc drift, entry-doc guards, rubocop
-# over bin/). "Ships no behavior" is not "cannot fail CI".
-# test_the_tier_gate_is_still_waived_on_a_green_exempt_diff and its code-carrying
-# control are what hold that line: relocating the CI block above the exit would pass
-# every OTHER test in this file and fail those two.
+# The EXEMPT (doc-only) path must read CI. A bare `exit 0` must not sit above the CI
+# allow-list and the gate-verdict emit. `dor_review` reading null means the gate did not run;
+# test_the_exempt_verdict_records_a_gate_attempt_in_both_directions pins that only observable.
+# WHAT MUST *NOT* CHANGE: only the shape/TEST-TIER gate is waived on a prose diff. CI GRADES
+# PROSE, so "ships no behavior" is not "cannot fail CI". Relocating the CI block above the
+# exit passes every other test here and fails
+# test_the_tier_gate_is_still_waived_on_a_green_exempt_diff and its control.
+# History: task gate-zero-skips-docs-ci.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -53,16 +32,14 @@ class DorCheckExemptCiTest < Minitest::Test
     }.merge(overrides)
   end
 
-  # Runs dor-check against an in-memory task, returns [parsed_json, exitcode].
-  # STDOUT only: the child inherits bundler's env under `bin/rails test` and emits
-  # rubygems warnings on STDERR, which would corrupt the --json parse if merged.
-  # `pr_files:` defaults to the SAME list the diff is injected from — the readable
-  # world, where the PR read succeeded and the exemption is proven against the PR
-  # itself. Pass "unreadable"/"unverified" to drive the FAILED-read worlds, where a
-  # non-PR source stands in and the exemption would otherwise be granted against an
-  # artifact nobody asked about. It is a separate dimension from `changed:` for the
-  # reason refusal()'s header states: a fixture that can only vary them together
-  # cannot express the failure it is pinning.
+  # Runs dor-check against an in-memory task, returns [parsed_json, exitcode]. STDOUT only:
+  # under `bin/rails test` the child emits rubygems warnings on STDERR, which would corrupt the
+  # --json parse.
+  # `pr_files:` defaults to the list the diff is injected from (the PR read succeeded). Pass
+  # "unreadable"/"unverified" for the FAILED-read worlds. It is separate from `changed:` for the
+  # reason refusal()'s header states: a fixture that can only vary them together cannot express
+  # the failure it pins.
+  # History: task gate-zero-skips-docs-ci.
   def check(devops_payload, ci: nil, role: "review", changed: DOC_DIFF, gate_bin: nil, args: "--json",
             pr_files: nil)
     Dir.mktmpdir do |dir|
@@ -99,18 +76,13 @@ class DorCheckExemptCiTest < Minitest::Test
     end
   end
 
-  # ── [unit] CiGate — the decision table both paths now share ─────────────────
-  #
-  # Pure: no subprocess, no ENV, no board. The exempt path's whole fix is that it
-  # asks THIS instead of asking nothing, so the states it must refuse are asserted
-  # here directly rather than inferred from a verdict's prose.
-  #
-  # READ "ADVANCES" AT THIS GRAIN. Here it means CiGate returns no refusal, and green
-  # is alone in that IN BOTH ROLES: since /tasks/dor-reads-settled-ci-verdict no
-  # local cert stands in for a no-verdict state, so the table below has no "unless
-  # the task carries a FULL cert" column any more. The one role split left is
-  # :pending, which is a WAIT for the builder (still a refusal, worded as waiting)
-  # and a refusal for review.
+  # ── [unit] CiGate: the decision table both paths share ──
+  # Pure: no subprocess, no ENV, no board. The states the exempt path must refuse are asserted
+  # here directly, not inferred from a verdict's prose.
+  # READ "ADVANCES" AT THIS GRAIN: CiGate returns no refusal, and green is alone in that IN BOTH
+  # ROLES. No local cert stands in for a no-verdict state. The one role split left is :pending:
+  # a WAIT for the builder (still a refusal, worded as waiting) and a refusal for review.
+  # History: task dor-reads-settled-ci-verdict.
 
   def test_unit_green_is_the_only_state_that_advances
     [true, false].each do |review_role|
@@ -215,23 +187,13 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_empty Array(verdict["errors"])
   end
 
-  # THE NEIGHBOURS, not just red. The documented allow-list refuses each of these,
-  # and an exempt task is no different.
-  #
-  # THE RECORDED ROW IS ASSERTED PER-STATE, NOT AS ONE FLAT "fail"
-  # (/tasks/gate-logs-auth-as-red, then /tasks/refused-review-records-fail). Every one
-  # of these REFUSES — that half is uniform and stays uniform — but the DURABLE row
-  # must say which non-answer it got, because the row outlives the refusal text above
-  # it. The three that had to move are CiGate::CI_NO_VERDICT_STATES: recorded as "fail"
-  # they wrote a red-CI bounce that never happened into the permanent gate history —
-  # :unreadable on every gate run straddling an ~hourly token expiry, :none on every PR
-  # whose checks had not started, :unverified on every transport blip.
-  #
-  # NOT "collapsing them all onto one honest value", which an earlier draft of this
-  # comment defended keeping "fail" to avoid: each of the three carries its OWN word,
-  # so the record stays 1:1 with the CI state. What keeps "fail" is the states that
-  # genuinely settled negative — a red CI, a conflict, a closed target, and an
-  # unclassified state an allow-list must refuse by default.
+  # THE NEIGHBOURS, not just red. The documented allow-list refuses each of these, exempt or
+  # not. THE RECORDED ROW IS ASSERTED PER-STATE, NOT AS ONE FLAT "fail": the durable row
+  # outlives the refusal text and must say which non-answer it got. CiGate::CI_NO_VERDICT_STATES
+  # each carry their OWN word, 1:1 with the CI state; as "fail" they record a red-CI bounce that
+  # never happened. "fail" stays for states that settled negative: a red CI, a conflict, a
+  # closed target, and an unclassified state an allow-list must refuse by default.
+  # History: task refused-review-records-fail.
   def test_pending_unreadable_and_unclassified_ci_all_refuse_an_exempt_review
     {
       "pending" => ["still RUNNING", "fail"],
@@ -281,29 +243,14 @@ class DorCheckExemptCiTest < Minitest::Test
     assert_includes errors_of(red), "GitHub CI is RED"
   end
 
-  # ── the exempt path must CONFIRM that it IS exempt ─────────────────────────
-  #
-  # THE HOLE (/tasks/exempt-path-trusts-local-tree). The gated path role-splits a
-  # failed PR-file read — ERROR for review, SUGGESTION for the builder — because the
-  # reviewer's checkout is deliberately NOT the task's tree, so grading a substitute
-  # there is the false pass gate-zero exists to refuse. The EXEMPT path had no such
-  # split: `pr_read_alert` landed in `suggestions` for BOTH roles, so a doc-only
-  # exemption could be earned from whatever tree the reviewer happened to be standing
-  # in while the PR itself went unread. Measured on this branch before the fix: the
-  # review and builder verdicts came back byte-identical, both `✓ … → ready to
-  # advance submitted → reviewed`, off `[source: git working tree]`.
-  #
-  # SISTER DEFECT TO /tasks/gate-zero-skips-docs-ci, one door out. That one was "the
-  # exempt path never asks CI"; this is "the exempt path never confirms it IS exempt."
-  # Both let a review gate pass on evidence it did not actually read.
-  #
-  # BOTH FAILED-READ STATES, because only one of them was ever closed. A REVIEW-role
-  # `:unreadable` is caught upstream in resolve_branch_diff (diff_source
-  # :pr_unreadable → nothing observed → the "could not be proven doc-only" refusal),
-  # but `:unverified` — gh missing, a 404, a transport error, an API outage — is a
-  # FAILED read too, and it was never in that guard: it fell through to the local
-  # working tree and reached the grant. Pinning only the credential state would
-  # re-close the door that was already shut and leave the open one open.
+  # ── the exempt path must CONFIRM that it IS exempt ──
+  # The reviewer's checkout is NOT the task's tree, so a doc-only exemption must not be earned
+  # there while the PR goes unread: a failed PR-file read is an ERROR for review, a SUGGESTION
+  # for the builder. BOTH FAILED-READ STATES: a review `:unreadable` is caught upstream in
+  # resolve_branch_diff (diff_source :pr_unreadable), but `:unverified` (gh missing, a 404, a
+  # transport error, an API outage) is a failed read too and can reach the grant through the
+  # local tree. Sister defect: /tasks/gate-zero-skips-docs-ci.
+  # History: task exempt-path-trusts-local-tree.
   FAILED_PR_READS = %w[unreadable unverified].freeze
 
   def test_a_failed_pr_file_read_refuses_the_review_exemption
@@ -342,16 +289,14 @@ class DorCheckExemptCiTest < Minitest::Test
     end
   end
 
-  # THE RECEIPT SURVIVES THE PROMOTION. `pr_read` is how a monitor asks "was the PR
-  # actually read?" of a verdict after the fact, and it used to be keyed off the
-  # SUGGESTION list — so promoting the alert to an error would have blanked the field
-  # in exactly the role where it matters most. Keyed off the refusal itself now.
-  # THE BUILD GATE STAYS LENIENT, review role or not — the clause that says so must
-  # not be inert. Measured: removing `gate != "build"` from the role split left every
-  # other test in this file green, which is precisely the half-inert guard this task's
-  # own discipline warns about. The build gate resolves no diff and must not shell
-  # `gh`, so a PR read that failed there is not evidence of anything; line 2356's
-  # gated-path twin carries the same clause for the same reason.
+  # THE RECEIPT SURVIVES THE PROMOTION. `pr_read` is how a monitor asks "was the PR actually
+  # read?" of a verdict later. It is keyed off the refusal itself, not the SUGGESTION list, or
+  # it blanks in the role where it matters most.
+  # THE BUILD GATE STAYS LENIENT, review role or not. Removing `gate != "build"` from the role
+  # split leaves every other test in this file green, so this test holds that clause. The build
+  # gate resolves no diff and must not shell `gh`, so a failed PR read there is evidence of
+  # nothing. Line 2356's gated-path twin carries the same clause.
+  # History: task exempt-path-trusts-local-tree.
   def test_the_build_gate_never_refuses_on_a_failed_pr_read
     FAILED_PR_READS.each do |state|
       verdict, code = check(devops, role: "review", pr_files: state, args: "--json --gate build")
@@ -533,20 +478,11 @@ class DorCheckExemptCiTest < Minitest::Test
   end
 
   # ══ NO VERDICT OFFERS A CERT, AND A RECORDED CERT CHANGES NOTHING ════════════
-  #
-  # THE HISTORY (/tasks/exempt-refusal-prints-dead-remedy). The exempt path once took
-  # the GATED path's refusal verbatim — "certify in full instead: `bin/full-suite-check
-  # <slug>`" — while bin/dor-check discarded the flag that was the only thing able to
-  # honour it: adding that exact cert produced a BYTE-IDENTICAL refusal. The pin that
-  # closed it READ THE PRINTED REFUSAL to decide what the gate promised, then executed
-  # the promise on both paths.
-  #
-  # SINCE /tasks/dor-reads-settled-ci-verdict THERE IS NO PROMISE TO EXECUTE: the suite
-  # evidence is the PR's settled green CI, on every path and in every role, and the
-  # fingerprint receipts are not read. So the property is now one-directional and
-  # holds everywhere — every no-verdict refusal DENIES a cert, offers none, and a
-  # recorded full cert leaves the refusal byte-identical. The byte-identity that was
-  # the defect's signature is the proof that the denial is accurate.
+  # The suite evidence is the PR's settled green CI, on every path and in every role, and the
+  # fingerprint receipts are not read (since /tasks/dor-reads-settled-ci-verdict). So every
+  # no-verdict refusal DENIES a cert, offers none, and a recorded full cert leaves the refusal
+  # byte-identical. That byte-identity is the proof that the denial is accurate.
+  # History: task exempt-refusal-prints-dead-remedy.
 
   # THE CONTRACT CLAUSES. Each is spelled ONCE in the source (bin/lib/ci_gate.rb and
   # bin/lib/ci_status.rb) and read here to classify a refusal. They are deliberately
@@ -672,32 +608,14 @@ class DorCheckExemptCiTest < Minitest::Test
     end
   end
 
-  # ── [unit] THE CALL-SITE REGISTRY — a comment that checks itself ────────────
-  #
-  # WHY THIS EXISTS. `CiStatus.unreadable_remedy` carries a comment naming every
-  # production caller and the route each is on. Prose about call sites goes stale the
-  # moment someone adds a call site, and nothing in a code review reliably notices.
-  # So the list is pinned to the SOURCE: add a caller, delete one, or flip one between
-  # "states its route" and "takes the default", and this fails and hands the author
-  # the comment to update.
-  #
-  # THE HASH IS KEYED BY FILE PATH, so on its own it can only ever audit the files
-  # someone thought to type. The FILE SET is therefore globbed and asserted
-  # separately — see `bin_files` and the set test below.
-  #
-  # NUMBERS, and the reason for each (re-derive with the scan below rather than
-  # trusting any figure written here — this table has moved in four consecutive
-  # sittings):
-  #   bin/lib/ci_gate.rb  0 stating / 1 default — unread_ci_refusal's :unreadable arm,
-  #                       both roles. It stopped forwarding a route at
-  #                       /tasks/dor-reads-settled-ci-verdict: every task-grain route
-  #                       prints the same denial, so there is nothing to forward.
-  #   bin/dor-check       0 stating / 1 default — pr_read_alert, for the same reason;
-  #                       the suite gate's two builder-side unreadable-CI refusals
-  #                       retired with the cert lanes they argued from.
-  #   bin/pr-review       0 stating / 1 default — the pre-review briefing (task grain).
-  #   bin/release.rb      2 stating / 0 default — the G3 pre-QA and G4 ship gates,
-  #                       release_grain: true.
+  # ── [unit] THE CALL-SITE REGISTRY: a comment that checks itself ────────────
+  # `CiStatus.unreadable_remedy` names every production caller and its route in a comment. This
+  # pins that list to SOURCE: add, delete, or flip a caller between "states its route" and
+  # "takes the default", and this fails and hands the author the comment to update. The hash
+  # audits only typed files, so the FILE SET is globbed separately: see `bin_files` and the set
+  # test below. bin/release.rb states release_grain: true at the G3 and G4 gates; the other
+  # callers take the default. Re-derive counts with the scan below.
+  # History: task exempt-refusal-prints-dead-remedy.
   UNREADABLE_REMEDY_CALL_SITES = {
     "bin/lib/ci_gate.rb" => { states_route: 0, takes_default: 1 },
     "bin/dor-check" => { states_route: 0, takes_default: 1 },
@@ -743,31 +661,13 @@ class DorCheckExemptCiTest < Minitest::Test
     args
   end
 
-  # THE CANDIDATE SET — GLOBBED, NEVER LISTED, and the reason is a mutation rather
-  # than a tidiness preference. UNREADABLE_REMEDY_CALL_SITES is keyed by file path and
-  # the count test iterates it, so for its whole life it opened exactly four files.
-  # RE-MEASURED IN REVIEW, at this branch's own base (32 tests) and head (33). The
-  # first draft of this paragraph quoted a 26-test head — numbers carried over from the
-  # older tree the finding was found on, which is precisely the drift this file exists
-  # to catch, written into itself. One probe, two placements: injected into
-  # bin/dor-check the COUNT test kills it ("Expected: 2" default-takers, found 3); the
-  # IDENTICAL caller in a NEW file, bin/lib/carl_probe.rb, SURVIVED the pre-change
-  # test at 32 runs, 310 assertions, 0 failures — and is KILLED by the set test below
-  # at 33 runs, 316 assertions, 1 failure naming the file. A fifth file was simply
-  # never opened.
-  #
-  # That is more than a test nit, because bin/lib/ci_status.rb's header tells the next
-  # reader this registry "fails when [a caller] appears, vanishes, or changes route.
-  # Add a caller and the suite makes you classify it." True of the four listed files,
-  # FALSE of a new one — so the hole in the test was a hole in a promise the
-  # production code makes in prose. Widening the net here is what makes that sentence
-  # honest without touching it.
-  #
-  # EVERY FILE UNDER bin/ — deliberately not `bin/**/*.rb`. Two of the four callers
-  # the registry ALREADY names, bin/dor-check and bin/pr-review, are extensionless
-  # scripts, so an extension-based glob is born blind to half the known set. Every
-  # narrower rule is a hole of the same shape as the one being closed, and the widest
-  # rule costs one `include?` over ~140 small text files.
+  # THE CANDIDATE SET: GLOBBED, NEVER LISTED. UNREADABLE_REMEDY_CALL_SITES is keyed by file path
+  # and the count test iterates it, so a caller in a NEW file is killed only by the set test
+  # below. bin/lib/ci_status.rb's header promises the registry "fails when [a caller] appears,
+  # vanishes, or changes route"; this net makes that true of a new file. EVERY FILE UNDER bin/,
+  # deliberately not `bin/**/*.rb`: bin/dor-check and bin/pr-review are extensionless. Every
+  # narrower rule is a hole of the same shape.
+  # History: task registry-blind-to-files.
   def bin_files
     Dir.glob("bin/**/*", base: REPO_ROOT)
        .select { |path| File.file?(File.join(REPO_ROOT, path)) }
@@ -835,25 +735,14 @@ class DorCheckExemptCiTest < Minitest::Test
     refute_includes source, "cert_route", "bin/dor-check must name no cert route anywhere — there is none"
   end
 
-  # ── the closing line that outlived its truth ────────────────────────────────
-  #
-  # THE DEFECT (/tasks/gate-sentence-outlived-truth). CiStatus.unreadable_remedy's
-  # exempt branch closed flatly: "Fixing the credential is the only route — this gate
-  # advances on a GREEN CI and nothing else." True when it was written. FALSE since
-  # PR #1225 taught this same path to refuse on an unread PR file list as well, which
-  # made green NECESSARY here and stopped it being SUFFICIENT. The co-fire is the case
-  # that shows it — one stale App token refuses the PR read AND the check read at
-  # once, so both halves fire on one verdict and the CI half signs off by promising
-  # that fixing the credential and getting a green would carry it. It would not: the
-  # PR-read refusal is still standing.
-  #
-  # WHY THE FIX IS A DERIVATION AND NOT A REWRITE, which is what these two tests are
-  # really pinning as a PAIR. The sentence is correct in one world and wrong in
-  # another, and the worlds differ by ONE input — whether anything else is refusing.
-  # So a fix that reworded it unconditionally would be a second defect wearing the
-  # first one's clothes: it would change what operators already read on every
-  # non-co-fire refusal, which is most of this branch's traffic. The pair below is
-  # deliberately identical but for `pr_files:`.
+  # ── the closing line that outlived its truth ──
+  # CiStatus.unreadable_remedy's exempt branch must not promise green is sufficient when
+  # something else refuses: one stale App token refuses the PR read AND the check read, so on a
+  # co-fire green is NECESSARY but not SUFFICIENT. THE FIX IS A DERIVATION, NOT A REWRITE,
+  # pinned as a PAIR identical but for `pr_files:`. The sentence depends on ONE input, whether
+  # anything else is refusing; rewording it unconditionally changes what operators read on every
+  # non-co-fire refusal.
+  # History: task gate-sentence-outlived-truth.
 
   # The sentence operators already know, pinned as a LITERAL. Recomputing it from the
   # method under test would make the fence agree with any rewrite of that method,
@@ -978,29 +867,14 @@ class DorCheckExemptCiTest < Minitest::Test
                  "the refused_by line and the also_refused list must both read that constant"
   end
 
-  # ── the WIDENED half of that closing line (/tasks/fence-the-widened-closing) ─
-  #
-  # WHAT WAS MISSING, and it is a fence rather than a defect. The task above fixed the
-  # sufficiency claim in CiStatus.unreadable_remedy AND deliberately WIDENED to its
-  # twin in bin/lib/ci_gate.rb's :none/:unverified branch — the same promise, the same
-  # role, the same path, reached with a different CI state. The behaviour that shipped
-  # is correct. Only the fence stopped at the file boundary: forcing
-  # `no_verdict_close` to print the co-fire wording ALWAYS, and then the original
-  # wording ALWAYS, left this suite green at 41 runs / 391 assertions / 0 failures,
-  # while the equivalent pair on the ci_status half killed both. A derivation nothing
-  # pins is a constant nobody has noticed yet, and the next reader is free to
-  # "simplify" it back into the sentence PR #1225 falsified.
-  #
-  # SO THE PAIR IS DELIBERATE, exactly as it is next door: the two tests below differ
-  # by ONE input — whether anything else is refusing this verdict — because that is
-  # the only input the sentence is allowed to depend on. Rewording it unconditionally
-  # would change what operators read on every NON-co-fire refusal, which is most of
-  # this branch's traffic, and that is a second defect wearing the first one's clothes.
-  #
-  # AND THE PAIR IS RUN TWICE, at two grains, for the reason the ci_status half
-  # learned the hard way: CiGate can format the derived clause perfectly while
-  # bin/dor-check never hands it the list. The unit pair pins the FORMATTER (and is
-  # what the two mutations above go red on); the binary pair pins the WIRING.
+  # ── the WIDENED half of that closing line ──
+  # A fence, not a defect: bin/lib/ci_gate.rb's :none/:unverified branch carries
+  # CiStatus.unreadable_remedy's promise. Forcing `no_verdict_close` to print either wording
+  # ALWAYS must fail here. THE PAIR IS DELIBERATE: the two tests differ by ONE input, whether
+  # anything else is refusing this verdict, the only input the sentence may depend on. RUN
+  # TWICE, at two grains: CiGate can format the clause perfectly while bin/dor-check never hands
+  # it the list. The unit pair pins the FORMATTER; the binary pair pins the WIRING.
+  # History: task fence-the-widened-closing.
 
   # The sentence operators already know, pinned as a LITERAL for the same reason
   # GREEN_SUFFICIENT is: recomputing it from the method under test would make the
@@ -1106,14 +980,12 @@ class DorCheckExemptCiTest < Minitest::Test
   end
 
   # [unit] THE SECONDARY SITE, and why it is a bare literal rather than a pair. The
-  # unclassified-state branch borrowed the same words to justify its refusal — "the
-  # review gate-zero advances on a GREEN CI and nothing else" — and there the claim was
-  # doing NECESSITY work only: this state is not green, therefore refuse. That argument
-  # never needed sufficiency, so the sentence says what the allow-list actually
-  # enforces: green is alone in PASSING (the shape, tier and PR-read gates each refuse
-  # on a fully green CI, so "advances" would overclaim). BOTH retired spellings are
-  # refuted below, because a correction that drops its predecessor's name is how the
-  # predecessor comes back.
+  # unclassified-state branch argues NECESSITY only: this state is not green, therefore refuse.
+  # So the sentence says what the allow-list enforces: green is alone in PASSING. The shape,
+  # tier and PR-read gates each refuse on a fully green CI, so "advances" would overclaim. BOTH
+  # retired spellings are refuted below, because a correction that drops its predecessor's name
+  # is how the predecessor comes back.
+  # History: task fence-the-widened-closing.
   def test_unit_the_unclassified_refusal_argues_from_necessity_not_sufficiency
     message = CiGate.unread_ci_refusal({ state: :surprise }, PR_URL, "t")
 
@@ -1126,43 +998,26 @@ class DorCheckExemptCiTest < Minitest::Test
                     "THE SECOND RETIRED CLAIM: advancing and passing are different predicates:\n#{message}"
   end
 
-  # ── the supervisor's own copy of the sentence ───────────────────────────────
-  #
-  # A FOURTH COPY, in a different binary, and the sharpest of the four because of
-  # WHERE it prints. bin/pr-review's `cert_caveat` closed "green is the only thing that
-  # advances it", and it is interpolated into exactly two lines: the :unreadable branch
-  # and the :unverified `else`. Those are the co-fire's OWN TRIGGERS — one stale App
-  # token refuses the check read and the PR file read together — so in the very
-  # incident this family is about, the supervisor told a reviewer green was SUFFICIENT
-  # one screen before their gate-zero told them it was NECESSARY AND NOT SUFFICIENT.
-  # It also contradicted docs/agents/agents/carl/sops/pr-review-primary.md, which had
-  # already been corrected.
-  #
-  # WHY THIS IS A SOURCE TEST. `cert_caveat` is a local inside a method that spawns
-  # real reviewer subprocesses; there is no value seam to call. bin/pr-review's other
-  # prose invariants are pinned the same way (test/lib/pr_review_zap_safety_test.rb),
-  # and the property here is genuinely structural: the supervisor and the gate must
-  # tell ONE story, in ONE spelling, at BOTH print sites.
+  # ── the supervisor's own copy of the sentence ──
+  # bin/pr-review's `cert_caveat` must not close "green is the only thing that advances it". It
+  # prints at exactly two lines, the :unreadable branch and the :unverified `else`, the
+  # co-fire's OWN TRIGGERS, where green is NECESSARY AND NOT SUFFICIENT
+  # (docs/agents/agents/carl/sops/pr-review-primary.md). A SOURCE TEST: `cert_caveat` is a local
+  # in a method that spawns real reviewer subprocesses, so there is no value seam. The
+  # supervisor and the gate must tell ONE story, in ONE spelling, at BOTH print sites.
+  # History: task fence-the-widened-closing.
   SUPERVISOR_GREEN_SUFFICIENT = "green is the only thing that advances it"
 
   def pr_review_source = File.read(File.join(REPO_ROOT, "bin/pr-review"))
 
-  # THE SAME FILE WITH ITS COMMENT-ONLY LINES REMOVED — what the script can actually
-  # PRINT. The header above quotes the retired sentence on purpose (a correction that
-  # deletes its own provenance is how a claim comes back), and a whole-file scan cannot
-  # tell that quotation from a live promise: it failed on the explanation of the fix.
-  #
-  # HEREDOC BODIES ARE NOT COMMENTS, and skipping that distinction would have put the
-  # hole back where it hurts most. bin/pr-review hands its reviewers PROMPT/TEXT
-  # heredocs — PROSE, which is this whole family's subject — and a markdown heading
-  # inside one begins with `#`. A flat "drop every line starting with #" would let the
-  # retired claim live on, invisibly, in the one place the supervisor's words reach a
-  # reviewer most directly. So heredoc bodies are tracked and kept. `#{` is kept too:
-  # an interpolation is code.
-  #
-  # Trailing comments are deliberately left in, so a claim parked at the end of a code
-  # line still trips this. test_unit_the_supervisor_stops_promising... is proven to
-  # bite by mutation: the claim reinstated on a code line fails it.
+  # THE SAME FILE WITH ITS COMMENT-ONLY LINES REMOVED: what the script can actually PRINT. A
+  # whole-file scan cannot tell a comment quoting the retired sentence on purpose from a live
+  # promise. HEREDOC BODIES ARE NOT COMMENTS: bin/pr-review's PROMPT/TEXT heredocs carry
+  # markdown headings beginning with `#`, where a flat "drop every line starting with #" would
+  # hide the claim. So heredoc bodies are tracked and kept. `#{` is kept too: an interpolation
+  # is code. Trailing comments stay, so a claim on a code line still trips
+  # test_unit_the_supervisor_stops_promising...
+  # History: task fence-the-widened-closing.
   def pr_review_printable = printable_ruby(pr_review_source)
 
   def printable_ruby(source)
@@ -1204,23 +1059,13 @@ class DorCheckExemptCiTest < Minitest::Test
   end
 
   # THE STRIPPER'S OWN CONTROL, because a scan that reads nothing passes everything.
-  # bin/pr-review DOES carry heredoc lines that begin with `#` — the reviewer PROMPT
-  # heredoc interpolates its sections — but every one of them is a `#{...}`, which the
-  # interpolation exemption keeps on its own. So the heredoc branch decides none of
-  # them, and driving this control against the real file would exercise nothing. That
-  # is the reason, and it is CHECKED rather than asserted in prose
-  # (/tasks/gate-prose-overclaims-again): the header used to claim the file carried no
-  # such line at all, which was flatly false while the conclusion drawn from it was
-  # right — a comment about prose drifting from behaviour, drifting from behaviour.
-  #
-  # ITS OWN TEST, NOT A PRELUDE TO THE FIXTURE'S (/tasks/exempt-path-claim-unqualified).
-  # These two source scans and the four fixture assertions below used to share one
-  # method, with the scans FIRST — so the day this alarm fired, Minitest stopped at it
-  # and the four checks it was standing in front of never executed. A firing alarm
-  # would have silently retired the very assertions that say what the stripper is FOR,
-  # and the run would have reported one failure where there might have been five. Two
-  # methods, not a reordering: order only chooses which half goes blind, and split
-  # leaves neither able to suppress the other.
+  # bin/pr-review's heredoc lines beginning with `#` are all `#{...}`, kept by the interpolation
+  # exemption, so driving this control against the real file would exercise nothing in the
+  # heredoc branch. That is CHECKED, not asserted in prose. ITS OWN TEST, NOT A PRELUDE TO THE
+  # FIXTURE'S: in one method with the scans first, a firing alarm stops Minitest before the four
+  # fixture assertions run. Two methods, not a reordering: order only chooses which half goes
+  # blind.
+  # History: task exempt-path-claim-unqualified.
   def test_unit_the_printable_stripper_control_reads_the_real_file
     refute_equal pr_review_source, flat_strip(pr_review_source),
                  "CONTROL: the scan must have read a real file — bin/pr-review carries full-line comments, " \
@@ -1289,44 +1134,14 @@ class DorCheckExemptCiTest < Minitest::Test
                     "the caveat must name the other refusal on this path, not merely hedge:\n#{cert_caveat_literal}"
   end
 
-  # ONE LITERAL, TWO SITES, TWO CAUSES. The caveat closed "one stale token refuses both
-  # reads" — a credential story, and it is interpolated at BOTH print sites. It is true
-  # at the :unreadable branch, where GitHub refused the credential. It is FALSE at the
-  # :unverified `else`: bin/lib/ci_status.rb defines :unverified as a gh/network fault
-  # and bin/dor-check's own alert calls that read "NOT a credential refusal". Naming one
-  # site's cause in a literal both sites print sends half the readers hunting a token
-  # while `gh` is simply down, so the closing must name the CLASS the two share.
-  #
-  # THE FIRST VERSION OF THIS GUARD WAS DOCUMENTARY, NOT BEHAVIOURAL
-  # (/tasks/exempt-path-claim-unqualified). It pinned three SUBSTRINGS, so it graded a
-  # spelling rather than the claim — and one reword walks straight through all three.
-  # Measured: rewriting the closing as "a refused token, NOT a `gh`/network failure"
-  # REINSTATES the retired credential story (it now asserts one cause and DENIES the
-  # other, which is worse than the sentence this family retired) and the pin stayed
-  # green at 1 run / 12 assertions. A guard the reinstatement passes is a comment with
-  # a `def` in front of it.
-  #
-  # SO ASSERT THE SHAPE OF THE CLAIM. The property is that the two causes are offered
-  # as ALTERNATIVES — one fault, either of two origins, neither excluded — because
-  # that is the only reading true at both print sites. The clause is extracted (from
-  # "hides both reads" to the next `;`) and asked four things: it names the credential
-  # cause, it names the transport cause, it joins them disjunctively, and it does not
-  # EXCLUDE either. Scoping the exclusion check to that clause is what makes it usable
-  # at all — the caveat's own "NECESSARY AND NOT SUFFICIENT" sits two clauses earlier,
-  # and a whole-literal negation scan would red-seal the correct sentence.
-  #
-  # WHAT IT STILL CANNOT SEE, stated rather than papered over. This is a source scan of
-  # a string literal; it reads syntax, not meaning. A reinstatement that keeps the
-  # disjunction and then leans on it in prose the clause does not contain — "…, or a
-  # `gh`/network failure; usually the token" — passes, because the closing it grades
-  # ends at the semicolon. Closing that would mean grading the whole caveat for
-  # emphasis, which has no fixture and no seam at this grain: `cert_caveat` is a local
-  # in a method that spawns real reviewer subprocesses (see pr_review_source's header),
-  # so there is no value to call and nothing to drive. The guard is therefore sound
-  # against DROPPING or NEGATING a cause — the two shapes the retired claim actually
-  # wore — and blind to re-weighting one. That boundary is the file's grain, not an
-  # oversight, and it is written down so the next reader does not mistake the pin for
-  # a proof.
+  # ONE LITERAL, TWO SITES, TWO CAUSES. The caveat prints at :unreadable (GitHub refused the
+  # credential) and the :unverified `else` (a gh/network fault), so its closing must name the
+  # CLASS they share. SO ASSERT THE SHAPE OF THE CLAIM: the clause ("hides both reads" to the
+  # next `;`) must name the credential cause and the transport cause, join them disjunctively,
+  # and EXCLUDE neither. Scope the exclusion check to the clause: a whole-literal scan red-seals
+  # "NECESSARY AND NOT SUFFICIENT". STILL BLIND to re-weighting a cause ("...; usually the
+  # token"): this reads syntax, so do not mistake the pin for a proof.
+  # History: task exempt-path-claim-unqualified.
   CO_FIRE_CAUSE_CREDENTIAL = /token/i
   CO_FIRE_CAUSE_TRANSPORT = %r{`gh`/network}
   CO_FIRE_DISJUNCTION = /\bor\b/i

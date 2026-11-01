@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] ReviewTreeGuard — the two "is the tree this review grades the tree that will
-# merge?" questions. Run directly:
-#   ruby -Itest test/lib/review_tree_guard_test.rb
-#
-# Driven against REAL temp git repositories, never a stubbed shell. The whole subject
-# here is what git refs actually say after a push nobody fetched, and a mock of `git`
-# would be a mock of the exact thing under test — it would certify the guard green
-# while proving nothing about the seam. Building a two-repo clone is a few lines and
-# reproduces the real condition: a desk whose remote-tracking ref is behind the remote.
+# [unit] ReviewTreeGuard: the two "is the tree this review grades the tree that will merge?"
+# questions.
+# Driven against REAL temp git repositories, never a stubbed shell: the subject is what refs say
+# after a push nobody fetched, so a mock of `git` certifies the guard while proving nothing. A
+# two-repo clone reproduces a desk whose remote-tracking ref is behind the remote.
+# History: task reviewer-zap-has-unmapped-seams.
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"

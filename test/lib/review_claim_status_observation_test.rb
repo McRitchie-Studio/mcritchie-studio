@@ -1,20 +1,11 @@
 # frozen_string_literal: true
 
 # [unit] `bin/task review-claim status` OBSERVES the lease.
-#
-# THE MEASUREMENT THIS FILE ENCODES (2026-09-01/02). Two independent sessions were
-# told to "sample the lease twice" before deciding whether a holder was alive. Both
-# sampled twice, both reported the question unanswerable, and both were looking at a
-# claim that had ALREADY EXPIRED. Sampling twice makes a reader look for AGREEMENT,
-# and two reads of one lease agree about the STATE every time — the fact that
-# settles it is that they disagree about the NUMBER.
-#
-# So the differencing lives in the COMMAND. Each test below drives the real `status`
-# path with a scripted sequence of board reads and an injected clock, and asserts
-# which of the states it OBSERVED — never that it printed a timestamp for somebody
-# else to work out.
-#
-#   ruby -Itest test/lib/review_claim_status_observation_test.rb
+# Two reads of one lease agree about the STATE every time; what settles it is that they disagree
+# about the NUMBER. So the differencing lives in the COMMAND. Each test drives the real `status`
+# path with scripted board reads and an injected clock, and asserts which state it OBSERVED,
+# never that it printed a timestamp for somebody else to work out.
+# History: task refusal-misnames-claim-holder.
 
 require "minitest/autorun"
 require "json"
@@ -179,15 +170,11 @@ class ReviewClaimStatusObservationTest < Minitest::Test
                      "must never be allowed to resolve as 'not renewing'"
   end
 
-  # A SUSTAINED outage is not a blip, and it is not evidence either. If the board
-  # answers once and then fails for the WHOLE window, there is no second reading to
-  # difference — `latest` stays pinned to `first`, and differencing a value against
-  # ITSELF says "it did not move" about something that was never looked at twice.
-  #
-  # MEASURED pre-fix: a live holder with 300s of lease left plus a board that 500s
-  # for the entire window printed CHARACTER-FOR-CHARACTER the same line as a
-  # genuinely dying holder. The grade is the smaller half of the defect; the line
-  # asserting an observation that never happened is the honesty failure.
+  # A SUSTAINED outage is not evidence. If the board answers once then fails for the WHOLE window
+  # there is no second reading: `latest` stays pinned to `first`, and differencing a value against
+  # ITSELF says "it did not move" about something never looked at twice. It must not print the
+  # dying-holder line.
+  # History: task observation-lies-under-outage.
   def test_a_board_unreadable_for_the_whole_window_reports_ignorance_not_a_dead_holder
     # ScriptedApi repeats its last entry, so this is: one good read, then 500s forever.
     out, = run_status([holder(300), :unreadable])
@@ -220,22 +207,14 @@ class ReviewClaimStatusObservationTest < Minitest::Test
     assert_equal ReviewClaimCli::CANT_RUN, cli.code
   end
 
-  # ── THE STEAL ROUTE AN OUTAGE CAN STILL REACH ───────────────────────────────
-  #
-  # LAPSED is inside OBSERVED_FREE (claim_holder.rb:126), so it is not merely a
-  # diagnostic — it is the grade that tells a caller the task is FREE TO TAKE.
-  #
-  # `observe` decides it with `now >= second`, where `now` is the LOOP-EXIT time
-  # and `second` is the expiry from the last SUCCESSFUL read. Nothing in that
-  # comparison knows the observation ended. So: one good poll, then the board goes
-  # dark for the rest of a window longer than the remaining lease, and the command
-  # concludes it "outlasted" a lease it stopped watching.
-  #
-  # The previous fix (observation-lies-under-outage) guarded the case where NO poll
-  # after the first succeeded. This has exactly ONE, so `differenced` is true and
-  # that guard does not fire. The guard was keyed on "did we ever difference a
-  # pair" when the question is "was the observation still LIVE when the deadline
-  # passed".
+  # --- THE STEAL ROUTE AN OUTAGE CAN STILL REACH ---
+  # LAPSED is inside OBSERVED_FREE (claim_holder.rb:126): it tells a caller the task is FREE TO
+  # TAKE. `observe` decides with `now >= second` (loop-exit time vs the expiry from the last
+  # SUCCESSFUL read), so one good poll then a dark board past the lease would conclude it
+  # "outlasted" a lease it stopped watching. The `differenced` guard
+  # (observation-lies-under-outage) does not fire here: the question is whether the observation
+  # was still LIVE at the deadline.
+  # History: task outage-lies-after-first-poll.
   def test_a_window_that_goes_dark_before_the_deadline_cannot_report_the_lease_free
     # first read + one good poll at the same expiry, then 500s forever.
     out, = run_status([holder(10), holder(10), :unreadable])
@@ -272,15 +251,12 @@ class ReviewClaimStatusObservationTest < Minitest::Test
                     "a genuinely dead lease must still hand over the acquire"
   end
 
-  # LAPSED is the STEAL route and the tests above pin it. NOT_RENEWING is the same
-  # lie in the other grade — "nothing is heartbeating this" is a claim about
-  # WATCHING, and an outage can manufacture it the same way, by letting the window
-  # accrue time nobody spent reading.
-  #
-  # This case cannot reach LAPSED (the lease outlives the window by minutes), so it
-  # isolates the `watched` half of the fix: wall time is longer than the renewal
-  # cycle, OBSERVED time is not. Without it, reverting `watched` to `now -
-  # first_read_at` passes every other test in this file — measured.
+  # LAPSED is the STEAL route; NOT_RENEWING is the same lie in the other grade: "nothing is
+  # heartbeating this" is a claim about WATCHING, which an outage can manufacture by accruing time
+  # nobody spent reading. This case cannot reach LAPSED, so it isolates `watched`: wall time
+  # exceeds the renewal cycle, OBSERVED time does not. Reverting `watched` to `now -
+  # first_read_at` passes every other test in this file.
+  # History: task outage-lies-after-first-poll.
   def test_a_dark_window_cannot_manufacture_not_renewing_from_time_it_did_not_watch
     # Lease with 300s left, so no deadline is reached. One good poll, then dark for
     # a window LONGER than the 30s renewal cycle.
@@ -293,21 +269,14 @@ class ReviewClaimStatusObservationTest < Minitest::Test
                     "one good poll then darkness is ignorance, whatever the wall clock says"
   end
 
-  # ── THE THIRD ROUTE: A 200-OK BOARD WE CANNOT READ ──────────────────────────
-  #
-  # `parse_time` returns nil for an EMPTY string and for an UNPARSEABLE one, and
-  # `observe` reads that nil as "nothing held it" — so a holder whose expiry cannot
-  # be read grades FREE, which is inside OBSERVED_FREE and hands over the acquire.
-  # The payload says `live: true` at the same time.
-  #
-  # Same shape as the two routes already closed: the command concludes from
-  # evidence it does not have. A failed poll is not evidence (fixed); a field it
-  # cannot parse is not evidence either. Ignorance is INCONCLUSIVE, never FREE.
-  # claim_holder.rb:141 already states the rule — "an unknown must never inherit
-  # the steal route" — it was simply not enforced for this input class.
-  #
-  # Asserted on the JSON `free` flag rather than prose: prose can match both the
-  # honest and the dishonest wording, and `free` is what a caller branches on.
+  # --- THE THIRD ROUTE: A 200-OK BOARD WE CANNOT READ ---
+  # `parse_time` returns nil for an EMPTY or UNPARSEABLE string, and `observe` must not read that
+  # nil as "nothing held it" (FREE, inside OBSERVED_FREE) while the payload says `live: true`.
+  # Ignorance is INCONCLUSIVE, never FREE; claim_holder.rb:141: "an unknown must never inherit the
+  # steal route".
+  # Asserted on the JSON `free` flag: prose can match both wordings, and `free` is what a caller
+  # branches on.
+  # History: task malformed-holder-grades-free.
   MALFORMED_HOLDERS = {
     "expires_at missing"     => { "session" => REVIEWER_SESSION, "live" => true },
     "expires_at empty"       => { "session" => REVIEWER_SESSION, "expires_at" => "", "live" => true },
@@ -348,15 +317,11 @@ class ReviewClaimStatusObservationTest < Minitest::Test
                  "ignorance, never an invitation to steal"
   end
 
-  # THE SECOND READ CAN DEGRADE TOO. The first read is clean — a live lease with
-  # ample time — and the board then answers 200 OK with a holder whose expiry
-  # cannot be parsed. `observe` reads that nil as "released outright between the
-  # two reads" and grades FREE, which is the steal route again, one read later.
-  #
-  # This path is NOT reachable through the four first-read shapes above: those all
-  # settle before the second read is ever graded. It needed its own case, and
-  # without it the second guard is inert — measured, by removing the guard and
-  # watching all 26 tests stay green.
+  # THE SECOND READ CAN DEGRADE TOO. First read clean, then 200 OK with an unparseable expiry:
+  # `observe` must not read nil as "released outright between the two reads" (FREE). This is NOT
+  # reachable through the four first-read shapes above, which settle first; without this case the
+  # second guard is inert.
+  # History: task malformed-holder-grades-free.
   def test_a_second_read_we_cannot_parse_is_ignorance_not_a_release
     good = { "task_slug" => SLUG, "session" => REVIEWER_SESSION, "label" => "Gastly",
              "acquired_at" => START.utc.iso8601, "expires_at" => (START + 300).utc.iso8601,

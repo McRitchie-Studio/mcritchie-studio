@@ -1,61 +1,13 @@
 # frozen_string_literal: true
 
-# THE DURABLE GATE RECORD when there is NO PR AT ALL. Standalone (no Rails — it shells
-# bin/dor-check with --file fixtures):
-#   ruby -Itest test/lib/gate_record_no_pr_ci_test.rb
-#
-# THE DEFECT (/tasks/no-pr-records-as-fail). A blank devops.pr_url resolves to :no_pr,
-# which rode CiGate.gate_row's `else` — the last NAMED state to do so after
-# /tasks/gate-logs-auth-as-red and /tasks/refused-review-records-fail took the
-# no-verdict family off it. The `else` answers differently depending on who asked, so
-# ONE world was written TWO wrong ways:
-#
-#   review role  → {"sop":"ci","result":"fail"}        a red-CI bounce for a PR that
-#                                                      does not exist
-#   builder role → {"sop":"ci","result":"unverified"}  collides with the state where
-#                                                      `gh` genuinely fell over
-#
-# MEASURED THROUGH THE LIVE CHAIN BEFORE THE FIX (2026-09-09), with a genuinely blank
-# pr_url and no injection — both rows above, verbatim.
-#
-# THE BUILDER HALF IS THE SHARPER ONE, and it is why this is not an edge case:
-# `bin/dor-check` runs BEFORE the PR exists, so :no_pr is the ORDINARY submit-side
-# state. Submit-side the gate is silent on stdout by design (it re-runs after the
-# push) — but it still wrote a durable row, and "unverified" is not a neutral word:
-# /tasks/refused-review-records-fail gave it a documented REMEDY, "`gh` fell over —
-# re-read, do NOT chase a credential" (docs/agents/modules/gates/g2-review.md). For a
-# task whose PR is simply not open yet the fix is to PUSH ONE. So the record did not
-# merely mislabel the state, it prescribed the wrong move, silently, on the common path.
-#
-# THE DESIGN QUESTION, ANSWERED HERE BECAUSE THE TESTS ENCODE THE ANSWER. The sharper
-# framing raised with this task was not "which value" but whether an absent PR belongs
-# under the `ci` sop at all — :none and :unverified are answers ABOUT CI, while :no_pr is
-# the absence of the thing CI would answer about. That distinction is REAL and it is
-# honoured, but it lands on a different set than it first appears to:
-#
-#   * :no_pr records a no-verdict ROW      (GATE_ROW_NO_VERDICT — paint it ⚠)
-#   * :no_pr is NOT in CI_NO_VERDICT_STATES (the family a FULL local cert may stand in
-#     for — a cert cannot conjure a PR)
-#
-# Both are pinned below, because the whole risk of this change is collapsing them back
-# together: admitting :no_pr to the cert-waiver family would let a task with NO PR
-# advance a review, the worst false green this gate can produce.
-#
-# WHY NOT OMIT THE ROW — the alternative that was seriously considered. Three reasons,
-# each measured: (1) both callers append on `if ci`, not on gate_row's return
-# (bin/dor-check#ci_gate_result and bin/dor-check#exempt_ci_result), so a nil persists `"result":null`, and `nil.to_s` is
-# "" — which falls to the gates card's ✓ DEFAULT, i.e. the omission route's failure mode
-# IS the inversion trap; (2) an absent ci row already MEANS something else — `--gate
-# build` writes none (bin/dor-check's CI-status gate runs on the merge gate only); (3) omitting
-# would make the fleet's most common gate run indistinguishable from a build gate and from
-# a run that aborted early.
-#
-# WHY THESE TESTS READ THE RECORD AND NOT STDOUT. The review path's stdout printed the
-# correct refusal in full ("devops.pr_url is BLANK…") while the row it persisted said
-# `fail`, so an assertion on the printed refusal passes on the broken build. Every
-# integration test here recovers the argv the gate CLI was actually handed and asserts
-# on the `{"sop":"ci"}` entry parsed out of it — and refuses to conclude anything when
-# no such entry was recorded at all (see ci_sop_entry).
+# THE DURABLE GATE RECORD when there is NO PR AT ALL. A blank devops.pr_url resolves to :no_pr,
+# the ORDINARY submit-side state since `bin/dor-check` runs BEFORE the PR exists; `fail` and
+# `unverified` both mislabel it, and the fix is to PUSH ONE.
+#   * :no_pr records a no-verdict ROW (GATE_ROW_NO_VERDICT, paint it ⚠)
+#   * :no_pr is NOT in CI_NO_VERDICT_STATES: admitting it lets a NO-PR task advance a review
+# Do not omit the row: callers append on `if ci`, so nil persists `"result":null`, falling to
+# the gates card's ✓ DEFAULT. Read the `{"sop":"ci"}` record, never stdout; see ci_sop_entry.
+# History: task no-pr-records-as-fail.
 require "minitest/autorun"
 require "json"
 require "tmpdir"

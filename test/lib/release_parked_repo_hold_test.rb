@@ -1,32 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] bin/release's PARKED-REPO HOLD (sweep-ignores-parked-repos).
-#
-#   ruby -Itest test/lib/release_parked_repo_hold_test.rb
-#
-# THE DEFECT. `bin/release prepare` took every `reviewed` task the board offered and
-# promoted every repo those tasks named. Nothing between the detection read and the
-# QA deploy asked the registry whether a repo was one the conductor sweeps, so a
-# reviewed task on rolio (`dormant`), tax-studio (`planned`) or chain-ops (`blocked`)
-# would have been promoted onto `release` and deployed. The only ladder read on the
-# way, verify_release_carries_accepted!, intersected the plan with the three-rung set
-# — which quietly dropped a parked repo from its check instead of refusing it.
-#
-# THE DECISION IS HOLD, NOT ABORT, on the self-healing sweep: the task is named on a
-# `⚠ HELD` line, left in its stage, never promoted, recorded or deployed, and the rest
-# of the sweep carries on — the same shape as the unstamped-merge hold. On the
-# EXPLICIT `bin/release merge <slug>` the operator named the task, so there it is a
-# refusal, like that command's own unstamped-merge abort.
-#
-# These drive the REAL prepare/merge in a subprocess with the board seam (`conductor`)
-# stubbed and a DRY run, so nothing reaches git, GitHub, Heroku or the board. The
-# registry gains an invented `parked-app` rather than borrowing rolio, so the tests
-# pin the rule and survive the day rolio is re-laddered.
-#
-# A FILE OF ITS OWN, not an addition to a release CLI file: those are frozen at their
-# ceilings by the suite's frozen-hotspot ratchet, and this is the out it names. (The
-# ratchet's config is deliberately not named by path here: nothing below reads it, and
-# a path citation would map this file to every edit of that config in bin/fast-check.)
+# [integration] bin/release's PARKED-REPO HOLD: a reviewed task on a repo the conductor does not
+# sweep must never be promoted, recorded or deployed. HOLD, NOT ABORT, on the self-healing
+# sweep: a `⚠ HELD` line, task left in its stage, sweep carries on. On explicit `bin/release
+# merge <slug>` it is a refusal. REAL prepare/merge, `conductor` stubbed, DRY run. An invented
+# `parked-app` in the registry pins the rule and survives rolio being re-laddered. A FILE OF ITS
+# OWN: release CLI files are frozen. The ratchet's config is deliberately not named by path: a
+# citation would map this file to every edit of that config in bin/fast-check.
+# History: task sweep-ignores-parked-repos.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

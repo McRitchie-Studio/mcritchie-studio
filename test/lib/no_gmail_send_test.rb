@@ -1,17 +1,11 @@
 require "test_helper"
 
-# [unit] THE SEND BAN. Nothing in this codebase may put mail in flight.
-#
-# The `gmail.compose` scope this credential holds DOES permit sending — there is
-# no draft-only Gmail scope — so "never sends" is a property of the source, not
-# of the grant. This file is what makes that property checkable.
-#
-# WHY IT SCANS FOR WHAT IT SCANS FOR. The obvious test greps for the REST path
-# "users.messages.send". That string appears nowhere in a Ruby codebase using
-# google-apis-gmail_v1, so the obvious test passes forever while
-# `send_user_message` sits in a service — a guard that cannot fail. The scan
-# therefore targets the gem's real method names, and the last test in this file
-# proves the detector fires on a sample that contains one.
+# [unit] THE SEND BAN. Nothing in this codebase may put mail in flight. The `gmail.compose`
+# scope DOES permit sending (there is no draft-only Gmail scope), so "never sends" is a property
+# of the source, not the grant. The scan targets the gem's real method names:
+# "users.messages.send" appears nowhere under google-apis-gmail_v1, so grepping it cannot fail.
+# The last test in this file proves the detector fires on a sample containing one.
+# History: task hub-google-workspace-client.
 class NoGmailSendTest < ActiveSupport::TestCase
   ROOT = Rails.root
 
@@ -21,16 +15,12 @@ class NoGmailSendTest < ActiveSupport::TestCase
   SCANNED_TEST_DIRS = %w[test].freeze
   SELF = "test/lib/no_gmail_send_test.rb".freeze
 
-  # Each pattern with what it catches, so a future reader can tell whether a new
-  # API surface is covered.
-  #
-  # THESE BAN AN INVOCATION, NOT A WORD, and that distinction is load-bearing.
-  # A bare /\bsend_user_message\b/ flags the very files that exist to forbid it —
-  # GmailClient::FORBIDDEN_GEM_CALLS and its test — and the only way to quiet
-  # that is to exclude the Gmail client from the scan, which is exactly the file
-  # where a send would most plausibly be added. So the patterns match a call on a
-  # receiver, a bare call with parens, or a symbol or QUOTED name handed to
+  # Each pattern with what it catches. THESE BAN AN INVOCATION, NOT A WORD: a bare
+  # /\bsend_user_message\b/ flags GmailClient::FORBIDDEN_GEM_CALLS and its test, and excluding
+  # the Gmail client from the scan drops the file where a send is likeliest. So the patterns
+  # match a call on a receiver, a bare call with parens, or a symbol or QUOTED name handed to
   # dispatch; a %w[] declaration or a bare quoted name matches none of them.
+  # History: task hub-google-workspace-client.
   SEND_CALLS = "send_user_(?:message|draft)".freeze
 
   FORBIDDEN = {

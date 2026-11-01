@@ -2,19 +2,13 @@ require "minitest/autorun"
 require "open3"
 require "tmpdir"
 
-# The ship's CARDLESS re-lock, driven for real: the step that moves every live
-# engine app the release did NOT carry to the published final, on its `accepted`.
-#
-# THE DEFECT THIS FILE EXISTS FOR. bump_consumer_locks_for_qa and repin_consumers
-# walk app_groups, the apps with a member card in the release. An engine app with
-# no card was in neither loop, so each engine publish left it one release further
-# behind: on 2026-10-24 moms-app locked studio-engine 0.101.0 and rantly 0.87.0
-# while the hub locked 0.112.0.
-#
-# A file of its own, as the test-health ratchet asks of new release-CLI work. Same
-# pattern as test/lib/release_producer_lock_bump_test.rb: the REAL function runs
-# against the real release registry and app catalog, with
+# The ship's CARDLESS re-lock, driven for real: it moves every live engine app the release did
+# NOT carry to the published final, on its `accepted`. bump_consumer_locks_for_qa and
+# repin_consumers walk app_groups only, so a cardless engine app would fall one release behind
+# per publish. A file of its own under the test-health ratchet; pattern from
+# test/lib/release_producer_lock_bump_test.rb: the REAL function, real registry and catalog,
 # `sh`/`git_capture` and the workspace stubbed.
+# History: task engine-node-22-and-consumer-catch-up.
 class ReleaseCardlessConsumerRelockTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 

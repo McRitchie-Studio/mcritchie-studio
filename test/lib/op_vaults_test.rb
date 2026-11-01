@@ -1,20 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] OpVaults — the ONE place that maps a credential lane to its 1Password
-# vault and service-account token.
-#
-# THE DEFECT THIS EXISTS TO PREVENT (2026-08-28). The vault name "agents" was
-# hardcoded in eleven places across six files. When the operator switched to a
-# 1Password SERVICE_ACCOUNT — which sees only the vaults granted to it — every
-# lane lost GitHub auth at once, and the two obvious fixes would have left nine
-# call sites broken, including bin/task.
-#
-# THE SHARPER DEFECT, and why `test_a_build_lane_cannot_reach_admin_credentials`
-# is the most important test in this file: `studio-agents` holds the AGENT app
-# item but not the DEPLOYER one. Repointing everything at the reachable vault
-# turns the build lane green immediately and breaks PRODUCTION DEPLOYS hours
-# later. The lanes must resolve to DIFFERENT vaults, and the admin lane must be
+# [unit] OpVaults: the ONE place that maps a credential lane to its 1Password vault and
+# service-account token. `test_a_build_lane_cannot_reach_admin_credentials` is the most
+# important test here: `studio-agents` holds the AGENT app item but not the DEPLOYER one, so
+# repointing everything at the reachable vault greens the build lane and breaks PRODUCTION
+# DEPLOYS later. The lanes must resolve to DIFFERENT vaults, and the admin lane must be
 # unreadable without its own token.
+# History: task two-vault-token-resolver.
 
 require "bundler/setup"
 require "minitest/autorun"
@@ -98,22 +90,12 @@ class OpVaultsTest < Minitest::Test
   end
 
   # ── THE REFUSAL MUST NAME A COMMAND THAT WORKS ──────────────────────────────
-  #
-  # MEASURED 2026-08-30. The old message had ONE branch for a missing admin token:
-  # "Run this from the admin lane, or install the token with
-  # bin/setup-1pass-token --admin." Both halves failed the reader. The first names
-  # NO command — the answer is `source ~/.zprofile.admin`, and this file was the
-  # only place in the repo that mentioned that path at all. The second is an
-  # INSTALL, which prompts for a credential the operator must fetch by hand.
-  #
-  # WHAT IT COST: an agent read that refusal, concluded the deployer lane was not
-  # self-service, and asked Mr. McRitchie to hand-mint deployer tokens from a
-  # downloaded .pem — repeatedly, blocking a production deploy on him. The token
-  # had been at ~/.zprofile.admin since 2026-08-28; sourcing it worked first try.
-  #
-  # THE ASSERTION THAT MATTERS IS THE DIFFERENCE. A single-branch message passes
-  # any test that merely checks "it mentions the admin token" — which is precisely
-  # how the old one survived. So these compare the two states against each other.
+  # A missing admin token's answer is `source ~/.zprofile.admin`. "the admin lane" names no
+  # command, and `bin/setup-1pass-token --admin` is an INSTALL that prompts for a credential the
+  # operator must fetch by hand. THE ASSERTION THAT MATTERS IS THE DIFFERENCE: a single-branch
+  # message passes any test checking "it mentions the admin token", so these compare the two
+  # states against each other.
+  # History: task deployer-refusal-names-fix.
 
   def test_a_provisioned_machine_is_told_to_source_the_file
     message = with_provisioned(true) { OpVaults.diagnose(:deployer) }
@@ -167,16 +149,10 @@ class OpVaultsTest < Minitest::Test
   end
 
   # ── THE SAME DEFECT, ONE RUNG DOWN ──────────────────────────────────────────
-  #
-  # `diagnose` used to bail to the vault-visibility hint for the DEFAULT lane, so
-  # an agent shell with no OP_SERVICE_ACCOUNT_TOKEN was told to "check
-  # `op vault list`" — a command that authenticates with the very token it is
-  # missing, and therefore cannot work. That is the bug class this file's other
-  # tests exist for, sitting unnoticed in the same method.
-  #
-  # It also made the agent lane's `profile:` key DEAD DATA: a reviewer mutated it
-  # to garbage on 2026-08-30 and killed zero tests across all three suites. These
-  # tests are what make that key load-bearing.
+  # An agent shell with no OP_SERVICE_ACCOUNT_TOKEN must not be told to "check `op vault list`":
+  # that authenticates with the very token it is missing. These tests also make the agent lane's
+  # `profile:` key load-bearing rather than DEAD DATA.
+  # History: task finish-the-admin-remedy-sweep.
 
   def test_a_provisioned_agent_shell_is_told_to_source_its_profile
     ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")

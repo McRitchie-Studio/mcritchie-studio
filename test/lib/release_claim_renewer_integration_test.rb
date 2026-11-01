@@ -1,46 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] the END-TO-END proof for the RELEASE CONDUCTOR renewer: a REAL detached
-# `release_claim_cli.rb renew-loop` process, a REAL stub board, and NO status line
-# anywhere in the picture.
-#
-# The unit tests either side of this one mock the pieces — the loop is driven with
-# injected lambdas (test/lib/shift_renewer_test.rb) and the spawn is recorded rather
-# than performed (test/lib/release_claim_cli_test.rb). Everything they mock is exactly
-# where these bugs hide: the spawn, the detach, the env handed to the child, whether
-# that child's renew POSTs carry the holder's identity AND role, and whether it ever
-# actually stops. From inside the mocks, a renewer that runs forever and one that exits
-# are indistinguishable after ONE iteration.
-#
-# THE THREE HALVES OF THE GUARANTEE this file asserts against a live process:
+# [integration] END-TO-END proof for the RELEASE CONDUCTOR renewer: a REAL detached
+# `release_claim_cli.rb renew-loop`, a REAL stub board, no status line. The unit tests
+# (test/lib/shift_renewer_test.rb, test/lib/release_claim_cli_test.rb) mock where bugs hide.
 #   1. a headless holder's renewals KEEP ARRIVING, unprompted, with no UI
-#   2. when the ANCHOR process dies, they STOP — a crash frees the release
-#   3. when the RELEASE itself finishes, they STOP — with the anchor still alive
-#
-# (3) IS THE LATER FIX (/tasks/release-renewer-outlives-ship). `renew_loop` originally
-# passed ShiftRenewer only `alive:`, so it terminated on its anchor dying and on NOTHING
-# else. That quietly assumed a session outlives its releases; it does not. A conductor
-# session runs many acts, so once a release shipped the loop kept renewing a claim over
-# finished work for as long as the anchor lived — bounded only by
-# ShiftRenewer::MAX_LIFETIME_SECONDS, twelve hours. It is the same shape as the
-# review-lane defect fixed in /tasks/renew-loop-outlives-task, found at the same time
-# and deliberately left to its own task because a production ship was running through
-# this exact machinery while that PR was open.
-#
-# WHY THIS LANE COSTS MORE THAN THE REVIEW LANE. An orphaned review renewer wastes board
-# polls. An orphaned ASSEMBLER or DEPLOYER claim additionally makes the next
-# `bin/release prepare` print "🛑 assembler already held — STAND DOWN" and ABORT before
-# merging or deploying anything, and it pins the fixed-path `_ship`/`_gate` workspaces
-# against reclaim. A session that finished its work hours ago can wedge the ENTIRE
-# qa-release lane — the exact stranding the per-release claim was designed to end,
-# arriving through a different door.
-#
-# WHAT MAKES THE (3) TESTS BITE. They hold the ANCHOR ALIVE from start to finish and
-# assert it is still alive at the moment the renewer exits. A test that kills the anchor
-# passes against the pre-fix code and proves nothing whatsoever — it would just be
-# re-testing (2).
-#
-#   ruby -Itest test/lib/release_claim_renewer_integration_test.rb
+#   2. when the ANCHOR process dies, they STOP: a crash frees the release
+#   3. when the RELEASE finishes, they STOP, with the anchor still alive. Those tests must hold
+#      the ANCHOR ALIVE and assert it at renewer exit; killing it just re-tests (2).
+# History: task release-renewer-outlives-ship.
 
 require "minitest/autorun"
 require "json"
@@ -56,15 +23,11 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
   ROLE    = "deployer"
   CLI     = File.expand_path("../../bin/lib/release_claim_cli.rb", __dir__)
 
-  # A minimal board: mints a token, serves the release at a state the test controls, and
-  # records every renew it is asked for. Raw TCP so the test pulls in no server
-  # dependency.
-  #
-  # IT NOW ROUTES BY PATH. It used to treat every non-auth request as a renew, which was
-  # correct while the loop only ever POSTed heartbeats. The loop also GETs the claim
-  # status now (that is where it reads `release_state`), so a stub that counted both
-  # would record an empty-bodied GET as a renewal and the identity assertions below
-  # would read nil — a stub silently agreeing with whatever it was asked.
+  # A minimal board: mints a token, serves the release at a state the test controls, and records
+  # every renew. Raw TCP so the test pulls in no server dependency. IT ROUTES BY PATH: the loop
+  # also GETs the claim status (where it reads `release_state`), so a stub counting both would
+  # record an empty GET as a renewal and the identity assertions below would read nil.
+  # History: task release-renewer-outlives-ship.
   class StubBoard
     attr_reader :renews
 
@@ -283,21 +246,13 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
   end
 
   # ── THE MALFORMED PAYLOAD: THE RENEWER MUST SURVIVE IT ────────────────────────
-  #
-  # The live-process counterpart of the unit test in release_claim_cli_test.rb, and the
-  # half that test CANNOT reach. The unit test proves `release_finished?` RETURNS false;
-  # this one proves the PROCESS is still standing afterwards — which is the property
-  # that actually matters, because the failure mode is not a wrong answer, it is an
-  # exception nobody catches. `ShiftRenewer.run` does not rescue `finished.call`, so
-  # without `return false unless data.is_a?(Hash)` a single malformed 200 raises
-  # TypeError out of the loop, the detached renewer DIES, and the claim lapses at the
-  # 120s TTL — on the deployer lane, where a lapsed claim lets a SECOND production
-  # deploy start. Fail-CLOSED, the exact inversion of the method's documented intent.
-  #
-  # WHAT MAKES IT BITE: the completion read happens BEFORE the first heartbeat (that is
-  # what lets the already-shipped test above post zero renews), so against the unguarded
-  # code this board records ZERO renewals and the renewer is gone. Asserting a RISING
-  # renew count plus a live process is therefore a real kill signal, not a formality.
+  # The live-process counterpart of the unit test in release_claim_cli_test.rb: that proves
+  # `release_finished?` RETURNS false, this proves the PROCESS still stands. `ShiftRenewer.run`
+  # does not rescue `finished.call`, so without `return false unless data.is_a?(Hash)` a malformed
+  # 200 kills the renewer and the claim lapses at the 120s TTL, on the deployer lane letting a
+  # SECOND production deploy start. The completion read precedes the first heartbeat, so a RISING
+  # renew count plus a live process is the real kill signal.
+  # History: task cover-renewer-payload-guard.
   def test_integration_a_malformed_status_payload_does_not_kill_the_renewer
     Dir.mktmpdir do |proj|
       # `assembling` is a LIVE candidate: the release must never be the thing that ends
@@ -374,18 +329,13 @@ class ReleaseClaimRenewerIntegrationTest < Minitest::Test
   end
 
   # ── THE DEPLOYER PATH: SHIPPED IS NOT FINISHED ──────────────────────────────
-  #
-  # FOUND IN REVIEW of this PR, and it is the case the first version got wrong.
-  # A deployer legitimately holds a claim on a release that is ALREADY `shipped`,
-  # on two supported paths: a `bin/release ship` RE-RUN resuming member flips
-  # (`resuming_member_ship = !r.active? && unfinished.positive?`, bin/release.rb),
-  # and `bin/release finalize` on a partial finalize. Stopping on state ALONE
-  # exited before the first heartbeat there, so the claim lapsed 120s into a run
-  # needing many minutes — a 2-minute orphan in place of a 12-hour one, on the lane
-  # where a lapsed claim means a CONCURRENT PRODUCTION DEPLOY.
-  #
-  # The test directly above (shipped, nothing left, zero polls) passes EITHER way.
-  # That is why the first version looked correct, and why this one had to exist.
+  # A deployer legitimately holds a claim on a `shipped` release on two paths: a `bin/release
+  # ship` RE-RUN resuming member flips (`resuming_member_ship = !r.active? &&
+  # unfinished.positive?`, bin/release.rb) and `bin/release finalize` on a partial finalize.
+  # Stopping on state ALONE lapses the claim, where that means a CONCURRENT PRODUCTION DEPLOY. The
+  # test directly above (shipped, nothing left, zero polls) passes EITHER way, which is why this
+  # one has to exist.
+  # History: task release-renewer-outlives-ship.
   def test_integration_a_shipped_release_with_member_work_left_keeps_renewing
     Dir.mktmpdir do |proj|
       @board = StubBoard.new(state: "shipped", work_remaining: true)

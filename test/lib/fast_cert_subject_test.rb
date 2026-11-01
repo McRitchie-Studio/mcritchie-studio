@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] + [integration] tests for the SUBJECT REFERENCE in bin/lib/fast_cert.rb —
-# the precision half of the fast cert's selection. Its sibling
-# fast_cert_family_test.rb pins the family hop for a tool that HAS a twin; this
-# file pins what happens when it does not, and what the grep is allowed to claim.
-#
-# THE DEFECT THIS PINS, measured over all 1928 hub sources 2026-09-07:
-#
-#   bin/task                     -> "task"   -> 325 of the repo's 622 test files
-#   bin/release                  -> "release"-> 257
-#   config/environments/test.rb  -> "Test"   -> 208
-#   app/services/news/review.rb  -> "Review" -> 39, NOT ONE of them about it
-#
-# 27 sources ALONE exceeded the 15-path mapped cap and every one was a grep like
-# these. The old token was a file's BASENAME AS AN ENGLISH WORD; the fix is the
-# subject's IDENTITY — a path for a file, the full constant for a class — plus the
-# harness family for a tool whose same-named twin was never written.
-#
-# BOTH DIRECTIONS ARE PINNED, because a precision fix is only as good as its
-# restraint: the wide sources must NARROW (below), and a source that already
-# mapped correctly must be UNTOUCHED (see the restraint section).
-#
-# Run directly:
-#   ruby -Itest test/lib/fast_cert_subject_test.rb
+# [unit] + [integration] tests for the SUBJECT REFERENCE in bin/lib/fast_cert.rb, the precision
+# half of the fast cert's selection. Sibling fast_cert_family_test.rb pins the family hop for a
+# tool that HAS a twin; this file pins what happens when it does not. A basename as an English
+# word over-matches (config/environments/test.rb -> "Test"); the token is the subject's
+# IDENTITY: a path for a file, the full constant for a class, plus the harness family for a tool
+# with no same-named twin. BOTH DIRECTIONS ARE PINNED: wide sources must NARROW, and a source
+# that already mapped correctly must be UNTOUCHED (see the restraint section).
+# History: task grep-maps-three-hundred-tests.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -182,16 +167,12 @@ class FastCertSubjectTest < Minitest::Test
     assert_equal ["TreeFingerprint"], FastCert.grep_tokens(REPO_ROOT, "bin/lib/tree_fingerprint.rb")
   end
 
-  # A config file is named by its PATH — and by the QUOTED BASENAME the path is
-  # SPLIT into, which is the half that was missing. The old token was the bare
-  # basename as a word, so config/environments/test.rb hunted for "Test" and matched
-  # 208 files; a path alone, though, cannot see
-  # `File.join(ROOT, "config", "rails_lane.yml")`.
-  #
-  # THE EXTENSION IS WHAT MAKES THE SECOND SPELLING SAFE. "rails_lane.yml" is a
-  # filename, never an English word, so this cannot re-admit the prose the bare token
-  # matched — unlike the bin side, whose quoted form has no extension and still lets
-  # `"rake"` match `require "rake"`.
+  # A config file is named by its PATH and by the QUOTED BASENAME the path is SPLIT into. The bare
+  # basename as a word made config/environments/test.rb hunt for "Test"; a path alone cannot see
+  # `File.join(ROOT, "config", "rails_lane.yml")`. THE EXTENSION IS WHAT MAKES THE SECOND SPELLING
+  # SAFE: "rails_lane.yml" is never an English word, unlike the bin side, whose quoted form has no
+  # extension and still lets `"rake"` match `require "rake"`.
+  # History: task config-sources-lose-their-tests.
   def test_a_config_file_is_named_by_its_path_or_its_quoted_basename
     assert_equal ["config/queue.yml", %("queue.yml")],
                  FastCert.grep_tokens(REPO_ROOT, "config/queue.yml")
@@ -210,16 +191,12 @@ class FastCertSubjectTest < Minitest::Test
     end
   end
 
-  # THE QUALIFICATION, and it is the whole reason this widening is safe. An
-  # initializer configures a class rather than defining one, so its camelized
-  # basename is only a NAME when this repo actually owns that constant. Unqualified —
-  # the pre-#1254 rule — this same clause hands config/environments/test.rb the token
-  # "Test" (208 files) and config/initializers/studio.rb "Studio" (127): the two
-  # widest cap trips the repo has ever had.
-  #
-  # BOTH SIDES ARE PINNED IN ONE PLACE on purpose. A test that only proved the gain
-  # would go green on a mutation that dropped the owner check, which is the exact
-  # over-widening this file has shipped twice.
+  # THE QUALIFICATION: an initializer configures a class rather than defining one, so its
+  # camelized basename is only a NAME when this repo owns that constant. Unqualified, this clause
+  # hands config/environments/test.rb the token "Test" and config/initializers/studio.rb "Studio".
+  # BOTH SIDES ARE PINNED IN ONE PLACE on purpose: a test proving only the gain goes green on a
+  # mutation that drops the owner check.
+  # History: task config-sources-lose-their-tests.
   def test_an_initializer_is_named_by_the_constant_it_wires_only_when_that_class_lives_here
     # The fixture deliberately uses names this REPO does not have. Writing the real
     # `EdgeGuard` here would make this file match config/initializers/edge_guard.rb in
@@ -266,15 +243,12 @@ class FastCertSubjectTest < Minitest::Test
     end
   end
 
-  # A SAME-NAMED SOURCE IS NOT AUTOMATICALLY THE OWNER, and this is the half of the
-  # qualification a mere existence check would get wrong. app/services/broadcasts/
-  # assets.rb and app/services/content/assets.rb both share a basename with
-  # config/initializers/assets.rb — but they define `Broadcasts::Assets` and
-  # `Content::Assets`, and neither of those is `Assets`. Qualifying on the basename
-  # instead of on the constant the source is actually NAMED BY would hand the Rails
-  # asset initializer the token `Assets` and three tests about content.
-  #
-  # THIS IS WHY THE CHECK ASKS #grep_tokens rather than asking whether a file exists.
+  # A SAME-NAMED SOURCE IS NOT AUTOMATICALLY THE OWNER. app/services/broadcasts/assets.rb and
+  # app/services/content/assets.rb share a basename with config/initializers/assets.rb but define
+  # `Broadcasts::Assets` and `Content::Assets`, not `Assets`. Qualifying on the basename would
+  # hand the asset initializer the token `Assets`. THIS IS WHY THE CHECK ASKS #grep_tokens rather
+  # than asking whether a file exists.
+  # History: task config-sources-lose-their-tests.
   def test_a_same_named_source_owns_the_constant_only_if_it_is_named_by_it
     twin = "app/services/content/assets.rb"
 
@@ -399,15 +373,12 @@ class FastCertSubjectTest < Minitest::Test
                     "(was 208 on the token \"Test\")"
   end
 
-  # The registry that enumerates every bin script must stay reachable from a script
-  # that has no harness test of its own — it is the only mapped evidence those
-  # scripts have, and the quoted-name spelling is what carries it.
-  #
-  # ASSERTED, NOT SKIPPED, if the registry is missing. The reflex here is a guard
-  # skip — and it would be wrong twice: this file lives in the hub and runs against
-  # the hub, so the condition cannot fire; and a skip is coverage switched off while
-  # keeping the test's name, which is what config/test_health.yml ratchets against.
-  # If the registry is ever deleted, the right outcome is a red test saying so.
+  # The registry enumerating every bin script must stay reachable from a script with no harness
+  # test of its own: it is their only mapped evidence, carried by the quoted-name spelling.
+  # ASSERTED, NOT SKIPPED, if the registry is missing: this file runs against the hub so the
+  # condition cannot fire, and a skip is what config/test_health.yml ratchets against. Deleted
+  # means red.
+  # History: task grep-maps-three-hundred-tests.
   def test_the_bin_registry_stays_reachable_from_a_family_less_script
     registry = "test/lib/bin_help_flag_class_test.rb"
 
@@ -470,83 +441,32 @@ class FastCertSubjectTest < Minitest::Test
     assert_includes FastCert.select_tests(REPO_ROOT, ["config/qa_environments.yml"]), guard
   end
 
-  # THE BLAST RADIUS, held down where the widening lives. Widening selection in this
-  # file has gone wrong twice — PR #1239 over-matched, and the bare-token grep #1254
-  # retired was widening's endpoint — and both times the symptom was a source alone
-  # mapping over the cap. So every config source in the repo is swept, not sampled.
-  #
-  # THE SWEEP COUNTS WHAT IT READ. A source-scanning test is exit-blind: if the glob
-  # or the filter ever returns nothing, an assertion inside the loop never runs and
-  # the test passes having proved nothing. The floor below is what makes a green run
-  # mean something.
+  # THE BLAST RADIUS: every config source in the repo is swept, not sampled, because over-widening
+  # shows up as a source alone mapping over the cap. THE SWEEP COUNTS WHAT IT READ: if the glob or
+  # filter returns nothing, an assertion inside the loop never runs and the test passes having
+  # proved nothing. The floor below is what makes a green run mean something.
+  # History: task config-sources-lose-their-tests.
   def test_no_config_source_in_this_repo_maps_over_the_cap
     over = config_sources.filter_map do |path|
       n = FastCert.select_tests(REPO_ROOT, [path]).size
       [path, n] if n > FastCert::DEFAULT_MAPPED_CAP
     end
 
-    # THE COUNT TRACKS THE TREE, so it moves whenever a test file is added whose
-    # path this config's spelling matches — it is not a property of the mapping
-    # rule. 20 → 21 on 2026-09-07 (wire-task-dependencies-field) when
-    # test/models/task_dependencies_test.rb was added; 21 → 22 the same day
-    # (prepare-drops-qa-dispatch) when test/lib/release_cli_dispatch_run_test.rb
-    # was added — a NEW test file whose header cites this config to explain why it
-    # is a new file rather than an append, which is exactly the reference the
-    # mapper is supposed to follow. 22 → 23 on 2026-09-07
-    # (approval-drop-warning-overfires) for the same reason again:
-    # test/lib/task_move_approval_drop_test.rb was split out of the frozen hotspot
-    # test/lib/task_cli_test.rb, and its header cites this config to say why.
-    # 23 → 25 on 2026-09-09, the same shape TWO more times in one night, from two
-    # branches that landed together: test/models/task_approval_window_test.rb
-    # (ship-discards-approval-request) was split out of the frozen hotspot
-    # test/models/task_test.rb when the rewritten operator-approval suite ran that
-    # file 59 lines past its ceiling, and test/lib/release_producer_lock_bump_test.rb
-    # (prepare-skips-engine-own-lock) is a new file rather than an append to the
-    # frozen release CLI hotspot, then at its ceiling. Each header
-    # cites this config to say why it is a new file rather than an append, which is
-    # exactly the reference the mapper is supposed to follow. That the same cause now
-    # accounts for four of the five increments is the pattern working, not drifting —
-    # the freeze exists to push new tests into new files, and each one that explains
-    # itself lands here.
-    # 25 → 26 on 2026-09-15 (comma-repo-list-aborts-sweep), the SIXTH increment and the
-    # fifth with this same cause: test/lib/task_comma_list_flags_test.rb was split out of
-    # the frozen hotspot test/lib/task_cli_test.rb when six new cases ran it 81 lines past
-    # its ceiling, and its header cites this config to say why it is a new file rather than
-    # an append.
-    # 26 → 27 on 2026-09-16 (server-guard-misses-raw-api), the SEVENTH increment and
-    # the sixth with this same cause: test/models/task_devops_identifier_lists_test.rb
-    # is a new file rather than an append to the frozen hotspot test/models/task_test.rb
-    # (2023, at its ceiling), and its header cites this config to say why.
-    # 27 → 28 on 2026-09-20 (extract-agent-worktree-test-fixture), the EIGHTH increment
-    # and the seventh with this same cause — but the first where the hotspot SHRANK
-    # instead of a new file landing beside it. test/lib/agent_worktree_fixture_test.rb
-    # is a new file whose header cites this config to say why the private harness of the
-    # frozen hotspot test/commands/agent_worktree_test.rb became
-    # test/support/agent_worktree_fixture.rb, and the ceiling came DOWN with the move
-    # (2513 → 1876). The hotspot file itself deliberately does NOT spell this config's
-    # path: its note names its own ceiling in words instead, because a mention there
-    # buys a reader nothing and costs this lane a file.
-    # 28 → 27 on 2026-10-06 (hub-drops-stale-password-digests), the first DECREMENT:
-    # test/lib/bcrypt_test_cost_test.rb, whose header cited this config, was deleted
-    # with the bcrypt gem when the hub User dropped has_secure_password.
-    # 27 → 24 on 2026-10-06 (guards-registries-and-ratchets): the headers of
-    # test/models/task_open_intents_test.rb, test/models/task_devops_identifier_lists_test.rb
-    # and test/lib/task_comma_list_flags_test.rb stopped citing this config when the
-    # guards they explained became constructions.
-    # What the assertion is FOR is the LIST: this one known entry and no other. A
-    # second path appearing is the regression; this number changing is bookkeeping.
+    # THE COUNT TRACKS THE TREE: it moves whenever a test file spelling this config's path is added
+    # or stops citing it, and is not a property of the mapping rule. The freeze pushes new tests
+    # into new files whose headers cite this config to say why, which the mapper is supposed to
+    # follow. A frozen hotspot deliberately does NOT spell the path: naming its ceiling in words
+    # buys the same and costs this lane no file. The assertion is FOR the LIST: this one known entry
+    # and no other. A second path appearing is the regression; this number changing is bookkeeping.
+    # History: task wire-task-dependencies-field.
     expected = ["config/test_health.yml (24)"]
 
-    # THE FAILURE NAMES THE SPELLING, not just the count — the half of this tripwire
-    # that was missing when it fired for real. Measured 2026-09-22: a new test file
-    # that spelled the release registry's path took that config 15 -> 16 and reddened
-    # THIS test, from a diff that touched neither the config nor the mapper. The old
-    # message named the config; it did not name what to change, and the builder's own
-    # file appears nowhere in it. #spelling_diagnosis lists every file that answers to
-    # each token, so the reader finds theirs, and states the remedy measured to work.
-    #
-    # BUILT ONLY FOR THE UNEXPECTED ENTRIES, so a passing run pays nothing: `over`
-    # equals `expected` on green and the map below walks an empty array.
+    # THE FAILURE NAMES THE SPELLING, not just the count: a new test file spelling a config's path
+    # can redden this from a diff touching neither the config nor the mapper. #spelling_diagnosis
+    # lists every file answering to each token, so the reader finds theirs, and states the remedy.
+    # BUILT ONLY FOR THE UNEXPECTED ENTRIES, so a passing run pays nothing: `over` equals `expected`
+    # on green and the map below walks an empty array.
+    # History: task mapped-cap-lacks-margin.
     assert_equal expected, over.map { |path, n| "#{path} (#{n})" },
                  "config/test_health.yml was already over the cap before this clause " \
                  "existed (its PATH matches 24 files); any OTHER entry here means the " \
@@ -555,31 +475,14 @@ class FastCertSubjectTest < Minitest::Test
                      .map { |path, _| "\n\n#{spelling_diagnosis(path)}" }.join
   end
 
-  # THE MARGIN, PINNED WHERE THE READER IS. The cap is a step function, and until
-  # 2026-09-22 nothing made the last step before it visible: the release registry
-  # sat at exactly 15 of 15, so the first test file to spell its path took the mapped
-  # lane from "runs 15" to "runs 0, still green". bin/fast-check now warns inside the
-  # margin — but only for a diff that CONTAINS the at-cap subject, and the builder who
-  # trips the cap is measurably not that person: a one-file diff adding a test that
-  # spells the path maps to 1 path (its own) and never mentions the cap at all.
-  #
-  # So the margin is pinned HERE too, because this sweep is what that builder's CI
-  # actually reddens. A config ENTERING the band reds this list one or two spellings
-  # BEFORE the lane goes quiet — the notice the cliff never gave.
-  #
-  # NAMED BY BASENAME, AND THAT IS NOT COSMETIC. Spelling a config's full path in this
-  # file would add this file to that config's mapped set — the exact mechanism under
-  # test. Writing the expectation as `<basename> (<n>)` evades BOTH tokens
-  # (#grep_tokens asks for the full path, and for the basename WRAPPED IN DOUBLE
-  # QUOTES; `"release_x.yml (15)"` is neither), so this tripwire does not trip itself.
-  # The over-cap sweep above keeps full paths deliberately: its one entry is already
-  # far over the cap and its pinned 28 COUNTS this file, so changing the spelling there
-  # would move a number for no gain.
-  #
-  # THE BAND RULE IS ASKED, NOT RESTATED. `n >= cap - margin && n <= cap` is
-  # FastCert.cap_decision's answer, and a second copy here is how a mutation to the
-  # first survives — the failure this module's comments cite twice (PR #1239). The cap
-  # is passed explicitly so an exported FAST_CHECK_MAPPED_CAP cannot move the pin.
+  # THE MARGIN, PINNED WHERE THE READER IS. At the cap the mapped lane goes from "runs 15" to
+  # "runs 0, still green". bin/fast-check warns only for a diff CONTAINING the at-cap subject, so
+  # this sweep, which that builder's CI reddens, flags a config ENTERING the band before it goes
+  # quiet. NAMED BY BASENAME, NOT COSMETIC: a full path here adds this file to that config's
+  # mapped set; `"release_x.yml (15)"` is neither #grep_tokens token. The over-cap sweep above
+  # keeps full paths. THE BAND RULE IS ASKED of FastCert.cap_decision, not restated. The cap is
+  # passed explicitly so an exported FAST_CHECK_MAPPED_CAP cannot move the pin.
+  # History: task mapped-cap-lacks-margin.
   def test_no_config_source_sits_inside_the_cap_margin_unannounced
     near = config_sources.filter_map do |path|
       tests = FastCert.select_tests(REPO_ROOT, [path])

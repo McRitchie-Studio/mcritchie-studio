@@ -2,16 +2,12 @@
 
 require "test_helper"
 
-# [unit] WHICH RUNG PHASE 0 WRITES, pinned in bin/release.rb's own source
-# (/tasks/carry-release-commit-onto-accepted, operator decision activity-8874).
-#
-# The behaviour is driven against real git in test/lib/release_gem_allocation_test.rb.
-# What THAT cannot see is the seam itself: `bin/release.rb` is a top-level CLI that
-# boots nothing and cannot be loaded into a Rails run (test/lib/session_env_test.rb
-# documents why), so the two facts that make the ladder one-way are asserted here,
-# in source order: the version commit is pushed to `accepted`, and the repo it was
-# written in is handed to the ordinary batch promote, which is the only way anything
-# reaches `release`.
+# [unit] WHICH RUNG PHASE 0 WRITES, pinned in bin/release.rb's own source.
+# test/lib/release_gem_allocation_test.rb drives the behaviour against real git but cannot see
+# the seam: `bin/release.rb` cannot be loaded into a Rails run (test/lib/session_env_test.rb).
+# So two facts are asserted in source order: the version commit is pushed to `accepted`, and
+# its repo goes to the ordinary batch promote, the only way anything reaches `release`.
+# History: task carry-release-commit-onto-accepted.
 class ReleaseAllocationRungTest < ActiveSupport::TestCase
   SOURCE = Rails.root.join("bin/release.rb").read.freeze
 

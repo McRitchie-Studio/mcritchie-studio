@@ -232,16 +232,12 @@ class CiWorkflowTriggersTest < Minitest::Test
     Array(push_trigger(yaml_text)["branches"])
   end
 
-  # Every job that opts OUT of the release-push verdict via a job-level `if:`.
-  #
-  # There is no single spelling of this skip, and assuming there was is how the first
-  # cut of this guard shipped with a hole. A cost-conscious engineer reaches for
-  # `github.event_name == 'pull_request'` at least as readily as a `github.ref`
-  # comparison — and either one keeps `release` in the trigger while producing a job
-  # that runs NOTHING on the release tip: a green required check over zero tests, which
-  # is the exact failure this workflow change exists to eliminate, one level up.
-  # `github.base_ref` (set only on pull_request events) is a third spelling of the same
-  # opt-out. Match the whole family; a new context key is the way this regresses next.
+  # Every job that opts OUT of the release-push verdict via a job-level `if:`. There is no single
+  # spelling: `github.ref`, `github.event_name == 'pull_request'` and `github.base_ref` (set only
+  # on pull_request events) each keep `release` in the trigger while the job runs NOTHING on the
+  # release tip, a green required check over zero tests. Match the whole family; a new context
+  # key is the way this regresses next.
+  # History: task detect-engine-migration-content-drift.
   SKIP_CONTEXT_KEYS = /github\.(ref|event_name|base_ref)/
 
   # A path filter on the PUSH trigger is a second, quieter way to strand the RC tip: it
@@ -390,62 +386,24 @@ class CiWorkflowTriggersTest < Minitest::Test
   # tell you four green `rails` checks were not green over four empty buckets.
   RAILS_EXECUTED_SET_COMMAND = %r{bin/rails-executed-set-check\b}
 
-  # Env keys that NARROW the suite to a subset (or to nothing) while the COMMAND on the
-  # line stays BYTE-IDENTICAL to the real invocation. The anchored pattern above cannot
-  # see any of them — only this walk can.
-  #
-  # VERIFIED against railties 8.1.3 (`grep -rn 'ENV\[' .../rails/test_unit/`), because
-  # the first cut of this list guarded a key Rails NEVER READS (`TESTS` — zero hits in
-  # the gem) while missing the live ones. A guard aimed at a dead key is decoration.
-  # Re-run that grep on a Rails upgrade; this list is a claim about railties, not a
-  # guess:
-  #   TEST                 testing.rake:10 — `run_from_rake("test", Array(ENV["TEST"]))`.
-  #                        `TEST=test/foo_test.rb` → that ONE file runs, exit 0. SILENT.
-  #   TESTOPTS             runner.rb:52 — Shellwords-spliced into the spawned command.
-  #                        Applies to `test:system` too (same run_from_rake path).
-  #   DEFAULT_TEST         runner.rb:117 — overrides the glob `test/**/*_test.rb`.
-  #   DEFAULT_TEST_EXCLUDE runner.rb:121 — excludes it. `'test/**/*_test.rb'` → 0 runs,
-  #                        exit 0: a green required check over an EMPTY suite. SILENT.
-  #
-  # LOUD vs SILENT — measured, because it changes which payload actually threatens the RC,
-  # and the obvious one is NOT the dangerous one:
-  #   · `TESTOPTS='-n /nothing_matches_this/'` → 0 runs, exit **1**. LOUD: minitest fails
-  #     the lane, CI goes red, everybody sees it. It is the spelling people reach for, and
-  #     it is the one that cannot hurt you.
-  #   · `TESTOPTS='-n /<a small PASSING subset>/'` → a couple of runs, exit **0**. SILENT.
-  #     This is why TESTOPTS stays on the list — for the subset spelling, not the zero one.
-  #   · `TEST=<one passing file>` → that file's runs, exit **0**. SILENT.
-  #   · `DEFAULT_TEST_EXCLUDE='test/**/*_test.rb'` → 0 runs, exit **0**. SILENT, and the
-  #     purest of the set: an EMPTY suite reporting success.
-  # A guard tuned to the loud payload guards the one CI already catches. Tune to the quiet
-  # ones. (Measured on this repo's real rake command; exact run COUNTS are deliberately not
-  # pinned here — they drift with the suite and a stale number in a comment is its own
-  # small lie. Re-measure, don't cite.)
-  #
-  # THE MECHANISM, so the next person tests the right path: the suite line is a MULTI-TASK
-  # RAKE invocation (`db:test:prepare test test:system`), which routes through
-  # `Rails::TestUnit::Runner.run_from_rake` — that is where TESTOPTS is spliced and where
-  # the TEST/DEFAULT_TEST globs are read. The `bin/rails test <file>` COMMAND path does
-  # NOT read TESTOPTS, so an experiment run that way comes back clean and the hole hides.
+  # Env keys that NARROW the suite while the command stays BYTE-IDENTICAL; only this walk sees
+  # them. Verified against railties 8.1.3 (`grep -rn 'ENV\[' .../rails/test_unit/`); re-run on a
+  # Rails upgrade. `TESTS` is a dead key. TEST runs one file, TESTOPTS is spliced in, DEFAULT_TEST
+  # overrides the glob `test/**/*_test.rb`, DEFAULT_TEST_EXCLUDE excludes it. Tune to the quiet:
+  # `TESTOPTS='-n /nothing_matches_this/'` is LOUD (exit 1); a passing TESTOPTS subset,
+  # `TEST=<one passing file>` and `DEFAULT_TEST_EXCLUDE='test/**/*_test.rb'` exit 0. Test via rake
+  # (`run_from_rake`): the `bin/rails test <file>` path does NOT read TESTOPTS.
+  # History: task detect-engine-migration-content-drift.
   NARROWING_ENV_KEYS = %w[TEST TESTOPTS DEFAULT_TEST DEFAULT_TEST_EXCLUDE].freeze
 
-  # THE SECOND VERDICT COMMAND — the `e2e` tier's lane (the sharded `playwright` job).
-  #
-  # WHY IT IS HERE, AND WHY ITS ABSENCE WAS A HOLE. When the Playwright suite was first
-  # wired as a PR-gating lane (PR #543), it was enrolled in NO execution-integrity guard
-  # in this file: TEST_COMMAND matches `bin/rails … test`, and `npx playwright test` does
-  # not, so the new lane never entered `suite_command_lanes` and NOTHING asserted it runs
-  # unconditionally. Mutation-confirmed FALSE-GREEN: a job-level `if: vars.E2E_ENABLED ==
-  # 'true'` made the lane execute zero specs while every guard in this file — and in
-  # feature_shape_tiers_test.rb — stayed green. That is the IDENTICAL spelling this same
-  # PR indicted in turf-monster's scheduled devnet workflow (see config/feature_shapes.yml;
-  # deleted 2026-10-24) as the reason `e2e_onchain` was a lie: a repo-variable gate,
-  # `skipped` on every run.
-  #
-  # The lesson generalized: a lane that CONSTITUTES a verdict must be enrolled here on
-  # the day it is wired, or the next lane repeats the bug one file over. Proving a
-  # command STRING exists in a `run:` step (which feature_shape_tiers_test.rb does) is
-  # not proving the JOB RUNS.
+  # THE SECOND VERDICT COMMAND: the `e2e` tier's lane (the sharded `playwright` job). TEST_COMMAND
+  # matches `bin/rails … test` and `npx playwright test` does not, so unenrolled the lane never
+  # enters `suite_command_lanes`: a job-level `if: vars.E2E_ENABLED == 'true'` runs zero specs
+  # with this file and feature_shape_tiers_test.rb green (the `e2e_onchain` lie, see
+  # config/feature_shapes.yml; deleted 2026-10-24). A lane that CONSTITUTES a verdict must be
+  # enrolled here on the day it is wired. Proving a command STRING exists in a `run:` step is not
+  # proving the JOB RUNS.
+  # History: task detect-engine-migration-content-drift.
   E2E_COMMAND = /\bplaywright\s+test\b/
 
   # The EXECUTED-SET gate: reads the shards' own JSON receipts and asserts the lane ran the 51
@@ -466,17 +424,13 @@ class CiWorkflowTriggersTest < Minitest::Test
   }.freeze
 
   # ==== THE ONE CONDITION A VERDICT LANE MAY CARRY ====================================
-  # `if:` on a verdict lane is normally fatal: a skipped JOB or STEP leaves the check
-  # REPORTING SUCCESS, which is a green required check over zero tests. So this file asserts
-  # `if:` is absent — with exactly one exception, and the exception is the opposite of the
-  # disease.
-  #
-  # `always()` cannot EXCLUDE a lane; it FORCES one to run. The executed-set gate `needs:` the
-  # playwright job, and a `needs:` dependency whose upstream FAILED is SKIPPED by default —
-  # so without `if: always()` the one gate that would say "the lane ran 43 of 51 specs" goes
-  # quiet in precisely the runs where a shard died. The condition is load-bearing, and it is
-  # the only condition permitted. Every other expression — event context, env var, repo
-  # variable, workflow input, matrix flag — can silently exclude the lane, and is refused.
+  # `if:` on a verdict lane is normally fatal: a skipped JOB or STEP reports success over zero
+  # tests. The one exception is `always()`, which cannot EXCLUDE a lane, it FORCES one. The
+  # executed-set gate `needs:` the playwright job, and a `needs:` whose upstream FAILED is SKIPPED
+  # by default, so without `if: always()` that gate goes quiet exactly when a shard died. Every
+  # other expression (event context, env var, repo variable, workflow input, matrix flag) is
+  # refused.
+  # History: task detect-engine-migration-content-drift.
   UNCONDITIONAL_IF = ["always()"].freeze
 
   # A LANE INPUT AT ITS DEFAULT IS NOT A CONDITION. The lane guards read `suite_as_run`,
@@ -540,65 +494,24 @@ class CiWorkflowTriggersTest < Minitest::Test
   SHELL_OPERATORS = %w[&& || ; |].freeze
 
   # ==== DEFAULT-DENY, ON THE FLAG AXIS ================================================
-  # These are the ONLY flags the e2e command may carry. Everything else is refused BY NAME —
-  # including flags Playwright ships next year and flags nobody in this repo has heard of.
-  #
-  # WHY AN ALLOWLIST AND NOT A BLACKLIST OF NARROWING FLAGS. The first version of this walker
-  # blacklisted exactly two things: a positional path and a positive `--grep`. Review of #543
-  # then widened the SANCTIONED flag instead — `--grep-invert '@quarantine|board'`, one edit,
-  # 51 specs down to 43, every guard in the repo still green. And the blacklist would have
-  # waved through `--only-changed` (Playwright ships this: on a PR touching no spec files it
-  # executes ZERO tests), `--last-failed`, and `--max-failures=1`. Each is a different SPELLING
-  # of "run less than the suite", and enumerating spellings is how this PR got bounced three
-  # times. So: allowlist the three flags that provably cannot shrink the set, deny the rest.
-  #
+  # The ONLY flags the e2e command may carry: they cannot SHRINK THE SELECTED SET. All else is
+  # refused BY NAME; a blacklist passes `--only-changed`, `--last-failed`, `--max-failures=1`.
   #   --shard        the shards UNION to the whole suite; that is the point of the matrix.
-  #   --grep-invert  the ONE sanctioned exclusion — and it is VALUE-PINNED below, because a
-  #                  flag that is allowed to exist but not allowed to say anything is exactly
-  #                  the door frame this PR left unbolted while it was ratcheting the lock.
-  #   --reporter     chooses the OUTPUT FORMAT. It cannot change which specs run.
-  #
-  # THE NAME OF THIS CONSTANT USED TO BE `INERT_E2E_FLAGS`, AND THAT WAS ITSELF AN OVER-CLAIM —
-  # the exact failure mode this PR exists to kill, sitting in the guard that hunts it.
-  # `--reporter` is NOT inert. It cannot narrow the lane, but it EMITS THE JSON RECEIPT the
-  # executed-set gate is judged on: drop `json` from it and the lane still runs all 51 specs
-  # while the only evidence that it did evaporates. So the property these three share is the
-  # narrow, true one — they cannot SHRINK THE SELECTED SET — and that is what the name says
-  # now. `--reporter`'s second, load-bearing job is pinned separately, by
-  # test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on.
+  #   --grep-invert  the ONE sanctioned exclusion, VALUE-PINNED below.
+  #   --reporter     output format only, but NOT inert: it EMITS THE JSON RECEIPT, pinned by
+  #                  test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on.
+  # History: task detect-engine-migration-content-drift.
   NON_NARROWING_E2E_FLAGS = %w[--shard --grep-invert --reporter].freeze
   # ====================================================================================
 
-  # Every argument that NARROWS which specs the e2e lane runs.
-  #
-  # THE INVARIANT IS POSITIVE: the lane runs the SUITE — the whole of playwright.config.js's
-  # testDir, sharded — not a selection from it. This is vector 7 (the gutted command) in its
-  # e2e spelling, and it is mutation-confirmed FALSE-GREEN against every other guard in the
-  # repo: narrowing the command to `npx playwright test e2e/smoke.spec.js` keeps this file
-  # AND feature_shape_tiers_test.rb green while the lane runs ONE spec. There is no `if:`,
-  # no path filter, no `continue-on-error` — nothing for a blacklist to match. Same hole as
-  # `run: echo "skipping"`, one tier over.
-  #
-  # Playwright narrows in exactly two ways, and both are caught here regardless of spelling:
-  #   · a POSITIONAL argument — a spec file or directory (`playwright test e2e/smoke.spec.js`);
-  #   · a POSITIVE `--grep` — an inclusion filter (`--grep @smoke`).
-  #
-  # NOT narrowings, and deliberately allowed (see NON_NARROWING_E2E_FLAGS — everything else is
-  # denied by name, so this is an allowlist, not a list of the cheats we happened to imagine):
-  #   · `--shard=i/n` — the shards UNION to the whole suite; that is the point of the matrix.
-  #   · `--reporter` — chooses the output format, not the test set (but it DOES emit the
-  #     receipt: separately pinned, see NON_NARROWING_E2E_FLAGS).
-  #   · `--grep-invert @quarantine` — the ONE sanctioned narrowing: a named, ticketed
-  #     EXCLUSION (/tasks/repair-rotted-e2e-specs), pinned to that EXACT VALUE below.
-  #
-  #     THIS COMMENT USED TO SAY the exclusion's "size is RATCHETED by
-  #     e2e_quarantine_ratchet_test.rb so the hole can only ever shrink." THAT WAS FALSE AS
-  #     WRITTEN, and review found it by mutation. The ratchet bounds how many specs may carry
-  #     the TAG. NOTHING bounded the FILTER THAT CONSUMES THE TAG — so
-  #     `--grep-invert '@quarantine|board'` dropped the lane from 51 specs to 43 in a single
-  #     edit with every guard still green. A ratchet on the lock, and the door frame left
-  #     unbolted. The exclusion is bounded now on BOTH sides: the tag count by the ratchet,
-  #     and the filter EXPRESSION by test_integration_the_sanctioned_exclusion_is_pinned_to_its_exact_value.
+  # Every argument that NARROWS which specs the e2e lane runs. The lane must run the SUITE, the
+  # whole of playwright.config.js's testDir, sharded. This is vector 7 (the gutted command) in e2e
+  # spelling: `npx playwright test e2e/smoke.spec.js` leaves every other guard green. Playwright
+  # narrows two ways: a POSITIONAL spec or directory, and a POSITIVE `--grep`. Allowed flags live
+  # in NON_NARROWING_E2E_FLAGS. `--grep-invert @quarantine` is the one sanctioned narrowing:
+  # e2e_quarantine_ratchet_test.rb bounds the TAG count only; the filter EXPRESSION is bounded by
+  # test_integration_the_sanctioned_exclusion_is_pinned_to_its_exact_value.
+  # History: task repair-rotted-e2e-specs.
   def e2e_narrowing_args(command)
     tokens = command.gsub(GHA_EXPRESSION, "EXPR").split
     start = tokens.each_cons(2).find_index { |a, b| a.end_with?("playwright") && b == "test" }
@@ -642,30 +555,14 @@ class CiWorkflowTriggersTest < Minitest::Test
     values
   end
 
-  # ==== THE POSITIVE INVARIANT — the thing that ENDS the arms race ======================
-  #
+  # ==== THE POSITIVE INVARIANT, the thing that ENDS the arms race ======================
   # The suite lane's `run:` script, stripped of comments and blank lines, must be EXACTLY
-  # SUITE_SCRIPT. Nothing before it, nothing after it, nothing around it.
-  #
-  # WHY THIS AND NOT A SIXTH BLACKLIST ROW. Five review rounds, five silent false-greens,
-  # and every one had the same shape: the guard enumerated the ways the suite might be
-  # neutered, and the next reviewer found a spelling one level away from wherever the last
-  # one looked. `export DEFAULT_TEST_EXCLUDE=… ; bin/rails …` — no `if:`, no filter, no
-  # `continue-on-error`, no `$GITHUB_ENV`, no `env:` key. Nothing for ANY blacklist bullet
-  # to match, and the suite runs zero tests, exit 0, green. The `KEY<<EOF` heredoc form
-  # walks past the `KEY=` regex the same way.
-  #
-  # There is no end to that list. There IS an end to this one: the CORRECT script has
-  # exactly one shape, so pin the shape instead of chasing the deformations. An inline
-  # `VAR=x cmd` prefix, a `true ||` short-circuit, a comment-out, an `export`, a heredoc,
-  # a `cd`, a `source`, and every shell trick nobody has thought of yet all fail the same
-  # single assertion — WITHOUT anyone predicting them. This is the advice this file's own
-  # header has given since the first version ("prefer strengthening the positive
-  # invariant"); it took five rounds to actually take it.
-  #
-  # Comments and blank lines are tolerated (they cannot execute); a trailing newline is
-  # tolerated. The env walk STAYS — it catches narrowing supplied from OUTSIDE the run
-  # script, which this assertion cannot see.
+  # SUITE_SCRIPT. Nothing before it, after it, or around it. This pins the one correct shape
+  # instead of a sixth blacklist row: an inline `VAR=x cmd` prefix, a `true ||` short-circuit, a
+  # comment-out, an `export`, a heredoc, a `cd` and a `source` all fail this single assertion.
+  # Comments, blank lines and a trailing newline are tolerated. The env walk STAYS: it catches
+  # narrowing supplied from OUTSIDE the run script, which this assertion cannot see.
+  # History: task detect-engine-migration-content-drift.
   def script_body(step)
     step["run"].to_s.lines.map(&:strip).reject { |line| line.empty? || line.start_with?("#") }
   end
@@ -679,36 +576,14 @@ class CiWorkflowTriggersTest < Minitest::Test
     end
   end
 
-  # The env spelling of the narrowing attack: the suite lane's COMMAND is byte-identical
-  # to the real invocation, and an env var cuts it down to a subset — or to nothing.
-  #
-  # ALL THREE SCOPES. The first cut of this walk read only `job["env"]` and `step["env"]`
-  # — and GitHub applies a TOP-LEVEL `env:` to every step of every job, so this, sitting
-  # above `jobs:`, kept the guard GREEN:
-  #     env:
-  #       TESTOPTS: "-n /nothing_matches_this/"
-  # A guard that inspects two of the three scopes an attacker can write to is not a guard.
-  #
-  # PRECEDENCE (workflow → job → step, most specific wins) is honored rather than flagging
-  # any mention: the level that actually SUPPLIES the value is the one reported, and a key
-  # deliberately BLANKED at a more specific level (`TESTOPTS: ""`, which restores the full
-  # suite) is correctly not a narrowing. A false RED here would train people to delete the
-  # guard.
-  # The env a step INHERITS from an earlier step in the same job. The GitHub runner exports
-  # every `KEY=value` appended to the `$GITHUB_ENV` file to all SUBSEQUENT steps — a
-  # DYNAMIC fourth scope that no static `env:` map in this file can see:
-  #
-  #     - name: Cache warm
-  #       run: echo "DEFAULT_TEST_EXCLUDE=test/**/*_test.rb" >> "$GITHUB_ENV"
-  #     - name: Run tests
-  #       run: #{SUITE_SCRIPT}   # byte-identical, unconditional
-  #
-  # The suite step is untouched — same command, no `if:`, no env: block — and it runs ZERO
-  # tests and exits 0. Only the steps ORDERED BEFORE it in the same job can reach it, so
-  # that is exactly what this scans. It keys on a literal `KEY=` write, so the documented
-  # `KEY<<EOF` HEREDOC form slips past it (task env-walk-heredoc-blind-spot, still open) —
-  # that spelling is caught here ONLY when the heredoc sits in the suite step's own script
-  # (via the positive invariant), not when it lands in an earlier step.
+  # The env spelling of the narrowing attack: the COMMAND is byte-identical and an env var cuts it
+  # down. Walk all scopes (GitHub applies a TOP-LEVEL `env:` to every job). Precedence is honored
+  # (workflow → job → step): a key BLANKED lower down (`TESTOPTS: ""`) is not a narrowing, since a
+  # false RED would train people to delete the guard. github_env_writes: `KEY=value` appended to
+  # `$GITHUB_ENV` reaches all SUBSEQUENT steps, so scan the steps ORDERED BEFORE the suite step.
+  # The `KEY<<EOF` HEREDOC form slips past (task env-walk-heredoc-blind-spot, still open) unless
+  # it sits in the suite step's own script.
+  # History: task env-walk-heredoc-blind-spot.
   def github_env_writes(job, suite_step)
     steps = Array(job["steps"]).grep(Hash)
     index = steps.index(suite_step)
@@ -1401,20 +1276,12 @@ class CiWorkflowTriggersTest < Minitest::Test
   end
 
   def test_integration_the_pinned_suite_scripts_MATCH_THE_LIVE_WORKFLOW
-    # THE VACUITY CHECK, and it has to read the REAL ci.yml — not a fixture.
-    #
-    # This test used to build a synthetic workflow containing a hand-copied duplicate of
-    # the suite command and assert TEST_COMMAND matched it. That proved the regex matched
-    # the copy. When the suite was sharded on 2026-08-20 the fixtures in this file were
-    # re-pointed at the SUITE_SCRIPT constant so they could never drift from it again —
-    # which is right for the PARSER tests around it, and turned THIS one tautological:
-    # a fixture interpolating the constant matches the pattern built from that same
-    # constant, always, whatever either says about ci.yml.
-    #
-    # So it asks the live file instead. If SUITE_SCRIPT or SYSTEM_SCRIPT stops being a
-    # verbatim `run:` body in ci.yml, every positive guard in this file starts asserting
-    # things about an empty set — a guard that guards nothing, which is the exact failure
-    # mode the `on:`-boolean trap at the top of this file describes.
+    # THE VACUITY CHECK, and it has to read the REAL ci.yml, not a fixture. A fixture interpolating
+    # the SUITE_SCRIPT constant matches the pattern built from that same constant, always, whatever
+    # either says about ci.yml. If SUITE_SCRIPT or SYSTEM_SCRIPT stops being a verbatim `run:` body
+    # in ci.yml, every positive guard in this file asserts things about an empty set, the same
+    # failure as the `on:`-boolean trap at the top of this file.
+    # History: task shard-the-rails-suite.
     yaml_text = suite_as_run
 
     suite = suite_command_lanes(yaml_text)
@@ -1607,16 +1474,12 @@ class CiWorkflowTriggersTest < Minitest::Test
   end
 
   # ==== THE SANCTIONED EXCLUSION IS BOUNDED ON BOTH SIDES =============================
-  # BLOCKER B, and it was the worse of the two: the ratchet bounded the TAG while nothing at
-  # all bounded the FILTER that consumes it. `--grep-invert` was allowed to exist AND allowed
-  # to say anything, so widening it to `'@quarantine|board'` took the lane from 51 specs to 43
-  # in ONE EDIT with every guard in the repo green. The hole this PR exists to close, reopened
-  # one line over, in a file the PR already touches.
-  #
-  # Pin the EXPRESSION, exactly, and pin it to the contract so there is one place to change it.
-  # (The arithmetic in bin/e2e-executed-set-check catches a widened filter too, and catches it
-  # in a way no spelling can dodge — 43 != 51. This is the fast, specific, local diagnosis; the
-  # receipt is the durable one. Belt and braces, and the braces are load-bearing.)
+  # The ratchet bounds the TAG; this bounds the FILTER that consumes it. Widening `--grep-invert`
+  # to `'@quarantine|board'` otherwise narrows the lane in one edit with every guard green. Pin
+  # the EXPRESSION exactly, and to the contract, so there is one place to change it.
+  # bin/e2e-executed-set-check catches a widened filter too; this is the fast, specific, local
+  # diagnosis and the receipt is the durable one. Both are load-bearing.
+  # History: task detect-engine-migration-content-drift.
   def test_integration_the_sanctioned_exclusion_is_pinned_to_its_exact_value
     contract = YAML.safe_load_file(E2E_CONTRACT)
     tag = contract.fetch("quarantine_tag")
@@ -1649,31 +1512,19 @@ class CiWorkflowTriggersTest < Minitest::Test
 
   # ==== THE RATCHET'S BASELINE MUST BE FETCHABLE ======================================
   # test/lib/e2e_quarantine_ratchet_test.rb ratchets the @quarantine ceiling against
-  # `origin/release` — the only copy of that number a PR's own diff cannot move. But
-  # actions/checkout fetches ONLY the head SHA by default (depth 1), and then `origin/release`
-  # does not resolve.
-  #
-  # The ratchet fails CLOSED in that case (RED, with the reason), so the failure mode is loud
-  # rather than silent — but "loud" is worth exactly nothing if the next person makes CI green
-  # by deleting the ratchet instead of restoring the fetch. So the fetch is PINNED here: the
-  # `test` job — the job that runs the ratchet — must check out with `fetch-depth: 0`.
-  #
-  # This is the same lesson as the receipt, in miniature: an invariant that depends on a
-  # condition must ASSERT that condition, or it is just hoping.
+  # `origin/release`, the only copy a PR's own diff cannot move, but actions/checkout fetches ONLY
+  # the head SHA by default (depth 1). The ratchet fails CLOSED then, and the wrong fix is
+  # deleting it to get green. So the fetch is PINNED: the `test` job, which runs the ratchet, must
+  # use `fetch-depth: 0`. An invariant that depends on a condition must ASSERT that condition.
+  # History: task detect-engine-migration-content-drift.
   def test_integration_the_test_job_can_see_the_ratchets_baseline
     # EVERY lane that could run the ratchet needs the baseline, not "the lane that does".
-    #
-    # test/lib/e2e_quarantine_ratchet_test.rb reads the @quarantine ceiling from
-    # `origin/release` — the one value a branch's own diff cannot move — and
-    # actions/checkout's default depth-1 fetch leaves that ref unresolvable. Before the
-    # suite was sharded there was one `test` job to point at. Now WHICH shard carries
-    # that file is decided by bin/lib/test_shard.rb's bin-packing and moves whenever a
-    # timing changes, so "the shard that runs it" is not a stable thing to assert about.
-    #
-    # So the assertion is over ALL of them: every lane that runs the sharded suite must
-    # check out the full history. Asserting it of only one would pass on a workflow where
-    # three shards out of four cannot see the baseline — which is a red build nobody can
-    # reproduce, arriving whenever a file moves bucket.
+    # test/lib/e2e_quarantine_ratchet_test.rb reads the ceiling from `origin/release`, and which
+    # shard carries that file is decided by bin/lib/test_shard.rb's bin-packing and moves whenever a
+    # timing changes. So every lane running the sharded suite must check out the full history.
+    # Asserting it of one shard passes while the others cannot see the baseline: a red build nobody
+    # can reproduce.
+    # History: task shard-the-rails-suite.
     lanes = suite_command_lanes(suite_as_run)
 
     refute_empty lanes, "no reusable-ci.yml step runs the sharded rails suite — see the primary guard"
@@ -1700,16 +1551,11 @@ class CiWorkflowTriggersTest < Minitest::Test
   # ====================================================================================
 
   # ==== THE RECEIPT MUST ACTUALLY BE EMITTED ==========================================
-  # `--reporter` is on the non-narrowing allowlist because it cannot change WHICH specs run.
-  # True — and for three rounds this file called it "inert", which was a LIE OF EXACTLY THE
-  # KIND THIS PR IS ABOUT: --reporter is the flag that EMITS THE RECEIPT the executed-set gate
-  # is judged on. It cannot narrow the lane, but it can silence the only evidence we have that
-  # the lane was not narrowed.
-  #
-  # The gate does fail closed if the receipt vanishes (no artifact -> zero reports -> RED), so
-  # this is not a hole. It is a diagnosis: pinned here, a dropped `json` reporter says "you
-  # broke the receipt" instead of "e2e_executed_set found no reports", which is the difference
-  # between a five-second fix and an afternoon.
+  # `--reporter` cannot change WHICH specs run, but it is not inert: it EMITS THE RECEIPT the
+  # executed-set gate is judged on. The gate fails closed if the receipt vanishes, so this is not
+  # a hole, it is a diagnosis: a dropped `json` reporter says "you broke the receipt" instead of
+  # "e2e_executed_set found no reports".
+  # History: task detect-engine-migration-content-drift.
   def test_integration_the_e2e_lane_emits_the_receipt_it_is_judged_on
     lanes = e2e_command_lanes(suite_as_run)
 

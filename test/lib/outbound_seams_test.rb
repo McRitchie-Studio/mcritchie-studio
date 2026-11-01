@@ -1,17 +1,10 @@
 # frozen_string_literal: true
 
-# Coverage for test/support/outbound_seams.rb — the network floor itself.
-# Standalone, like the harnesses it protects:
-#   ruby -Itest test/lib/outbound_seams_test.rb
-#
-# THE POINT OF THIS FILE. The floor's whole value is that it holds for harnesses
-# that never heard of it, and that is a claim about a CHILD PROCESS's environment,
-# which no amount of reading the module can settle. So every test below spawns a
-# real child and asks it what it sees. Two of them are written specifically to go
-# red on the mistakes that were actually available when the floor was written:
-# arming with `||=` (a no-op in any shell that already exports the production
-# board), and treating the floor as opt-in (which buys nothing in the files that
-# most need it).
+# Coverage for test/support/outbound_seams.rb, the network floor itself. It must hold for
+# harnesses that never heard of it: a claim about a CHILD PROCESS's environment, so every test
+# spawns a real child. Two go red on specific mistakes: arming with `||=` (a no-op in a shell
+# that exports the production board), and treating the floor as opt-in.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "open3"

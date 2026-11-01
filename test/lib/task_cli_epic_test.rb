@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
-# `bin/task --epic` — the CLI writer for `tasks.epic_slug`, the handle the board
-# card's epic chip prints and `/tasks?epic=<slug>` filters on.
-#
-# THE PROPERTY: the value rides the wire as a TOP-LEVEL column beside "devops",
-# never inside it (the column is the one store); `--epic none` reaches the wire as JSON null
-# rather than being dropped as falsy; an absent flag never mentions the column;
-# a non-slug dies at the flag; and the read-backs (`show`, `field`, `list
-# --epic`) resolve the COLUMN.
-#
-# Its own file with its own SMALL stub board: test/lib/task_cli_test.rb sits at
-# its hotspot ceiling, and these cases need only a server that records requests
-# and echoes a record — not that file's 261-line harness. (The ceiling registry's
-# path is deliberately not spelled here — the fast-cert mapper follows a spelled
-# config path, and this file would otherwise join that config's mapped set; see
-# test/lib/fast_cert_subject_test.rb.)
-#
-#   ruby -Itest test/lib/task_cli_epic_test.rb
+# `bin/task --epic`, the CLI writer for `tasks.epic_slug` (the card's chip;
+# `/tasks?epic=<slug>`). THE PROPERTY: the value rides the wire as a TOP-LEVEL column beside
+# "devops", never inside it; `--epic none` reaches the wire as JSON null; an absent flag never
+# mentions the column; a non-slug dies at the flag; the read-backs (`show`, `field`, `list
+# --epic`) resolve the COLUMN. Its own file: test/lib/task_cli_test.rb sits at its hotspot
+# ceiling. The ceiling registry's path is deliberately not spelled here: the fast-cert mapper
+# follows a spelled config path; see test/lib/fast_cert_subject_test.rb.
+# History: task epic-slug-on-task-cards.
 
 require "minitest/autorun"
 require "json"

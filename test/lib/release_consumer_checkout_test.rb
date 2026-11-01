@@ -1,42 +1,13 @@
 # frozen_string_literal: true
 
-# Does `bin/release` find the hub when the hub is CHECKED OUT UNDER ANOTHER NAME?
-#
-# THE LAYOUT NO LOCAL RUN REPRODUCES. Every checkout on the operator's machine is a
-# sibling at the projects root named exactly as the registry names it, so "the repo
-# name" and "the directory name" are the same string and nothing distinguishes them.
-# studio-engine's consumer-ci.yml checks each consumer out at
-# `path: ${{ matrix.consumer }}`, and that matrix value is the UNDERSCORED label —
-# `mcritchie_studio` for repo `mcritchie-studio`. There the two strings differ, and
-# `File.join(projects_root, "mcritchie-studio")` pointed at nothing:
-#
-#   bin/lib/docs_archive.rb:217:in `git': git ls-files -- docs: fatal: cannot change
-#     to '…/studio-engine/mcritchie-studio': No such file or directory
-#     (DocsArchive::CommandFailed)
-#
-# read from a script that was itself running out of `…/studio-engine/mcritchie_studio`.
-# Three release CLI archive tests went red in `mcritchie_studio
-# suite vs this engine`, the gem publish preflight failed with them, and a checkpoint
-# release stopped. The hub's OWN CI is green on those same three tests, because in the
-# projects-root layout both spellings are one directory — which is exactly why the
-# defect shipped, and exactly why this file BUILDS the CI layout instead of trusting
-# the local one.
-#
-# THE BREAK WAS NOT NEW — PR #984 REVEALED IT. bin/release.rb's `sweep_docs` call
-# sites took `.first` of `[out, ok]` and dropped the exit code, so the docs step had
-# been failing here all along with the failure swallowed. #984 taught the caller to
-# honour the refusal, and the pre-existing breakage surfaced. Nothing in this file
-# relaxes that: the beat is still expected to ABORT on a real refusal
-# (test/lib/release_archive_docs_refusal_test.rb owns that half), and the repair is
-# entirely in WHERE the sweep is pointed.
-#
-# WHY THE REAL bin/archive-docs AND A REAL GIT REPO. The bug was a directory the real
-# script could not `cd` into. A stubbed sweep ignores `--repo=` and would have stayed
-# green through the whole defect — the same trap that let the swallowed exit code live
-# for months. So the fixture is a genuine git checkout carrying the hub's own
-# bin/archive-docs, and the only things faked are the board and the artifact commit.
-#
-# Run directly:  ruby -Itest test/lib/release_consumer_checkout_test.rb
+# Does `bin/release` find the hub when CHECKED OUT UNDER ANOTHER NAME? studio-engine's
+# consumer-ci.yml checks consumers out at `path: ${{ matrix.consumer }}`, the UNDERSCORED
+# label (`mcritchie_studio` for repo `mcritchie-studio`). No local run reproduces it, so this
+# file BUILDS the CI layout. The beat must still ABORT on a real refusal
+# (test/lib/release_archive_docs_refusal_test.rb); the repair is only in WHERE the sweep is
+# pointed. REAL bin/archive-docs AND REAL GIT: a stubbed sweep ignores `--repo=` and stays
+# green. Only the board and the artifact commit are faked.
+# History: task resolve-hub-path-in-consumer.
 
 require "minitest/autorun"
 require "open3"
@@ -82,17 +53,11 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
     end
   end
 
-  # The hub's ACTUAL doc sweep, copied in — bin/archive-docs plus every lib it
-  # requires. Copied rather than stubbed because `--repo=` is the variable under test.
-  #
-  # THE LIST IS DERIVED, NOT WRITTEN DOWN. It used to be the literal
-  # `%w[docs_archive.rb ledger_guard.rb repo_root.rb]`, which was true only for as
-  # long as bin/archive-docs required exactly those three. Adding a fourth
-  # (lib/cli_arg_guard, the argument guard) broke both tests in this file with a
-  # LoadError from inside the fixture — a failure about the FIXTURE's shape wearing
-  # the costume of a failure about consumer checkouts, which is the most expensive
-  # kind to read. Reading the requires out of the script keeps the copy honest
-  # against a file that will keep growing.
+  # The hub's ACTUAL doc sweep, copied in: bin/archive-docs plus every lib it requires, because
+  # `--repo=` is the variable under test. THE LIST IS DERIVED from the script's requires, NOT
+  # WRITTEN DOWN: a literal list breaks with a LoadError inside the fixture when the script
+  # grows a require, a fixture failure wearing the costume of a consumer-checkout failure.
+  # History: task resolve-hub-path-in-consumer.
   def copy_real_sweep(hub)
     script = File.join(HUB, "bin", "archive-docs")
     FileUtils.cp(script, File.join(hub, "bin", "archive-docs"))
@@ -146,16 +111,12 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
 
   # ---- driving the real CLI ------------------------------------------------
 
-  # Spawn the REAL bin/release.rb, from INSIDE the fixture checkout (mirroring
-  # consumer-ci's `working-directory: ${{ matrix.consumer }}`, which is what makes the
-  # cwd-relative `bin/archive-docs` spawn resolve), with the projects root pinned at
-  # the fixture workspace.
-  #
-  # PROJECTS_DIR is bin/release's own documented seam for a non-default checkout
-  # layout, not a test-only backdoor: it supplies exactly the value consumer-ci's
-  # layout makes `projects_root` compute — the directory the checkout sits in. What
-  # the fix has to get right is the step AFTER that, choosing the directory NAME, and
-  # that is the only thing left varying here.
+  # Spawn the REAL bin/release.rb from INSIDE the fixture checkout (mirroring consumer-ci's
+  # `working-directory: ${{ matrix.consumer }}`, which makes the cwd-relative `bin/archive-docs`
+  # spawn resolve), with the projects root pinned at the fixture workspace. PROJECTS_DIR is
+  # bin/release's documented seam for a non-default layout, not a test-only backdoor. The fix
+  # must choose the directory NAME, the only thing left varying here.
+  # History: task resolve-hub-path-in-consumer.
   def run_archive(workspace, hub, argv: ["archive", "--yes", "--local"])
     script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{stubs}; archive)
     env = SessionEnv.neutralized(

@@ -1,20 +1,12 @@
 # frozen_string_literal: true
 
-# Integration test for bin/control-check — the EXECUTED half of the `test-only`
-# shape's control. Drives the real script against a throwaway git repo with a
-# stubbed test command and a stubbed board CLI. Run directly:
-#   ruby -Itest test/lib/control_check_test.rb
-#
-# HOW THESE TESTS PROVE THE HARNESS ACTUALLY SWAPPED
-#
-# The stub test command is `grep -q NEWMARKER <paths>`, and the fixtures are built
-# so the marker exists ONLY in the post-change content. So:
-#   * a harness that correctly restores the pre-change file  → grep fails → NECESSARY
-#   * a harness that silently failed to swap (the `sed -i ''` no-op class of bug)
-#     would run the NEW file twice → grep passes → NO-SIGNAL
-# Asserting NECESSARY is therefore an assertion that the swap BIT, not merely that
-# the script exited 0. A harness test that cannot fail when the harness stops
-# working is the thing being guarded against here.
+# Integration test for bin/control-check, the EXECUTED half of the `test-only` shape's control,
+# against a throwaway git repo. The stub test command is `grep -q NEWMARKER <paths>`, with the
+# marker ONLY in post-change content. A harness that restores the pre-change file makes grep
+# fail: NECESSARY. One that silently failed to swap (the `sed -i ''` no-op class) runs the NEW
+# file twice: NO-SIGNAL. So asserting NECESSARY asserts the swap BIT, not merely that the script
+# exited 0.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "json"

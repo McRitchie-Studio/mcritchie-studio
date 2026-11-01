@@ -96,18 +96,13 @@ class DevopsShiftCliTest < Minitest::Test
   end
 
   # --- [unit] the narration-marker sandbox: an UNPINNED caller must fail closed --
-  #
-  # The .devops-shift marker lives in the same store as .open-activity/.acting-agent,
-  # and resolved by the same CLAUDE_PROJECTS_DIR-else-real-projects-root fallback.
-  # The FakeApi above pins a tmpdir, so these tests are safe BY CONVENTION — which
-  # is exactly the pinning-by-convention that let the cost store leak (PR #525) and
-  # the statusline heartbeat leak here. This is the assertion that a caller which
-  # FORGETS now aborts instead of writing the operator's live narration store.
-  #
-  # The `abort` is SystemExit, not a StandardError, so it escapes write_marker's own
-  # `rescue StandardError => nil` (which would otherwise degrade the guard to a
-  # silent skip) AND DevopsShiftCli#run's top-level rescue. That is the point.
-  # The guard is only as good as its arming, so assert the arming — do not trust it.
+  # The .devops-shift marker lives in the .open-activity/.acting-agent store, by the same
+  # CLAUDE_PROJECTS_DIR-else-real-projects-root fallback. FakeApi's pin is safe only BY
+  # CONVENTION, so this asserts a caller which FORGETS aborts.
+  # The `abort` is SystemExit, not a StandardError, so it escapes write_marker's `rescue
+  # StandardError => nil` (a silent skip otherwise) AND DevopsShiftCli#run's top-level rescue.
+  # The guard is only as good as its arming, so assert the arming.
+  # History: task detect-engine-migration-content-drift.
   def test_unit_this_process_arms_the_narration_marker_sandbox
     assert TaskUsageSandbox.active?,
            "this file drives a CLI that writes the marker store — it must run sandboxed"

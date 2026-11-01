@@ -1,32 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] the END-TO-END proof that a review renewer dies with its TASK, using
-# a REAL detached `review-claim renew-loop` process and a REAL stub board.
-#
-# THE DEFECT, measured 2026-08-29 and again 2026-08-30 after it had already cost a
-# full day of GitHub auth. The loop terminated on its ANCHOR SESSION dying and on
-# NOTHING ELSE. That quietly assumed a session outlives its reviews; it does not. One
-# long-lived session reviews many tasks, so it accumulates one immortal renewer per
-# task. At 05:25Z on 2026-08-30 five were running and FOUR were renewing claims on
-# work that had SHIPPED TO PRODUCTION hours earlier — anchor pid 60790 alive the whole
-# time and legitimately busy. Nothing had crashed. Between them they polled the board
-# roughly 14,000 times a day and spent the ACCOUNT-WIDE 1Password read budget every
-# other lane shares, so the symptom presented as "1Password is down" rather than as
-# anything pointing at claim renewal.
-#
-# WHY THIS FILE AND NOT ONLY THE UNIT TESTS. The unit tests either side drive the
-# loop with injected lambdas (test/lib/shift_renewer_test.rb) and a fake API
-# (test/lib/review_claim_cli_test.rb). What they mock is exactly where this bug lived
-# for two days: whether a REAL detached process, spawned the way `acquire` spawns it,
-# actually reads the stage and actually exits. A loop that renews forever and a loop
-# that stops are indistinguishable from inside the mocks after ONE iteration.
-#
-# WHAT MAKES THESE TESTS BITE. Both hold the ANCHOR ALIVE from start to finish and
-# assert that it is still alive at the moment the renewer exits. A test that kills the
-# anchor passes against the ORIGINAL code and proves nothing whatsoever about this
-# defect — that distinction is the entire point of the regression.
-#
-#   ruby -Itest test/lib/review_claim_renewer_integration_test.rb
+# [integration] END-TO-END proof that a review renewer dies with its TASK, using a REAL detached
+# `review-claim renew-loop` and a REAL stub board. The loop must not stop only on its ANCHOR
+# SESSION dying: one session reviews many tasks, and its renewers spend the ACCOUNT-WIDE
+# 1Password budget.
+# Unit tests: test/lib/shift_renewer_test.rb, test/lib/review_claim_cli_test.rb.
+# WHAT MAKES THESE BITE: both hold the ANCHOR ALIVE and assert it is alive when the renewer
+# exits. A test that kills the anchor passes against the ORIGINAL code.
+# History: task renew-loop-outlives-task.
 
 require "minitest/autorun"
 require "json"

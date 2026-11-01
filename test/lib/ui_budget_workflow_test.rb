@@ -1,16 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] Guard test for .github/workflows/ui-budget.yml, the nightly UI budget.
-# It pins what makes the nightly an alarm rather than a chart nobody reads: it
-# runs every night off the hour, it runs bin/ui-budget's collector over the whole
-# config (no --only), an OVER row or a failure opens or comments on one "UI budget
-# over:" issue and only a clean night closes it, OVER rows report without failing
-# the run (task ui-budget-report-never-gates), the table reaches the job summary and the JSON an
-# artifact even when the run fails, and the token can write issues and nothing
-# else. Modelled on test/lib/ci_service_images_test.rb and r2_backup_workflow_test.rb.
-#
-# Run directly:
-#   ruby -Itest test/lib/ui_budget_workflow_test.rb
+# [unit] Guard test for .github/workflows/ui-budget.yml, the nightly alarm: it runs every night
+# off the hour over the whole config (no --only); an OVER row or failure opens or comments on
+# one "UI budget over:" issue and only a clean night closes it; OVER rows report without failing
+# the run; the table reaches the job summary and the JSON an artifact even on failure; the token
+# writes issues only. Modelled on test/lib/ci_service_images_test.rb and
+# r2_backup_workflow_test.rb.
+# History: task ui-budget-report-never-gates.
 require "minitest/autorun"
 require "yaml"
 

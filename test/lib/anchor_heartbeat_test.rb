@@ -1,26 +1,12 @@
 # frozen_string_literal: true
 
-# Tests for bin/lib/anchor_heartbeat.rb — the seam that tells a WORKING agent from a
-# merely RESIDENT process.
-#
-# THE DEFECT, measured 2026-09-22. A `codex --yolo` session (pid 51595) hit a usage
-# limit and was shut down. The process stayed in the process table, so
-# SessionIdentity.process_alive? kept answering TRUE, so the detached renewer kept
-# advancing the lease — observed moving 03:50:45Z → 03:52:47Z across a 75-second
-# read — over a desk holding 124 uncommitted lines nobody was coming back for.
-#
-# A held-but-abandoned desk cannot be reclaimed (the sweep withholds a claimed desk)
-# and cannot be taken (no session steals a live claim), so the two safety rules
-# compose into a deadlock. That is why an idle anchor must stop renewing.
-#
-# THE OTHER FACE, measured the same day during a live `bin/release prepare`: no agent
-# process resolved at all, so no renewer started, the assembler claim lapsed ~120s
-# into a multi-minute act, and the run ended unable to release what it no longer
-# held. The remedy there is a HONEST REPORT, never a refusal — that sweep completed
-# correctly without a claim, and an act that refused to start on a missing anchor
-# would wedge the release lane while fixing nothing.
-#
-#   ruby -Itest test/lib/anchor_heartbeat_test.rb
+# Tests for bin/lib/anchor_heartbeat.rb: telling a WORKING agent from a merely RESIDENT process.
+# SessionIdentity.process_alive? stays TRUE for a shut-down agent, so the renewer keeps
+# advancing the lease. A held-but-abandoned desk cannot be reclaimed or taken, so the two safety
+# rules compose into a deadlock: an idle anchor must stop renewing. THE OTHER FACE: no agent
+# process resolved, no renewer, the claim lapses. The remedy is a HONEST REPORT, never a
+# refusal: an act that refused on a missing anchor wedges the release lane.
+# History: task claim-anchor-needs-a-heartbeat.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -95,17 +81,12 @@ class AnchorHeartbeatTest < Minitest::Test
   end
 
   # --- the narration corpus, and what it says about the bound ---------------
-  #
-  # THE DEFECT THESE PIN was an ARGUMENT, not a number. IDLE_AFTER_SECONDS reused
-  # PROGRESS_QUIET_SECONDS on the claim that narration markers are "durable
-  # artifacts of exactly that kind". lib/claim_lease.rb ENUMERATES that kind — a
-  # TaskEvent or a GateRun — and Task#progress_evidence reads exactly those two
-  # associations. Narration writes agent_activity rows and marker files, so the
-  # 243 windows of BOARD silence behind that constant are a different population.
-  #
-  # The number survived the correction; the reasoning did not. These assert the
-  # reasoning that replaced it, so a future reader cannot restore the population
-  # match without reddening something.
+  # IDLE_AFTER_SECONDS must not be justified by PROGRESS_QUIET_SECONDS's population:
+  # lib/claim_lease.rb ENUMERATES that kind (a TaskEvent or a GateRun, read by
+  # Task#progress_evidence), and narration writes agent_activity rows and marker files. The number
+  # stands; these assert the reasoning, so nobody can restore the population match without
+  # reddening something.
+  # History: task record-the-narration-quiet-corpus.
 
   def test_unit_the_narration_corpus_derives_the_bound_it_states
     # "A number in prose cannot be checked. A number in a constant can."

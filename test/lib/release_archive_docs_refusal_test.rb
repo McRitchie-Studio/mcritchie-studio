@@ -1,27 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] Does `bin/release archive` HONOUR bin/archive-docs' refusal?
-#
-# PR #981 taught bin/archive-docs to exit 1 when the delete-later ledger has lost a
-# resolved row. That refusal was INERT through the only caller that matters: sweep_docs
-# returns `[out, status.success?]` and BOTH call sites took `.first`, dropping the
-# boolean on the floor. So the warning printed, the beat carried on, and
-# commit_artifact_to_accepted git-added the ledger plus its archive and pushed them to
-# `release` — committing the exact loss archive-docs had just refused.
-#
-# WHY THIS TEST DRIVES bin/release AND NOT bin/archive-docs. The sub-command already
-# refused correctly; test/lib/archive_docs_cli_test.rb pins that and would have stayed
-# green through the whole defect. The bug lived entirely in the CALLER's handling of the
-# verdict, so a test that re-checks the sub-command's exit code proves nothing about it.
-# This spawns the REAL bin/release.rb, calls its REAL `archive` entrypoint, and lets its
-# REAL sweep_docs cross a REAL Open3 process boundary. The only thing faked is what the
-# child process DOES — which is precisely the variable under test.
-#
-# Run directly:  ruby -Itest test/lib/release_archive_docs_refusal_test.rb
-#
-# A file of its own, named for its concern: the release CLI files are frozen hotspots in
-# config/test_health.yml, and the ratchet's remedy for "I need to add something" is a
-# new named home, not an append.
+# [integration] Does `bin/release archive` HONOUR bin/archive-docs' refusal? The bug lived in
+# the CALLER: sweep_docs returns `[out, status.success?]` and both call sites took `.first`, so
+# commit_artifact_to_accepted pushed the refused loss. test/lib/archive_docs_cli_test.rb cannot
+# see that, so this spawns the REAL bin/release.rb across a REAL Open3 boundary; only what the
+# child DOES is faked. A file of its own: the release CLI files are frozen hotspots in
+# config/test_health.yml.
+# History: task honour-archive-docs-refusal.
 
 require "minitest/autorun"
 require "open3"
@@ -36,15 +21,12 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
   # damage: it is where the lost ledger becomes a commit on `release`.
   COMMITTED = "SPY-COMMIT-ARTIFACT-REACHED"
 
-  # bin/release's three sweep helpers each spawn a CWD-RELATIVE command
-  # (`bin/archive-docs`, `bin/agent-worktree`, `bin/clean-artifacts`). Running the CLI
-  # from a scratch dir that carries its own `bin/` is what lets the real Open3 boundary
-  # run while the child's behaviour stays under the test's control.
-  #
-  # `archive_docs_exit` is the whole experiment: 0 = the sweep is happy, 1 = it refuses.
-  # The stub mirrors the real contract exactly — a --dry-run PREVIEW reports and exits 0
-  # even when rows are lost (a preview that failed would wedge the callers that preview
-  # before confirming), and only an APPLY refuses.
+  # bin/release's three sweep helpers spawn CWD-RELATIVE commands (`bin/archive-docs`,
+  # `bin/agent-worktree`, `bin/clean-artifacts`), so a scratch dir with its own `bin/` controls
+  # the child. `archive_docs_exit`: 0 = happy, 1 = refuses. A --dry-run PREVIEW reports and
+  # exits 0 even when rows are lost (a failing preview would wedge its callers); only an APPLY
+  # refuses.
+  # History: task honour-archive-docs-refusal.
   def with_stub_bin(archive_docs_exit:, dry_run_exit: 0)
     Dir.mktmpdir("release-archive-refusal") do |dir|
       FileUtils.mkdir_p(File.join(dir, "bin"))

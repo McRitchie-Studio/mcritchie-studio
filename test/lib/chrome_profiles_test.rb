@@ -1,22 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] ChromeProfiles — the Chrome avatar-menu roster and its resolver.
-#
-# WHAT THIS FILE IS FOR. The roster exists to survive a house burn-down, so the
-# property that matters is not "it produced the right menu on the Mac it was
-# written on" — it is "it produces the right menu on a DIFFERENT Mac, whose
-# profile directories were handed out in a different order". Chrome assigns
-# `Default`, `Profile 7`, `Profile 14` in SIGN-IN order; they are an accident of
-# history and they are not even dense. A roster keyed on them does not fail
-# loudly when restored — it renames the WRONG PROFILES, silently, and the
-# operator finds out by opening a menu. test_the_same_roster_lands_on_two_
-# machines_with_different_directories is the assertion that whole design exists
-# for, and it is the one to fix first if it ever goes red.
-#
-# The refusals get equal weight, because a resolver that refuses nothing is
-# indistinguishable from one that works right up until the day it is not.
-#
-#   ruby -Itest test/lib/chrome_profiles_test.rb
+# [unit] ChromeProfiles: the Chrome avatar-menu roster and its resolver. The roster must
+# produce the right menu on a DIFFERENT Mac: Chrome assigns `Default`, `Profile 7`, `Profile
+# 14` in SIGN-IN order, and a roster keyed on them silently renames the WRONG PROFILES when
+# restored. test_the_same_roster_lands_on_two_machines_with_different_directories is the
+# assertion the design exists for; fix it first if it goes red. The refusals get equal weight.
+# History: task chrome-profile-order-sop.
 
 require "minitest/autorun"
 require "minitest/mock"
@@ -364,16 +353,12 @@ class ChromeProfilesTest < Minitest::Test
     assert_equal before, File.read(state.path)
   end
 
-  # ---------------------------------------------------------------------------
-  # Emoji presence
-  # ---------------------------------------------------------------------------
-  #
-  # Built from bytes rather than read from the system font, because the font is
-  # macOS-only and CI runs on Ubuntu — a test that skips there would assert
-  # nothing on the machine that gates the merge. The synthetic fonts below
-  # exercise the real cmap parser: the TTC container, format 12, format 4, and
-  # the wide-span rejection that keeps a misparse from answering "present" to
-  # every codepoint you ask about.
+  # Emoji presence. Built from bytes rather than read from the system font: the font is
+  # macOS-only and CI runs on Ubuntu, so a skipping test would assert nothing on the machine
+  # that gates the merge. The synthetic fonts exercise the real cmap parser: the TTC container,
+  # format 12, format 4, and the wide-span rejection that keeps a misparse from answering
+  # "present" to every codepoint.
+  # History: task chrome-profile-order-sop.
 
   def format12(ranges)
     groups = ranges.map { |r| [ r.first, r.last, 1 ].pack("N3") }.join

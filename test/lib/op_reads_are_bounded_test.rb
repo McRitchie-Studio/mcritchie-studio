@@ -1,30 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] ONE WAY INTO 1PASSWORD: no file under bin/, app/ or lib/ runs `op`
-# outside the metered wrapper (bin/lib/op_meter.rb for Ruby, op_metered in
-# bin/lib/op-meter.sh for shell), so bin/op-reads sees every read.
-#
-# WHY. On 2026-10-31 the account-wide service-account quota (1000 read_writes a
-# day) ran out and every agent stalled for about five hours. The meter logged only
-# a few hundred successful reads, because a list of callers ran `op` directly and
-# nothing recorded them. A spend nobody can attribute has to be re-derived by hand
-# every time, which is the defect bin/op-reads exists to end. The procedure:
-# docs/agents/modules/credential-access.md.
-#
-# HOW. Every non-comment line is scanned for an `op` invocation in argv form
-# (`["op", "read", …]`, `[OP_BIN, "item", …]`) or shell form (`op read …`,
-# `"$OP" whoami`). A hit is allowed when the same line goes through the wrapper,
-# or when ALLOWED below names it with a reason. An allowance that matches nothing
-# fails too: an exemption must keep measuring the thing it exempts.
-#
-# HISTORY. This file began (2026-10-27) as a Ruby-only pin on a literal "op" as the
-# first argument of IO.popen, Open3, system, spawn or exec: every `op` call had hung
-# for two hours and a bare call waited with the daemon. It missed shell strings,
-# `op_bin` variables and BoundedCommand.capture3, so the unmetered callers above
-# passed it. The scan now covers bin/, app/ and lib/, shell and Ruby, and asks
-# "metered", which implies "bounded": both halves of the wrapper bound every attempt.
-#
-#   ruby -Itest test/lib/op_reads_are_bounded_test.rb
+# [unit] ONE WAY INTO 1PASSWORD: no file under bin/, app/ or lib/ runs `op` outside the
+# metered wrapper (bin/lib/op_meter.rb; op_metered in bin/lib/op-meter.sh), so bin/op-reads
+# sees every read. Procedure: docs/agents/modules/credential-access.md. Non-comment lines
+# are scanned for `op` in argv form (`["op", "read", …]`, `[OP_BIN, "item", …]`) or shell
+# form (`op read …`, `"$OP" whoami`). A hit is allowed when the line goes through the
+# wrapper, or ALLOWED names it with a reason; an allowance matching nothing fails too.
+# "Metered" implies "bounded".
+# History: task release-tooling-survives-hangs.
 
 require "minitest/autorun"
 require "tmpdir"

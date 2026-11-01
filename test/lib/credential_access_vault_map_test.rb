@@ -1,15 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] The vault permission map in docs/agents/modules/credential-access.md is
-# the same map as bin/lib/op_vaults.rb (OpVaults::LANES and OpVaults::VAULTS), both
-# ways, and its soul classes match AgentSession::ADMIN_SOULS.
-#
-# WHY. The map is the organization Alex McRitchie asked for before permissions move
-# to separate machines. A table that drifts from the code is worse than none: an
-# agent reads the doc, and the code decides. So a vault, a lane, a token or a future
-# machine changed in one place without the other fails here.
-#
-#   ruby -Itest test/lib/credential_access_vault_map_test.rb
+# [unit] The vault permission map in docs/agents/modules/credential-access.md is the same map as
+# bin/lib/op_vaults.rb (OpVaults::LANES and OpVaults::VAULTS), both ways, and its soul classes
+# match AgentSession::ADMIN_SOULS. An agent reads the doc and the code decides, so a vault,
+# lane, token or future machine changed in one place fails here.
+# History: task one-way-into-1password.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/op_vaults"

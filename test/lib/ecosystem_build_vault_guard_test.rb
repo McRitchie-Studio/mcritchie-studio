@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
 # [unit] + [integration] bin/ecosystem-build's agent-vault guard, EXECUTED.
-#
-# WHY THIS FILE EXISTS, and why it is not more assertions in
-# test/lib/credential_vault_resolution_test.rb. That file guards the SOURCE TEXT
-# of this guard — that it names $agent_vault in its verdict, that it resolves the
-# name through MCR_OP_VAULT_AGENT, that no `grep -w` survives. Every one of those
-# is a statement about a string. None of them runs the guard, and the defect they
-# were written for was a guard that read correctly and ANSWERED WRONG:
-# `op vault list | grep -qw agents` reported the credential lane healthy against
-# `studio-agents`, because -w treats a hyphen as a word boundary. A script whose
-# only test is a scan of its own text can be wrong in exactly that way forever.
-#
-# So this file stubs `op` and asks the guard questions.
-#
-# THE FOUR VAULTS ARE THE WHOLE POINT. The account holds studio-agents,
-# studio-agents-admin, industries-agents and family-agents. "Contains the word
-# agents" is true of all four and of the vault `agents`, which has not existed
-# since 2026-08-28 — so a match that is not an EXACT one answers a question
-# nobody asked.
-#
-# AND IT MUST FAIL CLOSED. A guard is a claim that something was checked. Absent,
-# empty, non-JSON or non-array output from `op` is not evidence a vault is
-# reachable, so each of those has to land on "no" rather than on a shrug.
+# test/lib/credential_vault_resolution_test.rb guards SOURCE TEXT, but `op vault list | grep
+# -qw agents` read correctly and ANSWERED WRONG against `studio-agents` (-w treats a hyphen
+# as a boundary). So this stubs `op` and asks the guard. THE FOUR VAULTS ARE THE WHOLE
+# POINT: studio-agents, studio-agents-admin, industries-agents, family-agents all contain
+# "agents", so the match must be EXACT. AND IT MUST FAIL CLOSED: absent, empty, non-JSON or
+# non-array `op` output lands on "no".
+# History: task repoint-ecosystem-build-vault.
 
 require "bundler/setup"
 require "minitest/autorun"
@@ -141,15 +126,13 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
 
   # ------------------------------------------------------------ the wiring ----
 
-  # [integration] The unit tests above prove the FUNCTION is right. They cannot
-  # see whether phase_secrets still calls it, or whether its three exit codes are
-  # still routed to three different verdicts — and a guard that is correct and
-  # unwired is exactly as useful as no guard. So this drives the phase itself,
-  # with the token set and every binary it reaches for stubbed.
-  #
-  # phase_secrets returns 1 at the Heroku step in all three cases (the stub
-  # `heroku` refuses), which is what keeps this from running a real bringup. The
-  # assertion is on the verdict line the vault guard printed on the way past.
+  # [integration] The unit tests above cannot see whether phase_secrets still calls the
+  # function or routes its three exit codes to three verdicts, and a correct, unwired guard is
+  # no guard. So this drives the phase with the token set and every binary stubbed.
+  # phase_secrets returns 1 at the Heroku step in all three cases (the stub `heroku` refuses),
+  # which keeps this from running a real bringup. Assert on the verdict line the vault guard
+  # printed.
+  # History: task repoint-ecosystem-build-vault.
   def test_phase_secrets_routes_each_guard_outcome_to_its_own_verdict
     ok = phase_secrets(op: REAL_LISTING)
 
@@ -182,17 +165,13 @@ class EcosystemBuildVaultGuardTest < Minitest::Test
 
   # ------------------------------------------------- the dispatch guard ----
 
-  # [unit] Everything above depends on `source bin/ecosystem-build` defining the
-  # script's functions and RUNNING NOTHING, which is a behaviour this task added.
-  # It has to be right in BOTH directions, and the dangerous direction is the
-  # quiet one: a guard that never fires turns the first script a fresh Mac runs
-  # into a no-op that exits 0, and nothing says so until somebody rebuilds a
-  # machine. That is the same silent-success failure as /tasks/ship-must-not-exit-zero,
-  # so it gets a test rather than a reading.
-  #
-  # `main` is replaced with an echo in a COPY. The real one installs Homebrew
-  # packages and bounces production-adjacent servers; there is no version of
-  # this test that runs it.
+  # [unit] Everything above depends on `source bin/ecosystem-build` defining functions and
+  # RUNNING NOTHING, in BOTH directions. The dangerous one is quiet: a guard that never fires
+  # turns the first script a fresh Mac runs into a no-op that exits 0, the same silent success
+  # as /tasks/ship-must-not-exit-zero. `main` is replaced with an echo in a COPY: the real one
+  # installs Homebrew packages and bounces production-adjacent servers, and no version of this
+  # test runs it.
+  # History: task repoint-ecosystem-build-vault.
   def test_main_runs_when_executed_and_stays_silent_when_sourced
     body = File.read(SCRIPT)
     neutered = body.sub(/^main\(\) \{.*?^\}$/m, %(main() { echo "MAIN RAN"; }))

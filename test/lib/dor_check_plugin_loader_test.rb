@@ -1,19 +1,11 @@
 # frozen_string_literal: true
 
-# THE PLUGIN SEAM. Standalone (no Rails):
-#   ruby -Itest test/lib/dor_check_plugin_loader_test.rb
-#
-# WHAT IS ACTUALLY BEING ASSERTED, and why the integration test is the important one.
-# The goal of this seam is not "checks live in smaller files" — that alone would just
-# move the contention to whichever file held the list. The goal is that ADDING A CHECK
-# EDITS NO SHARED FILE. So the test that matters writes ONE brand-new check file into a
-# checks directory, runs the real bin/dor-check as a subprocess, and asserts the verdict
-# changed — with no require line, no registry entry and no hook added anywhere. If that
-# test ever needs a second file edited to pass, the seam has regressed to a registry.
-#
-# MEASURED REASON THIS EXISTS (2026-08-14): bin/dor-check was touched by 24 of the last
-# 200 merged PRs, and three tasks in one wave all needed to edit it — they had to be
-# serialised by hand to avoid a guaranteed three-way conflict.
+# THE PLUGIN SEAM. Standalone (no Rails). The goal is that ADDING A CHECK EDITS NO SHARED FILE.
+# So the test that matters writes ONE new check file into a checks directory, runs the real
+# bin/dor-check as a subprocess, and asserts the verdict changed, with no require line, registry
+# entry or hook added. If it ever needs a second file edited to pass, the seam has regressed to
+# a registry.
+# History: task dor-check-loads-plugins.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -120,21 +112,13 @@ class DorCheckPluginLoaderTest < Minitest::Test
     assert_equal ["block line"], context(json: false).say("block line").lines
   end
 
-  # ── [integration] a NEW check file changes the verdict, editing nothing else ──
-  #
-  # HERMETIC BY CONSTRUCTION. An earlier cut of these two dropped the probe into the
-  # REAL bin/lib/dor/checks/ and deleted it in an ensure block. It passed locally and
-  # failed in CI, because the suite runs in parallel PROCESSES: one worker's probe file
-  # was on disk while another worker ran the control below and saw a marker it was
-  # asserting could not exist. Cleanup does not make a test isolated when the state is
-  # shared.
-  #
-  # So both now point the gate at their OWN empty directory through DOR_CHECKS_DIR, and
-  # the first also asserts the repo's real checks directory came out unchanged. NOT a
-  # copy of the real checks: a check requires its dependencies by relative path, so it
-  # is correct that it cannot be relocated — and an empty directory plus one probe is
-  # the sharper instrument for proving the SEAM anyway. The real checks are covered by
-  # their own suites.
+  # --- [integration] a NEW check file changes the verdict, editing nothing else ---
+  # HERMETIC BY CONSTRUCTION: never drop a probe into the REAL bin/lib/dor/checks/. The suite runs
+  # in parallel PROCESSES, and cleanup does not isolate shared state. Both tests point the gate at
+  # their OWN empty directory through DOR_CHECKS_DIR, and the first asserts the real directory
+  # came out unchanged. NOT a copy of the real checks: a check requires its dependencies by
+  # relative path, so it cannot be relocated.
+  # History: task dor-check-loads-plugins.
 
   def test_a_new_check_file_changes_the_verdict_with_no_registry_edit
     marker = "PLUGIN_SEAM_PROOF_#{Process.pid}"

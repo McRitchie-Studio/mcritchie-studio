@@ -1,26 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] Tests for bin/lib/presence_claim.rb — the WRITER half of the
-# agent-presence surface (docs/agents/system/agent-presence.md, slice 3).
-#
-#   ruby -Itest test/lib/presence_claim_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# WHAT IS ACTUALLY UNDER TEST, and it is not "does it write a file". The design's
-# governing rule is:
-#
-#   No claim asserts its own liveness. Every claim carries the OS's proof of
-#   identity, and the READER decides.
-#
-# So the properties that matter here are (1) the record carries a pid AND the OS's
-# own start time for it, because without both a reader cannot tell "our process"
-# from "a stranger who inherited the number"; (2) a phase change REWRITES one file
-# rather than leaving a trail of contradicting claims; and (3) the store guard is
-# on the path, because a writer that reached the operator's live store from a test
-# run is the leak TaskUsageSandbox exists to close.
-#
-# The killed-writer rule is asserted at the integration tier, in
-# test/lib/submit_test.rb, where a real ship is really SIGKILLed.
+# [unit] bin/lib/presence_claim.rb: the WRITER half of agent-presence
+# (docs/agents/system/agent-presence.md, slice 3). Governing rule: No claim asserts its own
+# liveness. Every claim carries the OS's proof of identity, and the READER decides. So (1) the
+# record carries a pid AND the OS's start time for it; (2) a phase change REWRITES one file
+# rather than leaving a trail of contradicting claims; (3) the store guard is on the path
+# (TaskUsageSandbox). The killed-writer rule is in test/lib/submit_test.rb, a real SIGKILL.
+# History: task certs-publish-no-phase.
 
 require "minitest/autorun"
 require "json"

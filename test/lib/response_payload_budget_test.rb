@@ -6,22 +6,12 @@ require "test_helper"
 # pulled 7,810,044 bytes of subresources — 7.4MB of which was four agent
 # portraits displayed at about 56 pixels.
 class ResponsePayloadBudgetTest < ActiveSupport::TestCase
-  # THE LARGEST DRAW IS NOT THE AVATAR. An earlier version of this guard said it
-  # was — "every agent portrait is drawn inside components/_agent_avatar, whose
-  # largest size is w-16 (64 CSS px)" — and set a 320px ceiling on that premise.
-  # The premise was false, and the ceiling would have cemented the regression it
-  # let through.
-  #
-  # The real largest draw is the `agent.avatar` image in app/views/agents/index.html.erb, the PUBLIC agents
-  # index, which renders each portrait as a full-bleed card hero: object-cover
-  # inside an aspect-[5/3] link. That hero is about 294 CSS px wide on a wide
-  # desktop and up to about 608 CSS px at the grid-cols-1 mobile breakpoint. The
-  # 5:3 crop is not a coincidence — 1619x971 is exactly that ratio, so these
-  # portraits were authored to BE that hero.
-  #
-  # 768px on the long edge is 2x the desktop hero and covers the mobile case;
-  # compared at 608 CSS px on a 2x display, a 768px re-encode is indistinguishable
-  # from the 2.4MB source, while 320px was visibly mush.
+  # THE LARGEST DRAW IS NOT THE AVATAR, so do not set a ceiling from components/_agent_avatar's
+  # w-16. It is the `agent.avatar` image in app/views/agents/index.html.erb, a full-bleed card
+  # hero: object-cover inside an aspect-[5/3] link, about 294 CSS px on desktop and up to about
+  # 608 CSS px at the grid-cols-1 mobile breakpoint. 768px on the long edge is 2x the desktop hero
+  # and covers the mobile case; 320px was visibly mush.
+  # History: task compress-and-shrink-payload.
   AGENT_IMAGE_MAX_EDGE = 768
 
   # Headroom over the largest current file (~156KB) and still far below a re-upload of the
@@ -65,16 +55,11 @@ class ResponsePayloadBudgetTest < ActiveSupport::TestCase
                  "agent portraits must stay inside the page-weight budget: #{oversized.join(', ')}"
   end
 
-  # THE FLOOR, which is the half that was missing. This file only ever had a
-  # CEILING, so shrinking the portraits to 320px — below what their largest draw
-  # needs — passed every assertion here. A ceiling guards against re-uploading the
-  # source; only a floor guards against over-compressing it.
-  #
-  # Scoped to the 5:3 portraits because that ratio IS the card hero
-  # (agents/index.html.erb:16 renders object-cover inside aspect-[5/3], and the
-  # 1619x971 sources are exactly 5:3 — they were authored for it). Square files are
-  # exempt: alex's source is only 340x340, so demanding 640 of it would demand
-  # resolution that has never existed.
+  # THE FLOOR: a ceiling guards against re-uploading the source; only a floor guards against
+  # over-compressing it. Scoped to the 5:3 portraits because that ratio IS the card hero
+  # (agents/index.html.erb:16). Square files are exempt: alex's source is only 340x340, so
+  # demanding 640 would demand resolution that has never existed.
+  # History: task compress-and-shrink-payload.
   HERO_MIN_LONG_EDGE = 640
 
   test "[unit] every 5:3 portrait is still big enough for the card hero" do

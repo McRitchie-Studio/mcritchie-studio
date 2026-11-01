@@ -76,17 +76,13 @@ class ReleaseCliPreQaGateTest < ReleaseCliHarness
   end
 
   # [unit] ci_poll_action is the PURE poll decision (the CI-verdict analogue of
-  # Release::ShipSequence.run_watch_verdict), factored so pending→hold / green→certify /
-  # red→abort / unreadable→abort is testable without a poll loop or a clock. The POSITIVE
-  # invariant, asserted directly (not by blacklisting failure spellings): GREEN is the
-  # ONLY :pass; :red, :unreadable and :ci_less are the ONLY :abort — a terminal
-  # non-green that waiting can never turn green (:ci_less because GitHub will run NO
-  # CI at all for a stale base, so there is no run to wait for — task
-  # detect-ci-less-stale-prs); EVERY other state is :wait, so a just-merged SHA's
-  # not-yet-concluded CI is HELD and re-read instead of aborting the sweep's first run.
-  # It is also proven against states the gate never actually feeds it (no_pr/closed/
-  # merged/conflicted) so the rule holds for vectors nobody has to enumerate — they hold
-  # then fail closed at the timeout, never a false pass.
+  # Release::ShipSequence.run_watch_verdict). The POSITIVE invariant: GREEN is the ONLY :pass;
+  # :red, :unreadable and :ci_less are the ONLY :abort (waiting can never turn them green;
+  # GitHub runs NO CI for a stale base); EVERY other state is :wait, so a just-merged SHA's
+  # unconcluded CI is HELD and re-read. It is also proven against states the gate never feeds
+  # it (no_pr/closed/merged/conflicted): they hold then fail closed at the timeout, never a
+  # false pass.
+  # History: task detect-ci-less-stale-prs.
   def test_ci_poll_action_classifies_each_verdict
     assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green }).inspect)), "green certifies"
     assert_equal ":pass", eval_helper(%(ci_poll_action({ state: :green, count: 3 }).inspect)),
@@ -747,23 +743,14 @@ class ReleaseCliPreQaGateTest < ReleaseCliHarness
   end
 
   def test_qa_gate_cmd_reads_the_registered_g3_tier_from_the_real_registry
-    # ONE subprocess reads every registered app through the REAL
-    # config/release_repos.yml — the exact seam pre_qa_gate reads at run time. The
-    # tier a repo registers turns on whether its DEPLOY runs the suite, not on
-    # hub-vs-satellite:
-    #   * the HUB and ROLIO both deploy via git_push_heroku (NO test step), so each
-    #     registers CI's full suite VERBATIM — base AND system tiers. It is the same
-    #     STRING for both (HUB_GATE_CMD), which is why rolio reuses the constant:
-    #     both ci.yml `test` jobs run `bin/rails db:test:prepare test test:system`.
-    #     For rolio this is its LAST gate before prod, and `bin/rails test` alone
-    #     SKIPS its test/system — the gap this pins shut.
-    #   * turf-monster keeps the integration subset — bin/deploy runs its full
-    #     suite pre-prod, and it has no test/system at all.
-    #   * turf-vault registers NOTHING, and this is the reader that proves it. The
-    #     Rails-side Release::Repos.qa_test_cmd is nil for it, but `bin/release`
-    #     reads the registry STANDALONE (no Rails), so the two could disagree. A
-    #     non-empty answer here would arm a Rails gate against an Anchor repo with
-    #     no bin/rails — red at G3, aborting the whole batch sweep.
+    # ONE subprocess reads every registered app through the REAL config/release_repos.yml,
+    # pre_qa_gate's seam. The tier turns on whether the DEPLOY runs the suite. HUB and ROLIO
+    # deploy via git_push_heroku (NO test step), so each registers CI's full suite VERBATIM
+    # (HUB_GATE_CMD); `bin/rails test` alone SKIPS rolio's test/system. turf-monster keeps the
+    # integration subset: bin/deploy runs its full suite. turf-vault registers NOTHING:
+    # `bin/release` reads the registry STANDALONE, apart from Release::Repos.qa_test_cmd, and a
+    # non-empty answer arms a Rails gate against an Anchor repo, red at G3.
+    # History: task release-cli-tests-by-subcommand.
     out = eval_helper(%(%w[mcritchie-studio turf-monster turf-vault rolio tax-studio chain-ops].map { |r| qa_gate_cmd(r) }.inspect))
 
     expected = [HUB_GATE_CMD,

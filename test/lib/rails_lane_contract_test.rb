@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# THE SHARDED LANE'S COVERAGE CONTRACT — the claim that licenses everything else.
-#
-# Two separate mechanisms lean on ONE property, and neither can check it:
-#
-#   · bin/rails-executed-set-check asserts CI ran everything the SHARDED lane owns. It
-#     is silent about the files the contract EXCLUDES — by design, since another job
-#     runs them.
-#   · config/release_repos.yml names `bin/rails db:test:prepare test test:system` as the
-#     suite at G3/G4, which is honest only while the sharded lane plus the `system` job
-#     covers what that command runs.
-#
-# The gap between them is exactly this: is `lane manifest ∪ excluded` the whole tree?
-# If the contract ever excludes a directory no other job runs, both stay green and
-# a tier goes dark — the 2026-07-12 disease, one config file over. So it is asserted
-# here, on the real tree, rather than believed twice.
-#
-# Run directly:
-#   ruby -Itest test/lib/rails_lane_contract_test.rb
-#
-# One tier (backend shape):
-#   [unit] the lane contract's file sets against the committed tree and ci.yml.
+# THE SHARDED LANE'S COVERAGE CONTRACT. Two mechanisms lean on ONE property neither can check:
+#   bin/rails-executed-set-check asserts CI ran all the SHARDED lane owns; it is silent on
+#     EXCLUDED files.
+#   config/release_repos.yml names `bin/rails db:test:prepare test test:system` at G3/G4, honest
+#     only while the sharded lane plus the `system` job covers it.
+# The property: `lane manifest ∪ excluded` is the whole tree, or both stay green and a tier goes
+# dark.
+# History: task shard-the-rails-suite.
 
 require "minitest/autorun"
 require "yaml"

@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
-# bin/release plumbing: the mise wrapper, the conductor-lock pin, the sealed child
-# env, projects_root / repo_path, target and option flags, confirm, the primary-checkout
-# lock paths, and the harness's own self-tests.
-#
-# Part of the bin/release CLI suite, one file per subcommand. The
-# shared subprocess harness, fixtures and stub constants live in
-# test/lib/release_cli_harness.rb. Run directly:
-#   ruby -Itest test/lib/release_cli_core_test.rb
-# It is also picked up by the normal `bin/rails test` sweep.
+# bin/release plumbing: the mise wrapper, the conductor-lock pin, the sealed child env,
+# projects_root / repo_path, target and option flags, confirm, the primary-checkout lock paths,
+# and the harness's own self-tests.
+# Part of the bin/release CLI suite, one file per subcommand. Shared harness, fixtures and stub
+# constants: test/lib/release_cli_harness.rb.
+# History: task release-cli-tests-by-subcommand.
 
 require_relative "release_cli_harness"
 
@@ -57,19 +54,14 @@ class ReleaseCliCoreTest < ReleaseCliHarness
     end
   end
 
-  # ── [unit] the conductor's locks live in the operator's real .agents ──────────
-  #
-  # <projects>/.agents/locks resolves by the same env-else-real-root fallback that
-  # leaked the cost store (PR #525) and the narration markers (PR #549). The comment
-  # on primary_checkout_lock_path has always SAID every test must pin
-  # MCR_PRIMARY_LOCK_DIR — and the stakes are real: a test that flocks the LIVE file
-  # while a G3 gate holds it (the gate holds it for its whole suite run) deadlocks the
-  # gate against itself. A pin you have to remember is exactly the bug this family is
-  # about, so it is now enforced, not requested.
-  #
-  # The guard aborts BEFORE mkdir_p, so this proves the refusal without creating the
-  # real lock dir. `abort` raises SystemExit carrying the message, so the wording is
-  # assertable in-process by rescuing that SystemExit.
+  # --- [unit] the conductor's locks live in the operator's real .agents ---
+  # <projects>/.agents/locks resolves by the env-else-real-root fallback, so a test must pin
+  # MCR_PRIMARY_LOCK_DIR, and that is enforced: flocking the LIVE file while a G3 gate holds it
+  # (for its whole suite run) deadlocks the gate against itself.
+  # The guard aborts BEFORE mkdir_p, so this proves the refusal without creating the real lock
+  # dir. `abort` raises SystemExit carrying the message, so the wording is assertable in-process
+  # by rescuing it.
+  # History: task release-cli-tests-by-subcommand.
   def test_unit_an_unpinned_conductor_lock_aborts_instead_of_flocking_the_real_one
     %w[primary_checkout_lock_path gate_workspace_lock_path].each do |helper|
       out = run_ruby_unpinned(<<~RUBY)
@@ -94,19 +86,14 @@ class ReleaseCliCoreTest < ReleaseCliHarness
     assert_equal self.class.lock_dir, File.dirname(path), "a pinned lock must still land in the pinned dir"
   end
 
-  # Run a bin/release subcommand in a clean subprocess with the given argv (which
-  # MUST include --dry-run — DRY/PROD are read from ARGV at load time, so argv is
-  # set before `load`). `setup` is extra ruby injected AFTER load (e.g. to stub
-  # `conductor` so the shell orchestration runs WITHOUT Rails/a DB), `call` is the
-  # entrypoint method to invoke.
-  # GUARD THE FLOOR ITSELF. run_ruby's env is the only thing between a case that
-  # forgets to stub `sh` and the developer's real `gh` / `heroku` / `op` / `ssh`.
-  #
-  # DRIVEN THROUGH THE REAL RUNNER, and read from the RECEIPT rather than the env
-  # hash. Asserting the env merely NAMES the stub directory would pass against a
-  # PATH that still resolves the real binary first — the exact shape of a guard
-  # that looks armed and is not. This spawns a child through run_ruby and asserts
-  # the stub actually intercepted the call.
+  # Run a bin/release subcommand in a clean subprocess with the given argv (which MUST include
+  # --dry-run: DRY/PROD are read from ARGV at load, so argv is set before `load`). `setup` is
+  # extra ruby injected AFTER load (e.g. to stub `conductor` so orchestration runs WITHOUT Rails/a
+  # DB); `call` is the entrypoint method.
+  # GUARD THE FLOOR ITSELF. run_ruby's env is all that stands between a case that forgets to stub
+  # `sh` and the real `gh` / `heroku` / `op` / `ssh`. Read from the RECEIPT: an env that merely
+  # NAMES the stub dir passes against a PATH resolving the real binary first.
+  # History: task release-cli-tests-by-subcommand.
   def test_the_child_env_seals_outbound_binaries
     OutboundSeams.reset!
     out = run_ruby(%(system("gh", "--version"); puts "CHILD-DONE"))
@@ -270,22 +257,14 @@ class ReleaseCliCoreTest < ReleaseCliHarness
     assert_equal "mcr-primary-checkout-x.lock", out
   end
 
-  # --- the GATE-WORKSPACE lock: the workspace is private to the CONDUCTOR -------
-  #
-  # BLOCKER (Avi, review of PR #511): the first cut of this change asserted the gate
-  # workspace needed no lock ("nothing else touches this tree"). FALSE — another
-  # `bin/release` does. The workspace PATH (<repo>/.worktrees/_gate) and its DB
-  # (<repo>_gate_test) are FIXED, and two concurrent conductors are a DOCUMENTED
-  # occurrence here (two QA-release sessions have already raced). Unlocked, conductor
-  # B's `reset --hard` moves the tree and its `db:test:prepare` PURGES the DB under
-  # conductor A's live, lazily-autoloading suite — the exact two root causes this gate
-  # exists to close, relocated one directory over (plus the parallel-full-suite
-  # SIGSEGV class).
-  #
-  # So the gate holds its OWN flock across pin → prepare → suite. It is deliberately
-  # NOT the primary-checkout lock: the primary must stay FREE (feature sessions live
-  # there, and monopolising it for the length of a suite was half of what made the old
-  # gate hostile), and the two are never nested, so they cannot deadlock.
+  # --- the GATE-WORKSPACE lock: the workspace is private to the CONDUCTOR ---
+  # The workspace PATH (<repo>/.worktrees/_gate) and DB (<repo>_gate_test) are FIXED and two
+  # conductors can run at once. Unlocked, conductor B's `reset --hard` moves the tree and its
+  # `db:test:prepare` PURGES the DB under conductor A's live suite.
+  # So the gate holds its OWN flock across pin -> prepare -> suite. It is deliberately NOT the
+  # primary-checkout lock: the primary must stay FREE (feature sessions live there), and the two
+  # are never nested, so they cannot deadlock.
+  # History: task release-cli-tests-by-subcommand.
 
   # [unit] The gate lock is its OWN file, in the SAME shared lock dir (TMPDIR-
   # independent, so two conductors contend on one file) — never the primary's. If
@@ -312,15 +291,11 @@ class ReleaseCliCoreTest < ReleaseCliHarness
     assert_match(%r{\Ahttp://127\.0\.0\.1:}, base, "…it is pinned at an unroutable loopback base instead")
   end
 
-  # --- regression: the silent swallowed-subprocess flake ------------------------
-  #
-  # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced — it
-  # must never slip through as a bare `Actual: ""` (how the original
-  # agent_worktree_test CI flake masqueraded, because the old
-  # `IO.popen(err: File::NULL)` helper discarded stderr + exit status). We force
-  # that mode deterministically: a script that writes to stderr and exits nonzero
-  # on every attempt. The old helper returned "" silently (no raise) and would fail
-  # THIS assertion; the hardened run_ruby flunks with the stderr included.
+  # --- regression: the silent swallowed-subprocess flake ---
+  # A subprocess that EXITS NONZERO must fail LOUD with its stderr surfaced, never a bare `Actual:
+  # ""`. Forced deterministically: a script that writes to stderr and exits nonzero on every
+  # attempt. An `IO.popen(err: File::NULL)` helper returns "" silently and fails this assertion.
+  # History: task release-cli-tests-by-subcommand.
   def test_run_ruby_flunks_loudly_when_subprocess_exits_nonzero
     error = assert_raises(Minitest::Assertion) do
       run_cli([], call: "STDERR.puts 'forced-subprocess-failure'; exit 1")

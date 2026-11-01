@@ -1,29 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] THE PRINTED REMEDY IS EXECUTED, NOT ASSERTED.
-#
-# A printed remedy is a CAUSAL CLAIM — "run this and the refusal clears" — and the
-# only honest test of a claim like that is to RUN IT and look at what moved. A test
-# that asserts the string appears in the file is blind to the whole defect: the
-# previous remedy in bin/reviewer-select was present, well-spelled, correctly
-# quoted, named a real command, and refreshed the wrong variable. Every string
-# assertion anyone could have written would have stayed green while an operator
-# looped on it.
-#
-# So each case below builds the remedy the refusal prints, runs it VERBATIM in a
-# shell, and then reads the environment back out of that shell. The interesting
-# case is the NEGATIVE CONTROL at the bottom: the OLD remedy, run the same way,
-# with the variable it leaves untouched named in the assertion. If a future edit
-# points the remedy back at GH_TOKEN, that case is what reddens.
-#
-# NOTHING HERE REACHES 1PASSWORD OR GITHUB. bin/gh-token's cache is pinned into a
-# tmpdir through TaskUsageSandboxEnv.child_env and pre-filled with a synthetic
-# token, so the real command runs its real code path and returns a fake credential.
-# bin/gh-auth-refresh is stubbed the way test/commands/gh_auth_refresh_test.rb
-# stubs it — its own `gh` and broker hooks — for the same reason that file states:
-# `gh auth login` writes the login KEYCHAIN, which GH_CONFIG_DIR does not isolate.
-#
-#   ruby -Itest test/lib/github_read_remedy_test.rb
+# [unit] THE PRINTED REMEDY IS EXECUTED, NOT ASSERTED. A printed remedy is a CAUSAL CLAIM, so
+# each case builds it, runs it VERBATIM in a shell, and reads the environment back; a string
+# assertion stays green on a remedy that refreshes the wrong variable. The NEGATIVE CONTROL at
+# the bottom runs the OLD remedy. NOTHING HERE REACHES 1PASSWORD OR GITHUB: bin/gh-token's cache
+# is pinned into a tmpdir through TaskUsageSandboxEnv.child_env. As in
+# test/commands/gh_auth_refresh_test.rb, bin/gh-auth-refresh is stubbed, because `gh auth login`
+# writes the login KEYCHAIN, which GH_CONFIG_DIR does not isolate.
+# History: task refusal-remedy-must-round-trip.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -151,17 +135,12 @@ class GithubReadRemedyTest < Minitest::Test
   end
 
   # === THE NEGATIVE CONTROL =====================================================
-  #
-  # THE DEFECT, RUNNABLE. `eval "$(bin/gh-auth-refresh --export)"` was printed by
-  # both of bin/reviewer-select's credential refusals. Its entire stdout contract is
-  # one line — `export GH_TOKEN='…'` (bin/gh-auth-refresh#export) — so it repairs the
-  # credential `gh` reads and leaves GITHUB_TOKEN, which is what
-  # Github::AppToken#resolve returns when App creds are absent, exactly as stale as
-  # it was. The operator followed it verbatim and got the byte-identical refusal.
-  #
-  # This is not here as history. It is the assertion that reddens if anyone points a
-  # remedy for a Ruby-side GitHub read back at GH_TOKEN, and it is stated as the
-  # measurement it is: both halves named, so a reader can see WHICH variable moved.
+  # `eval "$(bin/gh-auth-refresh --export)"` emits one line, `export GH_TOKEN='…'`
+  # (bin/gh-auth-refresh#export), and leaves stale GITHUB_TOKEN, which Github::AppToken#resolve
+  # returns when App creds are absent. This reddens if anyone points a remedy for a Ruby-side
+  # GitHub read back at GH_TOKEN. Both halves are named, so a reader can see WHICH variable
+  # moved.
+  # History: task refusal-remedy-must-round-trip.
   def test_the_old_remedy_does_not_touch_the_variable_the_read_consumes
     gh = File.join(@dir, "gh-stub")
     File.write(gh, <<~SH)

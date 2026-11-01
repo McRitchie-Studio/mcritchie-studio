@@ -1,23 +1,11 @@
 # frozen_string_literal: true
 
-# Unit tests for bin/lib/test_shard.rb — HOW THE RAILS SUITE IS CUT.
-#
-# THE PROPERTY UNDER TEST, and it is the only one that can make the lane WRONG rather
-# than merely SLOW:
-#
+# Unit tests for bin/lib/test_shard.rb, HOW THE RAILS SUITE IS CUT. THE PROPERTY:
 #     THE CONCATENATION OF THE BUCKETS IS A PERMUTATION OF THE INPUT.
-#
-# Nothing dropped, nothing duplicated, for every input — including the degenerate ones.
-# Balance is an optimisation and is tested as such; coverage is the contract, and it is
-# tested as a property over generated inputs rather than over one hand-picked example,
-# because the failure that actually happened (see the all-zero case below) was invisible
-# on every example anyone would hand-pick.
-#
-# Run directly:
-#   ruby -Itest test/lib/test_shard_test.rb
-#
-# One tier (backend shape):
-#   [unit] the packer's coverage, determinism and balance over synthetic file sets.
+# Nothing dropped, nothing duplicated, for every input, degenerate ones included. Balance is an
+# optimisation; coverage is the contract, tested over generated inputs because a real failure
+# (the all-zero case below) is invisible on hand-picked examples.
+# History: task shard-the-rails-suite.
 
 require "minitest/autorun"
 require "tmpdir"

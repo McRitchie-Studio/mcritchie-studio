@@ -5,15 +5,13 @@ require "stringio"
 require "tmpdir"
 require_relative "../../bin/lib/game_model/cli"
 
-# [unit] bin/game-model's mechanics with the network, the image API, ArcFace,
-# Apple Vision and ImageMagick faked: only team and league hosts are fetched, a
-# club gallery page parses to its photos, the edits request pins the dated model,
-# the prompts carry the lessons of the hand-built sheets (the three-quarter
-# geometry, the build anchors), the gate picks the best attempt and flags the
-# floor, the stitch lays out 2 + 6, and each stage wires its references in order
-# under the 16-image cap, and the performance sheet takes 16 front-on cells,
-# 4x4, from the face pack and today's jersey. The paid path itself was proven
-# by real runs.
+# [unit] bin/game-model's mechanics with network, image API, ArcFace, Apple Vision and
+# ImageMagick faked: only team and league hosts are fetched, a gallery page parses to
+# photos, the edits request pins the dated model, prompts carry the three-quarter geometry
+# and build anchors, the gate picks the best attempt and flags the floor, the stitch lays
+# out 2 + 6, each stage wires references in order under the 16-image cap, and the
+# performance sheet takes 16 front-on cells, 4x4.
+# History: task game-character-model-pipeline.
 class GameModelTest < Minitest::Test
   SPEC = {
     "name" => "Test Player", "espn_id" => "123", "descriptor" => "Bears white · 2026 Week 6 at ATL", "number" => 18,

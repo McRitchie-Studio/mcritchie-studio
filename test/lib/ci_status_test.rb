@@ -136,19 +136,14 @@ class CiStatusTest < Minitest::Test
     assert_includes v[:reason], "Not Found"
   end
 
-  # --- the CI-LESS third state (task detect-ci-less-stale-prs, 2026-07-20) -----
-  #
-  # REGRESSION. When a PR's base drifts far enough that GitHub cannot compute a
-  # merge commit, GitHub runs NO CI AT ALL: the head SHA has zero check-runs and
-  # mergeStateStatus reads UNKNOWN/DIRTY. Reading only the checks folds that into
-  # :none, which every watcher in the fleet treats as "CI is still coming" — so it
-  # waits forever on checks that will NEVER exist. That burned a full rework cycle
-  # (a watcher armed at 05:47Z on a commit that never got checks; the cure was a
-  # rebase, which triggered CI green 8/8 immediately).
-  #
-  # "No CI will run" is a THIRD state, not a slow :pending: its remedy is a rebase,
-  # and no amount of waiting substitutes. These vectors pin the CLASSIFICATION
-  # property — four inputs, four DISTINCT verdicts — not any message spelling.
+  # --- the CI-LESS third state ---------------------------------------------------
+  # When a PR's base drifts far enough that GitHub cannot compute a merge commit, GitHub runs
+  # NO CI AT ALL: zero check-runs and mergeStateStatus UNKNOWN/DIRTY. Reading only the checks
+  # folds that into :none, which every watcher treats as "CI is still coming", so it waits
+  # forever. "No CI will run" is a THIRD state, not a slow :pending: its remedy is a rebase.
+  # These vectors pin the CLASSIFICATION property, four inputs, four DISTINCT verdicts, not
+  # any message spelling.
+  # History: task detect-ci-less-stale-prs.
 
   # The four vectors, as `combine` sees them: [gh pr view payload, gh pr checks payload].
   def ci_vectors
@@ -233,30 +228,13 @@ class CiStatusTest < Minitest::Test
   end
 
   # --- ROUND 2: UNKNOWN mergeability is NOT a negative verdict ------------------
-  #
-  # Review blocked round 1 (avi, siding with jasper's light lane; carl's primary
-  # lane found the same defect and rated it non-blocking — the CONVERGENCE is why it
-  # blocked). The round-1 predicate was SELF-INCONSISTENT: an ABSENT `mergeable`
-  # counted as confirmed, while an explicit "UNKNOWN" did not — though both mean the
-  # SAME thing, that GitHub has not told us it cannot merge.
-  #
-  # Why that was not cosmetic: GitHub computes mergeability ASYNCHRONOUSLY after
-  # every push, answering UNKNOWN until it lands, and a brand-new head SHA has zero
-  # check-runs in that SAME window. Both halves of the conjunction are therefore true
-  # at once for a perfectly HEALTHY PR — and that window is exactly when builders run
-  # these tools, because the operating model prescribes "push, open a PR, then run
-  # bin/dor-check". A reviewer watched #588, #601 and #602 all flip to UNKNOWN within
-  # seconds of an unrelated merge and settle back with NO push.
-  #
-  # The harm is not the stale verdict, it is the INSTRUCTION the verdict carries: a
-  # hard block reading "waiting can never clear it… rebase and --force-with-lease".
-  # A compliant agent force-pushes a healthy branch and cancels its in-flight CI.
-  #
-  # THE RULE, now three-valued: mergeability is AFFIRMED, REFUTED, or UNKNOWN, and
-  # UNKNOWN is never converted into an actionable negative. Uncertainty about
-  # GITHUB'S KNOWLEDGE falls toward wait; only an affirmative negative blocks. The
-  # asymmetry justifies it — a wrong block force-pushes a healthy branch, a wrong
-  # wait costs a bounded timeout.
+  # An ABSENT `mergeable` and an explicit "UNKNOWN" mean the same thing. GitHub computes
+  # mergeability asynchronously after every push, and a new head SHA has zero check-runs in
+  # that window, so a HEALTHY PR looks CI-less just when builders run `bin/dor-check`. A block
+  # saying "rebase and --force-with-lease" force-pushes a healthy branch. THE RULE,
+  # three-valued: AFFIRMED, REFUTED or UNKNOWN; UNKNOWN is never converted into an actionable
+  # negative. Only an affirmative negative blocks; a wrong wait costs a bounded timeout.
+  # History: task detect-engine-migration-content-drift.
 
   def test_undetermined_mergeability_is_a_wait_not_ci_less
     # The exact vector review prescribed. UNKNOWN + zero checks = the fresh-push
@@ -321,22 +299,12 @@ class CiStatusTest < Minitest::Test
   end
 
   # --- ROUND 3 -----------------------------------------------------------------
-  #
-  # BLOCKER 1 (both lanes): BOUND EXHAUSTION MUST NOT MANUFACTURE CONFIDENCE.
-  # Round 2 let a second look convert an undetermined mergeability into a hard
-  # :ci_less — so the SAME payload it correctly called :none became a confident block
-  # five seconds later, emitting `--force-with-lease` advice at a healthy PR. That is
-  # round 1's harm on a timer. It also contradicted this module's own stated fail
-  # direction ("uncertainty falls toward wait") and gates/g2-review.md.
-  #
-  # The discriminator was never sound: ONE 5s retry against an asynchronous GitHub
-  # computation that publishes no SLA. Running out of patience is not evidence. A
-  # stable-unknown block would need a live PR observed staying UNKNOWN indefinitely, a
-  # bound sized to GitHub's real settling time, and a test of the re-read loop — none
-  # of which existed, and the loop itself was untested.
-  #
-  # So the bound is GONE, and with it the sleep on a hot path both dor-check and
-  # pr-review call. :ci_less now has EXACTLY ONE producer: an affirmative negative.
+  # BLOCKER 1: BOUND EXHAUSTION MUST NOT MANUFACTURE CONFIDENCE. A second look must not
+  # convert an undetermined mergeability into a hard :ci_less: running out of patience is not
+  # evidence, against an asynchronous GitHub computation with no SLA. So no bound and no sleep
+  # on a hot path both dor-check and pr-review call. :ci_less has EXACTLY ONE producer: an
+  # affirmative negative.
+  # History: task detect-engine-migration-content-drift.
 
   def test_ci_less_has_exactly_one_producer_an_affirmative_negative
     # THE invariant, asserted over the whole input space rather than by spot-checking
@@ -410,17 +378,12 @@ class CiStatusTest < Minitest::Test
     assert_equal :refuted, CiStatus.mergeability(view("OPEN", "DIRTY", mergeable: "MERGEABLE"))
   end
 
-  # BLOCKER 3: PRINTED ADVICE MUST FAIL SAFELY, NOT JUST SUCCEED.
-  #
-  # The round-2 remedy was `git fetch origin && git rebase origin/<base> && git push
-  # --force-with-lease`. But :refuted fires on `mergeable CONFLICTING` — GitHub
-  # affirming REAL conflicts — so the rebase HALTS, the `&&` chain stops silently, the
-  # push never runs, and the operator is left mid-rebase with no next instruction. The
-  # remedy never said "resolve the conflicts". The same defect appeared independently
-  # in a sibling PR the same day, which is why it is a standing lesson: we test that
-  # printed advice SUCCEEDS and never that it FAILS SAFELY.
-  #
-  # These assert the property (recoverable + clearly labeled), not the prose.
+  # BLOCKER 3: PRINTED ADVICE MUST FAIL SAFELY, NOT JUST SUCCEED. :refuted fires on `mergeable
+  # CONFLICTING`, real conflicts, so a `git fetch origin && git rebase origin/<base> && git
+  # push --force-with-lease` chain halts at the rebase and leaves the operator mid-rebase with
+  # no next instruction. These assert the property (recoverable + clearly labeled), not the
+  # prose.
+  # History: task detect-engine-migration-content-drift.
 
   def refuted_remedy
     CiStatus.ci_less_remedy(CiStatus.ci_less_verdict(view("OPEN", "UNKNOWN", mergeable: "CONFLICTING", base: "accepted")))
@@ -541,15 +504,13 @@ class CiStatusTest < Minitest::Test
   end
 
   # --- conflict-remedy-names-wrong-branch (round 5): the base is HOSTILE ---------
-  # base = the GitHub PR's baseRefName. pr-review and dor-check interpolate it VERBATIM
-  # into task feedback a human then PASTES INTO A SHELL, so the property under test IS
-  # the injection property — asserted on the EFFECT (what parses out of the printed
-  # line), never on one spelling of the output. A base that is not a plain git ref must
-  # NEVER surface as a LIVE shell token in a runnable `git …` line: the commands are
-  # omitted (an honest gap), or at most the ref appears shell-escaped and inert. A
-  # spelling assertion (refute the literal "; rm") would pass the instant an attacker
-  # picks a metacharacter the author did not enumerate; asserting the EFFECT catches
-  # every vector, including the ones we did not imagine.
+  # base = the PR's baseRefName. pr-review and dor-check interpolate it VERBATIM into task
+  # feedback a human PASTES INTO A SHELL. A base that is not a plain git ref must NEVER
+  # surface as a LIVE shell token in a runnable `git …` line: the commands are omitted, or at
+  # most the ref appears shell-escaped and inert. Assert the EFFECT (what parses out of the
+  # printed line), never a spelling: refuting the literal "; rm" passes the instant an
+  # attacker picks a metacharacter the author did not enumerate.
+  # History: task conflict-remedy-names-wrong-branch.
 
   # A base carrying any of these can, unescaped, run a SECOND command, open a
   # substitution, split into a second argument, or be read as a git/ssh OPTION.
@@ -997,16 +958,13 @@ class CiStatusTest < Minitest::Test
     assert_equal "", CiStatus.name_with_owner("")
   end
 
-  # --- :unreadable — a gate that cannot SEE must say WHY it cannot see ---------
-  #
-  # THE BUG (task dor-check-misses-rolio-ci, verified 2026-07-13): a PERMISSION
-  # denial and a genuinely-un-run CI both collapsed into "no verdict". A blind gate
-  # that cannot name its blindness gets ignored, then routed around — and that is
-  # how a genuinely RED CI eventually slips through. So an auth/permission failure
-  # is its OWN state, carrying its own cause.
-  #
-  # :unreadable is NOT more lenient than :unverified — it blocks exactly the same
-  # routes (notably it does NOT unlock the fast-cert credit). It is more HONEST.
+  # --- :unreadable: a gate that cannot SEE must say WHY it cannot see ---------
+  # A PERMISSION denial and a genuinely un-run CI must not collapse into "no verdict": a blind
+  # gate that cannot name its blindness gets routed around, and a RED CI slips through. An
+  # auth/permission failure is its OWN state, carrying its cause. :unreadable is NOT more
+  # lenient than :unverified: it blocks the same routes (it does NOT unlock the fast-cert
+  # credit).
+  # History: task dor-check-misses-rolio-ci.
 
   # The VERBATIM body from `gh pr checks 23 --repo McRitchie-Studio/rolio` (2026-07-13):
   # rolio is a PRIVATE repo and the fine-grained PAT lacks Checks: Read on it, so
@@ -1216,17 +1174,13 @@ class CiStatusTest < Minitest::Test
   end
 
   # --- THE STALE-CREDENTIAL RETRY ---------------------------------------------
-  #
-  # These are the only tests in this file that RUN the gh reads instead of feeding
-  # `parse` a payload, and that is the point: the bug being fixed was a branch that
-  # no test could reach, so a test that stubs the verdict proves nothing about it.
-  # Both seams are stubs — CI_STATUS_GH_BIN for gh, GH_AUTH_TOKEN_BIN for the token
-  # broker — so no network, no real token, and no 1Password session is involved.
-  #
-  # The stub gh REFUSES exactly as GitHub does on an expired installation token
-  # ("Bad credentials (HTTP 401)" on stderr, exit 1) unless it finds the minted token
-  # in its OWN environment. Passing therefore requires the whole chain: classify the
-  # refusal → mint once → hand the token to the RETRIED CHILD → re-read.
+  # The only tests here that RUN the gh reads instead of feeding `parse` a payload: a stubbed
+  # verdict proves nothing about this branch. Seams: CI_STATUS_GH_BIN for gh,
+  # GH_AUTH_TOKEN_BIN for the token broker, so no network or real token. The stub gh REFUSES
+  # as GitHub does ("Bad credentials (HTTP 401)", exit 1) unless the minted token is in its
+  # OWN environment. Passing requires the chain: classify the refusal → mint once → hand the
+  # token to the RETRIED CHILD → re-read.
+  # History: task detect-engine-migration-content-drift.
 
   MINTED = "stub-minted-token"
 

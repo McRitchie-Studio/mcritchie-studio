@@ -1,29 +1,13 @@
 # frozen_string_literal: true
 
-# bin/dor-check's PR FILE-LIST read, and the credential expiry that used to make it
-# lie. Standalone (no Rails — it shells out to the script with --file fixtures):
-#   ruby -Itest test/lib/dor_check_pr_files_auth_test.rb
-#
-# THE DEFECT. `pr_changed_files` made its own gh call with `err: File::NULL` and
-# `return nil unless $?.success?`. GitHub App installation tokens live ~1 hour, so
-# mid-session that read started failing — and BOTH halves of the failure were
-# invisible:
-#   1. nil is also what "this PR has no files" returns, so the resolver fell through
-#      to the LOCAL git diff and the gate went on to reason about the working tree
-#      while printing a verdict about "the PR". Shape tiers, the doc-only exemption
-#      and migration detection all judged a different artifact, with no signal.
-#   2. gh prints "Bad credentials (HTTP 401)" on STDERR, which File::NULL discarded —
-#      so there was no text left for GhAuthRetry.auth_failure? or
-#      CiStatus.unreadable_cause to classify. The failure could not even be NAMED,
-#      let alone recovered by the mint-once-and-retry seam bin/submit and bin/pr-review
-#      have used since PR 832.
-#
-# EVERY TEST HERE DRIVES THE REAL READ. No DOR_CHECK_PR_FILES injection: the gh
-# binary is stubbed through the seam's own CI_STATUS_GH_BIN, and the token broker
-# through GH_AUTH_TOKEN_BIN, so the whole chain runs — subprocess, stderr capture,
-# classification, mint, retry — without a network, a real token, or 1Password. A test
-# that asserted against the injection seam alone would never have watched the
-# unguarded version fall back, which is the one thing worth proving.
+# bin/dor-check's PR FILE-LIST read under credential expiry (App tokens live ~1 hour). nil
+# from the read is also "this PR has no files", so a swallowed failure falls through to the
+# LOCAL git diff and the gate judges a different artifact. `err: File::NULL` would discard
+# "Bad credentials (HTTP 401)", leaving GhAuthRetry.auth_failure? and
+# CiStatus.unreadable_cause nothing to classify. EVERY TEST DRIVES THE REAL READ. No
+# DOR_CHECK_PR_FILES injection: gh is stubbed through CI_STATUS_GH_BIN and the broker through
+# GH_AUTH_TOKEN_BIN, so capture, classification, mint and retry all run.
+# History: task detect-engine-migration-content-drift.
 require "minitest/autorun"
 require "json"
 require "tmpdir"

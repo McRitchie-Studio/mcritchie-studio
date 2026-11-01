@@ -1,15 +1,11 @@
 require "test_helper"
 require "rake"
 
-# Regression tier for `tasks:backfill_testing_phases` — the rake the release
-# pipeline runs as a post-deploy hook (see Release::PostDeploy).
-#
-# THE BUG THIS FILE EXISTS FOR: Task::TestingPhases.backfill! used to return a
-# SUCCESS count with a per-task `rescue` that did not increment it, and the rake
-# printed that count and exited 0 regardless. So a DB blip mid-run, or a column
-# missing after a partial migration, made EVERY refresh raise, printed
-# "refreshed for 0 task(s)", exited 0 — and the pipeline recorded the hook GREEN
-# and shipped past a backfill that rewrote nothing.
+# Regression tier for `tasks:backfill_testing_phases`, the rake the release pipeline runs as a
+# post-deploy hook (Release::PostDeploy). When EVERY refresh raises (a DB blip, a missing
+# column), Task::TestingPhases.backfill! must not print "refreshed for 0 task(s)" and exit 0,
+# or the pipeline records the hook GREEN and ships past a backfill that rewrote nothing.
+# History: task empty-backfill-ships-green.
 class TasksBackfillTestingPhasesRakeTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("tasks:backfill_testing_phases")

@@ -1,40 +1,12 @@
 # frozen_string_literal: true
 
 # [integration] When the doc sweep fails, does `bin/release archive` report what ACTUALLY
-# failed — and does it claim ledger loss only when rows genuinely fail to conserve?
-#
-# THE DEFECT. `bin/release archive` caught EVERY non-zero exit of bin/archive-docs and
-# announced one cause: "the delete-later ledger has lost resolved row(s)". It had checked
-# no such thing. On 2026-09-01, mid production deploy, it said exactly that while a
-# `git mv` had crashed on an existing destination. The operator counted the rows by hand —
-# delete-later.md 86 → 45 (−41), its archive 524 → 565 (+41) — perfectly conserved, 41 out
-# and 41 in. A ledger-loss claim reads as DATA LOSS IN AN AUDIT TRAIL; an operator who
-# believes it may start "recovering" rows that were never lost. It cost a real detour at
-# the worst possible moment.
-#
-# WHY THIS TEST DRIVES bin/release AND NOT DocsArchive.failure_report. The report is pure
-# and unit-tested in test/lib/docs_archive_failure_report_test.rb — hand it a verdict and
-# it renders that verdict faithfully. The question HERE is a different one and the unit
-# tier cannot ask it: does the caller MEASURE the verdict at all? A caller that kept
-# inferring the verdict from the exit code would pass every unit assertion. So this
-# spawns the REAL bin/release.rb, lets its REAL sweep_docs cross a REAL Open3 boundary,
-# and points it at a REAL git repo whose ledger state the test controls.
-#
-# THE EXPERIMENT, and the reason it proves discrimination rather than string-matching:
-# BOTH failing cases use the SAME child failure — byte-identical `git mv` crash stderr,
-# same exit code. The ONLY variable is the fixture repo's ledger. If the verdict flips
-# with it, the caller is measuring. If the caller were parroting the child, or inferring
-# from the exit status, both cases would read the same and one of the two would fail.
-#
-# THE CONTROL IS NOT OPTIONAL. Deleting the ledger check outright would satisfy "a crash
-# must not be called ledger loss" while shipping a strictly worse bug: a genuine loss
-# committed to `release` in silence. test_genuine_ledger_loss_* is what stops that.
-#
-# Run directly:  ruby -Itest test/lib/release_archive_docs_diagnosis_test.rb
-#
-# Sibling file: test/lib/release_archive_docs_refusal_test.rb pins that the refusal is
-# HONOURED (the beat halts before the artifact commit). This one pins that the halt is
-# EXPLAINED honestly. Both properties are load-bearing and they fail independently.
+# failed, and claim ledger loss only when rows fail to conserve? The question HERE is whether
+# the caller MEASURES the verdict, so this spawns the REAL bin/release.rb. BOTH failing cases
+# use a byte-identical child failure; the ONLY variable is the fixture's ledger. THE CONTROL IS
+# NOT OPTIONAL: test_genuine_ledger_loss_*. test/lib/docs_archive_failure_report_test.rb tests
+# the report; test/lib/release_archive_docs_refusal_test.rb pins that the refusal is HONOURED.
+# History: task archive-error-blames-ledger.
 
 require "minitest/autorun"
 require "open3"
@@ -74,15 +46,12 @@ class ReleaseArchiveDocsDiagnosisTest < Minitest::Test
 
   # --- the fixture ----------------------------------------------------------
 
-  # `dir` holds BOTH the cwd-relative bin/ stubs (bin/release spawns `bin/archive-docs`
-  # and friends relative to the working directory) AND the sibling checkout the CLI
-  # resolves through PROJECTS_DIR → repo_path("mcritchie-studio"). That last part is what
-  # lets the test own the ledger the caller measures, instead of reading the operator's.
-  #
-  # `ledger:` picks the WORKING-TREE state laid over a fixed HEAD:
-  #   :conserved — ALPHA moved from the ledger into the archive. The archive beat, done
-  #                correctly. The union still holds every resolved row: NOT a loss.
-  #   :lost      — ALPHA removed from the ledger and added to NEITHER file. A real loss.
+  # `dir` holds the cwd-relative bin/ stubs AND the sibling checkout resolved through
+  # PROJECTS_DIR → repo_path("mcritchie-studio"), so the test owns the ledger the caller
+  # measures. `ledger:` picks the WORKING-TREE state over a fixed HEAD:
+  #   :conserved: ALPHA moved from the ledger into the archive. NOT a loss.
+  #   :lost: ALPHA removed from the ledger and added to NEITHER file. A real loss.
+  # History: task archive-error-blames-ledger.
   def with_fixture(ledger: :conserved, archive_docs_exit: 1, dry_run_exit: 0, git_repo: true)
     Dir.mktmpdir("release-archive-diagnosis") do |dir|
       write_stubs(dir, archive_docs_exit: archive_docs_exit, dry_run_exit: dry_run_exit)
@@ -178,19 +147,12 @@ class ReleaseArchiveDocsDiagnosisTest < Minitest::Test
     ["#{out}\n#{err}", status]
   end
 
-  # THE REPORT ITSELF, sliced out of the run's combined streams — and this narrowing is
-  # load-bearing, not tidiness.
-  #
-  # sweep_docs also ECHOES the child's stderr (`warn(err)`) so a passing run reads as it
-  # always did, and the pre-fix CLI echoed it too via capture2e. So "the crash text appears
-  # somewhere in the output" was true BEFORE this fix and stays true if the report stops
-  # quoting stderr entirely — an assertion on the whole run proves nothing about the
-  # message. MEASURED: a mutation replacing `stderr: docs_sweep.err` with `stderr: ""`
-  # SURVIVED a whole-output assertion and is KILLED by this one.
-  #
-  # `abort` writes last, so everything from the report's lead line to the end IS the
-  # report. Returns "" when there is none, so an assertion on a passing run fails loudly
-  # rather than matching nil.
+  # THE REPORT ITSELF, sliced out of the run's combined streams; this narrowing is load-bearing.
+  # sweep_docs also ECHOES the child's stderr (`warn(err)`), so a whole-output assertion proves
+  # nothing: replacing `stderr: docs_sweep.err` with `stderr: ""` survives it and is KILLED by
+  # this. `abort` writes last, so the lead line to the end IS the report. Returns "" when there
+  # is none, so an assertion on a passing run fails loudly rather than matching nil.
+  # History: task archive-error-blames-ledger.
   LEAD = "docs archive FAILED"
 
   def report_in(out)

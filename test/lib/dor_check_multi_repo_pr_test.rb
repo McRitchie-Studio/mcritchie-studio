@@ -1,37 +1,13 @@
 # frozen_string_literal: true
 
-# bin/dor-check ON A TASK WITH A PR IN EVERY REPO IT NAMES.
-# Standalone (no Rails — it drives the script with --file fixtures):
-#   ruby -Itest test/lib/dor_check_multi_repo_pr_test.rb
-#
-# THE DEFECT (/tasks/dor-check-reads-one-pr, found independently by two agents on
-# 2026-09-07, hours apart). `devops.pr_url` — SINGULAR — fed BOTH the PR file list and
-# the CI verdict, while the plural `devops.pr_urls` register fed only the cert gate's
-# repo list. On a two-repo task the shape/tier gate, the doc-only exemption, migration
-# detection and the CI allow-list were therefore all measured against ONE PR, and the
-# verdict read as though it covered the task.
-#
-# WHY IT OUTLIVED THE KNOWN LIMIT. "The gate sees only the repos a task NAMES" was
-# already understood, and the standing remedy was to fix the record. This sat a rung
-# below that: on /tasks/document-burn-entry-token the task named BOTH repos and
-# recorded BOTH PR URLs correctly, and the gate still read one. Measured before the
-# fix — DOR_CHECK_DIFF_ROOT at turf-vault and again at turf-monster returned the
-# IDENTICAL three turf-vault files, because PR files outrank the git tree, so changing
-# the tree changes nothing. turf-monster's only file, docs/SOLANA.md, appeared in
-# neither run.
-#
-# EVERY TEST HERE DRIVES THE REAL GATE, through --file fixtures and the two per-repo
-# injection seams, and reads its verdict back out of --json. A unit test of the folder
-# would pass happily while the caller never handed it the second PR — which is the
-# whole shape of the bug.
-#
-# THE HAPPY PATH IS THE TRAP, so it is never asserted alone. Every refusal below is
-# paired with a CONTROL that differs in exactly the fact under test and PASSES, so a
-# refusal can never be credited to some unrelated permanent objection. And the seams
-# are read BACK from the payload (`pr_coverage[].ci`, `changed_files`) rather than
-# assumed to have landed: OutboundSeams seals `gh` to a stub that exits non-zero with
-# no stdout, so a seam that failed to land does not fall back to the network — it
-# fails the read, which this suite can tell apart from every other state.
+# bin/dor-check ON A TASK WITH A PR IN EVERY REPO IT NAMES. `devops.pr_url` (singular) must not
+# be all the shape/tier gate, doc-only exemption, migration detection and CI allow-list measure
+# on a two-repo task. PR files outrank the git tree, so changing the tree changes nothing.
+# EVERY TEST DRIVES THE REAL GATE via --file fixtures and two per-repo seams, reading --json; a
+# folder unit test passes while the caller never hands it the second PR. THE HAPPY PATH IS THE
+# TRAP: each refusal pairs with a passing CONTROL. Seams are read BACK from the payload
+# (`pr_coverage[].ci`, `changed_files`); OutboundSeams seals `gh`, so a miss fails the read.
+# History: task dor-check-reads-one-pr.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -220,14 +196,11 @@ class DorCheckMultiRepoPrTest < Minitest::Test
   # ── 4. THE SECOND PR'S CONTENT IS GRADED, not just counted ──────────────────
 
   # ── A STAGED MERGE (/tasks/gate-zero-blocks-staged-merges) ─────────────────────
-  #
-  # retire-the-last-mirrors, 2026-09-10: the consumer PRs (MS 1351, turf 675) merged into
-  # `accepted` FIRST BY DESIGN, then the engine PR 319 — devops.pr_url, CI green — came to
-  # review. Worst-of ranked :merged below :green, so the landed siblings GOVERNED and gate-
-  # zero refused the exact order the task required, with a cert remedy that could never
-  # clear it. The sibling here is left OUT of the injected CI map, so its verdict comes
-  # through the REAL `gh pr view` parse (a stub answering for that one URL) — the fact the
-  # exemption rests on is GitHub's, never a token a test or a builder typed.
+  # Consumer PRs can merge into `accepted` FIRST BY DESIGN, then the engine PR comes to review.
+  # Worst-of must not let :merged siblings GOVERN and refuse the order the task required. The
+  # sibling is left OUT of the injected CI map, so its verdict comes through the REAL `gh pr view`
+  # parse: the fact the exemption rests on is GitHub's, never a token a test or a builder typed.
+  # History: task gate-zero-blocks-staged-merges.
   def with_view_stub(view_json)
     Dir.mktmpdir do |dir|
       stub = File.join(dir, "gh")

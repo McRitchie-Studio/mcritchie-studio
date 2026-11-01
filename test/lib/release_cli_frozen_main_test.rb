@@ -70,15 +70,12 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   end
 
   # --- the ship's own checkout: main advances by REF PUSH, not by ff -----------
-  #
-  # HISTORY (2026-07-12). ship used to advance `main` by flipping the SHARED PRIMARY
-  # (checkout main → pull → merge --ff-only → push), so it had to REFUSE a dirty
-  # primary — and that refusal aborted a real production ship, after the gems had
-  # published, because a concurrent feature session had staged work there. Advancing
-  # a remote branch never needed a working tree: `git push origin
-  # <frozen>:refs/heads/main` reads the shared object store, moves no HEAD, touches
-  # no index, and is still fast-forward-checked by git. These are the proofs, on a
-  # REAL git fixture, that the deploy is now indifferent to the primary's state.
+  # Advancing a remote branch needs no working tree: `git push origin
+  # <frozen>:refs/heads/main` reads the shared object store, moves no HEAD, touches no index,
+  # and is still fast-forward-checked by git. So ship must not flip or refuse a dirty SHARED
+  # PRIMARY. These prove, on a REAL git fixture, that the deploy is indifferent to the
+  # primary's state.
+  # History: task release-cli-tests-by-subcommand.
 
   # [integration] The core acceptance: origin/main reaches the frozen SHA while the
   # primary is DIRTY and sitting on a feature branch — and comes out of it dirty, on
@@ -188,14 +185,10 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   end
 
   # --- post-ship: re-baseline origin/accepted onto the shipped SHA -------------
-  #
-  # DevOps v2 Phase 3, Slice 1. After push_frozen_main advances `main`, it also
-  # fast-forwards this repo's persistent `accepted` integration branch onto the
-  # same frozen SHA — retiring the manual `git push origin
-  # origin/main:refs/heads/accepted` the conductor ran by hand after every ship.
-  # Guarded (only where accepted exists), fail-closed (no --force), NON-FATAL (a
-  # failed advance never aborts a live ship). These are the proofs on a REAL git
-  # fixture.
+  # After push_frozen_main advances `main`, it also fast-forwards this repo's `accepted` onto
+  # the same frozen SHA. Guarded (only where accepted exists), fail-closed (no --force),
+  # NON-FATAL (a failed advance never aborts a live ship). Proofs on a REAL git fixture.
+  # History: task release-cli-tests-by-subcommand.
 
   # [integration] The core acceptance: with an origin/accepted present, it advances
   # to the shipped SHA alongside main. accepted starts BEHIND at the base commit, so
@@ -291,18 +284,13 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
     end
   end
 
-  # [integration] REGRESSION (rel-20260720-1fc111): accepted AHEAD, not diverged.
-  #
-  # A review pass merged two PRs into accepted WHILE the ship ran — a lane the
-  # pipeline explicitly supports. The advance correctly refused the non-ff, then
-  # mislabelled it "DIVERGED" and suggested `git push origin <sha>:refs/heads/accepted`.
-  # Running that would have DESTROYED both merges. accepted was missing NOTHING.
-  #
-  # The fixture reproduces the exact topology that defeats a naive ancestor check:
-  # the sweep merges accepted INTO release (--no-ff), so the frozen main is a MERGE
-  # COMMIT whose tree equals the accepted head it came from — and that merge commit
-  # is never in accepted's history. `merge-base --is-ancestor` is FALSE here (the
-  # test asserts it) even though every byte of main is already in accepted.
+  # [integration] REGRESSION: accepted AHEAD, not diverged. A review may merge into accepted
+  # WHILE the ship runs. Mislabelling that "DIVERGED" and suggesting `git push origin
+  # <sha>:refs/heads/accepted` would DESTROY those merges. The fixture defeats a naive
+  # ancestor check: the sweep merges accepted INTO release (--no-ff), so frozen main is a
+  # MERGE COMMIT whose tree equals the accepted head but is never in its history. `merge-base
+  # --is-ancestor` is FALSE here (the test asserts it).
+  # History: release rel-20260720-1fc111.
   def test_push_frozen_main_reports_accepted_ahead_and_suggests_nothing
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -416,19 +404,12 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
     end
   end
 
-  # [integration] BLOCKER (round 2). The DIVERGED reconcile advice must WORK on a
-  # real primary — one that already has a STALE LOCAL `accepted` branch.
-  #
-  # The round-1 advice (`fetch && checkout accepted && merge origin/main && push
-  # origin accepted`) failed exactly there, and NOT for want of a fetch: `git fetch`
-  # moves the remote-tracking ref origin/accepted, but `git checkout accepted` lands
-  # on the LOCAL branch, which the fetch never touches. The hub primary carries that
-  # stale local ref (measured 45 commits behind), so the merge lands on a stale base
-  # and the push is refused non-fast-forward. It only ever worked on a checkout with
-  # NO local accepted, where `checkout accepted` DWIMs off the remote — which is why
-  # it passed round-1 testing and would have failed the operator under ship pressure.
-  #
-  # This pins the stale-local case by RUNNING the printed command end to end.
+  # [integration] BLOCKER (round 2). The DIVERGED reconcile advice must WORK on a real primary
+  # with a STALE LOCAL `accepted`. `git fetch` moves origin/accepted, but `git checkout
+  # accepted` lands on the LOCAL branch the fetch never touches, so the merge lands on a stale
+  # base and the push is refused non-fast-forward. It only works with NO local accepted, where
+  # checkout DWIMs off the remote. Pins this by RUNNING the printed command end to end.
+  # History: task release-cli-tests-by-subcommand.
   def test_printed_reconcile_command_works_against_a_stale_local_accepted_branch
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -550,20 +531,13 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
     end
   end
 
-  # [integration] BLOCKER (round 3). THE FAILING PATH. Every advice test before this
-  # one executed the recipe against a fixture that merges CLEANLY — they prove the
-  # advice works for shapes we already imagined. The invariant is stronger: the
-  # printed advice must never STRAND the operator, for ANY merge outcome.
-  #
-  # This is not a corner. This PR's own docs declare :diverged the ROUTINE outcome on
-  # a gem-carrying release, and the mechanism is a Gemfile.lock bump — the file most
-  # likely to have been touched on accepted too. The routine path IS the conflict
-  # path. The round-2 recipe was an && chain, so `git merge` exiting non-zero halted
-  # it: no push, no `checkout main`, operator left on an unfamiliar branch mid-
-  # conflict with a DIRTY primary — which on a gem repo also aborts the NEXT ship.
-  #
-  # So this asserts the operator is TOLD WHAT TO DO and left RECOVERABLE, not that
-  # the chain succeeds. Both sides genuinely touch the same line of Gemfile.lock.
+  # [integration] BLOCKER (round 3). THE FAILING PATH. The printed advice must never STRAND
+  # the operator, for ANY merge outcome. :diverged is the ROUTINE outcome on a gem-carrying
+  # release, and a Gemfile.lock bump is its likeliest conflict, so an && chain halts at `git
+  # merge` and leaves a DIRTY primary, which on a gem repo also aborts the NEXT ship. Asserts
+  # the operator is TOLD WHAT TO DO and left RECOVERABLE. Both sides touch the same line of
+  # Gemfile.lock.
+  # History: task release-cli-tests-by-subcommand.
   def test_printed_reconcile_fails_safe_and_instructs_when_the_merge_conflicts
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -693,15 +667,11 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   end
 
   # ------------------------------------------------ push failure diagnosis ----
-  #
-  # THE DEFECT THIS PINS. Measured 2026-08-29, twice, on a real production ship:
-  # `git push` failed on CREDENTIALS (`remote: Invalid username or token`) and
-  # push_frozen_main answered "origin/main has diverged from the frozen SHA
-  # (someone pushed to main) ... reconcile main, re-run prepare to re-freeze".
-  # Nothing had diverged — main was strictly BEHIND release and a dry-run
-  # fast-forward succeeded — so the prescribed remedy was pure waste, delivered
-  # with complete confidence at the most expensive moment in the pipeline. git had
-  # already named the true cause three lines above; the code discarded it.
+  # A `git push` failing on CREDENTIALS (`remote: Invalid username or token`) must not be
+  # answered "origin/main has diverged from the frozen SHA ... reconcile main, re-run prepare
+  # to re-freeze": nothing diverged, and that remedy is pure waste at the most expensive
+  # moment. git names the true cause in its output; the code must not discard it.
+  # History: task release-cli-tests-by-subcommand.
 
   def test_a_credential_refusal_is_diagnosed_as_auth_not_as_a_divergence
     output = <<~GIT

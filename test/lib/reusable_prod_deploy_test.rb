@@ -1,15 +1,9 @@
 # frozen_string_literal: true
 
-# Guard test for .github/workflows/reusable-prod-deploy.yml: the hub-hosted production
-# deploy an app can call, and the fact that nothing calls it.
-#
-# The file ships ahead of its first caller. Its interface is pinned here (an app's
-# dispatching workflow is written against it), and so is the absence of a caller. The
-# registry half lives in test/models/release/repos_test.rb: no row names this file,
-# and every app's deploy strategy is pinned repo by repo.
-#
-# Run directly:
-#   ruby -Itest test/lib/reusable_prod_deploy_test.rb
+# Guard test for .github/workflows/reusable-prod-deploy.yml, the hub-hosted production deploy,
+# and the fact that nothing calls it. Its interface and the absence of a caller are pinned here.
+# The registry half lives in test/models/release/repos_test.rb: no row names this file.
+# History: task ci-callers-in-every-app.
 
 require "minitest/autorun"
 require "yaml"

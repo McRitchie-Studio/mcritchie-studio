@@ -2,21 +2,14 @@
 
 require "test_helper"
 
-# [unit] Every hub CLI that talks to the board must default to the CANONICAL host.
-#
-# lib/middleware/canonical_host.rb now 301s the vanity aliases onto the apex, and our
-# own tooling was pointed at one of them: bin/devops-cycle and bin/review-autopilot
-# both defaulted TASK_BOARD_URL to https://www.mcritchie.studio while the other nine
-# board CLIs used the apex. bin/lib/task_board.rb issues a bare Net::HTTP request and
-# does NOT follow a 3xx, so the day that redirect reaches production those two would
-# have started reading the redirect instead of the API.
-#
-# It would not even have failed loudly. TaskBoard.parse_body is deliberately lenient,
-# so the 301's HTML body parses to {} and bin/review-autopilot — the tool that lands
-# armed merges — dies complaining it "could not resolve a head sha".
-#
-# The two literals were the bug; this test is the fix. A default host is a one-word
-# edit that no reviewer reads closely, and nothing else in the suite looks at it.
+# [unit] Every hub CLI that talks to the board must default to the CANONICAL host
+# (bin/devops-cycle, bin/review-autopilot among them). lib/middleware/canonical_host.rb 301s the
+# vanity aliases onto the apex, and bin/lib/task_board.rb issues a bare Net::HTTP request that
+# does NOT follow a 3xx. TaskBoard.parse_body is lenient, so the 301's HTML parses to {} and
+# bin/review-autopilot dies on "could not resolve a head sha".
+# A default host is a one-word edit no reviewer reads closely, and nothing else in the suite
+# looks at it.
+# History: task pin-oauth-callback-host.
 class BoardCliCanonicalHostTest < ActiveSupport::TestCase
   CANONICAL = "mcritchie.studio"
 

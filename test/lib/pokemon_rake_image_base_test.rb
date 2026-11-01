@@ -1,15 +1,12 @@
 require "test_helper"
 require "rake"
 
-# [unit] lib/tasks/pokemon.rake writes the committed seed JSON's image URLs on
-# the PRODUCTION asset host, whatever storage the running process is on, and
-# its upload tasks refuse the production bucket from a non-production process.
-#
-# The base used to come from the storage adapter (Studio::S3.url). That is the
-# right answer for an object the process just wrote and the wrong one for a
-# seed file: local development runs with the DEV bucket's public URL, so a
-# local `pokemon:fetch` would have committed assets-dev URLs for production to
-# seed from.
+# [unit] lib/tasks/pokemon.rake writes the committed seed JSON's image URLs on the PRODUCTION
+# asset host, whatever storage the process is on, and its upload tasks refuse the production
+# bucket from a non-production process. The storage adapter (Studio::S3.url) is the wrong base
+# for a seed file: local `pokemon:fetch` would commit assets-dev URLs for production to seed
+# from.
+# History: task seeds-reference-production-assets.
 class PokemonRakeImageBaseTest < ActiveSupport::TestCase
   PRODUCTION_BASE = "https://assets.mcritchie.studio/pokemon".freeze
 

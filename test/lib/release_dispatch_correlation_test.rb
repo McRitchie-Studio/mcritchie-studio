@@ -1,17 +1,12 @@
 # frozen_string_literal: true
 
-# bin/release.rb's dispatch_and_watch selects its run by correlation id ONLY.
-# Standalone:
-#   ruby -Itest test/lib/release_dispatch_correlation_test.rb
-#
-# A run is watched when its title carries the `[<id>]` this dispatch sent, and never
-# because it is the newest run after the pre-dispatch read. A workflow that lacks the
-# `correlation_id` input is refused with one dispatch and no re-dispatch. The
-# pre-dispatch read stays, as the credential probe.
-#
-# The `sh` stub is a small GitHub: it answers each `gh run list --jq <filter>` by
-# running the script's own filter through the real `jq`. No test mints a token,
+# bin/release.rb's dispatch_and_watch selects its run by correlation id ONLY: a run is watched
+# when its title carries the `[<id>]` this dispatch sent, never for being newest after the
+# pre-dispatch read. A workflow lacking the `correlation_id` input is refused with one
+# dispatch and no re-dispatch. The pre-dispatch read stays, as the credential probe. The `sh`
+# stub answers each `gh run list --jq <filter>` through the real `jq`. No test mints a token,
 # dispatches or pushes.
+# History: task retire-blind-accepted-refusal.
 require "minitest/autorun"
 require "open3"
 require "json"

@@ -2,40 +2,14 @@
 
 require "test_helper"
 
-# [unit] The installed copy of the engine's standard-profile migration must REFUSE
-# to reverse.
-#
-# THIS FILE IS ALSO THE HUB'S DRIFT TRIPWIRE, and that is the larger reason it
-# exists. `test/lib/engine_pin_contract_test.rb` checks which engine migrations are
-# INSTALLED — by NAME. It cannot see a migration whose CONTENT changed in the gem,
-# which is exactly what happened here: studio-engine rewrote this migration's
-# `down` and the installed copy is a FORK, so a stale copy would have stayed GREEN
-# forever. Asserting the behaviour closes that hole for this migration.
-#
-# The general case now has its own guard: `test/lib/engine_migration_content_test.rb`
-# digests the CODE of every installed `*.studio_engine.rb` against the gem's copy
-# at the resolved version, so a rewrite of any of the other eight engine
-# migrations reddens here too. This file stays because the two fail differently —
-# the digest says "your copy is not the gem's", and only this file says "and a
-# rollback would take the hub's first_name with it".
-#
-# Why a consumer-side test at all, when the engine has its own: engine migrations
-# are install-COPIED (`bin/rails studio_engine:install:migrations`), not
-# referenced. `bin/rails db:rollback` here runs the file in db/migrate, never the
-# gem's — so a gem bump cannot deliver this guard, and the engine's green suite
-# says nothing about this app's exposure.
-#
-# What it protects. mcritchie-studio owned `users.first_name` NATIVELY, long before
-# the engine's first host-table migration existed. Measured on that exact shape
-# before the fix: `up` then `down` left the column GONE and its data destroyed,
-# with no error raised. The `up` guards every add with `if_not_exists` so it can
-# run against apps that already disagree — and that guard is precisely why it
-# cannot know, on the way out, which columns it created and which the host has
-# owned for years.
-#
-# The refusal is WHOLESALE on purpose. Scoping it to "the four columns we added"
-# would still leave `first_name` droppable, because the migration names it too and
-# cannot tell that this app already had it.
+# [unit] The installed copy of the engine's standard-profile migration must REFUSE to
+# reverse, and this is the hub's DRIFT TRIPWIRE. `bin/rails db:rollback` runs the
+# install-COPIED file, never the gem's, so a gem bump cannot deliver this.
+# test/lib/engine_migration_content_test.rb digests code; only this says a rollback would
+# take the hub's first_name. `up` guards adds with `if_not_exists`, so on the way out it
+# cannot know which columns it created. The refusal is WHOLESALE on purpose: "the four
+# columns we added" leaves `first_name` droppable.
+# History: task detect-engine-migration-content-drift.
 class StandardProfileRollbackGuardTest < ActiveSupport::TestCase
   MIGRATION = Rails.root.glob("db/migrate/*_add_standard_user_profile_columns.studio_engine.rb").freeze
 

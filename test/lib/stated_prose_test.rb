@@ -1,21 +1,12 @@
 # frozen_string_literal: true
 
-# Tests for test/support/stated_prose.rb — the population guards over stated prose read.
-#
-#   ruby -Itest test/lib/stated_prose_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# WHY THE POPULATION GETS ITS OWN TEST. A grade against the LIVE tree answers "does it
-# reach config/ and app/ today". It cannot answer "would it still find anything if the
-# reader were broken", because a reader that returns nothing and a tree with no defects are the same green.
-#
-# THAT IS NOT HYPOTHETICAL — it is what happened. The first draft matched comment
-# lines with `/\A\s*#\s?(.*)\z/` against a line that still had its newline. `.` never
-# crosses a newline and `\z` is the absolute end of the string, so NO line matched,
-# every non-markdown file read as blank, and the first probe of this population
-# reported a perfectly clean tree while scanning nothing at all. The assertions below
-# are written against prose whose answer is spelled out beside it, so a reader that
-# stops reading reds here instead of going quiet.
+# Tests for test/support/stated_prose.rb, the population guards over stated prose read. A
+# grade against the LIVE tree cannot tell a reader that returns nothing from a tree with no
+# defects. The trap: `/\A\s*#\s?(.*)\z/` against a line still holding its newline matches
+# NOTHING (`.` never crosses a newline, `\z` is the absolute end), so every non-markdown
+# file reads blank and looks clean. The assertions use prose whose answer is spelled out
+# beside it, so a reader that stops reading reds here.
+# History: task guard-lane-figures-beyond-docs.
 require "minitest/autorun"
 require "tmpdir"
 require "fileutils"

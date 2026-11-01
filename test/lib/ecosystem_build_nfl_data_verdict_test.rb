@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] bin/ecosystem-build's phase 6b verdicts, EXECUTED.
-#
-# COMPANION TO ecosystem_build_import_verdict_test.rb, which asks the same
-# question of phase 6c. A predicate the phase does not call is exactly as useful
-# as no predicate, and these were wiring defects: two of phase 6b's four tasks
-# were graded by `&&` on an exit code that could not go non-zero, and all four
-# had their stderr sent to /dev/null, so the one human-readable account of a
-# failure never reached the rebuild log.
-#
-# WHAT WAS MEASURED, before any of this was written:
-#   * espn:scrape_depth_charts with fetch_groups stubbed to nil for all 32 teams
-#     printed `{:teams_failed=>32}` and exited 0. The service tolerates a dead
-#     team on purpose; nothing above it turned 32 of 32 into a verdict.
-#   * nfl:rankings_compute with AthleteGrade emptied wrote the SAME 448 rows as
-#     a healthy run and exited 0 — 448 scores of 0.0 against 442 distinct
-#     values spanning 49.6..5604.37. The row count this phase logs is identical
-#     in both worlds.
-#
-# So `bundle` is stubbed and the phase is asked for its verdict in each world.
-# Every red case below has a green twin differing by exactly one thing, because
-# a check that answers the same in both worlds is not a check.
+# [integration] bin/ecosystem-build's phase 6b verdicts, EXECUTED. Companion to
+# ecosystem_build_import_verdict_test.rb (phase 6c). A task must not be graded by `&&` on an
+# exit code that cannot go non-zero, and stderr must reach the rebuild log.
+# Both exit 0: espn:scrape_depth_charts with all 32 teams failed (`{:teams_failed=>32}`), and
+# nfl:rankings_compute with AthleteGrade emptied (the row count logged is identical).
+# So `bundle` is stubbed and the phase is asked for its verdict in each world. Every red case
+# has a green twin differing by exactly one thing.
+# History: task rebuild-lane-grades-dead-exitcodes.
 require "bundler/setup"
 require "minitest/autorun"
 require "open3"

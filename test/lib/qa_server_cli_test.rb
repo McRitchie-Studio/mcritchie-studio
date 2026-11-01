@@ -1,33 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] bin/qa-server's ARGUMENT GUARD — the decision table under the fix for
-# /tasks/qa-server-help-provisions.
-#
-# THE DEFECT. The old dispatcher deleted `--yes` to set assume_yes and then called
-# `run_provision(ARGV[0])`. `--help` was never inspected, so
-#
-#     bin/qa-server provision <app> --yes --help
-#
-# dropped the flag and PROVISIONED A QA SERVER FOR REAL — heroku create, billable
-# add-ons, domains, ACM, and a config-var PATCH carrying real secrets — with the
-# confirmation already suppressed by the `--yes` sitting beside it.
-#
-# WHY NOTHING HERE RUNS bin/qa-server. The thing under test creates billable
-# infrastructure when probed, so "run it and see" is the one experiment that must
-# never be performed: if the guard has regressed, the probe IS the outage. This
-# file drives the shared guard against the PRODUCTION dictionary
-# (QaServerCli::COMMANDS) with an injected exiter, so every verdict is proven with
-# the dispatcher never reached. The one real execution — of the read-only `list` —
-# lives in test/integration/qa_server_argv_guard_test.rb.
-#
-# THE HALF THAT IS EASY TO GET WRONG. A guard that refuses everything is
-# indistinguishable from a guard that works, and it fails silently and expensively:
-# refuse `deploy <app> origin/release --yes` and Avi's whole QA sweep aborts, since
-# bin/release.rb#prepare shells exactly that line. So the DISPATCH cases below — every
-# distinct invocation shape found in a sweep of the repos and docs — carry as much
-# weight as the refusals.
-#
-#   ruby -Itest test/lib/qa_server_cli_test.rb
+# [unit] bin/qa-server's ARGUMENT GUARD, the decision table under
+# /tasks/qa-server-help-provisions. NOTHING HERE RUNS bin/qa-server: it creates billable
+# infrastructure when probed. This drives the shared guard against the PRODUCTION dictionary
+# (QaServerCli::COMMANDS) with an injected exiter. The one real execution, of the read-only
+# `list`, is in test/integration/qa_server_argv_guard_test.rb. EASY TO GET WRONG: refuse `deploy
+# <app> origin/release --yes` and the QA sweep aborts (bin/release.rb#prepare shells it), so the
+# DISPATCH cases weigh as much as the refusals.
+# History: task qa-server-help-provisions.
 
 require "minitest/autorun"
 require "stringio"

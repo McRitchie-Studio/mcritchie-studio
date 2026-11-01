@@ -15,28 +15,14 @@ require "stringio"
 # is what exposed it. Required so the cases mean what they say.
 require "aws-sdk-s3"
 
-# [integration] The three rebuild-lane rake tasks that could not fail, run for
-# real against the DB.
-#
-# THE COMPANION TO THE PHASE TESTS, WHICH CANNOT ASK THIS. test/lib/ecosystem_
-# build_*_verdict_test.rb stub `bundle` and prove the PHASE reacts to an exit
-# code. That is the wiring half. This file is the other half: whether the task
-# ever produces a non-zero exit code to react to. Both were broken, and either
-# one alone reads as fixed.
-#
-# Each task here rescues a per-item failure on purpose — one dead ESPN team must
-# not cost the other 31 their refresh, one dead headshot URL must not cost the
-# other thousand theirs — and then ended by returning, so the process exited 0
-# no matter how much had failed. The rescue is right; ending on it was not.
-#
-# THREE IS THIS FILE'S COVERAGE, NOT THE REPOSITORY'S INVENTORY. Two more lanes of
-# the same shape were closed under `coach-link-lane-false-green` (2026-09-28) and
-# live in test/lib/tasks/nfl_coach_headshots_test.rb and
-# test/lib/tasks/nfl_coach_team_sites_test.rb, because they sit in a different phase:
-# they are reached only through `db:seed` and db/seeds/32_headshot_links.rb, not
-# through 6b or 6c. `nfl:upload_coach_headshots` is the one still ungraded —
-# it counts `failed` and prints it, and it needs the dead-source split
-# nfl:upload_headshots carries. Known open, not measured clean.
+# [integration] The three rebuild-lane rake tasks, run for real against the DB.
+# test/lib/ecosystem_build_*_verdict_test.rb prove the PHASE reacts to an exit code; this asks
+# whether the task ever produces a non-zero one. Each task rescues a per-item failure on
+# purpose but must not end on it by returning. THREE IS THIS FILE'S COVERAGE, NOT THE
+# REPOSITORY'S INVENTORY: see test/lib/tasks/nfl_coach_headshots_test.rb and
+# test/lib/tasks/nfl_coach_team_sites_test.rb. `nfl:upload_coach_headshots` is still ungraded,
+# known open: it needs the dead-source split nfl:upload_headshots carries.
+# History: task rebuild-lane-grades-dead-exitcodes.
 class RebuildLaneVerdictTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("espn:scrape_depth_charts")
@@ -362,27 +348,13 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
                           "population subtracts the complete candidates out so this stays silent"
   end
 
-  # A SOURCELESS ATHLETE IS INVENTORY, NOT A VERDICT — the property the decline
-  # rule's narrowing buys, asserted where a warm re-run can see it. The twin above
-  # holds only because its whole population is one complete athlete; this one adds
-  # the shape that used to abort.
-  #
-  # ITS PREMISE, RE-MEASURED ON PRODUCTION 2026-09-27, AND CORRECTED. This comment
-  # used to say production carried 2,043 complete PLUS EIGHT with no
-  # `espn_headshot_url`, which kept `needed` positive against `attempted` 0 so the
-  # healthy re-run aborted. The eight athletes are real — they are the ones short a
-  # variant — but they are TWO populations and only one of them is a candidate:
-  #
-  #   chris-manhertz brandon-scherff jack-plummer jack-strand brett-thorson
-  #     espn_id yes, espn_headshot_url yes -> CANDIDATE, FETCHABLE, source 404s
-  #   james-thompson gabe-rubio blake-miller
-  #     espn_id NO, espn_headshot_url NO   -> not a candidate at all
-  #
-  # So `skipped_no_source` is ZERO on production and this rule never fired there.
-  # The abort operators actually got was `failed > cached` on five 404s, which is
-  # what the dead-source tests below cover. This shape is still worth pinning: the
-  # column is nullable, a cold run before any seed has thousands of them, and the
-  # rule must be quiet as a property of its population rather than by luck.
+  # A SOURCELESS ATHLETE IS INVENTORY, NOT A VERDICT: the decline rule's narrowing, asserted
+  # where a warm re-run can see it. The twin above holds only because its whole population is
+  # one complete athlete. `skipped_no_source` is ZERO on production, where the abort is `failed
+  # > cached` on 404s (the dead-source tests below). Still pinned: the column is nullable, a
+  # cold run before any seed has thousands of them, and the rule must be quiet as a property of
+  # its population, not by luck.
+  # History: task dead-headshot-source-aborts-lane.
   test "a warm re-run with a permanently sourceless athlete stays green" do
     complete = headshot_candidate(30, team_slug: "buffalo-bills")
     cache_variants(complete, %w[original 100 400])
@@ -456,24 +428,13 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
   # a run where nothing was wrong with the uploader, and the abort's first named
   # cause was "usually AWS credentials".
 
-  # THE DEFECT, MEASURED ON PRODUCTION 2026-09-27 (read-only, heroku run
-  # bin/rails runner):
-  #
-  #   TOTAL=2051  WITH_ESPN_ID=2048  COMPLETE_CANDIDATES=2043
-  #   FETCHABLE=5  SOURCELESS_CANDIDATES=0
-  #
-  # So production's whole fetchable population is five athletes, every one of them
-  # WITH an `espn_headshot_url` on file, and every one of those five URLs answers
-  # 404 when fetched the way the app fetches — `URI.open(url, read_timeout: 30,
-  # redirect: true)` — while a control espn_id answered 230,577 bytes through the
-  # same call. `curl` agreeing proves nothing about what Ruby sees, so it was
-  # asked in Ruby.
-  #
-  # The run is therefore cached 0, failed 5, and `failed > cached` aborts the
-  # rebuild and tells the operator to check AWS credentials that are fine. Scaled
-  # to 2 here, which is the same shape: 100% of attempts "failed", none of them
-  # ours. THIS IS NOT A REGRESSION FROM THE `fetchable` NARROWING — the retired
-  # `needed` code aborted identically on the same data, by the same rule.
+  # A run whose every source 404s is cached 0, failed N, and `failed > cached` aborts the
+  # rebuild telling the operator to check AWS credentials that are fine. Scaled to 2 here: the
+  # same shape, 100% of attempts "failed", none of them ours. Sources were checked the way the
+  # app fetches, `URI.open(url, read_timeout: 30, redirect: true)`: `curl` agreeing proves
+  # nothing about what Ruby sees. NOT A REGRESSION FROM THE `fetchable` NARROWING: the retired
+  # `needed` code aborted identically.
+  # History: task dead-headshot-source-aborts-lane.
   test "a run whose every ESPN source answers 404 stays green and names them" do
     a = headshot_candidate(40, team_slug: "buffalo-bills")
     b = headshot_candidate(41, team_slug: "buffalo-bills")
@@ -916,15 +877,13 @@ class RebuildLaneVerdictTest < ActiveSupport::TestCase
     received
   end
 
-  # Athletes the task will actually attempt: an espn_id, an NFL-league team
-  # through a contract, and no cached variants yet.
-  # A rake `abort` raises SystemExit, which is NOT a StandardError — Minitest does
-  # not rescue it. A task that wrongly aborts therefore kills the whole suite
-  # PROCESS with a bare exit 1, no dots and no failure name, and the
-  # `assert completed` line after the invoke never runs at all. MEASURED while
-  # mutation-testing this file: restoring the contract precondition made the run
-  # print `# Running:` and nothing else. Naming it here turns that into a
-  # readable failure attributed to the test that caused it.
+  # Athletes the task will actually attempt: an espn_id, an NFL-league team through a contract,
+  # and no cached variants yet.
+  # A rake `abort` raises SystemExit, NOT a StandardError, so Minitest does not rescue it: a
+  # task that wrongly aborts kills the whole suite PROCESS with a bare exit 1, no dots and no
+  # failure name, and `assert completed` never runs. Naming it here turns that into a readable
+  # failure attributed to the test.
+  # History: task rebuild-lane-grades-dead-exitcodes.
   def refute_aborts(task = "nfl:upload_headshots")
     yield
   rescue SystemExit => e

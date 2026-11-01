@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] ScratchBackup — the two properties that make a scratchpad backup safe.
-#
-# THE FAILURE UNDER TEST IS INVISIBLE BY CONSTRUCTION, which is why it needs a
-# test rather than a convention. Two agents saving a pristine `manifest.good` into
-# the session's shared scratchpad write SEQUENTIALLY: no truncation, no NUL hole,
-# no corrupt file — the second copy simply replaces the first, and the first agent
-# discovers it by restoring and getting someone else's code. There is nothing on
-# disk to grep for. (Contrast the sibling incident one directory up, where a
-# `>` against a held fd left a 2,586-byte hole that `file` reports as `data`.)
-#
-# So the assertions below are about the two things that CAN be checked:
-#
-#   NAMESPACED  — two owners saving the SAME path get different entries, and each
-#                 restores its own content. The collision cannot happen.
-#   VERIFIED    — when the namespace is defeated anyway (a hand-passed --owner, a
-#                 shared root, a future harness that reuses ids), restore REFUSES
-#                 on the receipt mismatch instead of handing over the wrong file.
-#
-# Each refusal test is paired with a control that SUCCEEDS on the same fixture,
-# because a refusal that fires unconditionally is indistinguishable from a working
-# guard right up until it blocks the legitimate restore too.
-#
-#   ruby -Itest test/lib/scratch_backup_test.rb
+# [unit] ScratchBackup: two properties, because a scratchpad collision leaves nothing on disk
+# to grep.
+#   NAMESPACED: two owners saving the SAME path get different entries, each restoring its own.
+#   VERIFIED: when the namespace is defeated (a hand-passed --owner, a shared root, reused ids),
+#   restore REFUSES on the receipt mismatch rather than hand over the wrong file.
+# Each refusal test pairs with a control that SUCCEEDS on the same fixture: a refusal that
+# fires unconditionally looks like a working guard until it blocks the legitimate restore.
+# History: task backup-collisions-are-silent.
 
 require "minitest/autorun"
 require "fileutils"

@@ -53,27 +53,13 @@ class BootGemDiagnosisTest < ActiveSupport::TestCase
   end
 
   # ---- integration --------------------------------------------------------
-  #
-  # Runs the REAL config/boot.rb in a REAL subprocess against a REAL Bundler,
-  # made to fail by pointing BUNDLE_GEMFILE at a Gemfile whose lock pins a
-  # version that is not installed. That is precisely the shape a release leaves
-  # behind, so the error class, message and timing are the genuine article rather
-  # than a stub's imitation.
-  #
-  # An earlier cut of this test stubbed `bundler/setup` on the load path instead.
-  # It reported GREEN while the real Bundler loaded ahead of the stub and boot
-  # SUCCEEDED — the test proved nothing. Kept as a note because the failure was
-  # invisible until the exit status was asserted.
-  #
-  # RUBYOPT is cleared so the parent's own `-rbundler/setup` cannot fire before
-  # boot.rb's begin block and bypass the rescue under test.
-  # WHY THREE VARIABLES AND NOT JUST RUBYOPT. A bundler-managed parent (this test
-  # suite is one) exports BUNDLER_SETUP and RUBYLIB as well. With those inherited,
-  # RubyGems activates the bundle from `gem_prelude` at INTERPRETER STARTUP, so a
-  # missing gem raises BEFORE config/boot.rb's first line and the rescue never
-  # runs. The first cut of this test cleared only RUBYOPT and failed with a
-  # backtrace ending in `<internal:gem_prelude>` — which is not a test artifact
-  # but a REAL limitation of boot-time rescues, pinned by its own test below.
+  # Runs the REAL config/boot.rb in a REAL subprocess against a REAL Bundler, made to fail by a
+  # BUNDLE_GEMFILE whose lock pins an uninstalled version. Do not stub `bundler/setup` on the load
+  # path: the real Bundler loads ahead of it, boot succeeds, and the test proves nothing. WHY
+  # THREE VARIABLES AND NOT JUST RUBYOPT: a bundler-managed parent exports BUNDLER_SETUP and
+  # RUBYLIB too. Inherited, RubyGems activates the bundle from `gem_prelude` at INTERPRETER
+  # STARTUP, so a missing gem raises BEFORE config/boot.rb's first line and the rescue never runs.
+  # History: task release-leaves-primary-unbundled.
   CLEAN_ENV = { "RUBYOPT" => nil, "BUNDLER_SETUP" => nil, "RUBYLIB" => nil }.freeze
 
   def boot_with_gemfile(gemfile_body, lock_body = nil)
@@ -143,18 +129,12 @@ class BootGemDiagnosisTest < ActiveSupport::TestCase
     refute_includes out, "This looks like a RELEASE"
   end
 
-  # THE KNOWN LIMIT, pinned so nobody credits this with coverage it does not have.
-  #
-  # When the bundle is activated BEFORE the script starts — a parent process that
-  # exports `-rbundler/setup` in RUBYOPT, which every bundler-managed process does
-  # to its children — RubyGems raises the missing gem at interpreter startup, and
-  # config/boot.rb never executes. No rescue placed in boot.rb can reach that
-  # case; it would need a wrapper around the interpreter itself.
-  #
-  # This is NOT the path the bug was reported on: an agent running `bin/reviewer-
-  # select` from a normal shell boots through config/boot.rb and DOES get the
-  # diagnosis (the test above). Recorded because the difference is invisible from
-  # the outside — the same command explains itself from one shell and not another.
+  # THE KNOWN LIMIT, pinned so nobody credits this with coverage it does not have. When a parent
+  # exports `-rbundler/setup` in RUBYOPT, RubyGems raises the missing gem at interpreter startup
+  # and config/boot.rb never executes; no rescue in boot.rb can reach it. A normal-shell
+  # `bin/reviewer-select` boots through config/boot.rb and DOES get the diagnosis, so the same
+  # command differs by shell.
+  # History: task release-leaves-primary-unbundled.
   test "a bundle activated before boot bypasses the rescue — known and pinned" do
     out, status = Dir.mktmpdir do |dir|
       File.write(File.join(dir, "Gemfile"), MISSING_GEMFILE)

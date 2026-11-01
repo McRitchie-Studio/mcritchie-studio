@@ -1,24 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] bin/agent-worktree starts a desk server under an ALLOW-LISTED environment.
-#
-# WHY (secrets-never-on-argv-or-desk-env, 2026-10-24). Desk servers inherited the
-# agent shell's whole environment. Puma and Sidekiq rename their process titles,
-# and on macOS `pgrep -fl` then prints a renamed process's environment, so one
-# listing put HEROKU_API_KEY into a transcript and the key was rotated.
-#
-# HOW. A clean ruby subprocess `load`s the real bin/agent-worktree (its dispatch is
-# guarded, so no subcommand runs), plants fake credentials in its own ENV, and
-# calls the real `spawn_desk_server` with a stub "server" that writes its
-# environment to a file and exits. The assertions read that file: the forbidden
-# names are absent, the system names and the desk's values are present.
-#
-# THE CONTROL. The same subprocess, with ChildEnv.desk_server replaced by the
-# pre-fix behaviour (the parent's whole ENV, merged), must hand the stub the
-# credentials. Without it, "the stub saw no secret" and "the fixture never planted
-# one" are the same observation.
-#
-# Run directly:  ruby -Itest test/lib/desk_server_env_test.rb
+# [unit] bin/agent-worktree starts a desk server under an ALLOW-LISTED environment: on macOS
+# `pgrep -fl` prints a retitled Puma or Sidekiq process's environment.
+# A clean ruby subprocess `load`s the real bin/agent-worktree, plants fake credentials in ENV,
+# and calls the real `spawn_desk_server` with a stub server that writes its environment to a
+# file. Forbidden names absent; system names and the desk's values present.
+# THE CONTROL: with ChildEnv.desk_server replaced by the parent's whole ENV, the stub must get
+# the credentials, or "saw no secret" and "never planted one" are the same.
+# History: task secrets-never-on-argv-or-desk-env.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

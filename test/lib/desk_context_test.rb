@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] DeskContext — the session half of the desk marker, and the join it enables.
-#
-# Pure and script-free. Every decision under test here is IO-free by construction:
-# `claiming?` takes its pwd, `stamp` takes what is on disk, and `grade` takes a
-# process TABLE rather than reading one. So the whole occupancy rule and the whole
-# grader are provable without a desk, a worktree, or a spawned process — which is
-# what lets the integration tier spend its time on the round trip instead.
-#
-# Run directly:  ruby -Itest test/lib/desk_context_test.rb
+# [unit] DeskContext: the session half of the desk marker, and the join it enables. Every
+# decision here is IO-free by construction: `claiming?` takes its pwd, `stamp` takes what is on
+# disk, and `grade` takes a process TABLE. So the occupancy rule and the grader need no desk or
+# spawned process.
+# History: task desk-context-names-session.
 require "minitest/autorun"
 require_relative "../../bin/lib/desk_context"
 

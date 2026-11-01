@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
-# bin/release.rb's CLEAN-ENV VERDICT in front of the gem publish. Standalone:
-#   ruby -Itest test/lib/release_cli_gem_ci_gate_test.rb
-#
-# WHAT IT DEFENDS. publish_gem authorised itself from a LOCAL `bin/release-check
-# --build` — whatever bundle, whatever Ruby, whatever half-installed state the
-# conductor's laptop happens to carry — and then pushed to RubyGems, which can
-# NEVER be un-pushed. Every other shippable tip in this ecosystem earns a
-# clean-env verdict before it moves; the gem's did not. The verdict already
-# EXISTED (engine-ci.yml builds `release`) and was simply never read.
-#
-# IT LIVES IN PHASE 1, and that placement is a fix rather than a detail. Review
-# found the first version sitting in the publish LOOP: a studio-engine +
-# solana-studio sweep pushed studio-engine to RubyGems and THEN aborted on the
-# second gem — a partial publish of the one artifact that cannot be un-pushed,
-# which is exactly what this task exists to prevent. validate_gems_for_qa holds
-# one invariant and says so in its own abort text: every swept gem validates
-# before the first irreversible push.
+# bin/release.rb's CLEAN-ENV VERDICT in front of the gem publish. A RubyGems push can NEVER
+# be un-pushed, so publish_gem must not authorise itself from a LOCAL `bin/release-check
+# --build` alone; the verdict comes from engine-ci.yml building `release`.
+# IT LIVES IN PHASE 1, and that placement is a fix: in the publish LOOP, a studio-engine +
+# solana-studio sweep pushed the first gem and THEN aborted on the second.
+# validate_gems_for_qa holds one invariant: every swept gem validates before the first
+# irreversible push.
+# History: task certify-engine-before-publish.
 require "minitest/autorun"
 require "open3"
 require "rbconfig"
@@ -78,18 +69,12 @@ class ReleaseCliGemCiGateTest < Minitest::Test
   end
 
   # --- the CI-less gem, which the first version BRICKED --------------------------
-  #
-  # The first version of this gate folded a CI-less gem's absent verdict to :none,
-  # polled the FULL window, and then told the operator to go and watch a run that
-  # does not and never will exist. Any sweep carrying such a member could never
-  # complete — a publish that worked before that change became impossible after it.
-  #
-  # solana-studio was the live example until 2026-08-20, when it shipped a Rails
-  # engine and declared a "Gem CI" lane. NO registered gem declares nil today, so
-  # these three STUB the declaration in the subprocess rather than borrow it from
-  # the registry — the branch still runs for the next gem onboarded without a
-  # suite, and a test that needed some real gem to stay CI-less was testing the
-  # map, not the gate.
+  # A CI-less gem's absent verdict must not fold to :none, poll the FULL window, and send the
+  # operator to watch a run that will never exist: any sweep carrying it could never complete.
+  # NO registered gem declares nil today, so these three STUB the declaration in the
+  # subprocess: the branch still runs for the next gem onboarded without a suite, and a test
+  # needing a real CI-less gem tests the map, not the gate.
+  # History: task certify-engine-before-publish.
 
   # Same as `verdict`, with GemCiWorkflows stubbed so `repo` reads as DECLARED
   # CI-less. Injected after the load, so nothing in bin/release.rb grows a
@@ -167,26 +152,13 @@ class ReleaseCliGemCiGateTest < Minitest::Test
 end
 
 # --- phase 1: NO gem publishes if ANY gem's verdict is bad ----------------------
-#
-# THE DEFECT REVIEW FOUND. With the verdict in the publish LOOP, a studio-engine
-# + solana-studio sweep pushed studio-engine to RubyGems and THEN aborted on the
-# second gem — a partial publish of the one artifact that cannot be un-pushed,
-# which is precisely what this task exists to prevent. In validate_gems_for_qa the
-# failure is COLLECTED alongside every other gem precondition and the sweep aborts
-# with zero pushes.
-#
-# ASSERTED ON THE SOURCE, and that is a deliberate retreat rather than laziness.
-# The behavioural version was written first and PASSED FOR THE WRONG REASON: with
-# PROJECTS_DIR pinned to an empty root (which every other test here needs, so
-# local and CI exercise one path), validate_gems_for_qa aborts at "gem repo not
-# found" long before it reaches the verdict. The test saw ABORTED, no "gem push:",
-# and reported success about a code path it never ran — the same false-pass shape
-# as the ordering test in the first round of this task.
-#
-# Making it behavioural needs a real sibling git repo per gem (see
-# release_gem_allocation_test's build_projects_root). That fixture is worth having
-# and is NOT worth growing this lap by; the verdict's own behaviour is covered
-# above, and what is left to pin is WHERE it is called from.
+# In validate_gems_for_qa the failure is COLLECTED alongside every other gem precondition
+# and the sweep aborts with zero pushes. ASSERTED ON THE SOURCE, a deliberate retreat: with
+# PROJECTS_DIR pinned to an empty root, a behavioural version aborts at "gem repo not found"
+# before the verdict and PASSES FOR THE WRONG REASON. Making it behavioural needs a real
+# sibling git repo per gem (see release_gem_allocation_test's build_projects_root). What is
+# left to pin is WHERE the verdict is called from.
+# History: task certify-engine-before-publish.
 class ReleaseCliGemCiPhaseOneTest < Minitest::Test
   SOURCE = File.read(File.expand_path("../../bin/release.rb", __dir__))
 

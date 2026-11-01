@@ -53,15 +53,12 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
     assert_includes held, "BUNDLE-LOCK studio-engine conservative=true expect=0.11.0"
   end
 
-  # [integration] The STRANDED-WORK guard: origin/release ahead of the last
-  # published tag with an UNBUMPED version_file must BLOCK loudly BEFORE anything
-  # publishes or deploys — the silent publish-skip that stranded engine commits.
-  #
-  # THE GUARD IS NOW A BACKSTOP, and this drives it as one. Step 4d's phase 0
-  # allocates the version, so on the happy path prepare fixes this state before
-  # the guard ever sees it — which is exactly why the guard must keep firing when
-  # allocation does NOT happen (skipped, refused, or wrong). `allocate: false`
-  # models that, and the guard has to behave precisely as it always did.
+  # [integration] The STRANDED-WORK guard: origin/release ahead of the last published tag with
+  # an UNBUMPED version_file must BLOCK loudly BEFORE anything publishes or deploys. THE GUARD
+  # IS NOW A BACKSTOP: step 4d's phase 0 allocates the version first, so the guard must keep
+  # firing when allocation does NOT happen (skipped, refused or wrong). `allocate: false`
+  # models that.
+  # History: task release-cli-tests-by-subcommand.
   def test_prepare_blocks_loudly_on_stranded_gem_work_when_allocation_did_not_run
     out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.10.0", allocate: false),
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
@@ -77,27 +74,14 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
     refute_includes out, "QA-DEPLOY", "no QA deploy past the guard"
   end
 
-  # [integration] THE PROPAGATION-LAG GUARD (rel-20260809-3b8f3d, 2026-08-09).
-  #
-  # `bundle lock --update` exits 0 whether or not it could SEE the version we
-  # published seconds earlier. When the RubyGems index has not propagated it
-  # resolves the OLD version and leaves the tree unchanged — which is byte-for-byte
-  # what a genuine already-bumped re-run looks like. prepare used to read that
-  # unchanged tree and announce "lock already at studio-engine 1.0.0", a version it
-  # had never read. turf-monster rode QA on the old engine while the release record
-  # asserted the new one, and the pre-QA gate CREDITED its identical-tree green, so
-  # no CI run contradicted it either.
-  #
-  # [integration] THE CALLER'S HALF of the guarantee: prepare hands every touched
-  # gem's PUBLISHED version to bundle_lock as `expect:`, so the read-back+ladder
-  # can run at all. Without this wiring the guard is inert no matter how correct
-  # bundle_lock is.
-  #
-  # (The abort itself is NOT asserted here on purpose. This harness stubs
-  # bundle_lock wholesale, so an abort in this test would come from the stub, not
-  # the code — it would assert the double. The real refusal and its retry ladder
-  # are driven against the live implementation in
-  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index.)
+  # [integration] THE PROPAGATION-LAG GUARD. `bundle lock --update` exits 0 whether or not it
+  # could SEE the version just published; an unpropagated index resolves the OLD version and
+  # leaves the tree unchanged, byte-for-byte a real already-bumped re-run. THE CALLER'S HALF:
+  # prepare hands every touched gem's PUBLISHED version to bundle_lock as `expect:`; without
+  # this wiring the guard is inert. The abort is NOT asserted here on purpose: this harness
+  # stubs bundle_lock wholesale, so it would assert the double. See
+  # test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index.
+  # History: release rel-20260809-3b8f3d.
   def test_prepare_passes_the_published_version_to_bundle_lock_as_expect
     out = run_cli(["--yes"], call: "prepare",
                   setup: gem_publish_stub(version: "1.0.0", live: ["1.0.0"], lock_dirty: false, tag: "v1.0.0", ahead: "") + ReleaseCliStubs::REUSED_FINAL)
@@ -113,16 +97,12 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
                     "the no-op message is now EARNED — bundle_lock proved the version before returning"
   end
 
-  # [integration] THE LADDER, driven for real. The stub above replaces
-  # bundle_lock wholesale, so it proves the CALLER refuses a stale lock but says
-  # nothing about the retry. Here `sh` is stubbed instead: `bundle lock` "succeeds"
-  # every time while the lockfile stays stale, so the REAL bundle_lock runs its
-  # propagation ladder — retry, retry, then abort.
-  #
-  # This is review finding (1): the ladder already existed but only ever retried a
-  # NON-ZERO exit, and this bug's signature is exit 0 with the old version still
-  # resolved. Aborting on first observation would turn an ordinary, self-curing
-  # index delay into a manual stop moments after an IRREVERSIBLE gem push.
+  # [integration] THE LADDER, driven for real. `sh` is stubbed instead of bundle_lock: `bundle
+  # lock` "succeeds" while the lockfile stays stale, so the REAL bundle_lock runs retry,
+  # retry, then abort. The ladder must retry exit 0 with the old version resolved, not just a
+  # NON-ZERO exit. Aborting on first observation turns a self-curing index delay into a manual
+  # stop moments after an IRREVERSIBLE gem push.
+  # History: task release-cli-tests-by-subcommand.
   def test_bundle_lock_retries_a_stale_resolution_then_aborts_naming_the_compact_index
     Dir.mktmpdir do |dir|
       File.write(File.join(dir, "Gemfile.lock"), <<~LOCK)
@@ -293,20 +273,13 @@ class ReleaseCliPrepareGemsTest < ReleaseCliHarness
     refute_includes out, "QA-DEPLOY"
   end
 
-  # [integration] THE PRODUCTION-DOWNGRADE vector, end to end (round-5 blocker).
-  # version_file declares 0.9.0 while the last published tag is v0.10.0 — the
-  # route in is a version.rb conflict resolved the wrong way on a merge into
-  # release. Before the ordering fix this walked the ENTIRE pipeline green:
-  # guard passed, publish "skipped" as already-live, and the consumer pin was
-  # rewritten DOWNWARD to `~> 0.9` and committed to origin/release. Now it must
-  # abort in phase 1: zero publishes, and — the assertion that matters most —
-  # NO downward pin rewrite ever reaches a commit.
-  #
-  # Driven with allocation OFF (`allocate: false`) for the same reason as the
-  # stranded test above: phase 0 now allocates forward over this backward version
-  # (0.10.1 for these inputs — the last tag v0.10.0 plus the patch an untyped
-  # member earns) before phase 1 reads it, so the DOWNGRADE branch is reachable
-  # only when allocation did not run. It must still fail closed there.
+  # [integration] THE PRODUCTION-DOWNGRADE vector, end to end. version_file declares 0.9.0
+  # while the last tag is v0.10.0 (a version.rb conflict resolved the wrong way on a merge
+  # into release). It must abort in phase 1: zero publishes and, above all, NO downward pin
+  # rewrite (`~> 0.9`) ever reaches a commit. Driven with `allocate: false`, as in the
+  # stranded test above: phase 0 allocates forward over a backward version, so the DOWNGRADE
+  # branch is reachable only when allocation did not run. It must still fail closed there.
+  # History: task release-cli-tests-by-subcommand.
   def test_prepare_backward_gem_version_aborts_and_never_downgrades_a_consumer
     out = run_cli(["--yes"], setup: gem_publish_stub(version: "0.9.0", live: [{ "number" => "0.9.0" }],
                                                     allocate: false),

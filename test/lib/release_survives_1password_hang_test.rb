@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
-# release-survives-1password-hang: a hung 1Password costs the release under thirty
-# seconds per read and one line that names it, never a silent fifteen-minute wait
-# or a GitHub 401; and `bin/release prepare|ship --wait-for-1password` waits it
-# out and resumes the step.
-#
-#   ruby -Itest test/lib/release_survives_1password_hang_test.rb
-#
-# Every `op` here is a fake on PATH or behind a seam. None of it reaches the real
-# 1Password, and no test value is a secret.
+# release-survives-1password-hang: a hung 1Password costs the release under thirty seconds per
+# read and one line naming it, never a silent fifteen-minute wait or a GitHub 401; `bin/release
+# prepare|ship --wait-for-1password` waits it out and resumes the step.
+# Every `op` here is a fake on PATH or behind a seam: none reaches the real 1Password, and no
+# test value is a secret.
+# History: task release-survives-1password-hang.
 
 require "minitest/autorun"
 require "open3"

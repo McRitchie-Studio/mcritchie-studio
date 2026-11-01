@@ -24,23 +24,14 @@ module ReleaseCliStubs
     end
   end
 
-  # Makes solana-studio read as NOT self-gated.
-  #
-  # It registered a `release_check` on 2026-08-20, when it grew bin/release-check
-  # alongside its Rails engine, so NO registered gem is non-self-gated any more.
-  # The two preflight guards that refuse a non-self-gated gem — the gem-only
-  # candidate and the no-swept-consumer case — still have to bite for the next gem
-  # onboarded without a runner, so they CREATE the condition instead of borrowing
-  # it from the registry. A test that needed some real gem to stay runner-less was
-  # testing the registry, not the guard.
-  #
-  # Injected after `load bin/release.rb`, so the production script grows no
-  # test-only seam.
-  # PREPEND + super, not a copy. An earlier version restated bin/release.rb's own
-  # `!gem_meta_for(repo)["release_check"].to_s.strip.empty?` inline, which is a
-  # second home for a predicate that has one — change the real one and this stub
-  # keeps asserting the old rule, green. Overriding only the ONE repo and calling
-  # super for every other keeps production as the single source.
+  # Makes solana-studio read as NOT self-gated. NO registered gem is non-self-gated now, but the
+  # two preflight guards that refuse one (the gem-only candidate and the no-swept-consumer case)
+  # must still bite for the next runner-less gem, so they CREATE the condition. Injected after
+  # `load bin/release.rb`, so the production script grows no test-only seam. PREPEND + super, not
+  # a copy: restating `!gem_meta_for(repo)["release_check"].to_s.strip.empty?` is a second home
+  # for the predicate. Overriding only the ONE repo and calling super keeps production the single
+  # source.
+  # History: task stand-up-onchain-engine.
   NOT_SELF_GATED = <<~'RUBY'
     self.singleton_class.prepend(Module.new do
       def self_gated_gem?(repo)

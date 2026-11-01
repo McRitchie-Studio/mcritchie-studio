@@ -1,18 +1,11 @@
 # frozen_string_literal: true
 
-# [integration] `bin/task bounces` and the breaker gate on `bin/task block --kind
-# rework`, driven end-to-end against a localhost stub board (no Rails, no real
-# network) — status line, parse, classification, exit code, and what goes on the wire.
-#
-# WHY AN INTEGRATION TIER AT ALL, when BounceLedger is unit-tested next door.
-# Because the defect being fixed lived in the SEAM, not in anybody's logic: the
-# recipe fetched a real response and then read it wrong. A unit test that hands the
-# ledger a hash can never catch a CLI that forgets to parse — so this file gives the
-# CLI a real socket, a real Net::HTTPResponse, and a real 401, and asserts the
-# breaker's ANSWER rather than its internals.
-#
-#   ruby -Itest test/lib/bounce_check_cli_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [integration] `bin/task bounces` and the breaker gate on `bin/task block --kind rework`,
+# end to end against a localhost stub board: status line, parse, classification, exit code,
+# wire. BounceLedger's unit tests cannot catch a CLI that forgets to parse, so this gives
+# the CLI a real socket, a real Net::HTTPResponse and a real 401, and asserts the breaker's
+# ANSWER, not its internals.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "json"

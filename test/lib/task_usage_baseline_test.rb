@@ -17,19 +17,13 @@ class TaskUsageBaselineTest < Minitest::Test
   SESSION = "aaaa1111-bbbb-2222-cccc-333344445555"
   SLUG = "demo-task"
 
-  # ARM + PIN — this file writes the store IN-PROCESS, so it needs its own pin.
-  #
-  # Requiring session_env above arms TASK_USAGE_SANDBOX for this process (the
-  # sibling guarantee), and rule 1 of TaskUsageSandbox demands the TASK_USAGE_DIR
-  # pin be SET at the write seam — even though every write in this file targets an
-  # explicit tmpdir `dir:`. The guard cannot loosen that: by the time a path
-  # reaches TaskUsageBaseline#write, a CLI's env-fallback dir looks exactly like a
-  # test's explicit one, so the ENV pin is the only tell it has. Unpinned, the
-  # first `seed` here ABORTS the whole combined `bin/rails test` process — this
-  # file was green alone (nothing armed the sandbox) and took the mapped-tests
-  # lane down when any sibling file loaded session_env. Requiring the support
-  # here makes the standalone run the regression: drop this pin and
-  # `ruby -Itest test/lib/task_usage_baseline_test.rb` aborts on its own.
+  # ARM + PIN: this file writes the store IN-PROCESS, so it needs its own pin. Requiring
+  # session_env arms TASK_USAGE_SANDBOX, and rule 1 of TaskUsageSandbox demands the
+  # TASK_USAGE_DIR pin be SET at the write seam, even for an explicit tmpdir `dir:`: at
+  # TaskUsageBaseline#write the two look alike. Unpinned, the first `seed` ABORTS the whole
+  # combined `bin/rails test` process. Requiring the support here makes the standalone run the
+  # regression.
+  # History: task detect-engine-migration-content-drift.
   def setup
     @pinned_usage_dir = Dir.mktmpdir
     @prior_usage_dir = ENV["TASK_USAGE_DIR"]

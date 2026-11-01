@@ -1,15 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] The 1Password read `bin/release` makes on its static_cloudflare deploy
-# path (StaticCloudflare::Credentials.r2 → DomainCutover::Credentials.op_read)
-# carries a deadline. From 06:14 to 08:17 MDT on 2026-10-27 every `op` call hung;
-# this read was the release path's last bare IO.popen, so it would have frozen a
-# ship instead of failing it.
-#
-# A fake `op` on PATH hangs whatever it is asked; MCR_OP_DEADLINE shortens
-# OpMeter's per-attempt bound so the case runs in about a second.
-#
-#   ruby -Itest test/lib/release_op_read_deadline_test.rb
+# [unit] The 1Password read `bin/release` makes on its static_cloudflare deploy path
+# (StaticCloudflare::Credentials.r2 -> DomainCutover::Credentials.op_read) carries a deadline,
+# so a hung `op` fails a ship instead of freezing it.
+# A fake `op` on PATH hangs whatever it is asked; MCR_OP_DEADLINE shortens OpMeter's per-attempt
+# bound so the case runs in about a second.
+# History: task release-tooling-survives-hangs.
 
 require "minitest/autorun"
 require "tmpdir"

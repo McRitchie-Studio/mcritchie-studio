@@ -625,20 +625,12 @@ class ReviewClaimCliTest < Minitest::Test
   end
 
   # --- [unit] renew REPORTS WHAT IT DID -----------------------------------------
-  #
-  # THIS BLOCK REPLACES `test_renew_is_always_a_clean_exit_zero`, which asserted the
-  # defect. That test drove a fake board answering `renewed: true` to everything and
-  # asserted exit 0 — so it passed identically whether the CLI read the answer or
-  # threw it away, which is exactly what the CLI was doing (renew-exits-zero-renewing).
-  # Measured on the real board 2026-09-08: renew every 60s against the 120s TTL for
-  # ~31 minutes, every call exit 0 with zero stderr, lease FREE nearly throughout.
-  #
-  # The mutation the old test could not catch, and these can: delete the CLI's read of
-  # the response body and three of the four cases below go red.
-  #
-  # A 204 here is a REAL 204 — no body — because that is what the board sends and
-  # because a test that hands the refusal path a JSON body would prove the CLI can
-  # read an answer it will never actually receive.
+  # A fake board answering `renewed: true` to everything passes whether the CLI reads the
+  # answer or throws it away. These catch that mutation: delete the CLI's read of the response
+  # body and three of the four cases go red. A 204 here is a REAL 204, no body, because that
+  # is what the board sends; a test handing the refusal path a JSON body proves the CLI can
+  # read an answer it will never receive.
+  # History: task renew-exits-zero-renewing.
 
   # No route: the flat data answers everything, including the board's holder read.
   def renew_refusal_routes(holder)
@@ -973,15 +965,12 @@ class ReviewClaimCliTest < Minitest::Test
   end
 
   # --- [unit] every argument is accounted for BEFORE anything is claimed ---------
-  # THE SCAR: `bin/task claim-next-review --help` CLAIMED A REAL TASK. The flag fell
-  # through parse_flags into an ignored key and the atomic pop ran anyway, taking a
-  # live review lease on work nobody was reviewing. So the assertion here is never
-  # "usage was printed" — printed text is compatible with the bug. It is that NO POP
-  # REACHED THE BOARD: no request recorded, no marker, no renewer.
-  #
-  # `posts` is the whole seam: FakeApi records every http_json, so a claim that
-  # happened is a claim that shows up here. The pop the tests above assert
-  # (POST /api/v1/tasks/claim_next_review) must be ABSENT.
+  # THE SCAR: `bin/task claim-next-review --help` must not take a live lease. The assertion is
+  # never "usage was printed", since printed text is compatible with the bug. It is that NO
+  # POP REACHED THE BOARD: no request recorded, no marker, no renewer. `posts` is the whole
+  # seam: FakeApi records every http_json, so POST /api/v1/tasks/claim_next_review must be
+  # ABSENT.
+  # History: task refuse-unknown-claim-flags.
   def assert_claimed_nothing(cli, proj, message)
     assert_empty cli.instance_variable_get(:@api).posts, "#{message}: it reached the BOARD"
     assert_empty @spawned, "#{message}: it anchored a renewer"
@@ -1144,14 +1133,12 @@ class ReviewClaimCliTest < Minitest::Test
   end
 
   # ---- naming the source a refusal trusted --------------------------------
-  #
-  # The pop and `bin/dor-check --gate-role review` read DIFFERENT places by design:
-  # the pop folds the board's own ingested Actions rows, dor-check reads gh LIVE.
-  # When the board has not ingested the PR's current tip they disagree about the
-  # SAME PR — entry gate no, gate-zero yes — and the task cannot be reviewed by the
-  # SOP at all. auto-mint-level-up-tokens (turf PR 407) sat in `submitted` from
-  # 2026-08-23 on exactly that, and printed NO warning: blind_repos fires only for a
-  # repo with no ingested runs AT ALL, and that repo was wired.
+  # The pop and `bin/dor-check --gate-role review` read DIFFERENT places by design: the pop
+  # folds the board's ingested Actions rows, dor-check reads gh LIVE. If the board has not
+  # ingested the PR's tip they disagree (entry gate no, gate-zero yes) and the SOP cannot
+  # review the task. blind_repos fires only for a repo with no ingested runs AT ALL, so a
+  # wired repo prints no warning.
+  # History: task pop-and-gate-disagree.
 
   def test_unit_claim_next_names_the_source_and_head_when_the_board_has_no_green
     Dir.mktmpdir do |proj|
@@ -1226,20 +1213,12 @@ class ReviewClaimCliTest < Minitest::Test
     end
   end
   # --- the renew loop must die with its TASK, not only with its session ----------
-  #
-  # THE DEFECT (measured 2026-08-29, and again on 2026-08-30 after it had already
-  # cost a day): `renew-loop` stopped on its ANCHOR SESSION dying and on nothing
-  # else. One long-lived session reviews many tasks, so it accumulated one immortal
-  # renewer per task — five were found running at 05:25Z, FOUR of them renewing
-  # claims on work that had shipped to production hours earlier, against an alive and
-  # legitimately busy anchor. Between them they spent the account-wide 1Password
-  # budget every other lane depends on, so the outage presented as "1Password is
-  # down" and went undiagnosed for a day.
-  #
-  # THE CONFOUND THESE TESTS ARE BUILT AROUND: every one of them anchors to
-  # Process.pid — THIS test process, which is unarguably alive for the whole run. So
-  # a loop that exits here cannot have exited for the old reason, and the control
-  # below proves the wiring actually runs rather than failing open into silence.
+  # One long-lived session reviews many tasks, so a `renew-loop` that stops only on its ANCHOR
+  # SESSION dying leaves one immortal renewer per task, spending the account-wide 1Password
+  # budget. THE CONFOUND THESE TESTS ARE BUILT AROUND: every one anchors to Process.pid, alive
+  # for the whole run, so a loop that exits here cannot have exited for the old reason. The
+  # control below proves the wiring runs rather than failing open into silence.
+  # History: task renew-loop-outlives-task.
 
   def anchor_flags
     ["--anchor-pid", Process.pid.to_s, "--anchor-start", SessionIdentity.proc_start(Process.pid)]

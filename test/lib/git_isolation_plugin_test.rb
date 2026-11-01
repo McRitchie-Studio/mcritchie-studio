@@ -1,15 +1,12 @@
 # frozen_string_literal: true
 
 # [unit] Git's background maintenance must be disarmed for every test process.
-#
 #   ruby -Itest test/lib/git_isolation_plugin_test.rb
-#
-# NOTE THE IRONY, and it is load-bearing: run this file the way that header line
-# says and the plugin under test DOES NOT LOAD (a non-bundler `ruby` resolves
-# minitest 6, which dropped automatic plugin discovery). So these tests never
-# assert on ambient process state — every one DRIVES a real `git` subprocess
-# with an explicit env, which is the only way they can be true under both
-# invocations. That is deliberate; do not "simplify" them into reading ENV.
+# NOTE THE IRONY: run that way, the plugin under test DOES NOT LOAD (a non-bundler `ruby`
+# resolves minitest 6, which dropped automatic plugin discovery). So every test DRIVES a real
+# `git` subprocess with an explicit env, never ambient process state. Do not "simplify" them
+# into reading ENV.
+# History: task git-maintenance-flakes-tmpdirs.
 
 require "minitest/autorun"
 require "tmpdir"

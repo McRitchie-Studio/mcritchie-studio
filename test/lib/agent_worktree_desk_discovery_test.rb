@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
-# bin/agent-worktree's DESK AUDIT: which desks the sweep sees, how it judges a discovered
-# repo's desk, and how `remove` finds the desk it was named. Three defects from the
-# 2026-09-25/26 desk audit (task desk-audit-sees-every-desk):
-#
-#   1. snapshot scanned only <repo>/.worktrees/, so a worktree git had registered anywhere
-#      else (<projects>/.worktrees/<repo>/, a sibling <repo>.worktrees/, a scratchpad) never
-#      reached the Desks panel;
-#   2. `cleanup --reclaim` withheld EVERY desk of a discovered repo (66 of 70 held desks,
-#      ~50 clean and merged), because such a desk can carry no bound task;
-#   3. `remove studio-engine studio-s3-ignores-qa_env` normalized `_` to `-` before looking,
-#      and answered "missing worktree" about a desk that was there.
-#
-# Every check here builds real git repos in a tmpdir — a test for discovery must own the
-# thing being discovered — and points PROJECTS_DIR at it, so HUB_DIR has no satellites.yml
-# and the registry holds mcritchie-studio alone. The script is `load`ed in a subprocess
-# (its dispatch suppressed by the main guard), as in test/lib/agent_worktree_test.rb, except
-# for `remove`, which drives the real binary because the defect sat in its dispatch.
+# bin/agent-worktree's DESK AUDIT: which desks the sweep sees and judges, how `remove` finds
+# one.
+#   1. snapshot sees worktrees outside <repo>/.worktrees/, wherever git registered them.
+#   2. `cleanup --reclaim` must not withhold EVERY discovered-repo desk for lack of a bound
+#     task.
+#   3. `remove` does not normalize `_` to `-` before looking.
+# Real git repos in a tmpdir; `load`ed in a subprocess, except `remove`, which runs the binary.
+# History: task desk-audit-sees-every-desk.
 require "minitest/autorun"
 require "fileutils"
 require "open3"

@@ -1,29 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] bin/release prepare's promote step REFUSES a merge that would file
-# a new CHANGELOG entry under a version heading that already shipped — against
-# real git (/tasks/rolled-changelog-merge-misfiles).
-#
-# THE DEFECT. An `accepted` that has not absorbed the `Release <version>` commit keeps
-# its un-rolled `## Unreleased` while builders keep writing into it. Prepare now writes
-# the roll (Release::Changelog.roll) onto `accepted` and promotes it from there
-# (/tasks/carry-release-commit-onto-accepted), so this is a rung a sweep missed rather
-# than the resting state it once was — and the guard stays armed for it. That
-# promote merges an un-rolled bucket into a rolled file, and git does one of
-# two things (measured on studio-engine's real file with the real roll):
-#
-#   * a bullet added INSIDE an existing `###` subsection merges CLEAN and lands
-#     under the heading the roll just wrote — a version that shipped without it.
-#     Silent, and permanent: the next roll moves only what is under Unreleased.
-#   * a new subsection at the TOP of the bucket CONFLICTS, and the batch PR dies
-#     in `gh pr merge` with GitHub's generic "not mergeable".
-#
-# REAL, not mocked: a bare origin, a clone, a `release` rolled and tagged, an
-# `accepted` that did not absorb it, and bin/release's own guard reading them. The
-# promote itself (`gh pr merge`) is network and is NOT driven; the guard runs
-# before it, which is the point — a refusal there means nothing was promoted.
-#
-#   ruby -Itest test/lib/release_changelog_promote_test.rb
+# [integration] bin/release prepare's promote step REFUSES a merge that would file a new
+# CHANGELOG entry under a version heading that already shipped. An un-rolled `## Unreleased`
+# merging into a rolled file does one of two things: a bullet INSIDE an existing `###`
+# subsection merges CLEAN under the shipped heading, silently and permanently; a new subsection
+# at the TOP CONFLICTS, and the batch PR dies in `gh pr merge`. REAL, not mocked: bare origin,
+# clone, a rolled and tagged `release`, an `accepted` that did not absorb it. `gh pr merge` is
+# NOT driven; the guard runs before it, so a refusal means nothing was promoted.
+# History: task rolled-changelog-merge-misfiles.
 
 require "minitest/autorun"
 require "open3"

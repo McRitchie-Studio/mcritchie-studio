@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] DocsArchive.failure_report — does a failing doc sweep report what ACTUALLY
-# failed, and does it claim ledger loss ONLY on a measured loss?
-#
-# THE DEFECT THIS PINS. `bin/release archive` announced "the delete-later ledger has
-# lost resolved row(s)" for EVERY non-zero exit of bin/archive-docs, having checked no
-# such thing. On 2026-09-01, mid production deploy, it said exactly that when a
-# `git mv` had crashed. The operator counted the rows by hand — delete-later.md 86 → 45
-# (−41), its archive 524 → 565 (+41) — and found them perfectly conserved. The message
-# had diagnosed something it never looked at, and the wrong diagnosis cost a detour at
-# the worst possible moment.
-#
-# WHAT MAKES THIS TIER THE RIGHT ONE. The report is PURE: strings in, string out, no
-# git and no subprocess. So the DISCRIMINATION — the same failure reading differently
-# depending only on the measured verdict — is provable here in milliseconds, with the
-# verdict supplied directly rather than staged. The CALLER's half (does it measure the
-# verdict at all, and does it stop before the commit?) needs a real process boundary and
-# lives in test/lib/release_archive_docs_diagnosis_test.rb.
-#
-# BOTH HALVES ARE ASSERTED HERE, and that is deliberate. A test that only proved "a
-# crash must not be called ledger loss" would stay green if the ledger claim were
-# deleted outright — which would be a worse bug, silently shipped under a passing test.
-#
-# Run directly:  ruby -Itest test/lib/docs_archive_failure_report_test.rb
+# [unit] DocsArchive.failure_report: does a failing doc sweep report what ACTUALLY failed,
+# claiming ledger loss ONLY on a measured loss? ("the delete-later ledger has lost resolved
+# row(s)" for every non-zero bin/archive-docs exit is the defect.)
+# The report is PURE, so the discrimination is proved here with the verdict supplied directly.
+# The caller's half needs a process boundary: test/lib/release_archive_docs_diagnosis_test.rb.
+# BOTH HALVES ARE ASSERTED: proving only "a crash must not be called ledger loss" stays green if
+# the ledger claim is deleted outright.
+# History: task archive-error-blames-ledger.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/docs_archive"

@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# Unit test for AgentFanoutUsage — the fan-out reconciler that reads a session's
-# CHILD subagent transcripts and partitions their spend across the activities that
-# authored it. Plain Ruby (no Rails); also picked up by `bin/rails test`.
-#
-#   ruby -Itest test/lib/agent_fanout_usage_test.rb
-#
-# The fixture mirrors the real pr-review shape that exposed the bug (prod session
-# 84293426): a quiet PARENT + an AVI supervisor child that narrates the nil lane +
-# a CARL reviewer child that narrates its own soul lane.
+# Unit test for AgentFanoutUsage, which reads a session's CHILD subagent transcripts and
+# partitions their spend across the authoring activities. Plain Ruby. The fixture mirrors
+# the real pr-review shape: a quiet PARENT + an AVI supervisor child narrating the nil lane
+# + a CARL reviewer child narrating its own soul lane.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "json"

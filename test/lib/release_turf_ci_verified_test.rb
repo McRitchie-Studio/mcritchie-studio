@@ -1,16 +1,10 @@
 # frozen_string_literal: true
 
-# TURF READS THE CI VERDICT INSTEAD OF RE-RUNNING ITS SUITE (task
-# faster-steadier-production-ship, part 1).
-#
-# The conductor used to print "turf-monster self-gates (no conductor test_cmd; its
-# deploy runs tests) — skip", and turf's `bin/deploy --yes` then ran the full
-# `bin/rails test` locally, about 20 minutes, on a SHA CI had already tested. Now
-# turf registers test_cmd, so the ship READS GitHub CI's verdict for the SHA it
-# deploys (test_gate, frozen and re-lock), and only a green read for EXACTLY that SHA
-# makes deploy_app append the declared `ci_verified_arg` (`--ci-verified=<sha>`).
-#
-#   ruby -Itest test/lib/release_turf_ci_verified_test.rb
+# TURF READS THE CI VERDICT INSTEAD OF RE-RUNNING ITS SUITE. turf registers test_cmd, so the
+# ship READS GitHub CI's verdict for the SHA it deploys (test_gate, frozen and re-lock), and
+# only a green read for EXACTLY that SHA makes deploy_app append the declared `ci_verified_arg`
+# (`--ci-verified=<sha>`).
+# History: task faster-steadier-production-ship.
 
 require_relative "release_cli_harness"
 

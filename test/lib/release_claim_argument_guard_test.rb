@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] ReleaseClaimCli must account for EVERY argument before it dispatches.
-#
-# THE DEFECT (the sibling of the one PR 974 closed on ReviewClaimCli): unknown flags
-# fell through parse_flags into an ignored key and the subcommand ran anyway. A
-# `--role deployre` typo did not refuse — it dispatched with no role, and a `-h` probe
-# was not even recorded as an ignored key: the single-dash token vanished entirely.
-#
-# EXPOSURE IS LOWER HERE THAN ON THE REVIEW CLAIM, and saying so is part of the fix
-# being honest. There is no `bin/task release-claim` subcommand for an agent to probe,
-# and every subcommand requires --role, so a bare `--help` line dies on the missing
-# role before it mutates. This closes a family; it does not fix a live incident.
-#
-# WHAT THIS FILE PROTECTS MOST IS THE OTHER DIRECTION. A guard that refuses everything
-# looks exactly like a guard that works, and here the failure is silent and expensive:
-# refuse the DETACHED RENEWER's own spawned argv and every conductor lease lapses
-# mid-act, so two `bin/release prepare` runs assemble the same release. So the argv
-# INVENTORY below is the centerpiece — every real invocation in the repo, replayed
-# through the guard, asserted to dispatch with its slug and flag VALUES intact.
-#
-# The CLI's board behavior lives in test/lib/release_claim_cli_test.rb; the operator
-# seam (a real process, a real stub board) in test/lib/release_claim_flags_test.rb.
-#
-#   ruby -Itest test/lib/release_claim_argument_guard_test.rb
+# [unit] ReleaseClaimCli must account for EVERY argument before it dispatches: an unknown flag
+# refuses, and `-h` must not vanish. The other direction matters most: refusing the DETACHED
+# RENEWER's spawned argv lapses every conductor lease mid-act, silently, and two `bin/release
+# prepare` runs assemble the same release. So the argv INVENTORY below replays every real
+# invocation, asserting its slug and flag VALUES survive.
+# Board behavior: test/lib/release_claim_cli_test.rb. Operator seam:
+# test/lib/release_claim_flags_test.rb.
+# History: task refuse-unknown-release-claim-flags.
 
 require "minitest/autorun"
 require "json"
@@ -85,16 +70,13 @@ class ReleaseClaimArgumentGuardTest < Minitest::Test
     end
   end
 
-  # ── THE ARGV INVENTORY ───────────────────────────────────────────────────────
-  # Every way this CLI is invoked anywhere in the repo, with the source that builds
-  # each line. Grepped for `release_claim_cli` / `ReleaseClaimCli` / `release-claim`
-  # across the whole tree, not just bin/. `renew` and `status` have no production
-  # caller — they are hand/internal commands — so their documented shapes are pinned
-  # here from the CLI's own header block, which is the contract an operator types.
-  #
-  # The renewer's line is NOT hand-copied into this table; it is captured from a real
-  # acquire in test_the_detached_renewers_own_argv_survives_the_guard_it_reenters,
-  # because a hand copy proves the transcription, not the code.
+  # --- THE ARGV INVENTORY ---
+  # Every way this CLI is invoked anywhere in the repo, with its source. `renew` and `status` have
+  # no production caller, so their shapes are pinned from the CLI's header block.
+  # The renewer's line is NOT hand-copied:
+  # test_the_detached_renewers_own_argv_survives_the_guard_it_reenters captures it from a real
+  # acquire, because a hand copy proves the transcription, not the code.
+  # History: task refuse-unknown-release-claim-flags.
   REAL_ARGV = [
     { source: "bin/release.rb#acquire_conductor_claim!",
       argv: ["acquire", SLUG, "--role", "deployer"],

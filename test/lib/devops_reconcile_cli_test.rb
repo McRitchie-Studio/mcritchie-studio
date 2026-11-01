@@ -452,17 +452,11 @@ class DevopsReconcileCliTest < Minitest::Test
   end
 
   # --- a failed read is not an empty one -------------------------------------
-  #
-  # THE DEFECT (found 2026-09-20, verified 2026-09-22). `armed_states` ran
-  # `sh("bin/review-autopilot", "list", "--all")`, which discarded BOTH the exit
-  # code and the child's stderr, then answered `{}`. `{}` is not "I could not
-  # look" — the caller's `arms.fetch(slug, :none)` reads a missing key as a
-  # POSITIVE :none, so an unreadable registry removed every :verdict_stranded
-  # finding this seam can make and the run still printed the all-clear at exit 0.
-  #
-  # The sharp part: bin/review-autopilot's own `list` was hardened against this
-  # exact reading in PR 1481. The false clear survived, inside the consumer of the
-  # very read that was fixed.
+  # `armed_states` must not run `sh("bin/review-autopilot", "list", "--all")`, discard the
+  # exit code and stderr, and answer `{}`: the caller's `arms.fetch(slug, :none)` reads a
+  # missing key as a POSITIVE :none, so an unreadable registry removes every :verdict_stranded
+  # finding and prints the all-clear at exit 0.
+  # History: task conductor-survey-false-clear.
 
   def test_an_unreadable_armed_registry_is_not_nothing_stranded
     with_shims(gh_json: GH_MERGED, autopilot_exit: 1) do |root, _calls|

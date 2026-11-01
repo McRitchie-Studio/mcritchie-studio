@@ -1,17 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] bin/ship and bin/ship-wait are the old names of bin/submit and
-# bin/submit-wait, kept as aliases for one release. Running sessions call them
-# through the fixed-path tooling, so each alias must print one rename line and
-# exec the new script with the WHOLE argument line, untouched.
-#
-# Each alias is copied into a scratch bin/ beside a stub that records its argv, so
-# the test reads exactly what the alias handed over without running a real
-# handoff. A mutant alias that drops an argument is run through the same check, so
-# the assertion is shown to bite.
-#
-# Run directly:
-#   ruby -Itest test/lib/submit_alias_test.rb
+# [unit] bin/ship and bin/ship-wait are aliases of bin/submit and bin/submit-wait for one
+# release. Each must print one rename line and exec the new script with the WHOLE argument
+# line, untouched. Each is copied into a scratch bin/ beside an argv-recording stub. A mutant
+# alias that drops an argument runs through the same check, so the assertion is shown to bite.
+# History: task rename-ship-and-retire-aliases.
 
 require "minitest/autorun"
 require "open3"

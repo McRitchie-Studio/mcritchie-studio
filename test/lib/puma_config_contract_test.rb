@@ -1,20 +1,12 @@
 # frozen_string_literal: true
 
-# Config-contract test for web/worker concurrency vs. the board Postgres.
-#
-# From the 2026-08-09 H12 outage: production ran one Basic dyno with no Puma
-# `workers` line and 3 threads — 3 TOTAL concurrency — and a request swarm
-# queued the entire site (2,293 H12s in 2m47s). The fix raises WEB_CONCURRENCY,
-# but the board Postgres is Heroku essential-1 with a HARD 20-connection limit
-# shared by web (workers x threads), the Solid Queue dyno (bin/jobs), and agent
-# CLI/console sessions. This test parses the REAL config files (config/puma.rb,
-# config/database.yml, config/queue.yml, config/recurring.yml), re-derives the
-# worst-case connection budget documented beside the `workers` line in
-# config/puma.rb, and fails if it ever reaches the ceiling.
-#
-# Standalone (no Rails env). Run directly:
-#   bundle exec ruby -Itest test/lib/puma_config_contract_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# Config-contract test for web/worker concurrency vs. the board Postgres: Heroku essential-1,
+# a HARD 20-connection limit shared by web (workers x threads), the Solid Queue dyno
+# (bin/jobs), and agent CLI/console sessions. It parses the REAL config/puma.rb,
+# config/database.yml, config/queue.yml and config/recurring.yml, re-derives the worst-case
+# budget documented beside the `workers` line in config/puma.rb, and fails if it ever reaches
+# the ceiling. Standalone (no Rails env).
+# History: incident 2026-08-09 H12 outage.
 
 require "minitest/autorun"
 require "puma"

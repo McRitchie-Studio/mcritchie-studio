@@ -26,16 +26,12 @@ class LogosBrandPinsTest < Minitest::Test
     # own one line (Alex McRitchie 2026-10-28, Option A); its existing drawings did not move: without the two-line ones
     # the digest is still c1f383a9….
     "turf" => "334788795e0f9759eadbbfca57cf8aa5722332e3c83cad7a25fe8273f09632a2",
-    # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); was d1411cdd…. The three
-    # others above did not move by a byte.
-    # Re-taken by the review fix: the stacked two-line small line keeps its WELDING LLC word gap when tracked (only
-    # its two-line drawings changed); was 854451d3….
-    # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
-    # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 5b868519…. Industries did not move.
-    # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue, when Alt on a dark page drew the Original's helmet,
-    # blue half kept, instead of the single-colour one (Alex McRitchie 2026-10-28), and its tagline took the client's
-    # Spark Orange (the tones' `quiet`); only the 30 dark drawings, the dark icon and the 6 light tagline drawings
-    # moved; was 4e2f0a55….
+    # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet (v1's whole name, COMMERCIAL WELDING
+    # LLC; was d1411cdd…); by its review fix (the stacked WELDING LLC word gap; was 854451d3…); by
+    # task stacked-rule-of-three (every icon's box became its ink, Logos::IconInk; was 5b868519…);
+    # and by task turf-two-lines-and-welding-blue (Alt on a dark page drew the Original's helmet,
+    # its tagline took Spark Orange; was 4e2f0a55…). Each on Alex McRitchie's call.
+    # History: task turf-two-lines-and-welding-blue.
     "welding" => "42dff7bd63f7b8d186ab18f1a5e969ebdaff49099ebd8c7ed64d7b85500a1afe",
     # Added by task welding-llc-and-v2-helmet: Commercial Welding v2 as it first shipped.
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie

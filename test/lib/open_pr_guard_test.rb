@@ -143,20 +143,11 @@ class OpenPrGuardTest < Minitest::Test
     assert_equal :open, OpenPrGuard.decide(prs: [pr(:open)], stage: "shipped")
   end
 
-  # THE COMPLETENESS PROPERTY: every grade `decide` can actually produce is either
-  # PERMITTED or carries a message the operator can act on. So a grade added later
-  # cannot slip through as a silent refusal with nothing behind it.
-  #
-  # WHAT THIS TEST USED TO BE, and why it proved nothing: it derived the grade list
-  # from the real predicate — correctly — and then built its assertion from a
-  # hardcoded `prs: [pr(:open)]`, never passing `grade` into anything. So every
-  # unpermitted grade rendered the same open-PR refusal, which is of course
-  # non-empty, and the property was never exercised. Proven inert by execution: an
-  # unpermitted grade with no message left the file at 26 runs / 0 failures.
-  #
-  # It bites now because the message is looked up BY GRADE, through the same
-  # dispatcher bin/task calls, using the very roster and stage that produced it.
-  # An unanswered grade returns nil, and nil is a fact this can see.
+  # THE COMPLETENESS PROPERTY: every grade `decide` can actually produce is PERMITTED or carries
+  # a message the operator can act on. The message is looked up BY GRADE, through the dispatcher
+  # bin/task calls, with the roster and stage that produced it, so nil is a fact this can see. A
+  # hardcoded `prs: [pr(:open)]` never passes `grade` into anything and proves nothing.
+  # History: task harden-open-pr-guard.
   def test_every_grade_decide_produces_is_either_permitted_or_explained
     cases = ROSTERS.product(STAGES).map do |prs, stage|
       [OpenPrGuard.decide(prs: prs, stage: stage), prs, stage]
@@ -277,18 +268,11 @@ class OpenPrGuardTest < Minitest::Test
 
   # ── reading the receipt back: WHOLE URLS, NOT PREFIXES ──────────────────────
 
-  # THE UNSAFE FAILURE, and the reason this task exists. `.../pull/24` is a strict
-  # PREFIX of `.../pull/245`, so the substring reader this replaced
-  # (`recorded.any? { |entry| entry.include?(ref[:url]) }`) answered TRUE for a PR
-  # nobody ever abandoned. Downstream, `bin/task orphan-prs` printed a REAL orphan
-  # as "abandoned on purpose", suppressed its `decide:` remediation line, and sorted
-  # it to the bottom — the alarm going quiet about live, forgotten work, which is
-  # precisely the harm this guard shipped to close.
-  #
-  # THE SECOND ASSERTION IS THE CONTROL. It proves the fixture still exhibits the
-  # collision, so a green first assertion can never mean "these two urls simply do
-  # not overlap" — the way a fixture that cannot express the bug passes against the
-  # defect and the fix alike.
+  # THE UNSAFE FAILURE: `.../pull/24` is a strict PREFIX of `.../pull/245`, so a substring
+  # reader (`recorded.any? { |entry| entry.include?(ref[:url]) }`) answers TRUE for a PR nobody
+  # abandoned, and `bin/task orphan-prs` prints a REAL orphan as "abandoned on purpose". THE
+  # SECOND ASSERTION IS THE CONTROL: it proves the fixture still exhibits the collision.
+  # History: task harden-open-pr-guard.
   def test_a_receipt_for_245_does_not_cover_24
     receipt = OpenPrGuard.record(prs: [pr(:open, url: ENGINE)], at: AT)
 

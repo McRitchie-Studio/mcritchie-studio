@@ -1,21 +1,13 @@
 # frozen_string_literal: true
 
-# Release::AcceptedCertification — the decision behind the promote's second guard.
-# Standalone (no Rails, no DB, no fixtures):
-#   ruby -Itest test/lib/release_accepted_certification_test.rb
-#
-# WHY THIS DRIVES SYNTHETIC YAML RATHER THAN THE REAL SIBLING CHECKOUTS. A test that
-# reads turf-monster's actual ci.yml can only ever assert today's fleet, and it asserts
-# it from a repo that does not own the file — so it goes red for a change made three
-# repos away, skips entirely on the hub's CI runner (where no sibling is checked out),
-# and passes blind exactly where it most needs to bite. The PROPERTY is what belongs
-# under test: given a workflow, does this module correctly say whether `accepted` gets
-# built? The live fleet question is asked at the moment it matters — inside
-# promote_accepted_to_release!, against origin/accepted, by bin/release.rb — and pinned
-# in test/lib/release_cli_accepted_gate_test.rb.
-#
-# EVERY POSITIVE CASE BELOW IS MUTATION-PAIRED: the same workflow with `accepted`
-# removed must flip the verdict. A guard nobody has watched fail is not a guard.
+# Release::AcceptedCertification: the decision behind the promote's second guard. Standalone (no
+# Rails, no DB, no fixtures).
+# It drives SYNTHETIC YAML, not sibling checkouts: reading turf-monster's ci.yml goes red for a
+# change three repos away and skips on the hub's CI runner. The live fleet question is asked
+# inside promote_accepted_to_release!, pinned in test/lib/release_cli_accepted_gate_test.rb.
+# EVERY POSITIVE CASE IS MUTATION-PAIRED: the same workflow with `accepted` removed must flip
+# the verdict.
+# History: task certify-accepted-everywhere.
 require "minitest/autorun"
 require_relative "../../app/models/release/accepted_certification"
 

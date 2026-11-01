@@ -225,16 +225,12 @@ class ArchiveDocsCliTest < Minitest::Test
   end
 
   # --- the move-never-delete invariant, at the beat that makes the loss permanent ------
-  #
-  # This sweep is where three destroyed rows became history in 2026-08-21: a teardown
-  # driven from a desk carrying a stale bin/agent-worktree overwrote their dated rows in
-  # the hub's WORKING TREE, and `bin/release archive` committed the result. The roller was
-  # never at fault — it archived what it was handed, 40 of 43 rows — so the refusal belongs
-  # in front of it, where the destroyed row is still one `git show HEAD:` away.
-  #
-  # THE DAMAGE IS PRODUCED THE WAY THE STALE WRITER PRODUCES IT: a dated row replaced in
-  # place. Nothing here calls the fixed writer, because the writer is exactly the component
-  # that cannot be relied on.
+  # A stale bin/agent-worktree can overwrite dated rows in the hub's WORKING TREE, and
+  # `bin/release archive` commits the result. The roller archives what it is handed, so the
+  # refusal belongs in front of it, where the row is still one `git show HEAD:` away. The
+  # damage is produced as the stale writer does, a dated row replaced in place; nothing calls
+  # the fixed writer, which cannot be relied on.
+  # History: task guard-ledger-against-stale-desks.
   def clobber_dated_row(repo)
     path = File.join(repo, DocsArchive::LEDGER)
     File.write(path, File.read(path).sub("| `/new/two` | worktree | recent | done | removed 2026-07-14 |",

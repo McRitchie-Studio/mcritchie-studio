@@ -1,18 +1,11 @@
 # frozen_string_literal: true
 
-# Tests for test/support/doc_reference_scanner.rb — the READER half of the doc
-# servability guard.
-#
-#   ruby -Itest test/lib/doc_reference_scanner_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# WHY THE EXTRACTOR GETS ITS OWN TEST. test/integration/doc_reference_servability_test.rb
-# grades whatever this returns. A scanner that quietly returned [] would make that
-# integration test pass on a corpus full of broken references — a green that tested
-# nothing, and the exact failure mode the guard exists to prevent. So the rule ("can
-# the route serve it?") is proven against the real route over there, and the extraction
-# ("what does this doc reference?") is proven here, against markdown whose answer is
-# written down beside it.
+# Tests for test/support/doc_reference_scanner.rb, the READER half of the doc servability guard.
+# test/integration/doc_reference_servability_test.rb grades what this returns, so a scanner
+# quietly returning [] would pass a corpus full of broken references. The rule is proven over
+# there, against the real route; the extraction is proven here, against markdown with its answer
+# written beside it.
+# History: task serve-or-retire-doc-avatars.
 require "minitest/autorun"
 require_relative "../support/doc_reference_scanner"
 

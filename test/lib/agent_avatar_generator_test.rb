@@ -1,34 +1,13 @@
 # frozen_string_literal: true
 
-# Tests for script/generate_agent_avatars.rb — the manual placeholder generator
-# and, specifically, the never-clobber guard that decides whether a soul already
-# has a real face.
-#
-#   ruby -Itest test/lib/agent_avatar_generator_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# THE BUG (repair-avatar-generator-and-docs; found in review of PR #965). The guard
-# asked `File.exist?("public/agents/<slug>.png")`. PR #965 re-encoded every portrait
-# to .webp and deleted the .png originals, so that path stopped existing for EVERY
-# soul, the guard could never fire again, and a run drew placeholder initial-bubbles
-# over shannon, jasper, carl, avi and steffon — dropping five stray .png files into
-# public/agents beside the real .webp. Measured on 2026-08-21 against a fixture root
-# holding the ten real portrait NAMES: five placeholders written, zero skips.
-#
-# THE SECOND COPY IS GONE. The generator also copied each placeholder to
-# docs/agents/agents/<slug>/avatar.png, which the persona's role.md embedded. The docs
-# route cannot serve an image (DocsController#show reads `<path>.md` and its path guard
-# rejects the dot first), so all nine embeds rendered broken while costing 5.75MB in
-# every worktree. serve-or-retire-doc-avatars retired the files, the embeds, and this
-# write path; test/integration/doc_reference_servability_test.rb keeps them from
-# returning. The assertions below now pin the ABSENCE of that write.
-#
-# It could not break a render — the avatar column is DATA and db/seeds/02_agents.rb
-# points at .webp — which is exactly why it needs a test rather than a page.
-#
-# WHY THE PREDICATE IS EXTRACTED. The lowest tier that reproduces this is a unit
-# test on the decision itself, so the script defines AgentAvatarPlaceholders and
-# only runs under `__FILE__ == $PROGRAM_NAME`. Requiring it here is inert.
+# Tests for script/generate_agent_avatars.rb, the manual placeholder generator, and its
+# never-clobber guard deciding whether a soul already has a real face. Portraits are .webp, so a
+# guard asking `File.exist?("public/agents/<slug>.png")` can never fire and draws over them. The
+# assertions pin the ABSENCE of the docs/agents/agents/<slug>/avatar.png write;
+# test/integration/doc_reference_servability_test.rb keeps those files from returning. It cannot
+# break a render (db/seeds/02_agents.rb points at .webp), so it needs a test. Requiring the
+# script is inert: AgentAvatarPlaceholders runs only under `__FILE__ == $PROGRAM_NAME`.
+# History: task repair-avatar-generator-and-docs.
 require "minitest/autorun"
 require "fileutils"
 require "open3"

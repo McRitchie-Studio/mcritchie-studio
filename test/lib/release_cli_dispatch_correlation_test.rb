@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# bin/release.rb's dispatch_and_watch finds ITS OWN run by a correlation id in the
-# run name, not by "newest run after the baseline". Standalone:
-#   ruby -Itest test/lib/release_cli_dispatch_correlation_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# THE GAP (guard-catalog row 7.4). `gh workflow run` names no run, so the method
-# snapshotted the newest run id and watched the first one strictly greater. That is
-# ours only while nobody else dispatches the same workflow in the window: a second
-# conductor, a hand dispatch or a rollback each register a run that is ALSO newer,
-# and `--limit 1` returns whichever is newest. On prod-deploy.yml the conductor would
-# report another deploy's verdict as its own.
-#
-# THE FIX THIS PINS. Each dispatch carries a fresh `correlation_id`; both workflows
-# stamp it into `run-name`; the poll selects the run whose title carries `[<id>]`.
-#
-# HOW IT IS DRIVEN. The `sh` stub below is a small GitHub: it holds a run list and
-# answers every `gh run list --jq <filter>` by running THE SCRIPT'S OWN FILTER through
-# the real `jq` over that list. So the test proves the filter the shell sends, not a
-# stub's idea of it — a filter that selected the wrong run would watch the wrong run.
-#
-# A FILE OF ITS OWN: the release CLI files are frozen by config/test_health.yml.
+# bin/release.rb's dispatch_and_watch finds ITS OWN run by a correlation id in the run name, not
+# by "newest run after the baseline": a second conductor, hand dispatch or rollback also
+# registers a newer run, so on prod-deploy.yml the conductor would report another deploy's
+# verdict. Each dispatch carries a `correlation_id`; both workflows stamp `run-name`; the poll
+# selects the title with `[<id>]`. The `sh` stub runs THE SCRIPT'S OWN `gh run list --jq` FILTER
+# through the real `jq`, so the test proves the filter the shell sends. A FILE OF ITS OWN:
+# release CLI files are frozen by config/test_health.yml.
+# History: task dispatch-run-name-correlation.
 require "minitest/autorun"
 require "open3"
 require "json"

@@ -1,15 +1,10 @@
 # frozen_string_literal: true
 
-# `bin/release rollback`: the previous shipped SHA per app, redeployed through each
-# app's strategy, with the board record. Every seam that could reach production,
-# Heroku, GitHub or the board is stubbed: the conductor, git reads, the Heroku
-# release read, the workflow dispatch, the shell and the /up poll.
-#
-# Part of the bin/release CLI suite, one file per subcommand. The
-# shared subprocess harness, fixtures and stub constants live in
-# test/lib/release_cli_harness.rb. Run directly:
-#   ruby -Itest test/lib/release_cli_rollback_test.rb
-# It is also picked up by the normal `bin/rails test` sweep.
+# `bin/release rollback`: the previous shipped SHA per app, redeployed through each app's
+# strategy, with the board record. Every seam that could reach production, Heroku, GitHub or
+# the board is stubbed: conductor, git reads, Heroku release read, workflow dispatch, shell,
+# /up poll. Shared harness: test/lib/release_cli_harness.rb.
+# History: task release-rollback-command.
 
 require_relative "release_cli_harness"
 

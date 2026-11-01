@@ -1,24 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] The DEPLOYER token must never be written to, or served from, the cache.
-#
-# THE DEFECT THIS EXISTS TO CATCH (found 2026-08-28 by Carl, reviewing the
-# two-vault split). `bin/gh-token` caches minted tokens in
-# `<projects>/.agents/github-tokens.json` so sibling agent PROCESSES can share
-# them — correct for `agent`, which re-mints hourly across concurrent lanes.
-#
-# But the main flow reads that cache BEFORE it mints, and `usable_token` filters
-# only on age. So for the 50 minutes after ANY admin-lane mint
-# (REFRESH_AFTER_SECONDS = 3000), a deployer token sat in a 0600 file that
-# ordinary lanes read by design — and `bin/gh-token --identity deployer`
-# SUCCEEDED in a shell carrying no admin token. The two-vault split made a build
-# lane unable to MINT admin credentials; it never stopped one OBTAINING a
-# deployer token. The docs claimed otherwise.
-#
-# WHY A SUBPROCESS RATHER THAN UNIT-CALLING THE METHODS. The bug lived in the
-# ORDER of the top-level flow — cache read before mint — not in any one method.
-# A test that called `usable_token` directly would have passed against the bug.
-# These drive the real script with a sandboxed store and a stubbed minter.
+# [unit] The DEPLOYER token must never be written to, or served from, the cache. `bin/gh-token`
+# caches minted tokens in `<projects>/.agents/github-tokens.json` for sibling processes, correct
+# for `agent`. The main flow reads that cache BEFORE it mints and `usable_token` filters only on
+# age.
+# WHY A SUBPROCESS: the bug lived in the ORDER of the top-level flow; calling `usable_token`
+# directly passes against it. These drive the real script with a sandboxed store and a stubbed
+# minter.
+# History: task never-cache-deployer-token.
 
 require "bundler/setup"
 require "minitest/autorun"
@@ -131,15 +120,12 @@ class DeployerTokenNeverCachedTest < Minitest::Test
     end
   end
 
-  # The real script, driven through the seams it ACTUALLY honours —
-  # CLAUDE_PROJECTS_DIR (bin/gh-token#PROJECTS), GH_TOKEN_OP_BIN (bin/gh-token#OP_BIN)
-  # and GH_TOKEN_MINT_BIN (bin/gh-token#MINT_BIN). Nothing here touches 1Password or GitHub.
-  #
-  # I first wrote this against GH_TOKEN_MINT_STUB and MCR_PROJECTS_ROOT, neither
-  # of which exists. A harness built on invented seams fails for the wrong reason
-  # or, worse, passes because the script ignored it — so the seams are cited by
-  # line above, and `test_the_harness_actually_drives_the_script` proves the stub
-  # is reached rather than assumed.
+  # The real script, driven through the seams it ACTUALLY honours: CLAUDE_PROJECTS_DIR
+  # (bin/gh-token#PROJECTS), GH_TOKEN_OP_BIN (bin/gh-token#OP_BIN), GH_TOKEN_MINT_BIN
+  # (bin/gh-token#MINT_BIN). Nothing here touches 1Password or GitHub. A harness on invented seams
+  # passes because the script ignored it, so `test_the_harness_actually_drives_the_script` proves
+  # the stub is reached.
+  # History: task never-cache-deployer-token.
   def run_token(root, *args)
     env = SessionEnv.neutralized(
       "CLAUDE_PROJECTS_DIR" => root,

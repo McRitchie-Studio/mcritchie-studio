@@ -1,42 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] A REVIEW RENEWER MUST NOT OUTLIVE ITS REVIEWER — and must not outlive its REVIEW.
-#
-# THE INCIDENT, measured 2026-09-10 ~01:15 MDT. Two tasks read `review_in_progress: yes`
-# with no reviewer alive: their reviewer subagents had died in the 07:10Z account
-# spend-limit 429s. Their leases were kept alive by two detached `renew-loop`
-# processes, orphaned to launchd, both anchored to a claude SESSION started 33 hours
-# earlier and still open. One of those loops had been running since ~21:05 MDT the
-# previous evening — during that task's FIRST review — and renewed straight through a
-# rework bounce, the builder's rework, and the resubmit.
-#
-# TWO HALVES, and this file pins both:
-#
-#   1. THE ANCHOR CANNOT SEE A REVIEWER. A reviewer is a SUBAGENT, and a subagent is
-#      not an OS process: its shell commands are direct children of the session's
-#      `claude` process and carry the session's own CLAUDE_CODE_SESSION_ID (measured
-#      from inside a subagent while building this fix). So the anchor pid, the session
-#      id AND the live-instance nonce are all the SESSION's. A reviewer that dies
-#      inside a living session changes none of them, and a renewer bounded only by its
-#      anchor renews for as long as the session stays open — up to ShiftRenewer's 12h
-#      safety cap, plus one REVIEW_TTL after that.
-#   2. NOTHING ENDED THE LOOP WHEN THE REVIEW ENDED. It stopped only on `reviewed`,
-#      `assembled`, `shipped` and `archived`. A bounce (`bin/task block`, stage →
-#      `building`) is a verdict too, and it was not on the list.
-#
-# WHAT MAKES THESE BITE. The anchor is held ALIVE in every test here, because that is
-# the incident: the session never died. A test that let the anchor die would pass
-# against the original code, which already stopped on a dead anchor.
-#
-# Driven through the REAL `renew_loop` with a fake board, a fake clock and a fake
-# sleep, so twelve hours of renewal run in milliseconds and the defect reads as a
-# count rather than as a hang.
-#
-#   bundle exec ruby -Itest test/lib/review_renewer_lifetime_test.rb
-#
-# `bundle exec` is not optional: this file requires minitest/mock, and bare `ruby` loads
-# the system minitest (6.x), which no longer ships it — the run dies on a LoadError
-# before a test starts. The bundle pins 5.27, which does.
+# [unit] A REVIEW RENEWER MUST NOT OUTLIVE ITS REVIEWER, and must not outlive its REVIEW. A
+# reviewer is a SUBAGENT, not an OS process: anchor pid, session id and live-instance nonce
+# are all the SESSION's, so an anchor-only renewer runs up to ShiftRenewer's 12h cap. A
+# bounce (`bin/task block`, stage → `building`) must also end the loop. The anchor is held
+# ALIVE in every test: a dying anchor passes against the original code. Drives the REAL
+# `renew_loop` with fake board, clock and sleep. `bundle exec` is not optional: this
+# requires minitest/mock, and bare `ruby` loads system minitest (6.x), a LoadError.
+# History: task review-renewer-outlives-its-reviewer.
 
 require "minitest/autorun"
 require "minitest/mock"

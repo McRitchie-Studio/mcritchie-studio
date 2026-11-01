@@ -1,25 +1,13 @@
 require "test_helper"
 require Rails.root.join("bin/lib/ci_gate").to_s
 
-# /tasks/pending-ci-paints-check — the PRODUCER half of "a running CI is not a CI that
-# passed".
-#
-# THE DEFECT, AND WHY IT IS THE DANGEROUS DIRECTION. `CiGate.gate_row` has answered the
-# builder role "pending" for an unsettled CI since the arm was written. The gates card's
-# glyph chain was fail → ✗, `running` → ◌, NO_VERDICT_RESULTS → ⚠, DEFAULT → ✓ — and
-# "pending" is in none of the first three. So the durable GateRun row for a CI that was
-# STILL RUNNING rendered with the PASS glyph. Its four siblings
-# (/tasks/gate-logs-auth-as-red, /tasks/refused-review-records-fail,
-# /tasks/no-pr-records-as-fail) each manufactured a FAILURE, which gets audited because
-# it blocks somebody; this one manufactured a SUCCESS, which nobody audits.
-#
-# THE VALUE DID NOT CHANGE, AND THAT IS DELIBERATE. `"pending"` is pinned builder-side
-# by test/lib/dor_check_exempt_ci_test.rb and rides bin/dor-check's --json as
-# `ci_gate_result`. This task gave the word a CONSTANT and a GLYPH; renaming it would
-# have been a second, unrelated break dressed as a fix.
-#
-# Pure: no subprocess, no ENV, no board — `gate_row` is the single function that decides
-# the recorded word, so the producer's half is testable without a fixture.
+# /tasks/pending-ci-paints-check: the PRODUCER half of "a running CI is not a CI that passed".
+# `CiGate.gate_row` answers the builder role "pending" for an unsettled CI, and the gates
+# card's DEFAULT glyph is the PASS one, so that word needs its own glyph or a running CI
+# manufactures a SUCCESS nobody audits. THE VALUE DID NOT CHANGE, DELIBERATELY: `"pending"` is
+# pinned builder-side by test/lib/dor_check_exempt_ci_test.rb and rides bin/dor-check's --json
+# as `ci_gate_result`. Pure: `gate_row` alone decides the recorded word.
+# History: task pending-ci-paints-check.
 class GateRecordPendingCiTest < ActiveSupport::TestCase
   # THE TWO ROLES ANSWER DIFFERENTLY HERE, UNLIKE EVERY NO-VERDICT VALUE, because they
   # ask different questions. Review's gate-zero asks "may this merge NOW" — an unsettled

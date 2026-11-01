@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# THE KILLED-WRITER RULE, PROVED AGAINST A REAL KILL.
-#
-# The unit tier grades hand-built claims against a process table. That is the right tier
-# for the decision table, and it is NOT enough for the one property this whole design
-# rests on: that a SIGKILLed sweep is graded a corpse by the OS's own answer, with no
-# timeout to elapse. A stand-in pid can only show the code path; a process this test
-# actually starts and actually kills shows the property.
-#
-# So this tier spawns a REAL conductor stand-in in its OWN process group, has it publish
-# through the REAL ReleasePresence, reads the claim from disk, and SIGKILLs it — the
-# signal no handler can catch, which is precisely why this record exists — then grades the
-# survivor against a REAL `ps`, using the REAL reader.
-#
-# It also pins what a peer READS while all this happens: `AgentPresence.snapshot` headroom
-# before, during and after. A weight is a constant and a test that asserts one passes in
-# both directions the moment somebody edits the constant and the expectation together.
-# Headroom can only be produced by a claim that is on disk, live, graded and weighted
-# correctly at that instant.
-#
-# Run directly:
-#   ruby -Itest test/lib/release_presence_integration_test.rb
+# THE KILLED-WRITER RULE, PROVED AGAINST A REAL KILL. The property: a SIGKILLed sweep is graded
+# a corpse by the OS's own answer, with no timeout to elapse. A stand-in pid can only show the
+# code path, so this tier spawns a REAL conductor stand-in, publishes through the REAL
+# ReleasePresence, SIGKILLs it, and grades the survivor against a REAL `ps` with the REAL
+# reader. It also pins `AgentPresence.snapshot` headroom before, during and after: a test
+# asserting a weight constant passes when constant and expectation are edited together; headroom
+# needs a claim on disk, live, graded and weighted correctly at that instant.
+# History: task sweeps-publish-local-claim.
 
 require "minitest/autorun"
 require "json"
@@ -51,41 +38,14 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     Dir.mktmpdir { |store| yield(store, File.join(store, "mcritchie-studio")) }
   end
 
-  # A conductor stand-in: a real claim through the real module, then an unbounded sleep.
-  # It never exits on its own, so the ONLY way this test ends it is the kill it is here
-  # to prove.
-  #
-  # IT DELIBERATELY DOES NOT CALL `Process.setpgrp`, and that omission is the whole point.
-  # An earlier version opened with `Process.setpgrp` and commented it as "what bin/release
-  # gets from the shell that launches it" — backwards. `bin/release` calls `setpgrp`
-  # NOWHERE; it INHERITS its caller's group. So the stand-in was installing a topology the
-  # real conductor never has: it MANUFACTURED the safe case and then certified the unsafe
-  # code, and 12/12 green proved only that the fixture agreed with itself (review,
-  # 2026-09-02).
-  #
-  # Spawned plainly, the child inherits THIS TEST RUNNER'S process group — whose leader is
-  # the runner, which by construction OUTLIVES the child we are about to kill. That is
-  # exactly the harness shape (`/bin/zsh -c …` wrapper, measured at pid 61666 in pgid
-  # 61388), reproduced with no artifice at all.
-  #
-  # AND IT HOLDS NO PIPE — /dev/null for stdout, a LOG FILE for stderr. That is a fix,
-  # not a tidy-up. The old stand-in wrote "claimed" down an `IO.pipe` whose READ END the
-  # parent closed the instant the marker appeared, and the child publishes its marker
-  # BEFORE it writes that line. So the parent could win that race, and when it did the
-  # child took SIGPIPE on the write and DIED: its marker still on disk — that survival is
-  # this module's whole design, proved two tests below — and a ZOMBIE in the process
-  # table. `ProcessTable.live_process` excludes zombies, so the real reader graded
-  # that claim :dead and subtracted nothing for it. Headroom read 2.75 where 2.50 was
-  # asserted, which is the CI red this closes (shard rails (4), run 35796326365): the
-  # harness killed its own conductor and then measured the corpse.
-  #
-  # MEASURED, against this very test, with a delay induced between the marker write and
-  # the stdout write: 0/12 red idle, 7/12 at 20ms, 11/12 at 50ms, 8/12 at 80ms, 7/12 at
-  # 120ms, 0/12 at 200ms. The window is bounded at BOTH ends — the child has to die AFTER
-  # the parent closes the read end and BEFORE the headroom assertion reads the claim — so
-  # this flake is near-deterministic inside a band and invisible outside it, which is why
-  # 5/5 green locally was never evidence against a race. Under the harness below the same
-  # test is 0/12.
+  # A conductor stand-in: a real claim through the real module, then an unbounded sleep, so the
+  # only way this test ends it is the kill it is here to prove.
+  # IT DELIBERATELY DOES NOT CALL `Process.setpgrp`: `bin/release` calls it NOWHERE and inherits
+  # its caller's group. Spawned plainly, the child inherits THIS TEST RUNNER'S group.
+  # AND IT HOLDS NO PIPE: /dev/null for stdout, a LOG FILE for stderr. With an `IO.pipe` the child
+  # can take SIGPIPE and die a zombie, `ProcessTable.live_process` excludes zombies, and headroom
+  # reads wrong: a flake inside a timing band, invisible outside it.
+  # History: task sweeps-publish-local-claim.
   def spawn_conductor(store, root, kind:, lane:, weight: nil, boot_delay: nil,
                       die_after_publish: false, timeout: BOOT_TIMEOUT)
     weight_arg = weight ? ", weight: #{weight.inspect}" : ""
@@ -111,26 +71,14 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     File.join(store, "conductor-#{kind}-#{@spawned}.err")
   end
 
-  # THE POSTCONDITION IS THE CLAIM GRADING LIVE — NOT A FILE COUNT.
-  #
-  # Counting markers cannot express the property every caller here depends on, and the
-  # reason is this module's own central design: A CLAIM OUTLIVES ITS WRITER. The marker
-  # a SIGKILLed conductor leaves behind is the artefact two tests below exist to prove
-  # survives, so "a second file appeared" is satisfied just as well by a corpse as by a
-  # live conductor. The count was already bounded, already loud, and already waited for
-  # THIS conductor's own file — and it still returned a pid whose claim the real reader
-  # graded :dead, because none of those things is the question. Ask the question: does
-  # `AgentPresence.grade` — the shipped reader, the same one the assertions use — call
-  # this conductor LIVE yet?
-  #
-  # That closes the flake at its source, and the source was the harness killing its own
-  # conductor (see `spawn_conductor`). It also closes every FUTURE way to lose one,
-  # because the failure it now refuses to return is "published but not live" whatever
-  # caused it. Under-reporting is the expensive direction — the very asymmetry
-  # `test_two_live_conductors_are_both_published_and_both_counted` asserts on — so a
-  # harness that can under-report is a harness that silently SIMULATES the bug it
-  # guards. Every red here was therefore ambiguous, and the cheap response to an
-  # ambiguous red is a re-run, which is exactly what would dismiss a real regression.
+  # THE POSTCONDITION IS THE CLAIM GRADING LIVE, NOT A FILE COUNT. A CLAIM OUTLIVES ITS WRITER, so
+  # "a second file appeared" is satisfied by a corpse as well as by a live conductor. Ask the
+  # question: does `AgentPresence.grade`, the shipped reader, call this conductor LIVE yet? This
+  # refuses to return "published but not live" whatever caused it. Under-reporting is the
+  # expensive direction (see `test_two_live_conductors_are_both_published_and_both_counted`), so a
+  # harness that can under-report silently simulates the bug it guards, and invites a re-run over
+  # a real regression.
+  # History: task conductor-presence-test-races-publish.
   def await_live_claim(pid, store, kind:, timeout:, log: nil)
     deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + timeout
     suffix = ".presence-#{kind}-#{pid}"
@@ -183,16 +131,13 @@ class ReleasePresenceIntegrationTest < Minitest::Test
     nil
   end
 
-  # THE READERS' GLOB, spelled as the shipped reader spells it — and the PARSE BELOW IS
-  # BARE ON PURPOSE. Production rescues `JSON::ParserError` to `:malformed`
-  # (bin/lib/agent_presence.rb#read_claim) because a reader racing a writer must degrade
-  # rather than crash; this tier must do the OPPOSITE. A test that swallowed an
-  # unparseable claim would report a wrong count as a plain assertion failure, or as no
-  # failure at all — and it is exactly this bare parse that turned the temp-sibling
-  # defect into a named error (`JSON::ParserError: unexpected end of input at line 1
-  # column 1`, CI on PR #1259) instead of an intermittent, unattributable one. The writer
-  # now publishes through a DOTFILE sibling, so nothing this glob returns is ever
-  # mid-write; if that regresses, this line is the alarm and it stays loud.
+  # THE READERS' GLOB, spelled as the shipped reader spells it, and the PARSE BELOW IS BARE ON
+  # PURPOSE. Production rescues `JSON::ParserError` to `:malformed`
+  # (bin/lib/agent_presence.rb#read_claim) because a reader racing a writer must degrade; this
+  # tier must do the OPPOSITE, so an unparseable claim is a named error. The writer publishes
+  # through a DOTFILE sibling, so nothing this glob returns is ever mid-write; if that regresses,
+  # this line is the alarm and it stays loud.
+  # History: task presence-glob-catches-temp-sibling.
   def claim_files(store) = Dir.glob(File.join(store, ".agents", "sessions", "*.presence-*")).sort
 
   def read_claim(store, index: 0) = JSON.parse(File.read(claim_files(store).fetch(index)))
@@ -382,22 +327,13 @@ class ReleasePresenceIntegrationTest < Minitest::Test
   end
 
   # --- [integration] the claim may only name a subject its writer OWNS -----------------
-  #
-  # THIS IS THE TEST THAT CAUGHT THE FIRST BLOCKER, and every clause of it is chosen so
-  # that it CANNOT pass by agreeing with itself:
-  #
-  #   * it grades with the REAL `AgentPresence.grade` (both subjects), not a helper that
-  #     reads one pid and calls that the reader;
-  #   * it spawns the conductor with NO `setpgrp`, exactly as `bin/release` runs, so the
-  #     child inherits THIS RUNNER'S group;
-  #   * the runner — the group's leader — is alive throughout and by construction outlives
-  #     the child, which is the harness shape (`/bin/zsh -c …` wrapper) that made an
-  #     inherited pgid read as a live claim forever.
-  #
-  # Against `PresenceClaim`'s own `Process.getpgid` default this fails: the killed sweep
-  # grades :live via the group subject, COUNTED, with no TTL to expire — an unbounded
-  # wedge, and the exact inverse of the rule this module is named for. That default is
-  # right for `bin/submit`, which spawns its runner into its own group; it is wrong here.
+  # Every clause is chosen so it CANNOT pass by agreeing with itself: it grades with the REAL
+  # `AgentPresence.grade` (both subjects); it spawns with NO `setpgrp`, as `bin/release` runs, so
+  # the child inherits THIS RUNNER'S group; and the runner, the group's leader, outlives the
+  # child. Against `PresenceClaim`'s own `Process.getpgid` default this fails: the killed sweep
+  # grades :live via the group subject, with no TTL to expire. That default is right for
+  # `bin/submit`, which spawns its runner into its own group; it is wrong here.
+  # History: task sweeps-publish-local-claim.
   def test_a_killed_sweep_is_a_corpse_to_the_real_reader_not_just_to_its_own_helper
     with_store do |store, root|
       pid = spawn_conductor(store, root, kind: "sweep", lane: "release:prepare")

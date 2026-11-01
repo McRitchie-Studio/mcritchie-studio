@@ -19,25 +19,14 @@ require_relative "../../bin/lib/ci_gate"
 class DorCheckTest < Minitest::Test
   BIN = File.expand_path("../../bin/dor-check", __dir__)
 
-  # THE CHILD ENV FOR EVERY SPAWN IN THIS FILE — the session scrub plus the
-  # network floor (test/support/outbound_seams.rb).
-  #
-  # WHAT THE FLOOR CLOSED, measured: this suite leaked 5 live `gh pr view` calls
-  # per run (CiStatus::VIEW_FIELDS, bin/lib/ci_status.rb) against fixture URLs that
-  # are nobody's PR — github.com/o/r/pull/1 and friends. The cost was never a wrong
-  # verdict: with a refusing shim all 265 runs still passed, because no test reads
-  # that outcome. THAT is why it stayed invisible for so long. The cost was that on
-  # this machine the operator's gh keyring token is invalid, so those refusals
-  # classify AUTH-shaped, which arms GhAuthRetry.mint → bin/gh-token → `op read`
-  # against live 1Password → a POST to api.github.com that mints a REAL App
-  # installation token. A plain `bin/rails test` minting production credentials is
-  # not a failure mode any assertion in this file could ever have caught.
-  #
-  # The sibling seams here — with_neutralized_pr_read, with_default_ci_verdict
-  # — are per-CONCERN defaults in this test's own process ENV, and they were the
-  # right shape for what they cover. The floor is the different thing: it seals the
-  # CHILD'S REACH, so a call site nobody thought about (a new gh read, a board
-  # write, an `op` shell-out) is contained before anyone notices it exists.
+  # THE CHILD ENV FOR EVERY SPAWN IN THIS FILE: the session scrub plus the network floor
+  # (test/support/outbound_seams.rb). Trap: a `gh` refusal against a fixture URL classifies
+  # AUTH-shaped on an invalid keyring token, which arms GhAuthRetry.mint → bin/gh-token → `op
+  # read` and mints a REAL App installation token; no assertion here could catch that. The sibling
+  # seams with_neutralized_pr_read and with_default_ci_verdict are per-CONCERN defaults in this
+  # process's ENV. The floor seals the CHILD'S REACH, so a call site nobody thought about (a new
+  # gh read, a board write, an `op` shell-out) is contained.
+  # History: task detect-engine-migration-content-drift.
   def dor_env(overrides = {})
     OutboundSeams.env(overrides)
   end
@@ -79,20 +68,13 @@ class DorCheckTest < Minitest::Test
     ENV.delete("DOR_CHECK_CI_STATUS") unless had
   end
 
-  # NEUTRALIZE THE PR FILE-LIST READ, for the same reason SessionEnv neutralizes the
-  # session vars: without it these subprocesses reach a REAL external service. Most
-  # fixtures here carry a `pr_url`, and dor-check answers one by asking GitHub for
-  # that PR's files — so the verdict depended on whether the operator's `gh`
-  # credential happened to be live, and on a fixture URL (github.com/o/r/pull/1) that
-  # is nobody's PR. It passed anyway only because the failure used to be SILENT: the
-  # read returned nil and the gate quietly graded the local tree instead. That is the
-  # defect this suite's sibling (dor_check_pr_files_auth_test.rb) exists to close, so
-  # leaving the leak here would mean every unrelated test in this file re-runs it.
-  #
-  # "" is the seam's "the PR listed no files" — not a failure, so it raises no alert
-  # and every test below keeps the local-diff behavior it was written against. A test
-  # that wants the real read (or a specific failure) sets the key itself and this
-  # default steps aside.
+  # NEUTRALIZE THE PR FILE-LIST READ, as SessionEnv neutralizes the session vars: most fixtures
+  # carry a `pr_url`, and dor-check would ask GitHub for that PR's files.
+  # dor_check_pr_files_auth_test.rb owns the failure case. "" is the seam's "the PR listed no
+  # files": not a failure, so it raises no alert and every test keeps its local-diff behavior. A
+  # test wanting the real read (or a specific failure) sets the key itself and this default steps
+  # aside.
+  # History: task detect-engine-migration-content-drift.
   def with_neutralized_pr_read
     had = ENV.key?("DOR_CHECK_PR_FILES")
     ENV["DOR_CHECK_PR_FILES"] = "" unless had
@@ -127,15 +109,12 @@ class DorCheckTest < Minitest::Test
     saved.each { |k, (had, val)| had ? ENV[k] = val : ENV.delete(k) }
   end
 
-  # Build a throwaway git repo so the script's real changed_files git path can be
-  # exercised deterministically (no DOR_CHECK_CHANGED_FILES injection). Files are
-  # relative paths placed in one of three working-tree states:
-  #   staged    — new file, git add'd (git diff --cached)
-  #   unstaged  — committed baseline, then modified (git diff)
-  #   untracked — new file, never added (git ls-files --others)
-  # The base is HEAD, so the committed view (base...HEAD) is empty — mirroring the
-  # pre-commit SOP case where HEAD carries no feature commit yet. Yields the repo
-  # dir; the block runs dor-check via with_env(DOR_CHECK_DIFF_ROOT => dir, ...).
+  # Build a throwaway git repo so the script's real changed_files git path runs (no
+  # DOR_CHECK_CHANGED_FILES injection). Relative paths go in one of three working-tree states:
+  # staged (git diff --cached), unstaged (git diff), untracked (git ls-files --others). The base
+  # is HEAD, so base...HEAD is empty, mirroring the pre-commit SOP case. Yields the repo dir; the
+  # block runs dor-check via with_env(DOR_CHECK_DIFF_ROOT => dir, ...).
+  # History: task detect-engine-migration-content-drift.
   def with_git_repo(staged: [], unstaged: [], untracked: [])
     Dir.mktmpdir do |dir|
       git = ->(args) { assert(system("git -C #{dir} #{args} >/dev/null 2>&1"), "git #{args}") }
@@ -309,16 +288,11 @@ class DorCheckTest < Minitest::Test
     assert_match(/--gem-bump major/, out, "and must name the remedy for a genuinely breaking change")
   end
 
-  # THE CHANGELOG IS DELIBERATELY NOT GATED, and this pins that.
-  #
-  # An earlier pass refused it, on the strength of a message promising the release
-  # "assembles the changelog from its members". A reviewer grepped for that assembler
-  # and found NONE — three CHANGELOG hits across bin/ app/ lib/ config/, not one of
-  # them a writer. The version has a working manual path (the conductor commits it
-  # onto the gem's `accepted`, which the promote carries); the changelog would have
-  # had no writer AND no documented manual path, leaving the file permanently
-  # un-editable through the cycle. Refusing edits to a file nothing maintains is a
-  # dead end, not ownership. It re-enters WITH its assembler (finding-d0621629719b).
+  # THE CHANGELOG IS DELIBERATELY NOT GATED, and this pins that. Nothing assembles it, so it has
+  # no writer and no documented manual path; refusing edits to a file nothing maintains is a dead
+  # end, not ownership. The version has a working manual path. It re-enters WITH its assembler
+  # (finding-d0621629719b).
+  # History: task detect-engine-migration-content-drift.
   def test_integration_the_changelog_is_not_gated_until_an_assembler_exists
     devops = { "kind" => "chore", "shape" => "library", "repositories" => ["studio-engine"],
                "acceptance" => ["Something is done well here"], "test_plan" => ["[unit] x"],
@@ -1241,16 +1215,13 @@ class DorCheckTest < Minitest::Test
   end
 
   # --- [unit] the suite gate: a SETTLED GREEN CI, and nothing else -----------------
-  # The headline retro fix (lines 54 + 58) was that a tier tag is free text — running
-  # only the touched FILES satisfies it — so the merge gate ALSO demands evidence that
-  # the FULL suite went green against the exact tree shipped. Since
-  # /tasks/dor-reads-settled-ci-verdict that evidence has ONE form: the PR's settled
-  # GREEN GitHub CI (bin/lib/ci_gate.rb). The fingerprint receipts bin/fast-check and
-  # bin/full-suite-check record are not read here any more — the tests below pin
-  # that they are INERT, in both directions. The contract is otherwise complete so
-  # the CI gate is the sole variable — including post_deploy_cmd, so a branch whose
-  # own working tree happens to touch a seed/migration (this check() runs against the
-  # live tree) doesn't trip the post-deploy gate and leak into these assertions.
+  # A tier tag is free text, so the merge gate ALSO demands evidence the FULL suite went green
+  # against the exact tree shipped. That evidence has ONE form: the PR's settled GREEN GitHub CI
+  # (bin/lib/ci_gate.rb). The fingerprint receipts bin/fast-check and bin/full-suite-check record
+  # are INERT here, pinned in both directions. The contract is otherwise complete so the CI gate
+  # is the sole variable, including post_deploy_cmd, so a branch whose live tree touches a seed or
+  # migration does not trip the post-deploy gate and leak into these assertions.
+  # History: task dor-reads-settled-ci-verdict.
   SUITE_CONTRACT = {
     "shape" => "backend", "repositories" => ["mcritchie-studio"],
     "risk_tags" => ["devops"], "acceptance" => ["enforce the full suite"],
@@ -1778,14 +1749,11 @@ class DorCheckTest < Minitest::Test
   end
 
   # --- CI-less PR (stale base, ZERO check-runs): the same hard blocker -----------
-  # Task detect-ci-less-stale-prs (2026-07-20). The :conflicted fix above only
-  # catches mergeStateStatus DIRTY, but a base that drifted past GitHub's merge
-  # computation gets zero check-runs WITHOUT ever reading DIRTY — indistinguishable
-  # from a slow CI to every watcher in the fleet, which then waits forever on checks
-  # that will never exist (a full rework cycle burned: a watcher armed at 05:47Z on a
-  # commit that never got checks; the cure was a rebase, which fired CI green 8/8).
-  # It must block in BOTH roles with a RECOVERABLE fix named, and stay distinct from
-  # pending/none — the states that legitimately mean "wait".
+  # A base past GitHub's merge computation gets zero check-runs WITHOUT reading DIRTY, so to a
+  # watcher it looks like a slow CI and it waits forever. It must block in BOTH roles with a
+  # RECOVERABLE fix named, and stay distinct from pending/none, the states that legitimately mean
+  # "wait".
+  # History: task detect-ci-less-stale-prs.
 
   def test_merge_gate_blocks_a_ci_less_pr
     out, code = ci_check("ci_less")
@@ -1938,15 +1906,12 @@ class DorCheckTest < Minitest::Test
   end
 
   # ==== [integration] the `test-only` shape ==========================================
-  #
-  # `test-only` is the only shape that carries NO dor_tiers and still ships
-  # executable code, so it is the only shape whose lighter contract could become
-  # the default answer for a change nobody tested. Everything below exists to pin
-  # that it cannot be — at the GATE, not just in the classifier's unit tier, since
-  # the classifier being right is worth nothing if dor-check never consults it.
-  #
-  # See bin/lib/test_only_diff.rb for why the classifier is an allowlist, and
-  # config/feature_shapes.yml for the shape's full three-part contract.
+  # `test-only` is the only shape with NO dor_tiers that still ships executable code, so its
+  # lighter contract must not become the default for a change nobody tested. This pins that at the
+  # GATE, not just in the classifier's unit tier. See bin/lib/test_only_diff.rb for why the
+  # classifier is an allowlist, and config/feature_shapes.yml for the shape's full three-part
+  # contract.
+  # History: task detect-engine-migration-content-drift.
 
   # A complete, honest `test-only` submission: all-test diff, a control naming a
   # file from that diff, everything else the shape asks for.
@@ -2121,19 +2086,13 @@ class DorCheckTest < Minitest::Test
   end
 
   # ==== [integration] the EXECUTED control ==========================================
-  #
-  # Until 2026-08-11 the `[control]` line was checked for STRUCTURE only: dor-check
-  # confirmed it existed and named a file in the diff, which is a DECLARATION.
-  # bin/control-check now replays the pre-change version of the changed test files
-  # against current production code and stamps a fingerprint-bound
-  # `[control@<fp>]` line, and these tests pin the GATE half of that contract.
-  #
-  # The contract has two populations and the tests below cover both, because the
-  # ONE thing that must not happen is the gate getting stricter where the builder
-  # cannot comply:
+  # bin/control-check replays the pre-change version of the changed test files against current
+  # production code and stamps a fingerprint-bound `[control@<fp>]` line; these pin the GATE half.
+  # The gate must not get stricter where the builder cannot comply:
   #   * replayable → the executed stamp is required (prose alone stops working)
   #   * not replayable → the author's prose line stays the requirement, unchanged
-  # and one thing that must not happen either way: refusing on the VERDICT.
+  # And either way the gate must not refuse on the VERDICT.
+  # History: task detect-engine-migration-content-drift.
 
   # A temp repo whose BASE commit carries `test/models/a_test.rb`, so the path is
   # genuinely replayable (it has a pre-change version) rather than merely named.

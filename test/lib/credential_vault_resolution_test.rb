@@ -48,19 +48,12 @@ class CredentialVaultResolutionTest < Minitest::Test
 
   # ------------------------------------------------- the vault name itself ----
 
-  # THE STANDING RULE, made enforceable: never hardcode a vault name again.
-  #
-  # bin/lib/op_vaults.rb exists because "agents" was a literal in eleven places
-  # and the rename broke all eleven at once. Two of them were still live when this
-  # task was picked up, in the ONE script a fresh Mac runs first:
-  # bin/ecosystem-build's `op read "op://agents/agent.alex.solana/private key"`
-  # (verified failing against the real service account on 2026-08-29) and its
-  # `grep -qw agents` vault guard, which passed only because -w treats the hyphen
-  # in `studio-agents` as a word boundary — it would have gone red on
-  # `agents_studio` and never consulted MCR_OP_VAULT_AGENT at all.
-  #
-  # A literal is the defect whether it names the OLD vault or the NEW one, so this
-  # asks for the FORM, not for a blessed spelling.
+  # THE STANDING RULE, made enforceable: never hardcode a vault name. bin/lib/op_vaults.rb
+  # exists because a literal breaks at every rename. A literal is the defect whether it names
+  # the OLD vault or the NEW one, so this asks for the FORM, not a blessed spelling. The trap:
+  # `grep -qw agents` passes on `studio-agents`, because -w treats the hyphen as a word
+  # boundary.
+  # History: task correct-credential-doc-overclaims.
   def test_no_script_resolves_a_vault_from_a_literal
     offenders = scripts.flat_map do |rel|
       body = File.read(File.join(ROOT, rel))

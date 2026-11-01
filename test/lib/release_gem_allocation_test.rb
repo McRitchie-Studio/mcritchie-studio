@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] bin/release prepare's step-4d gem version ALLOCATION — the call
-# site, against real git.
-#
-# The arithmetic is unit-tested in test/models/release/gem_version_test.rb. What
-# is tested HERE is everything the pure module cannot see: that a real candidate's
-# membership reaches it, that the number it returns is written into the real
-# version_file, that the commit carries the Gemfile.lock beside it, and that a
-# refusal leaves origin/release exactly as it found it.
-#
-# REAL, not mocked: a bare origin, a clone, a tag, a commit past the tag, and
-# bin/release's own workspace/commit/push path. Two things are stubbed, both
-# because they are network:
-#
-#   * `rubygems_versions` — redefined after `load` to return a fixed live list.
-#   * `bundle` — a stub on PATH. The REAL `bundle lock` behaviour it stands in for
-#     was MEASURED on studio-engine (0.38.0 → 0.39.0 rewrites the `PATH remote: .`
-#     spec and nothing else — a one-line diff), and the stub reproduces exactly
-#     that. Its point is that the stub can also be told to MISBEHAVE, which is how
-#     the lockfile guard below is proven to actually bite.
-#
-#   ruby -Itest test/lib/release_gem_allocation_test.rb
+# [integration] bin/release prepare's step-4d gem version ALLOCATION: the call site, against
+# real git; arithmetic is in test/models/release/gem_version_test.rb. A real candidate's
+# membership reaches it, the number lands in the real version_file, the commit carries the
+# Gemfile.lock, and a refusal leaves origin/release as it found it. REAL: bare origin, clone,
+# tag, bin/release's own workspace/commit/push path. Stubbed, both network:
+# `rubygems_versions` (redefined after `load`) and `bundle` on PATH, which reproduces the
+# measured `PATH remote: .` rewrite and can MISBEHAVE, proving the lockfile guard bites.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "open3"
@@ -51,18 +38,14 @@ class ReleaseGemAllocationTest < Minitest::Test
     end
   end
 
-  # Every child env is built HERE, through SessionEnv, so an ambient agent
-  # session can never leak into a subprocess that runs real git.
-  #
-  # BUNDLER IS SCRUBBED TOO, and that one is not optional. Under `bin/rails test`
-  # the parent exports `RUBYOPT=-rbundler/setup` + `BUNDLE_GEMFILE`, so the child
-  # loads Bundler at startup — and Bundler PREPENDS ITS OWN BIN DIR TO `PATH`,
-  # which shadowed the `bundle` stub below with the real one. The real `bundle
-  # lock` then ran against THIS WORKTREE'S Gemfile (it printed "Writing lockfile
-  # to …/wire-gem-version-allocation/Gemfile.lock") and every stubbed-misbehaviour
-  # test silently exercised a healthy bundler instead. Running the child outside
-  # the suite's bundler context is also simply correct: `bin/release` runs as a
-  # plain CLI in production, not inside a test's bundle.
+  # Every child env is built HERE, through SessionEnv, so an ambient agent session cannot leak
+  # into a subprocess that runs real git.
+  # BUNDLER IS SCRUBBED TOO, not optional. Under `bin/rails test` the parent exports
+  # `RUBYOPT=-rbundler/setup` + `BUNDLE_GEMFILE`, and Bundler PREPENDS ITS OWN BIN DIR TO
+  # `PATH`, shadowing the `bundle` stub below, so every stubbed-misbehaviour test silently
+  # exercises a healthy bundler against this worktree's Gemfile. `bin/release` runs as a plain
+  # CLI in production anyway.
+  # History: task detect-engine-migration-content-drift.
   BUNDLER_ENV_KEYS = %w[RUBYOPT RUBYLIB BUNDLE_GEMFILE BUNDLE_BIN_PATH BUNDLER_VERSION BUNDLER_SETUP].freeze
 
   def child_env(root, stub_bin)
@@ -145,18 +128,13 @@ class ReleaseGemAllocationTest < Minitest::Test
   end
 
   # The `bundle` stub. `mode`:
-  #   :real    — rewrite the PATH spec from the version file, as measured.
-  #   :stale   — succeed and change NOTHING (RubyGems-propagation-shaped: the
-  #              exact failure `bundle lock` reports success for).
-  #   :fail    — exit non-zero.
-  #
-  # WRITTEN IN RUBY, not shell, and that is not a style choice. The first version
-  # of this stub used `sed -i '' …`, which is BSD syntax: on macOS it edits in
-  # place, on GNU sed (Linux CI) the empty `''` is consumed as the SCRIPT and the
-  # real script becomes a filename ("sed: can't read s/^    studio-engine…").
-  # The stub then silently did nothing, the lock genuinely never moved, and the
-  # read-back guard correctly refused — so five tests went red on CI and green on
-  # macOS. The guard was right; the harness was lying. Ruby has one dialect.
+  #   :real   rewrite the PATH spec from the version file, as measured.
+  #   :stale  succeed and change NOTHING (the exact failure `bundle lock` reports success for).
+  #   :fail   exit non-zero.
+  # WRITTEN IN RUBY, not shell: `sed -i ''` is BSD syntax, and GNU sed consumes the empty `''`
+  # as the SCRIPT, so the stub silently does nothing and tests go red on CI and green on macOS.
+  # Ruby has one dialect.
+  # History: task detect-engine-migration-content-drift.
   def install_bundle_stub(root, mode: :real)
     dir = File.join(root, "stub-bin")
     FileUtils.mkdir_p(dir)
@@ -645,16 +623,11 @@ class ReleaseGemAllocationTest < Minitest::Test
     end
   end
 
-  # A second registered gem, with no tracked Gemfile.lock.
-  #
-  # Its version_file was `solana-studio.gemspec` until 2026-08-20 — this fixture
-  # existed partly to cover that gemspec-shaped `spec.version =` declaration.
-  # The gem moved to a dedicated lib/solana_studio/version.rb (bin/dor-check
-  # refuses a PR editing the registered version_file, which while it WAS the
-  # gemspec locked spec.files and the dependencies too), so this fixture follows
-  # the registry. Both declaration shapes keep direct coverage in
-  # test/models/release/gem_version_test.rb, where rewrite_version is exercised
-  # as the pure function it is — a better home for it than a git-fixture sweep.
+  # A second registered gem, with no tracked Gemfile.lock. Its version_file is
+  # lib/solana_studio/version.rb, and this fixture follows the registry. Both declaration shapes
+  # keep direct coverage in test/models/release/gem_version_test.rb, where rewrite_version is
+  # exercised as a pure function.
+  # History: task stand-up-onchain-engine.
   def build_solana_repo(root)
     origin = File.join(root, "solana-studio-origin.git")
     repo   = File.join(root, "solana-studio")

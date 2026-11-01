@@ -1,36 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] The REAL `bin/devops-shift` process must never touch the board on an
-# argument it did not understand — and must still take, hold, and renew a real shift
-# on every argument it does.
-#
-# The guard's logic is unit-covered in test/lib/devops_shift_argument_guard_test.rb
-# with a fake API. This file pins the seam an operator (or bin/statusline, or the
-# clean-up SOP) actually crosses: a real ruby process, real ARGV, real AgentApi, real
-# HTTP — and asserts the only thing that matters, that NO ACQUIRE LEFT THE PROCESS.
-# Printed usage text is not the property: before the guard, `acquire avi --help`
-# printed a cheerful "shift acquired" and exited 0 having already POSTed.
-#
-# THE SECOND HALF IS WHY THIS FILE IS WORTH ITS RUNTIME. test_a_real_acquire_still…
-# runs the WHOLE chain in real processes — acquire → detached renew-loop → renewals on
-# the wire. The renewer re-enters this very CLI, spawned with out:/err: File::NULL, so
-# a guard that refused its argv would print the refusal into /dev/null and every shift
-# would lapse ~120s into a multi-minute conductor act, silently. On the release-claim
-# sibling (PR #980) the mutation that stripped the spawn's anchor flags was caught by
-# the real-detached-process test and by NOTHING ELSE.
-#
-# ATOMIC_CAPTURE_URL IS THE LOAD-BEARING PIN. This CLI does not speak TASK_API_BASE at
-# all — it goes through AgentApi, which reads ATOMIC_CAPTURE_URL, and requiring
-# session_env pins THAT one unroutable for every child. Correct as a floor, and a trap
-# for a test like this: pin only TASK_API_BASE and the child talks to a closed port,
-# where "the stub saw no acquire" would be just as true with the bug still in place.
-# Pointing it at the stub is what makes an acquire that happens an acquire this test
-# SEES, and the positive control is what proves the stub is genuinely being reached.
-#
-# NOTHING HERE TOUCHES THE PRODUCTION BOARD, and nothing here can take a real shift:
-# the session identity is a fixture, and every refusal stub answers `acquired: false`.
-#
-#   ruby -Itest test/lib/devops_shift_flags_test.rb
+# [integration] The REAL `bin/devops-shift` must never touch the board on an argument it did not
+# understand, and must still take, hold and renew a shift on every argument it does. Assert NO
+# ACQUIRE LEFT THE PROCESS. The renewer re-enters this CLI with out:/err: File::NULL, so a
+# refused argv silently lapses every shift. ATOMIC_CAPTURE_URL IS THE LOAD-BEARING PIN: this CLI
+# uses AgentApi, not TASK_API_BASE. Pin only TASK_API_BASE and "the stub saw no acquire" holds
+# with the bug present; the positive control proves the stub is reached.
+# History: task refuse-unknown-shift-flags.
 
 require "minitest/autorun"
 require "json"

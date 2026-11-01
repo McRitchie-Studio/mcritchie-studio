@@ -1,23 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] THE RUBY SUITE'S RATCHET. Standalone (no Rails):
-#   ruby -Itest test/lib/test_health_ratchet_test.rb
-#
-# The static counterpart to config/e2e_lane.yml, for the Ruby suite: zero assertion-free
-# tests (stored), and a skip count and frozen hotspot sizes that may not rise above the
-# merge base with origin/accepted (computed, never stored).
-#
-# WHY A ZERO NEEDS ITS OWN PROOF. "assertion_free: 0" is a claim produced by a
-# detector, and a detector that silently matches nothing produces the same zero as a
-# clean suite. So the vectors below drive TestHealth.assertion_free_in directly and
-# prove it FLAGS the shapes it is supposed to flag before the count is trusted at all.
-# A negative result from an unproven instrument is not evidence.
-#
-# WHAT THIS DOES NOT CLAIM. It reads SOURCE. It can see that a test declares no
-# assertion; it cannot see whether an assertion it declares actually executes, or
-# whether the test ran. That gap is mutation testing's, and it belongs to the grooming
-# act — this half is the cheap one that fails in milliseconds and keeps the number
-# honest in between.
+# [unit] THE RUBY SUITE'S RATCHET. Static counterpart to config/e2e_lane.yml: zero
+# assertion-free tests (stored), and a skip count and frozen hotspot sizes that may not rise
+# above the merge base with origin/accepted (computed, never stored). WHY A ZERO NEEDS ITS OWN
+# PROOF: a detector matching nothing yields the same zero as a clean suite, so the vectors
+# drive TestHealth.assertion_free_in and prove it FLAGS its shapes first. IT READS SOURCE: it
+# cannot see whether a declared assertion executes or the test ran; that gap is mutation
+# testing's.
+# History: task test-health-ratchet-gate.
 require "minitest/autorun"
 require "yaml"
 require_relative "../../bin/lib/test_health"

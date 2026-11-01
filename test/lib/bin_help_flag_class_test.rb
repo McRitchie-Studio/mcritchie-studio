@@ -1,44 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] EVERY script in bin/ is classified for how it handles an argument it does
-# not recognize. This is the test that stops the class from recurring.
-#
-# THE CLASS, and its cost. A script hand-parses a few exact flag spellings and has
-# no notion of an unrecognized argument, so `--help` — the universal safe probe,
-# reached for precisely BECAUSE it is expected to do nothing — matches nothing, is
-# silently dropped, and the script RUNS ITS REAL ACTION.
-#
-#   PR #974     bin/lib/review_claim_cli.rb   `--help` took a real review claim
-#   PR #980     bin/lib/release_claim_cli.rb  same shape, release lane
-#   (devops)    bin/devops-shift              `acquire avi --help` TOOK THE SHIFT
-#   2026-08-31  bin/archive-docs              `--help` ROLLED THE DOCS LEDGER
-#   2026-08-31  bin/release.rb                `prepare --yes --help` PROMOTED FOR REAL
-#
-# Each of those was fixed one at a time, in place, and the third was written up as
-# "the third and last member of the family". It was not — a sweep on 2026-08-31
-# found five more, including one that DROPS DATABASES on any argument and one that
-# installs a credential into the wrong lane on a typo. The class kept costing
-# because nothing enumerated it: each instance had to be discovered by an operator
-# probing a command and watching it act.
-#
-# WHAT THIS FILE DOES ABOUT IT. It requires every executable in bin/ to be named in
-# MANIFEST below with how it handles unrecognized arguments. A NEW SCRIPT FAILS
-# THIS TEST until someone classifies it. That is the whole point: the next instance
-# is caught by CI at the moment it is written, by an author who still has the
-# context, instead of by an operator whose ledger it just rewrote.
-#
-# WHY THE ASSERTIONS ARE STATIC. The honest behavioural proof — "the tree and index
-# are byte-identical after --help" — lives in test/lib/archive_docs_help_guard_test.rb,
-# which spawns a real process against a fixture repo that carries its own bin/.
-# That technique does not generalise here: to prove `bin/clean-artifacts --help`
-# sweeps nothing you must be willing to run it, and if the guard has regressed it
-# truncates logs and deletes caches across every repo on the machine. config/test_health.yml
-# records what that costs — two under-stubbed tests once ran bin/clean-artifacts and
-# bin/archive-docs FOR REAL against a developer's machine, reclaiming 32.9 MB across
-# 9 repos and leaving a `git mv` in the primary checkout that the next run died on.
-# So this tier asserts the guard is WIRED, and never executes a bin/ script.
-#
-#   ruby -Itest test/lib/bin_help_flag_class_test.rb
+# [unit] EVERY script in bin/ must be named in MANIFEST below with how it handles an argument it
+# does not recognize. A NEW SCRIPT FAILS THIS TEST until someone classifies it. THE CLASS: a
+# script hand-parses exact flags, so `--help`, the universal safe probe, matches nothing, is
+# silently dropped, and the script RUNS ITS REAL ACTION. WHY STATIC: with a regressed guard,
+# `bin/clean-artifacts --help` truncates logs and deletes caches across every repo
+# (config/test_health.yml records the cost). So this tier asserts the guard is WIRED, never
+# executes a bin/ script. Behavioural: test/lib/archive_docs_help_guard_test.rb.
+# History: task archive-docs-help-mutates.
 
 require "minitest/autorun"
 
@@ -100,14 +69,10 @@ class BinHelpFlagClassTest < Minitest::Test
     # credential read, so `register <d> --price x --ok y --help` buys nothing.
     "domain-register"        => :cli_arg_guard,
     # --- retrofitted 2026-08-31, /tasks/qa-server-help-provisions -------------
-    # It sat in :subcommand looking classified while `provision <app> --yes --help`
-    # ran a REAL provision — heroku create, billable add-ons, domains, ACM and a
-    # config-var PATCH — with the confirmation already suppressed by the --yes
-    # beside it. Found by READING this manifest rather than by an operator watching
-    # it act, which is the first time this class has been caught that way. Its
-    # per-subcommand dictionary is QaServerCli::COMMANDS; help and refusal both exit
-    # NON-ZERO because bin/release reads this script's exit status as "the QA
-    # deploy succeeded".
+    # `provision <app> --yes --help` ran a REAL provision, with confirmation suppressed by
+    # --yes. Its per-subcommand dictionary is QaServerCli::COMMANDS. Help and refusal both exit
+    # NON-ZERO because bin/release reads this script's exit status as "the QA deploy succeeded".
+    # History: task qa-server-help-provisions.
     "qa-server"              => :cli_arg_guard,
     # The content pipeline's agent CLI. CLAIMS and WRITES, so `--help` is wired
     # through the parser and exits before dispatch — verified against a dead
@@ -183,27 +148,14 @@ class BinHelpFlagClassTest < Minitest::Test
     # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
     # rows are recorded", which a probe never established.
     "harvest-desk-ledger"    => :cli_arg_guard,
-    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates,
-    # 2026-09-01) — the LAST member of the class, and the highest-frequency one. It
-    # dispatched with `command = argv.shift` inside AgentActivityCli#run and handed the
-    # rest to a parse_flags with no unknown-argument arm, so an unrecognized `--token`
-    # became `flags["token"] = true` and was never read. Measured at source, each of
-    # these RAN FOR REAL:
-    #
-    #   grade 42 --disposition good --help        POSTED the grade to the production board
-    #   start --category Edit --reason x --help   opened a real activity
-    #   close-open --help                         closed every open activity + deleted 3 markers
-    #   heartbeat avi --help                      wrote the sticky .acting-agent marker
-    #
-    # …and `run` swallows every StandardError while the script always exits 0, so a
-    # probe that mutated reported nothing and returned SUCCESS. Its per-subcommand
-    # dictionary is AgentActivityCli::COMMANDS, which lives in bin/atomic-event itself
-    # rather than in bin/lib/: the parsers it must agree with are ten lines below it and
-    # the file already `load`s inert under test, so a separate lib would only add a
-    # second place to drift. Help exits 0 here — the opposite of bin/release,
-    # bin/qa-server and bin/agent-worktree — because this CLI's 0 means only "this ran";
-    # every caller discards its status. The rationale names all six callers, on
+    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates). `run`
+    # swallows every StandardError and the script always exits 0, so a probe that mutated would
+    # report SUCCESS. Its dictionary is AgentActivityCli::COMMANDS, in bin/atomic-event itself
+    # rather than bin/lib/: the parsers it must agree with are ten lines below it. Help exits 0
+    # here, the opposite of bin/release, bin/qa-server and bin/agent-worktree, because this
+    # CLI's 0 means only "this ran". The rationale names all six callers, on
     # AgentActivityCli::HELP_EXIT.
+    # History: task atomic-event-help-mutates.
     "atomic-event"           => :cli_arg_guard,
     # The agent mailbox (docs/agents/system/agent-message-loop.md). bin/heartbeat
     # CLAIMS a message on the board; bin/agent-inbox only reads. Both guard first.
@@ -222,56 +174,21 @@ class BinHelpFlagClassTest < Minitest::Test
     "local-services"         => :cli_arg_guard,
     "agent-inbox"            => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/worktree-subcommand-drops-help).
-    # The WIDEST surface the class has produced: TWENTY subcommands, FOURTEEN of which
-    # reach a durable write — measured from the dispatcher, not estimated; the SIX
-    # read-only arms are apps, list, plan, env, shell-hook and doctor. (Both counts were
-    # off by one until 2026-09-01: `whereami` was listed read-only and is not —
-    # `run_whereami(app, task)` with both positionals calls write_context_marker, which
-    # File.writes .agent-context.json. Re-derived from source, 20 − 6 = 14, not carried
-    # forward.) It dispatched with `cmd = ARGV.shift || "help"` and no arm
-    # validated the remainder, so `bin/agent-worktree new <app> <task> --help` created a
-    # REAL desk — `git worktree add -b`, a port and Redis DB written into
-    # .env.agent-stack, the .agent-context.json marker, and a Postgres database from
-    # prepare_test_env. The `new` arm did not merely ignore the flag: it destructured
-    # `app_name, raw_task, maybe_type, *rest = ARGV` and then chose the branch type with
-    # `maybe_type&.start_with?("--") ? "feat" : ...`, so `--help` was RECOGNISED as
-    # flag-shaped and thrown away on purpose, while `*rest` was never inspected at all.
-    # Four more arms were reachable identically — `bind-task … --help` wrote the stack
-    # env and marker, `up … --help` STARTED the stack, `status … --help` wrote the
-    # marker, `scale out --help` GREW the persisted Redis band — and `remove`,
-    # `cleanup --reclaim`, `sweep-orphan-dbs` and `snapshot --write` were safe only
-    # because each gates on an explicit --yes/--write. Safe by luck, not by design.
-    #
-    # Its per-subcommand dictionary is AgentWorktreeCli::COMMANDS. Help exits 1 and the
-    # refusal 2, because exit 0 from this script is read as a FACT by four callers:
-    # bin/task#begin_step! as "THE WORKTREE WAS CREATED" (begin_step! die!s on anything else),
-    # bin/qa-intake#refresh_registry as "the registry was refreshed", and bin/release.rb#restore_primaries
-    # / bin/release.rb#reclaim_worktrees as "the primary was restored" / "the reclaim
-    # ran". A fifth reader is not a script —
-    # `shell-hook zsh` is consumed as eval "$(...)" from the login shell — which is why
-    # usage goes to stderr.
-    #
-    # ONE ARM FORWARDS, and is guarded per-arm rather than wholesale: `test <app>
-    # <task> [-- rails-test-args]` hands its tail to `bin/rails test`, so it gets the
-    # help scan and only the help scan. Classifying that tail would refuse `-n
-    # /pattern/` and `--` itself — a top-level guard wearing a per-arm guard's clothes,
-    # the mistake bin/agent-runtime's `codex-update` arm exists to avoid.
-    #
-    # The behavioural half — the guard proven BY RECEIPT, with a pinned `git` spy that
-    # stays silent through the probe beside a control that fills it — lives in
-    # test/integration/agent_worktree_argv_guard_test.rb, because a green manifest
-    # cannot tell a guard that is CALLED from one merely DEFINED.
+    # Dictionary: AgentWorktreeCli::COMMANDS. Help exits 1 and the refusal 2: exit 0 is read as
+    # a FACT by bin/task#begin_step!, bin/qa-intake#refresh_registry,
+    # bin/release.rb#restore_primaries and bin/release.rb#reclaim_worktrees. `shell-hook zsh` is
+    # eval'd, so usage goes to stderr. ONE ARM FORWARDS: `test <app> <task> [--
+    # rails-test-args]` gets the help scan only, or `-n /pattern/` and `--` refuse. Proof:
+    # test/integration/agent_worktree_argv_guard_test.rb.
+    # History: task worktree-subcommand-drops-help.
     "agent-worktree"         => :cli_arg_guard,
     # --- NEW SCRIPT, guarded at birth (/tasks/backup-collisions-are-silent) ---
-    # Not a retrofit — the first entry here added by an author rather than by a sweep,
-    # which is the whole point of test_every_bin_script_is_classified: it failed the
-    # moment the file landed in bin/ and was answered before the script ever ran.
-    # `restore` OVERWRITES A FILE IN THE WORKING TREE and `save` can overwrite a
-    # restore point, so both are real mutations. Its per-subcommand dictionary is
-    # COMMANDS in the script itself (four arms, all four taking the same --owner/--root
-    # pair), fed to one guard call ahead of the dispatcher. Help exits 1: `verify`
-    # makes exit 0 an ASSERTION — "this backup IS the one you saved" — and a probe must
-    # never answer with an assertion, the same reasoning as bin/harvest-desk-ledger.
+    # `restore` OVERWRITES A FILE IN THE WORKING TREE and `save` can overwrite a restore point.
+    # Its dictionary is COMMANDS in the script (four arms, same --owner/--root pair), fed to one
+    # guard call ahead of the dispatcher. Help exits 1: `verify` makes exit 0 an ASSERTION, and
+    # a probe must never answer with an assertion, the same reasoning as
+    # bin/harvest-desk-ledger.
+    # History: task backup-collisions-are-silent.
     "scratch-backup"         => :cli_arg_guard,
     # --- NEW SCRIPT, guarded at birth (/tasks/local-dev-drops-prod-hub-key) ---
     # `rewrite`/`fix` OVERWRITE a local .env's SECRET_KEY_BASE, and `scan` reads every
@@ -286,20 +203,13 @@ class BinHelpFlagClassTest < Minitest::Test
     # exit 0 reports a plan, which a probe must never answer with.
     "dev-google-client"      => :cli_arg_guard,
     # --- NEW SCRIPT, guarded at birth (/tasks/chrome-profile-order-sop) -------
-    # The second entry added by an author rather than a sweep. Its mutations reach
-    # OUTSIDE this repo entirely, which is new for this file: `apply` QUITS THE
-    # OPERATOR'S BROWSER and rewrites Chrome's own `Local State`, `pin-dock`
-    # rewrites com.apple.dock and restarts the Dock, `install-wrapper` writes an
-    # app bundle into ~/Applications, and `relaunch` quits and restarts Chrome.
-    # None of that is undone by `git checkout`. Its per-subcommand dictionary is
-    # ChromeProfiles::Cli::COMMANDS.
-    #
-    # Help exits 1, for the reason bin/agent-presence and bin/scratch-backup do:
-    # `status` makes exit 0 an ASSERTION — "the roster resolves cleanly against
-    # this Mac, nothing refuses" — and that is what an SOP step gates on. Handing
-    # the universal safe probe a green light would answer a question it never
-    # asked. It also needs the GUARD_HELPER_CALLERS row below, because it wraps
-    # the guard in a helper.
+    # Its mutations reach OUTSIDE this repo: `apply` QUITS THE OPERATOR'S BROWSER and rewrites
+    # Chrome's `Local State`, `pin-dock` rewrites com.apple.dock and restarts the Dock,
+    # `install-wrapper` writes into ~/Applications, `relaunch` restarts Chrome. Dictionary:
+    # ChromeProfiles::Cli::COMMANDS. Help exits 1: `status` makes exit 0 an ASSERTION that an
+    # SOP step gates on. It needs the GUARD_HELPER_CALLERS row below, because it wraps the
+    # guard.
+    # History: task chrome-profile-order-sop.
     "chrome-profiles"        => :cli_arg_guard,
     # Writes PNGs into app/assets/images and tmp/. OptionParser with a -h arm;
     # it also REFUSES a leftover positional, so `bin/workspace-icon logo.png`
@@ -331,47 +241,20 @@ class BinHelpFlagClassTest < Minitest::Test
     # Behavioural proof against fixture profiles: test/commands/heroku_profile_migrate_test.rb.
     "heroku-profile-migrate" => :optparse,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/docs-installer-help-publishes).
-    # These two were the sharpest pair in the gap bucket, because the thing they
-    # publish is GLOBAL and shared. `bin/install-agent-docs install --help` read its
-    # mode as `MODE="${1:-install}"`, tested $1 alone, and had no `$#` check anywhere
-    # in the file — so the flag sat in $2, was discarded, and the probe copied
-    # AGENTS.md + CLAUDE.md into the projects root, mirrored every skill into
-    # ~/.claude/skills and ~/.codex/skills, `rm -rf`'d the retired ones, rewrote the
-    # hooks in ~/.claude/settings.json, and appended to ~/.zprofile — the operator's
-    # live login profile, from the command people type BECAUSE it should do nothing.
-    # bin/agent-runtime was the same defect with a longer fuse: its install/repair/
-    # check arms exec'd the installer with the flag intact. Exactly one of its six
-    # arms (`doctor`) counted its arguments, which is what made the omission legible
-    # as an omission rather than a design.
-    #
-    # Both now carry the shell idiom the three above use — a whole-line --help|-h
-    # scan plus an explicit unrecognized-argument refusal — asserted by
-    # test_the_shell_scripts_answer_help_without_acting and positioned by
-    # test_the_installer_refuses_before_it_publishes. The behavioural half (a
-    # sandboxed HOME/PROJECTS_DIR that stays EMPTY through the probe, with a control
-    # install that fills it) lives in
-    # test/commands/install_agent_docs_help_guard_test.rb, because a green manifest
-    # cannot tell a guard that is CALLED from one merely DEFINED.
-    #
-    # NOT the shared bin/lib/cli_arg_guard.rb, and the reason is specific to these
-    # two: it is Ruby, and this is the fresh-machine bootstrap that installs the
-    # login-shell Ruby PATH and whose `doctor` exists to diagnose Ruby drift. An
-    # argument guard that needs a working modern Ruby cannot read its own command
-    # line on the machine it exists to repair.
+    # Both carry the shell idiom the three above use: a whole-line --help|-h scan plus an
+    # explicit unrecognized-argument refusal, per
+    # test_the_shell_scripts_answer_help_without_acting and
+    # test_the_installer_refuses_before_it_publishes. Behavioural:
+    # test/commands/install_agent_docs_help_guard_test.rb. NOT the shared
+    # bin/lib/cli_arg_guard.rb: it is Ruby, and this bootstrap repairs Ruby.
+    # History: task docs-installer-help-publishes.
     "install-agent-docs"     => :own_guard,
     "agent-runtime"          => :own_guard,
-    # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). This was
-    # :subcommand, a label claiming it "falls through to usage"; it fell through to
-    # `*) exit 0` — no usage, no signal — and `get --help` ran the REAL `get`. The
-    # release sweep then re-filed it as :subcommand_gap with the probe
-    # `bin/gh-app-git-credential get --help`, measured to mint a live installation
-    # token, write it to the shared token store, and print it. Both entries were
-    # true when written; the fix landed underneath them, so the gap bucket no
-    # longer holds this script and the record lives here instead.
-    #
-    # THE LESSON WORTH KEEPING: :subcommand carried no wiring assertion, so its
-    # claim was never checked against the code for anyone. :own_guard is, by
-    # test_the_shell_scripts_answer_help_without_acting below.
+    # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). `get --help` ran the REAL
+    # `get`, measured to mint a live installation token, write it to the shared store, and print
+    # it. :subcommand carried no wiring assertion, so its claim was never checked against the
+    # code. :own_guard is, by test_the_shell_scripts_answer_help_without_acting below.
+    # History: task credential-helper-help-mints.
     "gh-app-git-credential"  => :own_guard,
     # --- the three prior fixes -----------------------------------------------
     "task"                   => :own_guard,
@@ -449,21 +332,12 @@ class BinHelpFlagClassTest < Minitest::Test
     # and a stray positional refuses before the store is touched.
     "keep-awake"             => :optparse,
     # --- subcommand dispatch that falls through to usage (BARE form) ----------
-    #
-    # Read the legend above before trusting this bucket: it says what the BARE
-    # probe does and nothing about `<cmd> --help`. The six entries that were
-    # measured to drop a subcommand-position argument onto a mutation now sit in
-    # :subcommand_gap below.
-    #
-    # KNOWN DILUTION, filed rather than silently re-sorted. Nine of the entries
-    # below are not subcommand dispatchers at all — ci-shard, op-reads,
-    # measure-test-timings, gh-auth-refresh, gh-token, prod-smoke,
-    # e2e-executed-set-check, rails-executed-set-check and secret are single-level
-    # flag loops, most with an explicit unknown-argument refusal, i.e. closer to
-    # :own_guard. They are safe, so re-sorting them is cosmetic — but a bucket
-    # holding two different shapes is exactly what let six real gaps sit here
-    # looking classified. Re-judge them in the next sweep, from this written set
-    # rather than by rediscovering it.
+    # Read the legend above first: this bucket says what the BARE probe does, nothing about
+    # `<cmd> --help`. KNOWN DILUTION: ci-shard, op-reads, measure-test-timings, gh-auth-refresh,
+    # gh-token, prod-smoke, e2e-executed-set-check, rails-executed-set-check and secret are
+    # single-level flag loops, closer to :own_guard. They are safe. Re-judge them in the next
+    # sweep, from this written set.
+    # History: task release-subcommand-drops-help.
     "conductor"              => :subcommand,
     "triage"                 => :subcommand,
     "agent-marker"           => :subcommand,
@@ -483,16 +357,12 @@ class BinHelpFlagClassTest < Minitest::Test
     "release"                => :delegates, # sh binstub: execs bin/release.rb, which owns --help
     "ship"                   => :delegates, # sh alias: execs bin/submit, which owns --help
     "ship-wait"              => :delegates, # sh alias: execs bin/submit-wait, which owns --help
-    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates,
-    # 2026-09-01). It carried the identical exposure — `close-open --help` closed every
-    # open activity — because it is an 8-line shim that `load`s bin/atomic-event and
-    # calls the SAME AgentActivityCli#run. The guard was therefore placed INSIDE `run`,
-    # not under bin/atomic-event's `$PROGRAM_NAME == __FILE__` block, so ONE call guards
-    # both names. This is the same relationship bin/release has to bin/release.rb above,
-    # and it is the bucket's rule rather than an exception — but a label is not a test,
-    # so test_the_in_repo_delegating_stubs_reach_a_guarded_script below asserts the
-    # delegation, and the shim's refusal is proven by real execution with a control in
-    # test/lib/atomic_event_cli_test.rb.
+    # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates). An
+    # 8-line shim that `load`s bin/atomic-event and calls the SAME AgentActivityCli#run, so the
+    # guard is INSIDE `run`, not under `$PROGRAM_NAME == __FILE__`: ONE call guards both names.
+    # test_the_in_repo_delegating_stubs_reach_a_guarded_script asserts the delegation; the
+    # refusal is proven by real execution with a control in test/lib/atomic_event_cli_test.rb.
+    # History: task atomic-event-help-mutates.
     "agent-activity"         => :delegates, # 8-line shim: loads bin/atomic-event, which owns --help
     "rails"                  => :delegates,
     "rake"                   => :delegates,
@@ -505,43 +375,13 @@ class BinHelpFlagClassTest < Minitest::Test
     "island-background"      => :delegates,
     "test-js"                => :delegates, # execs `node --test`, which owns --help; runs tests, mutates nothing
     # --- CONFIRMED subcommand-position gaps, each with a filed task -----------
-    #
-    # Found by the sweep that shipped the bin/release fix
-    # (/tasks/release-subcommand-drops-help, 2026-08-31) and verified line by line
-    # at source, not inferred. Every one dispatches on a subcommand and then drops
-    # whatever is left, so the probe named on each entry RUNS THE REAL ACTION.
-    # They are not fixed here on purpose: this change already touches the release
-    # machinery, and four more scripts in one PR is how a safety fix becomes
-    # unreviewable. They are recorded HERE rather than only on the board so a
-    # reader of the manifest cannot conclude, as one just did about bin/release,
-    # that a `:subcommand` label means the command is safe to probe.
-    # ⚠ THE BUCKET IS NOW EMPTY, and that is the finished state, not a missing record.
-    # All FIVE entries have LEFT IT, each reclassified above with its record kept in
-    # full rather than deleted — every one of them on 2026-09-01:
-    #
-    #   bin/install-agent-docs  :own_guard      /tasks/docs-installer-help-publishes
-    #   bin/agent-runtime       :own_guard      /tasks/docs-installer-help-publishes
-    #   bin/agent-worktree      :cli_arg_guard  /tasks/worktree-subcommand-drops-help
-    #   bin/atomic-event        :cli_arg_guard  /tasks/atomic-event-help-mutates
-    #   bin/agent-activity      :delegates      /tasks/atomic-event-help-mutates
-    #
-    # The last two closed the family: bin/agent-activity is an 8-line shim over
-    # bin/atomic-event, so one guard placed inside AgentActivityCli#run retired both.
-    #
-    # The tripwire that guarded this moment has been retired DELIBERATELY. Steffon left
-    # `refute_empty gaps` in test_the_two_subcommand_buckets_are_disjoint with a note
-    # saying it would go red BY DESIGN on the last fix, so the record could not be
-    # deleted quietly, and instructing whoever did that fix to remove the line in the
-    # SAME change. That is what happened; `assert_empty plain & gaps` stays, because it
-    # is still meaningful on an empty bucket. Its failure message anticipated a bucket
-    # emptied by DELETION and told the reader to reclassify — which was already done, so
-    # the message alone would have been misleading here. That is why the instruction
-    # lived on the entries and not only in the assertion.
-    #
-    # THE BUCKET ITSELF STAYS, armed and empty: :subcommand_gap remains a legal
-    # classification, test_every_subcommand_gap_carries_a_probe_and_a_filed_task still
-    # enforces the probe + filed task on any future entry, and the section headers below
-    # are what that test anchors on. The next sweep that finds a gap files it here.
+    # A gap dispatches on a subcommand and drops the rest, so its named probe RUNS THE REAL
+    # ACTION; a `:subcommand` label does not mean safe to probe. THE BUCKET IS NOW EMPTY, the
+    # finished state: each entry was reclassified above with its record kept. `refute_empty
+    # gaps` was retired DELIBERATELY; `assert_empty plain & gaps` stays. THE BUCKET ITSELF
+    # STAYS, armed: test_every_subcommand_gap_carries_a_probe_and_a_filed_task enforces any
+    # future entry and anchors on the section headers below.
+    # History: task release-subcommand-drops-help.
 
     # --- known gaps, filed rather than fixed in this change -------------------
     #
@@ -571,16 +411,12 @@ class BinHelpFlagClassTest < Minitest::Test
     File.read(File.join(BIN, name))
   end
 
-  # Source with whole-line comments removed.
-  #
-  # EVERY position assertion below runs on THIS, not on the raw file, and the two
-  # are not interchangeable. These scripts carry long doctrinal headers that NAME
-  # the very calls being located — bin/control-check's header explains
-  # `ControlReplay.partition` at line 19, 140 lines above the call, and
-  # bin/setup-1pass-token's explains `pbpaste` at line 34, 80 lines above the read.
-  # Indexing the raw text finds the PROSE and concludes the guard runs after a
-  # mutation that has not happened yet. A substring assertion that can match a
-  # comment is asserting about documentation, not about code.
+  # Source with whole-line comments removed. EVERY position assertion below runs on THIS, not on
+  # the raw file: doctrinal headers NAME the calls being located (`ControlReplay.partition` in
+  # bin/control-check, `pbpaste` in bin/setup-1pass-token), so raw text finds the PROSE and
+  # concludes the guard runs after the mutation. A substring that can match a comment asserts
+  # about documentation, not code.
+  # History: task archive-docs-help-mutates.
   def code_only(name)
     source(name).lines.reject { |line| line.lstrip.start_with?("#") }.join
   end
@@ -598,20 +434,11 @@ class BinHelpFlagClassTest < Minitest::Test
                  "already rolled a docs ledger, taken a shift lease, and dropped databases."
   end
 
-  # A HASH LITERAL WITH ONE KEY TWICE KEEPS THE LAST, SILENTLY — so a duplicate is
-  # invisible to every other test in this file, because MANIFEST.keys has already
-  # collapsed it before they run. This one reads the SOURCE instead.
-  #
-  # MEASURED 2026-08-31. The sweep that fixed bin/release filed five more scripts as
-  # :subcommand_gap, one of them bin/gh-app-git-credential. A branch fixing that
-  # script reclassified it :own_guard. Both landed, git merged both hunks without a
-  # conflict, and the gap entry — being LATER in the literal — won. The
-  # reclassification the change existed to make was discarded, the enforced
-  # shell-promise hash below still passed because it is a SEPARATE literal, and
-  # nothing went red.
-  #
-  # That is not a one-off: four more :subcommand_gap entries are still open, each
-  # with a filed task that will do exactly this to exactly this hash.
+  # A HASH LITERAL WITH ONE KEY TWICE KEEPS THE LAST, SILENTLY, so a duplicate is invisible to
+  # every other test here: MANIFEST.keys has already collapsed it. This one reads the SOURCE.
+  # The trap: git can merge a reclassification and a gap entry for one script with no conflict,
+  # the LATER entry wins, the change is discarded, and nothing goes red.
+  # History: task credential-helper-help-mints.
   def test_no_script_is_classified_twice
     literal = File.read(__FILE__)[/MANIFEST = \{.*?\}\.freeze/m]
     refute_nil literal, "the MANIFEST literal moved — re-anchor this test"
@@ -679,16 +506,13 @@ class BinHelpFlagClassTest < Minitest::Test
     # The vault read (an `op` process) is the first side effect, and the file
     # rewrite follows it in the same block, so the guard has to precede that call.
     "dev-google-client"   => "DevGoogleClient.read_from_vault",
-    # Same reasoning once more, and the LAST of the family. Every POST and marker write
-    # bin/atomic-event can perform — the activity open/close, the close_all teardown,
-    # the grade, the action report, the sticky acting-agent — is reached through
-    # `case command` inside AgentActivityCli#run, so that line is the seam the guard has
-    # to precede. Unlike the three above, this one wraps the guard in NO helper: the
-    # only occurrence of `CliArgGuard.guard!` in the file IS the call site, which is why
-    # it needs no GUARD_HELPER_CALLERS entry below. Its behavioural proof is stronger
-    # than a static index either way — test/lib/atomic_event_cli_test.rb runs the real
-    # script against a recording stub server and asserts a POST RECEIPT, each probe
-    # paired with a control that fires.
+    # Same reasoning once more. Every POST and marker write bin/atomic-event can perform is
+    # reached through `case command` inside AgentActivityCli#run, so the guard has to precede
+    # that line. Unlike the three above, it wraps the guard in NO helper: the only
+    # `CliArgGuard.guard!` in the file IS the call site, so it needs no GUARD_HELPER_CALLERS
+    # entry. Behavioural proof: test/lib/atomic_event_cli_test.rb asserts a POST RECEIPT, each
+    # probe paired with a control.
+    # History: task atomic-event-help-mutates.
     "atomic-event"        => "case command",
     # The newest member, and the only one here that was never a defect. Its mutations —
     # ScratchBackup.save writing a blob, ScratchBackup.restore overwriting a file in the
@@ -734,18 +558,11 @@ class BinHelpFlagClassTest < Minitest::Test
     end
   end
 
-  # The binstubs whose TARGET lives in this same bin/, mapped to the script that
-  # owns `--help` for them. The other :delegates entries (rails, rake, bundle,
-  # rubocop, …) hand off to a gem outside this repo, which this file cannot assert
-  # about; these it can.
-  #
-  # WHY THIS EXISTS. :delegates was, until 2026-09-01, the last bucket in this manifest
-  # with no wiring assertion behind it — the exact condition this file spent a hundred
-  # lines recording as the reason six real gaps sat here looking classified. Moving
-  # bin/agent-activity from :subcommand_gap (which enforces a probe AND a filed task)
-  # into :delegates would have been a NET LOSS of enforcement on the very script the
-  # change existed to fix, and the label's claim — "the underlying tool owns --help" —
-  # would have rested on prose. Prose does not fail CI. This does.
+  # The binstubs whose TARGET lives in this same bin/, mapped to the script that owns `--help`
+  # for them. The other :delegates entries (rails, rake, bundle, rubocop, …) hand off to a gem
+  # outside this repo, which this file cannot assert about. Without this, the label's claim that
+  # "the underlying tool owns --help" rests on prose. Prose does not fail CI. This does.
+  # History: task atomic-event-help-mutates.
   IN_REPO_DELEGATES = {
     "release"        => "release.rb",
     "agent-activity" => "atomic-event",
@@ -777,43 +594,26 @@ class BinHelpFlagClassTest < Minitest::Test
     end
   end
 
-  # The scripts big enough to wrap the shared guard in a helper of their own, mapped to
-  # the SEAM that reads the subcommand — the line the helper's call has to precede.
-  #
-  # It was a bare array against a hardcoded `ARGV.shift` until 2026-09-04, which
-  # quietly limited the table to one dispatcher idiom. bin/chrome-profiles reads its
-  # subcommand with `case ARGV.first` and never shifts, so under the old form
-  # `shift_at` was nil, the guard's `refute_nil` fired, and the only way to make this
-  # file green would have been to leave the script OUT of the table — exempting it
-  # from the one assertion here that separates a called guard from a defined one.
-  # A table that can only describe scripts already in it is not a table.
+  # The scripts that wrap the shared guard in a helper, mapped to the SEAM that reads the
+  # subcommand: the line the helper's call has to precede. A table, not a bare array against
+  # `ARGV.shift`: bin/chrome-profiles uses `case ARGV.first` and never shifts, so a hardcoded
+  # seam makes `shift_at` nil and fires `refute_nil`, and the only green would be exempting the
+  # script.
+  # History: task chrome-profile-order-sop.
   GUARD_HELPER_CALLERS = {
     "qa-server"       => "ARGV.shift",
     "agent-worktree"  => "ARGV.shift",
     "chrome-profiles" => "case ARGV.first"
   }.freeze
 
-  # ANCHORED ON THE CALL SITE, NEVER THE DEFINITION — the property
-  # test_the_guard_runs_before_the_first_mutation above CANNOT establish on these two.
-  #
-  # WHY THIS TEST EXISTS (finding-e429a953ff23, reproduced twice). That test indexes
-  # `CliArgGuard.guard!`, and in a script that wraps the guard in `def guard_argv!`
-  # near the top, the first occurrence of that string is inside the DEFINITION — which
-  # sits above the dispatcher by construction, whether or not anything ever calls it.
-  # Measured: with the guard's CALL deleted and its definition left intact,
-  # this entire file passed 16 runs, 209 assertions, 0 failures against a script that
-  # was fully unguarded. A guard that is defined and never called is the exact shape
-  # of an inert fix, and it is invisible to every assertion in this file but this one.
-  #
-  # The regex matches the INVOCATION — a bare `guard_argv!`, `guard_argv!(ARGV)`, or a
-  # constant BOUND to its result (`PARSED = guard_argv!`, which bin/chrome-profiles
-  # needs because its subcommands read the parsed flags back) — and cannot match
-  # `def guard_argv!(argv = ARGV, out: …)`: that line continues past the parameters,
-  # and the anchor requires the call to END there.
-  # The behavioural proof that the call is reached at RUNTIME lives one tier up, in
-  # test/integration/agent_worktree_argv_guard_test.rb and
-  # test/integration/qa_server_argv_guard_test.rb; this is the cheap static half that
-  # fails the instant the line is deleted.
+  # ANCHORED ON THE CALL SITE, NEVER THE DEFINITION.
+  # test_the_guard_runs_before_the_first_mutation indexes `CliArgGuard.guard!`; in a wrapping
+  # script its first hit is inside `def guard_argv!`, called or not. The regex matches the
+  # INVOCATION: bare `guard_argv!`, `guard_argv!(ARGV)`, or `PARSED = guard_argv!`. It cannot
+  # match `def guard_argv!(argv = ARGV, out: …)`: the anchor requires the call to END there.
+  # Runtime: test/integration/agent_worktree_argv_guard_test.rb,
+  # test/integration/qa_server_argv_guard_test.rb.
+  # History: task worktree-subcommand-drops-help.
   def test_the_dispatcher_calls_its_guard_rather_than_merely_defining_it
     GUARD_HELPER_CALLERS.each do |name, seam|
       src = code_only(name)
@@ -862,18 +662,14 @@ class BinHelpFlagClassTest < Minitest::Test
                     "…and before the clipboard secret is read"
   end
 
-  # The docs installer is the credential installer's twin, one blast radius up: the
-  # targets are not this repo but the SHARED roots every session reads — the projects
-  # root AGENTS.md/CLAUDE.md, ~/.claude/skills, ~/.codex/skills, ~/.claude/settings.json
-  # and ~/.zprofile. So the refusal has to come before the first COPY, not merely
-  # somewhere in the file.
-  #
-  # ANCHORED ON CALL SITES, NEVER DEFINITIONS. `install_pair` and `guard_no_arguments`
-  # are both FUNCTIONS defined near the top, so indexing `install_pair() {` or the `cp`
-  # inside it finds the definition — which sits ABOVE the guard by construction — and
-  # this test would fail on correct code while passing on a script whose guard runs
-  # after the copy loop. The pairs below are the invocations: the loop that copies, the
-  # `rm -rf` of a retired skill, and the exec that hands the line to the installer.
+  # The docs installer's targets are the SHARED roots every session reads: the projects root
+  # AGENTS.md/CLAUDE.md, ~/.claude/skills, ~/.codex/skills, ~/.claude/settings.json and
+  # ~/.zprofile. So the refusal has to come before the first COPY. ANCHORED ON CALL SITES, NEVER
+  # DEFINITIONS: `install_pair` and `guard_no_arguments` are FUNCTIONS near the top, so indexing
+  # `install_pair() {` fails on correct code and passes a guard that runs after the copy loop.
+  # The pairs below are invocations: the copy loop, the `rm -rf` of a retired skill, and the
+  # exec to the installer.
+  # History: task docs-installer-help-publishes.
   FIRST_PUBLISH = {
     "install-agent-docs" => ['install_pair "$src" "$tgt"', 'rm -rf "$retired"'],
     "agent-runtime"      => ['exec "$INSTALLER"']
@@ -965,40 +761,12 @@ class BinHelpFlagClassTest < Minitest::Test
   end
 
   # --- the :subcommand label, made a tested property -------------------------
-  #
-  # WHY THIS EXISTS. Until 2026-08-31 :subcommand was the ONLY bucket in this
-  # manifest with no wiring assertion behind it. Its legend was prose, and prose
-  # does not fail CI — which is exactly how bin/qa-server sat here looking
-  # classified while
-  #
-  #     bin/qa-server provision <app> --yes --help
-  #
-  # PROVISIONED A QA SERVER FOR REAL. It deleted `--yes` to suppress the
-  # confirmation, dispatched on ARGV[0], and never inspected `--help` at all, so
-  # the flag fell off the end of the line and the create / addons / domains /
-  # config-var writes ran to completion. The label was true about the BARE form
-  # and the reader's conclusion was false — the same way bin/release read one
-  # task earlier. Narrowing that legend's wording was the right move and did not
-  # fix a single script. This does.
-  #
-  # WHAT IT ASSERTS, and why the predicate is exactly this wide. The bucket only
-  # ever claimed something about the BARE form, so this must NOT assert that
-  # `<cmd> --help` is safe — that would be a STRONGER promise than the label
-  # makes, and a record that overclaims is the very thing being fixed here. What
-  # it CAN require is the property whose absence makes the bare-form claim
-  # actively misleading: a script that reaches a durable, outside-the-process
-  # mutation must account for an argument it does not recognize SOMEWHERE in its
-  # code. Three spellings satisfy that, because all three genuinely account for
-  # the line — the shared guard, an explicit help-flag arm, or an explicit
-  # unknown-argument refusal.
-  #
-  # MEASURED across all sixteen entries before it was written: bin/qa-server was
-  # the ONLY failure. bin/gate and bin/triage both write to the PRODUCTION board
-  # and both refuse an unknown flag BEFORE the POST; the nine confessed
-  # flag-loops carry explicit `--help` arms; bin/secret reaches no durable
-  # mutation. So this assertion cost no reclassification and no churn — it makes
-  # the one real gap impossible to re-introduce silently, which is the only thing
-  # a safety record is for.
+  # The bucket only claims something about the BARE form, so this must NOT assert `<cmd> --help`
+  # is safe: that overclaims. It requires only this: a script reaching a durable,
+  # outside-the-process mutation must account for an argument it does not recognize SOMEWHERE in
+  # its code. Three spellings satisfy that: the shared guard, an explicit help-flag arm, or an
+  # explicit unknown-argument refusal.
+  # History: task qa-server-help-provisions.
 
   # Calls that reach outside this process and leave something behind. A small,
   # literal vocabulary rather than a clever heuristic, and every entry is a call

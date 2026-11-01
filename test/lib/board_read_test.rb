@@ -6,18 +6,12 @@ require "rbconfig"
 require "English"
 require_relative "../../bin/lib/board_read"
 
-# [unit] The STATUS decision under every board read: may this response be treated
-# as an answer, and if not, what does the operator do about it?
-#
-# The companion integration file (test/commands/review_autopilot_test.rb) proves the
-# EXIT CODE end to end through the real script. This one proves the decision itself,
-# response class by response class, because the exit code is downstream of it and a
-# subprocess test cannot enumerate the status space cheaply.
-#
-# THE CASE THAT CARRIES THIS FILE is `test_a_redirect_is_not_a_credential_failure`.
-# On 2026-09-20 a 301 on every board GET was read as an expired agent token and
-# chased into 1Password — the wrong system entirely — because "-> HTTP 301" and
-# "-> HTTP 401" are the same sentence with a different number in it.
+# [unit] The STATUS decision under every board read: may this response be treated as an answer,
+# and if not, what does the operator do? test/commands/review_autopilot_test.rb proves the EXIT
+# CODE end to end; this proves the decision class by class.
+# THE CASE THAT CARRIES THIS FILE is `test_a_redirect_is_not_a_credential_failure`: "-> HTTP
+# 301" and "-> HTTP 401" are the same sentence with a different number.
+# History: task fix-autopilot-base-url.
 class BoardReadTest < Minitest::Test
   # ── the answers that may be read ───────────────────────────────────────────
 

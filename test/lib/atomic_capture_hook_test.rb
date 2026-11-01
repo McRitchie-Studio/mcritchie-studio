@@ -1,18 +1,12 @@
 # frozen_string_literal: true
 
-# Tests for bin/atomic-capture-hook — the Claude Code PostToolUse hook that
-# streams each tool call into the atomic-capture endpoint.
-#
-#   ruby -Itest test/lib/atomic_capture_hook_test.rb
-# It is also picked up by the normal `bin/rails test` sweep.
-#
-# Two tiers (backend shape):
-#   [unit]        the pure builders — tool_name→kind mapping, truncation, outcome
-#                 detection, marker derivation, and full payload shape — loaded in
-#                 process (the bin's main is guarded so `load` is side-effect free).
-#   [integration] the real script, shelled out against a localhost stub HTTP
-#                 server, mints a token then POSTs the right shape to
-#                 /api/v1/agent_actions.
+# Tests for bin/atomic-capture-hook, the Claude Code PostToolUse hook that streams each tool
+# call into the atomic-capture endpoint. Two tiers (backend shape):
+#   [unit] pure builders (tool_name->kind mapping, truncation, outcome detection, marker
+#     derivation, full payload shape), loaded in process (main is guarded).
+#   [integration] the real script, shelled against a localhost stub HTTP server, mints a token
+#     then POSTs to /api/v1/agent_actions.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "json"

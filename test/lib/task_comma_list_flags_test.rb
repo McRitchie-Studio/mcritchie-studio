@@ -1,27 +1,13 @@
 # frozen_string_literal: true
 
-# The comma guard on bin/task's repeatable IDENTIFIER flags — the PURE half.
-#
-# THE DEFECT. `--repo` and `--risk` are repeatable (`--repo a --repo b`), so
-# `--repo a,b` stored a ONE-ELEMENT array holding the joined string. Nothing
-# refused it and nothing rendered it differently — `bin/task show` prints
-# `repos: a,b` for the joined entry and the correct pair alike — so the record
-# read right up until something tried to RESOLVE an entry. On 2026-09-15 that was
-# a live QA release sweep: Release::Conductor saw a multi-repo task naming a
-# phantom repo with no PR url and refused at step 3a. Nothing was promoted,
-# recorded or deployed. A second instance was typed the same night by the
-# operator who had just watched the first one abort, because the record LOOKS
-# right — which is the argument for a guard rather than a lesson.
-#
-# WHY THIS FILE EXISTS SEPARATELY. The cases that must drive the real binary
-# against test/lib/task_cli_test.rb's private stub server (what actually goes on
-# the wire, and the prose controls proving `--accept` survives unsplit) stay
-# there, because a copy of that 261-line harness would be testing its own copy.
-# Everything here needs NO harness: the guard's wiring, read out of the script,
-# and its ORDERING, proved against an unroutable board. The guarded set is the
-# key map, lib/devops_list_flags.rb (test/lib/devops_list_flags_test.rb).
-#
-#   ruby -Itest test/lib/task_comma_list_flags_test.rb
+# The comma guard on bin/task's repeatable IDENTIFIER flags: the PURE half. `--repo a,b` would
+# store a ONE-ELEMENT array holding the joined string, and `bin/task show` prints it like the
+# correct pair until something RESOLVES the entry (Release::Conductor refuses at step 3a). The
+# record LOOKS right, hence a guard. Cases driving the real binary against
+# test/lib/task_cli_test.rb's stub server stay there. Here: the guard's wiring, read out of
+# the script, and its ORDERING, proved against an unroutable board. Guarded set:
+# lib/devops_list_flags.rb (test/lib/devops_list_flags_test.rb).
+# History: task comma-repo-list-aborts-sweep.
 
 require "minitest/autorun"
 require "open3"

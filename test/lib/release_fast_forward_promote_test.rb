@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
-# `bin/release prepare`'s `accepted → release` promote, driven against REAL git.
-#
-# The promote is a fast-forward ref push whenever `release` is contained in
-# `accepted`, and the batch PR only when `release` has diverged. The commits prepare
-# lands around it (the consumer lock bump, the archive and retro artifacts) go onto
-# `accepted` first, so `release` never carries a commit `accepted` lacks. The proof
-# that matters is the one the CI credit rests on: after a ship, `accepted`, `release`
-# and `main` hold ONE commit id, so the verdict CI gave the `accepted` head is the
-# verdict on the SHA production runs.
-#
-# The seams stubbed here are the ones that reach outside git: the CI guards on the
-# `accepted` head, the RubyGems wait, `bundle lock`, the engine migration install,
-# and `gh`. Every git command runs for real against a bare origin.
-#
-# Part of the bin/release CLI suite; the shared harness lives in
-# test/lib/release_cli_harness.rb. Run directly:
-#   ruby -Itest test/lib/release_fast_forward_promote_test.rb
+# `bin/release prepare`'s `accepted → release` promote, against REAL git and a bare origin. It
+# is a fast-forward ref push whenever `release` is contained in `accepted`, the batch PR only
+# when `release` has diverged. Prepare's own commits (lock bump, archive, retro) go onto
+# `accepted` first. The proof: after a ship, `accepted`, `release` and `main` hold ONE commit
+# id, so CI's verdict on the `accepted` head is the verdict on the production SHA. Stubbed: the
+# CI guards, the RubyGems wait, `bundle lock`, the engine migration install, `gh`. Shared
+# harness: test/lib/release_cli_harness.rb.
+# History: task fast-forward-release-promote.
 
 require_relative "release_cli_harness"
 

@@ -1,38 +1,13 @@
 # frozen_string_literal: true
 
-# THE DURABLE GATE RECORD, when the token expired mid-gate. Standalone (no Rails —
-# it shells bin/dor-check with --file fixtures):
-#   ruby -Itest test/lib/gate_record_unreadable_ci_test.rb
-#
-# THE DEFECT (/tasks/gate-logs-auth-as-red). A `dor_review` gate-zero whose GitHub
-# read was REFUSED on credentials closed its attempt with the sops row
-#
-#   {"sop":"ci","result":"fail","state":"unreadable","cause":"credentials", ...}
-#
-# and both readers of that record show `result` alone — `bin/gate show` prints
-# `ci:fail`, and the task's gates card paints a rose ✗. So the task's PERMANENT gate
-# history said a red CI bounced this PR. The PR's CI was never red. Nobody read it.
-#
-# WHY IT IS WORSE THAN A MISPRINT. Installation tokens live ~1 hour BY DESIGN in
-# this fleet, so this is not a race — every gate run straddling an expiry wrote one,
-# into the one artifact a later auditor has left after Heroku's log retention is
-# gone. And it inverts the usual direction: the rest of CiGate's decision table
-# guards against a green credited for work nobody verified; this row MANUFACTURED a
-# failure.
-#
-# THE VOCABULARY IS NOT NEW. CiStatus.gate_evidence has ridden `state:"unreadable"`
-# + cause + reason into this very entry since PR #865, and
-# /tasks/builder-reads-remedy-twice established UNREADABLE as distinct from no-CI in
-# the refusal prose. Only `result` — the field the readers render — collapsed it.
-#
-# WHY THESE TESTS READ THE RECORD AND NOT STDOUT. A gate that PRINTS the right thing
-# and STORES the wrong thing is precisely this defect: dor-check's stdout already
-# said "GitHub CI is UNREADABLE … CREDENTIAL fault, NOT a missing CI" in full while
-# the row it persisted said fail. Asserting the printed refusal would have passed on
-# the broken build. So every integration test here recovers the argv the gate CLI
-# was actually handed, parses the `{"sop":"ci"}` entry out of it, and asserts on
-# that — and refuses to conclude anything when no such entry was recorded at all
-# (an absent row is not a passing row; see ci_sop_entry's guard).
+# THE DURABLE GATE RECORD, when the token expired mid-gate. A review whose GitHub read was
+# REFUSED on credentials must not record `result` "fail": `bin/gate show` and the gates card
+# render `result` alone, so PERMANENT history would claim a red CI nobody read. Tokens live ~1
+# hour BY DESIGN. WHY THESE READ THE RECORD AND NOT STDOUT: a gate can PRINT right and STORE
+# wrong. Each integration test recovers the argv the gate CLI was handed, parses the
+# `{"sop":"ci"}` entry, and asserts on it, refusing to conclude when none was recorded (see
+# ci_sop_entry's guard).
+# History: task gate-logs-auth-as-red.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -72,22 +47,12 @@ class GateRecordUnreadableCiTest < Minitest::Test
     assert_equal "fail", CiGate.gate_row({ state: :conflicted }, review_role: true, review_refused: true)
   end
 
-  # THIS TEST PINNED THE DEFECT ITS OWN PREMISE FORBADE, and it is kept (renamed,
-  # corrected) rather than deleted so the correction is legible.
-  #
-  # The premise was right: :none ("nothing reported"), :unverified ("gh itself fell
-  # over") and :unreadable ("GitHub refused my credential") are three different
-  # non-answers, and the row stays 1:1 with the CI state. The assertions said the
-  # opposite — they froze :none and :unverified onto the SAME flat "fail" a genuinely
-  # red CI writes, which is neither 1:1 nor a non-answer. Scoping the arm to
-  # :unreadable left two thirds of the family manufacturing a failure in permanent
-  # gate history, and this test held that in place until 2026-09-09.
-  #
-  # Corrected by /tasks/refused-review-records-fail, which gave the other two their own
-  # arms by this file's own rule. Their coverage — the live chain, the persisted argv,
-  # the distinctness invariant — is in test/lib/gate_record_no_verdict_ci_test.rb; what
-  # stays here is the neighbour check that this file's :unreadable arm did not swallow
-  # them.
+  # :none ("nothing reported"), :unverified ("gh itself fell over") and :unreadable ("GitHub
+  # refused my credential") are three different non-answers, and the row stays 1:1 with the CI
+  # state, never the flat "fail" a red CI writes. Coverage of the other two (live chain,
+  # persisted argv, distinctness invariant) is in test/lib/gate_record_no_verdict_ci_test.rb;
+  # this is the neighbour check that this file's :unreadable arm did not swallow them.
+  # History: task refused-review-records-fail.
   def test_unit_the_rest_of_the_no_verdict_family_names_itself_too
     none = CiGate.gate_row({ state: :none }, review_role: true, review_refused: true)
     unverified = CiGate.gate_row({ state: :unverified }, review_role: true, review_refused: true)

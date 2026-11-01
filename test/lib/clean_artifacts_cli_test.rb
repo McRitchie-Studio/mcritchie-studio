@@ -1,16 +1,10 @@
 # frozen_string_literal: true
 
-# [integration] tests for bin/clean-artifacts — the real CLI, spawned as a real
-# process, against a fake projects root on real disk.
-#
-# This crosses the boundaries the unit tests deliberately do not: process spawn,
-# the child environment handed to each app, and the tagged JSON summary that
-# `bin/release archive` parses. The apps here are shims rather than Rails apps
-# (a Rails boot per case would make this suite unrunnable), so the "a real Rails
-# app gets the cap" half lives in studio-engine's own
-# test/integration/log_rotation_test.rb, which boots real apps.
-# Run directly:
-#   ruby -Itest test/lib/clean_artifacts_cli_test.rb
+# [integration] tests for bin/clean-artifacts: the real CLI, spawned as a real process, against
+# a fake projects root on real disk. Crosses process spawn, the child env handed to each app,
+# and the tagged JSON summary `bin/release archive` parses. Apps are shims; the "a real Rails
+# app gets the cap" half is in studio-engine's test/integration/log_rotation_test.rb.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -206,23 +200,14 @@ class CleanArtifactsCliTest < Minitest::Test
     end
   end
 
-  # [integration] THE ABLATION: the audit's verdict must be a fact about the
-  # APPS, not about the parent that launched the sweep.
-  #
-  # This reproduces the production bug in miniature. bin/release execs the
-  # release runner as `mise x ruby@<version> -- ruby bin/release.rb`, whose ONLY
-  # environment change is prepending mise's Ruby bin dir to PATH. Each audited
-  # app's `bin/rails` then resolved `ruby` through that PATH to an interpreter
-  # whose gem tree is not the app's, and the boot died in its own config/boot.rb.
-  # Measured 2026-09-22 on this machine: moms-app and rolio read LOOSE from a
-  # clean shell and UNKNOWN under `mise x`, hiding four genuinely loose apps
-  # behind the one that stayed visible — and under a `bundle exec` parent an app
-  # measured healthy at a 16 MB cap read UNKNOWN too. A contaminated UNKNOWN says
-  # nothing in EITHER direction, which is what makes it worse than a wrong answer.
-  #
-  # BOTH ARMS RUN HERE, and the first is what makes the second mean anything: a
-  # green "the verdicts agree" proves nothing unless the contamination it claims
-  # to survive is shown to reach the verdict when it is NOT restored.
+  # [integration] THE ABLATION: the audit's verdict must be a fact about the APPS, not the parent
+  # that launched the sweep. bin/release execs `mise x ruby@<version> -- ruby bin/release.rb`,
+  # prepending mise's Ruby to PATH; each app's `bin/rails` then resolves `ruby` to an interpreter
+  # whose gem tree is not the app's and dies in config/boot.rb. A contaminated UNKNOWN says
+  # nothing in EITHER direction.
+  # BOTH ARMS RUN HERE: "the verdicts agree" proves nothing unless the contamination is shown to
+  # reach the verdict when NOT restored.
+  # History: task cap-uncapped-app-logs.
   def test_the_audit_verdict_does_not_depend_on_the_parents_path
     with_apps do |root|
       _, clean = run_cli(root, "--dry-run")
@@ -234,21 +219,13 @@ class CleanArtifactsCliTest < Minitest::Test
         FileUtils.chmod(0o755, decoy)
         poisoned = "#{fake_bin}#{File::PATH_SEPARATOR}#{ENV.fetch('PATH')}"
 
-        # BOTH ARMS RUN FROM A PARENT SHAPED LIKE THE RELEASE RUNNER'S: no bundler
-        # binding at all, exactly as `mise x ruby@<version> -- ruby bin/release.rb`
-        # leaves it (measured: RUBYOPT, GEM_HOME, GEM_PATH and BUNDLE_GEMFILE are
-        # all empty there). Two things forced this, and both are worth knowing:
-        #
-        #   * this suite runs under bundler, so BUNDLER_ORIG_PATH is inherited and
-        #     restores the decoy away on its own — arm 1 came back `uncapped`
-        #     until the records were cleared, which is the fix working through its
-        #     OTHER path and an ablation measuring nothing.
-        #   * clearing only the records is not enough. RUBYOPT=-rbundler/setup is
-        #     also inherited, so bundler loads inside the spawned CLI and RE-WRITES
-        #     BUNDLER_ORIG_* from the already-bundled environment it finds — the
-        #     restoration then faithfully restores a binding that came from the
-        #     grandparent. Leaving RUBYOPT set while deleting its record builds a
-        #     parent that cannot occur in life, and it reads as a leak.
+        # BOTH ARMS RUN FROM A PARENT SHAPED LIKE THE RELEASE RUNNER'S: no bundler binding.
+        # * This suite runs under bundler, so BUNDLER_ORIG_PATH is inherited and restores the decoy
+        # on
+        #     its own: arm 1 measures nothing until the records are cleared.
+        # * Clearing only the records is not enough: an inherited RUBYOPT=-rbundler/setup RE-WRITES
+        #     BUNDLER_ORIG_*. RUBYOPT without its record is a parent that cannot occur.
+        # History: task cap-uncapped-app-logs.
         mise_like = (%w[RUBYOPT RUBYLIB BUNDLER_SETUP BUNDLER_VERSION BUNDLE_GEMFILE BUNDLE_BIN_PATH] +
                      ENV.keys.select { |key| key.start_with?(ToolchainEnv::BUNDLER_PREFIX) })
                     .to_h { |key| [key, nil] }

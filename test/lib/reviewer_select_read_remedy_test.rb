@@ -1,45 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] EVERY REMEDY bin/reviewer-select PRINTS ON A FAILED PR READ IS
-# HARVESTED OFF ITS OWN STDERR AND RUN.
-#
-# THE DEFECT. Both of this tool's credential refusals printed, unconditionally:
-#
-#     eval "$(bin/gh-auth-refresh --export)"
-#
-# and no test asserted either string. The command is real and its whole stdout is
-# `export GH_TOKEN='…'` (bin/gh-auth-refresh#export). But the read that had just
-# failed is THIS process's — Task#derived_authors_probe → Github::TaskDerivation →
-# Github::Client → Github::AppToken — and with App creds absent AppToken returns
-# `ENV[FALLBACK_TOKEN_ENV]`, i.e. GITHUB_TOKEN. So the operator followed the
-# printed line verbatim and got the byte-identical refusal, on the one refusal
-# whose other exit is asserting something about somebody else's work.
-#
-# The house rule this broke is already written down, in bin/gh-auth-refresh's own
-# header: EVERY REMEDY THIS COMMAND PRINTS MUST ROUND-TRIP — run it verbatim, in
-# the lane that printed it. This file is that rule applied here.
-#
-# ── HOW THE REFUSALS ARE REACHED WITH NO NETWORK ─────────────────────────────
-#
-# `Github::TaskDerivation#parse!` raises Unreadable for a pr_url that is not a
-# GitHub PR url BEFORE any HTTP is attempted (task_derivation.rb:161), so a task
-# JSON naming such a url produces a genuine `unreadable` probe offline. Neither
-# refusal was reachable from any CLI test before, because a script test cannot
-# inject `derivation:` — it only gets to write the task JSON — and the test
-# environment switches derivation off. DERIVE_FROM_GITHUB=1 arms the PATH, not a
-# network call; see config/environments/test.rb.
-#
-# ── WHAT IS PROVEN HERE AND WHAT IS PROVEN NEXT DOOR ─────────────────────────
-#
-# Here: which remedy each refusal prints, that the paths resolve on disk, that the
-# credential-free escape run verbatim SELECTS A PAIR, and that a non-credential
-# fault gets NO credential remedy. The credential line's own round trip — run it,
-# then read the variable back out of the shell — is measured in
-# test/lib/github_read_remedy_test.rb, with the OLD remedy beside it as a control;
-# it is not repeated here because this file would have to stub the broker anyway
-# and the assertion belongs next to the composer.
-#
-#   ruby -Itest test/lib/reviewer_select_read_remedy_test.rb
+# [integration] EVERY REMEDY bin/reviewer-select PRINTS ON A FAILED PR READ IS HARVESTED OFF ITS
+# OWN STDERR AND RUN: EVERY REMEDY MUST ROUND-TRIP. The trap: `eval "$(bin/gh-auth-refresh
+# --export)"` sets GH_TOKEN, but this read falls to GITHUB_TOKEN. Offline:
+# `Github::TaskDerivation#parse!` raises Unreadable for a non-PR pr_url before any HTTP;
+# DERIVE_FROM_GITHUB=1 arms the PATH, not a network call (config/environments/test.rb). Here:
+# which remedy prints, the credential-free escape SELECTS A PAIR, a non-credential fault gets NO
+# credential remedy. Credential round trip: test/lib/github_read_remedy_test.rb.
+# History: task refusal-remedy-must-round-trip.
 
 require "minitest/autorun"
 require "json"
@@ -106,16 +74,11 @@ class ReviewerSelectReadRemedyTest < Minitest::Test
     [out, err, status.exitstatus]
   end
 
-  # THE REFUSAL, SLICED OUT OF stderr FROM ITS HEADLINE DOWN.
-  #
-  # stderr is NOT only the refusal. Under `bin/rails test` the child inherits bundler's
-  # env and prints rubygems warnings ahead of anything the script says — the same noise
-  # test/lib/reviewer_select_test.rb's header documents, which is why that file discards
-  # stderr entirely. MEASURED: the first version of the block-shape assertion below read
-  # stderr raw, passed under `ruby -Itest`, and failed under `bin/fast-check` on
-  # "already initialized constant Gem::Platform::JAVA" — a test that depended on which
-  # runner invoked it. The refusal starts at its headline, so say that rather than
-  # trusting the stream to be clean.
+  # THE REFUSAL, SLICED OUT OF stderr FROM ITS HEADLINE DOWN. Under `bin/rails test` the child
+  # inherits bundler's env and prints rubygems warnings first, so a raw read passes under `ruby
+  # -Itest` and fails under `bin/fast-check` ("already initialized constant
+  # Gem::Platform::JAVA").
+  # History: task refusal-remedy-must-round-trip.
   def refusal(stderr)
     lines = stderr.lines
     start = lines.index { |line| line.start_with?("reviewer-select REFUSED") }
@@ -197,23 +160,12 @@ class ReviewerSelectReadRemedyTest < Minitest::Test
   # --- the reason is one line --------------------------------------------------
 
   def test_the_quoted_reason_never_breaks_the_refusal_block
-    # The reason is a GitHub API error whose body is multi-line JSON. Interpolated raw
-    # it splits the indented block open and every single-line grep over the refusal
-    # loses the half it was looking for.
-    #
-    # ASSERTED ON THE BLOCK'S SHAPE, NOT ON A PHRASE, and the first spelling of this
-    # case is why. It looked for the phrase "not a GitHub PR url" on one line and
-    # asserted both halves of the payload were on it — and it stayed GREEN with the
-    # squeeze removed, because Ruby's `inspect` re-escapes the newline inside the
-    # exception message, so the phrase and both halves rode the SAME line anyway. The
-    # assertion was measuring the escaped copy while the defect was in the raw
-    # interpolation two lines above it. Measured: unsqueezed, the block really prints
-    #
-    #     the commits on stub://HTTP 401
-    #   {"message": "Bad credentials"} could not be read (not a GitHub PR url: "…")
-    #
-    # so the observable defect is a body line starting at COLUMN ZERO. A refusal block
-    # has exactly one unindented line — its headline — and that is what is asserted.
+    # The reason is a GitHub API error whose body is multi-line JSON; raw, it splits the block
+    # open. ASSERTED ON THE BLOCK'S SHAPE, NOT ON A PHRASE: a phrase check stays GREEN with the
+    # squeeze removed, because `inspect` re-escapes the newline in the exception message. The
+    # observable defect is a body line at COLUMN ZERO. A refusal block has exactly one
+    # unindented line, its headline.
+    # History: task refusal-remedy-must-round-trip.
     _out, err, = select("stub://HTTP 401\n{\"message\": \"Bad credentials\"}", "--builder", "none", "--dry")
 
     body = refusal(err).lines.reject { |line| line.strip.empty? }

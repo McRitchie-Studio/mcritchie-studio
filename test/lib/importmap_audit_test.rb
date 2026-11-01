@@ -17,17 +17,13 @@ class ImportmapAuditTest < ActiveSupport::TestCase
     \tfrom vendor/bundle/ruby/3.3.0/gems/net-protocol-0.2.2/lib/net/protocol.rb:229:in `rbuf_fill'
   OUT
 
-  # CUT FROM THE PRODUCER, NOT IMAGINED. Rendered exactly as
-  # importmap-rails-2.2.3 puts_table emits it (commands.rb:155-167): every row
-  # is `"| " + row.join(" | ") + " |"`, columns padded to the widest cell, a
-  # divider under the header, and the summary line carrying TWO leading spaces
-  # plus a severity tally.
-  #
-  # The previous fixture here was space-delimited because that is what a table
-  # looks like if you picture one instead of reading the gem. It passed, and it
-  # let a dead regex sit in the classifier looking live.
-  # The summary line specifically — not "any line mentioning a vulnerability",
-  # which would also match the header's own column name.
+  # CUT FROM THE PRODUCER, NOT IMAGINED. Rendered exactly as importmap-rails-2.2.3 puts_table
+  # emits it (commands.rb:155-167): every row `"| " + row.join(" | ") + " |"`, columns padded to
+  # the widest cell, a divider under the header, and a summary line with TWO leading spaces plus
+  # a severity tally. A space-delimited fixture lets a dead regex in the classifier look live.
+  # The summary line specifically, not "any line mentioning a vulnerability", which would also
+  # match the header's own column name.
+  # History: task fixture-shaped-from-assumption.
   SUMMARY_PATTERN = /vulnerabilit(?:y|ies)\s+found/i
 
   VULNERABLE_OUTPUT = <<~OUT

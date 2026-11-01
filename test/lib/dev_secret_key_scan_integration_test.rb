@@ -1,20 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] The digest scan, EXECUTED: bin/dev-secret-key run as a process over a
-# projects tree laid out the way the machine is (primaries plus .worktrees desks),
-# and bin/ecosystem-build's local .env writer run beside a stubbed `heroku` that
-# answers with a production config, which the writer must never read.
-#
-# What the scan must do, and what each test pins:
+# [integration] The digest scan, EXECUTED: bin/dev-secret-key as a process over a projects tree.
 #   * flag every local env file whose key matches a production digest, and only those
 #   * never print a value, flagged or not
 #   * `fix` leaves no file on a production key, and a re-scan proves it
-#   * FAIL CLOSED: with no production digest to compare against, a scan that found
-#     nothing proves nothing, so it exits 2 instead of 0
-# and what a fresh-machine restore must do: write every config var EXCEPT the
-# production key, and give the file a generated development one instead.
-#
-#   ruby -Itest test/lib/dev_secret_key_scan_integration_test.rb
+#   * FAIL CLOSED: with no production digest to compare against, exit 2 instead of 0
+# bin/ecosystem-build's .env writer runs beside a stubbed `heroku` and must write every config
+# var EXCEPT the production key, giving the file a generated development one.
+# History: task local-dev-drops-prod-hub-key.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

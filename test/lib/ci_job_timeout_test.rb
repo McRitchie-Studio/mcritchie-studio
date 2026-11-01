@@ -1,40 +1,13 @@
 # frozen_string_literal: true
 
-# Guard: EVERY workflow job declares a wall-clock bound.
-#
-# WHY. A GitHub job with no `timeout-minutes` inherits the platform default of
-# SIX HOURS. That is not a bound, it is an absence of one, and the difference is
-# not academic — on 2026-08-18 a runner-fleet network incident left jobs sitting
-# on "Install packages" and "Install FFmpeg":
-#
-#   mcritchie-studio  test / playwright (3) / island_animator   1h39m
-#   studio-engine     mcritchie_industries suite vs this engine 3h54m
-#
-# Both had to be CANCELLED BY HAND. That is the sharp part: GitHub refuses
-# `gh run rerun` on an incomplete run, so a hang blocks the SANCTIONED SINGLE
-# RETRY as well as the run itself. A failed job can be re-run; a hung one cannot.
-# One of those hangs stalled a release — the qa-release pre-QA gate credits an
-# identical-tree commit to skip a duplicate suite, picked a commit whose second
-# run was hung, and waited on a job that would never finish while the candidate's
-# own CI was already fully green.
-#
-# WHY 45 MINUTES, AND WHY UNIFORM. Sized from measured successful durations over
-# the last ~12 runs per lane, not guessed:
-#
-#   scan_ruby / scan_js / lint / e2e_executed_set   0-1 min
-#   island_animator                                  0-2 min
-#   playwright shards                                2-5 min  (worst success 17)
-#   test                                             3-10 min
-#
-# 45 is ~4.5x the slowest routine lane and ~2.6x the worst observed SUCCESS,
-# while catching both hangs with room to spare. Tightness is NOT the goal here:
-# a bound that bites a legitimately slow run manufactures exactly the false red
-# this repo already pays for elsewhere. The goal is that "hangs forever" becomes
-# "fails", which any bound well under six hours achieves. One number, uniform, so
-# there is nothing per-lane to drift.
-#
-# ASSERTED POSITIVELY over every workflow file, rather than listing today's jobs:
-# a lane added tomorrow fails here without anyone remembering to enrol it.
+# Guard: EVERY workflow job declares a wall-clock bound. No `timeout-minutes` inherits GitHub's
+# SIX-HOUR default, and GitHub refuses `gh run rerun` on an incomplete run, so a hang blocks the
+# single retry too.
+# WHY 45 MINUTES, AND WHY UNIFORM: ~4.5x the slowest routine lane, ~2.6x the worst observed
+# SUCCESS. Tightness is NOT the goal: a bound that bites a slow run manufactures a false red.
+# ASSERTED POSITIVELY over every workflow file, not today's jobs: a lane added tomorrow fails
+# here without enrolling.
+# History: task bound-hung-ci-steps.
 require "minitest/autorun"
 require "yaml"
 

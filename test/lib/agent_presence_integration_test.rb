@@ -1,27 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] bin/agent-presence — the killed-writer property, proved by kill.
-#
-# THE CLAIM THIS FILE EXISTS TO PROVE, and it is the one the whole design rests on:
-#
-#   A claim whose writer has been KILLED reads as dead IMMEDIATELY — no timeout to
-#   elapse, no renewal to miss, so the wedge window is ZERO rather than one TTL.
-#
-# That cannot be proved against a hand-built process table, because a hand-built table
-# is just the author asserting the conclusion. So every process here is real: spawned
-# with Process.spawn, identified by the OS's own `ps -o lstart=`, killed with a real
-# signal, and graded against a real `ps`. Nothing is stubbed and nothing sleeps waiting
-# for a lease to lapse — `Process.waitpid` returns when the OS says the process is gone,
-# and the very next read is the assertion.
-#
-# AND THE OPPOSITE ERROR, which is the one that would starve someone all over again.
-# A LIVE process must read as LIVE even when it is IDLE. Cost #4: two `bin/submit`
-# processes parked in a CI wait — consuming nothing, sleeping — read as competing certs
-# and nearly held off a launch. A sleeping `sleep 30` is exactly that shape, and if this
-# reader graded "not burning CPU" as "not there" it would reproduce the bug it replaces.
-# Both directions are asserted, because a reader that gets only one right is not safe.
-#
-#   ruby -Itest test/lib/agent_presence_integration_test.rb
+# [integration] bin/agent-presence: the killed-writer property, proved by kill. A claim whose
+# writer has been KILLED reads as dead IMMEDIATELY: the wedge window is ZERO, not one TTL. A
+# hand-built process table only asserts the conclusion, so every process is real: Process.spawn,
+# `ps -o lstart=`, a real signal, a real `ps`.
+# THE OPPOSITE ERROR: a LIVE process must read LIVE even when IDLE, like a `bin/submit` parked
+# in a CI wait; a sleeping `sleep 30` is that shape. Both directions are asserted, because a
+# reader that gets only one right is not safe.
+# History: task agent-presence-reader.
 
 require "minitest/autorun"
 require "json"
@@ -124,20 +110,13 @@ class AgentPresenceIntegrationTest < Minitest::Test
     table = ProcessTable.process_table
     row = table.find { |p| p[:pid] == pid }
     refute_nil row, "a GONE process leaves no row — this test needs a process that exists"
-    # This precondition means "the process is ALIVE" — present in the table and not a
-    # zombie. It used to read `assert_match(/\AS/, row[:state])`: a one-letter prefix
-    # test for SLEEPING, standing in for liveness by accident.
-    #
-    # SLEEPING is not a property this process guarantees. On 2026-09-02 it sampled as
-    # "D" — uninterruptible I/O: alive, but blocked in the kernel — and reddened
-    # studio-engine PR #265 on hub shard 3 (Consumer CI run 33672861848, attempt 1); a
-    # re-run of the same head passed. Any non-S state does it. Liveness is the property
-    # under test, and it does not flicker.
-    #
-    # So exclude what is NOT alive rather than name what is: GONE by the refute_nil
-    # above, ZOMBIE by the check below. Both are preconditions for legibility, not
-    # coverage — either also fails the grade assertion that follows, the real subject.
-    # Injecting a table here would assert that conclusion, so the process stays REAL.
+    # This precondition means the process is ALIVE (in the table, not a zombie), not a prefix test
+    # for SLEEPING: it can sample "D" (uninterruptible I/O) or any non-S state. Liveness is the
+    # property under test, and it does not flicker.
+    # Exclude what is NOT alive: GONE by the refute_nil above, ZOMBIE by the check below. Both are
+    # preconditions for legibility, not coverage; either also fails the grade assertion that
+    # follows. Injecting a table would assert that conclusion, so the process stays REAL.
+    # History: task process-state-assertion-flakes.
     refute_match(/\AZ/, row[:state].to_s,
                  "a zombie holds no DB connection and is not the live process this test needs")
 
@@ -298,19 +277,12 @@ class AgentPresenceIntegrationTest < Minitest::Test
     assert_match(/unrecognized argument/, out)
     assert_match(/NOTHING was read/, out)
   end
-  # --- the supervisor claim, end to end through the REAL writer -------------------
-  #
-  # WHY THIS TIER AND NOT A STRING ASSERTION. A unit test that asserts the glob
-  # PATTERN proves the pattern is present, not that it matches anything — and the
-  # whole defect this slice fixes was a reader one glob short. So these write a real
-  # claim with the real writer, glob it off a real disk, and grade it against a real
-  # `ps`. If the writer's filename and the reader's glob ever disagree, nothing here
-  # can stay green.
-  #
-  # Measured live on 2026-09-01 BEFORE this hop existed: a `bin/submit` parked in its
-  # CI wait, publishing `waiting/idle` on disk, was still reported by this reader
-  # under `backstop:` as UNATTRIBUTED — and the machine called BUSY on the strength
-  # of it. The claim was correct; nothing read it.
+  # --- the supervisor claim, end to end through the REAL writer ---
+  # A unit test asserting the glob PATTERN proves it is present, not that it matches anything. So
+  # these write a real claim with the real writer, glob it off a real disk, and grade it against a
+  # real `ps`. If the writer's filename and the reader's glob ever disagree, nothing here can stay
+  # green.
+  # History: task certs-publish-no-phase.
 
   def publish_claim(root, pid:, phase:, weight:, kind: "ship", lane: nil)
     claim = PresenceClaim.open(

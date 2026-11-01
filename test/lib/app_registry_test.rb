@@ -1,16 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] The registry cross-check: config/apps.yml (AppCatalog) is the record of
-# every app's identity, tier and status, and the hand-kept registries that still
-# have their own readers must agree with it. config/satellites.yml (ports, navbar,
-# bin/ecosystem-build), config/release_repos.yml (how each repo ships) and
-# config/qa_environments.yml (QA and production targets) are each read here and
-# compared row by row; any slug, port, Heroku app, production URL, status word
-# or engine flag that disagrees is named in the failure.
-#
-# Adding an app: add its record to config/apps.yml, run this file, and fix what
-# it names. Each rule below also has a test that breaks one row and expects the
-# rule to name it, so a rule that stops biting fails too.
+# [unit] The registry cross-check: config/apps.yml (AppCatalog) is the record of every app's
+# identity, tier and status. config/satellites.yml (ports, navbar, bin/ecosystem-build),
+# config/release_repos.yml (how each repo ships) and config/qa_environments.yml (QA and
+# production targets) must agree, row by row; a disagreeing slug, port, Heroku app, production
+# URL, status word or engine flag is named. Adding an app: add its record to config/apps.yml,
+# run this file, and fix what it names. Each rule also has a test that breaks one row and
+# expects the rule to name it.
+# History: task one-app-catalog-config.
 
 require "minitest/autorun"
 require "yaml"

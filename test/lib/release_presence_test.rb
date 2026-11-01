@@ -1,40 +1,13 @@
 # frozen_string_literal: true
 
-# A SWEEP MUST PUBLISH, LOCALLY, THAT IT IS CONSUMING THIS MACHINE.
-#
-# Slice 4 of docs/agents/system/agent-presence.md. The measured cost this closes: a
-# 45-minute full-suite run SIGTERMed at its 2700s ceiling having completed 11% of its
-# tests, saturated by a `bin/release prepare` sweep that no status command reported.
-#
-# The sweep was never UNCLAIMED. It already takes a board `assembler` conductor claim
-# (answering "is a release live", remotely, on a TTL, and read by exactly one caller in
-# the ecosystem) and flocks under `.agents/locks` (invisible to anything not already
-# contending for them). Neither answers "is THIS MACHINE saturated", and only that one
-# decides whether a peer may launch a suite.
-#
-# WHAT THESE TESTS PIN, and why each is a property rather than a spelling:
-#
-#   1. The claim lands where the slice-1 reader ALREADY globs — asserted by calling that
-#      reader, not by restating its glob. A claim the reader cannot see closes nothing.
-#   2. It carries the OS's (pid, lstart) identity for BOTH subjects, and BOTH name a
-#      process this writer IS. `bin/release` inherits its process group, so recording
-#      that group makes a killed sweep read `:live` forever.
-#   3. A KILLED writer's claim grades DEAD on the very next read — no timeout to elapse,
-#      no renewal to miss, so the wedge window is zero rather than one TTL.
-#   4. Two conductors at once BOTH publish and are BOTH counted. This REPLACED an
-#      earlier never-clobber rule: the claim used to share one runlock slot per root, so
-#      a second conductor had to refuse and publish nothing. In the marker namespace
-#      there is no shared slot, and counting both is the accurate answer.
-#   5. A scope's presence weight comes from the REGISTRY, so a scope added later cannot
-#      silently inherit `suite` from a call site nobody revisits.
-#
-# The tier boundary: everything here grades hand-built claims or claims this process
-# wrote. The property the whole design rests on — that a REAL SIGKILL leaves a corpse the
-# REAL reader recognises — is not provable at this tier and lives in
-# test/lib/release_presence_integration_test.rb.
-#
-# Run directly:
-#   ruby -Itest test/lib/release_presence_test.rb
+# A SWEEP MUST PUBLISH, LOCALLY, THAT IT IS CONSUMING THIS MACHINE (agent-presence.md, slice 4).
+#   1. The claim lands where the slice-1 reader ALREADY globs; asserted by calling that reader.
+#   2. (pid, lstart) for BOTH subjects, each a process this writer IS: `bin/release` inherits
+#      its process group, so recording that group makes a killed sweep read `:live` forever.
+#   3. A KILLED writer's claim grades DEAD on the very next read. 4. Two conductors BOTH count.
+#   5. A scope's presence weight comes from the REGISTRY, so a later one cannot inherit `suite`.
+# A REAL SIGKILL is proved in test/lib/release_presence_integration_test.rb, not at this tier.
+# History: task sweeps-publish-local-claim.
 
 require "minitest/autorun"
 require "json"

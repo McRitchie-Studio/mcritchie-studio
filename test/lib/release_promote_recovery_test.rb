@@ -1,26 +1,13 @@
 require "test_helper"
 
 # The promote step's ECHO PLACEMENT, asserted against bin/release.rb's own source.
-#
-# Release::GhFailure owns what the recovery SAYS and is unit-tested on that. What
-# no behavioural test in this repo can reach is whether bin/release actually calls
-# it on the path that matters — `promote_accepted_to_release!` is a top-level def
-# in a 6,600-line CLI that boots nothing and cannot be loaded into a test process
-# (test/lib/session_env_test.rb documents what require_relative'ing an autoloadable
-# path does to a Rails run). So the seam is pinned where it actually broke: in the
-# source order.
-#
-# THE DEFECT. The step echoed gh's captured output with
-#
-#   say(merge_out.strip) if ok && !merge_out.strip.empty?
-#   if !ok && pr_merged?(pr_url) ... ok = true end
-#
-# — the echo ABOVE the fallback, gated on an `ok` the fallback had not yet set. So
-# the interrupted-run recovery, the one path where gh's line ("… is already
-# merged") is the EVIDENCE for continuing, was the one path that discarded it. It
-# broke by being in the wrong ORDER, and every functional test passed anyway. That
-# is the shape release_merge_forward_test.rb exists for, and this is the same shape
-# one function over.
+# Release::GhFailure owns what recovery SAYS; `promote_accepted_to_release!` is a top-level def
+# in a CLI that cannot be loaded into a test process (test/lib/session_env_test.rb), so the seam
+# is pinned in source order.
+# The echo must not sit above the `pr_merged?` fallback, gated on an `ok` it has not yet set: in
+# the interrupted-run recovery gh's line ("... is already merged") is the EVIDENCE for
+# continuing. Same shape as release_merge_forward_test.rb.
+# History: task detect-engine-migration-content-drift.
 class ReleasePromoteRecoveryTest < ActiveSupport::TestCase
   SOURCE = Rails.root.join("bin/release.rb").read.freeze
 

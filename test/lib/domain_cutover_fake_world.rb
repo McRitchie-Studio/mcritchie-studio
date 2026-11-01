@@ -1,15 +1,12 @@
 # frozen_string_literal: true
 
-# DomainCutoverFakeWorld — an in-memory internet for bin/lib/domain_cutover: the
-# two DoH resolvers, RDAP, Cloudflare's API and Heroku's API, behind the one
-# Transport#call seam the library uses. Nothing here opens a socket.
-#
-# The world is stateful the way the real one is: a zone created over the API
-# starts `pending` and EMPTY (Cloudflare's import can come back empty), the
-# resolvers answer from the OLD zone until `delegate_to_cloudflare!`, a PUT on
-# activation_check activates the zone only once the registry shows its
-# nameservers, Heroku's config-vars read lags one read behind a PATCH, and ACM
-# issues only after a refresh made while the bare domain resolves.
+# DomainCutoverFakeWorld: an in-memory internet for bin/lib/domain_cutover (two DoH resolvers,
+# RDAP, Cloudflare's API, Heroku's API) behind the one Transport#call seam. Nothing opens a
+# socket. It is stateful like the real one: a new zone starts `pending` and EMPTY, resolvers
+# answer from the OLD zone until `delegate_to_cloudflare!`, a PUT on activation_check activates
+# only once the registry shows its nameservers, Heroku's config-vars read lags one read behind a
+# PATCH, and ACM issues only after a refresh made while the bare domain resolves.
+# History: task domain-cutover-command.
 
 require "json"
 require "uri"

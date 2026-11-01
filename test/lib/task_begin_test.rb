@@ -1,16 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] Harness tests for `bin/task begin` — the fast-lane session-start
-# wrapper (create → agent-worktree new → bind-task → move building →
-# session-preflight, one command, resumable). Follows the two house patterns
-# together: the board is a localhost stub HTTP server (test/lib/task_cli_test.rb)
-# so the create/claim writes are asserted as real requests — including the child
-# `move building` the wrapper spawns — while the worktree/preflight tools are
-# logging stubs via the TASK_BEGIN_* seams (test/lib/fast_check_test.rb). The
-# slug derivation is unit-tested in test/lib/fast_lane_test.rb.
-# Run directly:
-#   ruby -Itest test/lib/task_begin_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [integration] Harness tests for `bin/task begin`, the fast-lane session-start wrapper (create
+# -> agent-worktree new -> bind-task -> move building -> session-preflight, one command,
+# resumable). The board is a localhost stub HTTP server (test/lib/task_cli_test.rb), so the
+# create/claim writes and the child `move building` are real requests; worktree/preflight tools
+# are logging stubs via the TASK_BEGIN_* seams (test/lib/fast_check_test.rb). Slug derivation:
+# test/lib/fast_lane_test.rb.
+# History: task detect-engine-migration-content-drift.
 
 require "minitest/autorun"
 require "json"
@@ -254,15 +250,12 @@ class TaskBeginTest < Minitest::Test
     assert_includes out, "bin/submit #{SLUG}", "the summary must name the handoff twin"
   end
 
-  # [unit] begin invokes preflight against the WORKTREE root — the
-  # begin-preflight-wrong-root bug. begin ran the PRIMARY's copy of
-  # session-preflight (BinHelpers.bin_for resolves it relative to bin/task's own
-  # dir), and session-preflight resolves its root from __dir__, so `chdir: worktree`
-  # was cosmetic — it silently inspected the PRIMARY. That is a false GREEN (a desk
-  # it never examined reads "OK") and, whenever the primary drifts behind accepted
-  # (routine), a false RED that EXITS begin non-zero. The fix pins the inspected
-  # root by passing --root <worktree>; assert that handle is present and points at
-  # the task's worktree, not the primary.
+  # [unit] begin invokes preflight against the WORKTREE root (the begin-preflight-wrong-root bug).
+  # session-preflight resolves its root from __dir__ and begin runs the PRIMARY's copy
+  # (BinHelpers.bin_for), so `chdir: worktree` is cosmetic: a false GREEN on a desk it never
+  # examined, a false RED when the primary drifts. Pin with --root <worktree>; assert it points at
+  # the task's worktree.
+  # History: task detect-engine-migration-content-drift.
   def test_begin_pins_preflight_root_to_the_worktree
     _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task)
 
@@ -279,22 +272,14 @@ class TaskBeginTest < Minitest::Test
                  "preflight's --root must be the task worktree, not the primary checkout"
   end
 
-  # [integration] THE LAST LINE BEGIN PRINTS IS AN INSTRUCTION, AND IT MUST RESOLVE.
-  # begin used to close with `hand off with: bin/submit <slug>` — the BARE form, which
-  # resolves only from a hub desk. Every fast-lane script lives in mcritchie-studio/bin
-  # alone, so a builder on a turf-monster or rolio desk who followed the tool's own
-  # hint got `nohup: bin/submit: No such file or directory`. PR #1334 fixed the same
-  # sentence in the docs; this pins the half the TOOL speaks, which is the half that
-  # wins, because it speaks last and at the moment of action.
-  #
-  # THE ASSERTION IS KEYED ON THE FILESYSTEM, NOT THE WORDING: whatever begin prints,
-  # the script named must be an absolute path to an existing executable, and the desk
-  # named must be the task's worktree — the cwd is the other half of the instruction
-  # (bin/submit roots at the cwd's git toplevel and RE-ROOTS at the desk loudly rather than
-  # refusing, and dying with the root guard's refusal only when no desk resolves; the cert
-  # WRITERS run by hand afterwards refuse ANY foreign root). Remedy.handoff's
-  # own arms are unit-tested in test/lib/fast_lane_test.rb; THIS test is the wiring, and
-  # it is what reddens if the bare form is ever restored here.
+  # [integration] THE LAST LINE BEGIN PRINTS IS AN INSTRUCTION, AND IT MUST RESOLVE. A BARE
+  # `bin/submit <slug>` resolves only from a hub desk.
+  # THE ASSERTION IS KEYED ON THE FILESYSTEM, NOT THE WORDING: the script named must be an
+  # absolute path to an existing executable, the desk named must be the task's worktree
+  # (bin/submit roots at the cwd's git toplevel; the cert WRITERS run by hand refuse ANY foreign
+  # root).
+  # Remedy.handoff's arms are unit-tested in test/lib/fast_lane_test.rb; THIS is the wiring.
+  # History: task task-prints-bare-ship-path.
   def test_begin_prints_a_handoff_that_resolves_from_the_desk
     _requests, out, err, status, = run_begin([SLUG], existing: building_task)
 
@@ -918,16 +903,13 @@ class TaskBeginTest < Minitest::Test
   end
 end
 
-# [integration] `bin/task begin` end to end on a machine that holds a harness key
-# (docs/agents/system/agent-sessions-design.md, section 9, questions 4 to 6). The
-# board is a localhost stub that records the bearer on every request, and the key
-# sits in a tmpdir projects root; the worktree and preflight tools are logging
-# stubs (the house pattern of test/lib/task_begin_test.rb).
-#
-# On a keyed machine begin reads, creates, claims and logs in with the key and
-# never exchanges the shared secret; its owed note rides the login it minted. A
-# machine with no key, or whose key the board refuses, still presents the
-# shared token (question 6).
+# [integration] `bin/task begin` end to end on a machine holding a harness key
+# (docs/agents/system/agent-sessions-design.md, section 9, questions 4 to 6). The stub records
+# the bearer on every request; the key sits in a tmpdir projects root.
+# On a keyed machine begin reads, creates, claims and logs in with the key and never exchanges
+# the shared secret; its owed note rides the login it minted. No key, or a refused key: still
+# presents the shared token (question 6).
+# History: task harness-key-reads-and-doors.
 
 require "time"
 require_relative "../support/task_usage_sandbox"

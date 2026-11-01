@@ -2,21 +2,14 @@
 
 require "minitest/autorun"
 
-# THE REVIEWER HALF'S WIRING (/tasks/review-guards-stacked-prs).
-#
-# merge_feature_pr used to read baseRefName, retarget ANY non-`accepted` base, and merge one
-# line later. Measured 2026-09-13: turf #701 was stacked on turf #624 while #624 was HELD for
-# a credential rotation, so popping #701 would have put the held signing-key change on
-# `accepted`. `--match-head-commit` cannot catch it, because retargeting moves what the PR
-# MERGES while the head stays exactly where the reviewer validated it.
-#
-# WHAT THIS FILE CAN AND CANNOT PROVE, stated because it decided the design. bin/pr-review has
-# no execution harness — every test of it reads its SOURCE — and a source test CANNOT see a
-# disabled branch: a mutant that replaced the refusal's condition with `if false` left the
-# refusal text sitting in dead code and every assertion here green. So the decision does not
-# live in the script any more. It lives in StackedPr.guard_base, where test/lib/
-# stacked_pr_test.rb drives it with a SPY writer and asserts that a stack retargets NOTHING.
-# This file pins only the wiring: that the script asks that function and honours its answer.
+# THE REVIEWER HALF'S WIRING. merge_feature_pr must not retarget a stack and merge: that puts a
+# held parent's change on `accepted`. `--match-head-commit` cannot catch it: retargeting moves
+# what the PR MERGES while the head stays put.
+# bin/pr-review has no execution harness, and a source test CANNOT see a disabled branch. So the
+# decision lives in StackedPr.guard_base, where test/lib/stacked_pr_test.rb drives it with a SPY
+# writer and asserts a stack retargets NOTHING. This file pins only the wiring: the script asks
+# that function and honours its answer.
+# History: task review-guards-stacked-prs.
 class PrReviewStackedBaseTest < Minitest::Test
   SRC = File.read(File.expand_path("../../bin/pr-review", __dir__))
 

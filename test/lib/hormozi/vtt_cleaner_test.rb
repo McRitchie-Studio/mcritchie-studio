@@ -3,21 +3,12 @@
 require "minitest/autorun"
 require_relative "../../../lib/hormozi/vtt_cleaner"
 
-# [unit] THE ROLLING WINDOW SAYS EVERYTHING THREE TIMES — and a transcript that
-# says everything three times is what we would have paid an extraction pass to
-# read.
-#
-# THE SHAPE OF THE DEFECT. A YouTube auto-caption file is not a transcript. Each
-# cue repeats the tail of the cue before it and adds a few new words, and each
-# cue is emitted twice: once carrying inline `<00:00:04.480><c> word</c>`
-# timings, once plain. Naively concatenating the cue text triples the corpus.
-#
-# WHAT THAT COSTS. The fixture below is nine spoken words. Concatenated
-# naively it is nineteen — so a 600-hour corpus bills as 1,800 hours of
-# reading, and the extraction agent spends its context re-reading a stutter
-# instead of learning the method. The merge is by LONGEST word overlap, so the
-# duplicate cue contributes nothing and the rolling cue contributes only its
-# new words.
+# [unit] THE ROLLING WINDOW SAYS EVERYTHING THREE TIMES. A YouTube auto-caption file is not
+# a transcript: each cue repeats the tail of the one before and adds a few words, and each
+# is emitted twice, once with inline `<00:00:04.480><c> word</c>` timings, once plain. Naive
+# concatenation triples the corpus. The merge is by LONGEST word overlap, so the duplicate
+# cue contributes nothing and the rolling cue only its new words.
+# History: task hormozi-corpus-pipeline.
 class VttCleanerTest < Minitest::Test
   ROLLING_WINDOW = <<~VTT
     WEBVTT

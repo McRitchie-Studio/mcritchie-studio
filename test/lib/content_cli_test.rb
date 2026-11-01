@@ -1,21 +1,11 @@
 # frozen_string_literal: true
 
-# [integration] bin/content's SESSION — the string that is the entire proof of a
-# content claim, driven through the real script against a stub board.
-#
-# THE DEFECT (found at PR 1498's review, verified 2026-09-22). The id was derived
-# from `tmp/content-session` — ONE FILE PER CHECKOUT — while
-# docs/agents/agents/turf_monster/sops/content-build.md sends every soul to the
-# hub primary. Two souls therefore presented the SAME string, so the server's
-# write guard — which is correct, and which refuses the moment two sessions differ
-# — could not tell them apart, and the sequence the lease exists to prevent went
-# through. The guard was never the problem; what it authenticated was.
-#
-# The board is a local HTTP stub that RECORDS the session each claim carries, so
-# these assert on the wire rather than on the script's own reporting.
-#
-#   ruby -Itest test/lib/content_cli_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [integration] bin/content's SESSION: the string that is the entire proof of a content claim,
+# driven through the real script against a stub board. The id must not be one per checkout:
+# docs/agents/agents/turf_monster/sops/content-build.md sends every soul to the hub primary,
+# so two souls would present one string and the server's write guard, which is correct, could
+# not tell them apart. The stub RECORDS each claim's session, so these assert on the wire.
+# History: task session-identifies-checkout-not-soul.
 
 require "minitest/autorun"
 require "open3"
@@ -29,18 +19,14 @@ class ContentCliTest < Minitest::Test
   BIN  = File.expand_path("../../bin/content", __dir__)
   ROOT = File.expand_path("../..", __dir__)
 
-  # The per-agent-process session files this script derives, namespaced so a run
-  # here can never collide with a real one sitting in the same checkout.
-  #
-  # UNIQUE PER (WORKER, TEST) — NOT a shared constant, and that is the whole point.
-  # These files live in the REPO's tmp/, which every parallel worker shares, while
-  # `teardown` deletes what its own test used. With ONE shared nonce across six
-  # tests, a sibling worker's teardown deleted the file mid-test and `bin/content`
-  # minted a fresh id, so the claim/release pairing assertion failed. Measured on CI
-  # (PR #1553, shard 4) and then reproduced deterministically here by deleting the
-  # shared path in a loop while the test ran. Rails' `parallelize` gives each worker
-  # its own DATABASE, never its own filesystem — any fixture written under the repo
-  # root has to carry the pid.
+  # The per-agent-process session files this script derives, namespaced so a run here can never
+  # collide with a real one in the same checkout.
+  # UNIQUE PER (WORKER, TEST), NOT a shared constant. They live in the REPO's tmp/, shared by
+  # parallel workers, while `teardown` deletes its own: with a shared nonce a sibling's teardown
+  # deletes the file mid-test, `bin/content` mints a fresh id, and the pairing assertion fails.
+  # `parallelize` gives each worker its own DATABASE, never its own filesystem: any fixture
+  # under the repo root must carry the pid.
+  # History: task session-identifies-checkout-not-soul.
   NONCE_PREFIX = "contentclitest"
 
   def setup
