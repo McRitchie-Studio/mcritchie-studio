@@ -146,4 +146,9 @@ class SlackOperateOnGoTest < ActiveSupport::TestCase
                  go.reload.response_text)
     assert_empty @transport.calls
   end
+
+  test "a proposal made in Slack records Slack as where it was asked, with the message's own link" do
+    assert_equal "Slack", @proposal.requested_in
+    assert_match(%r{/archives/#{CHAN}/p#{ROOT.delete('.')}\z}, @proposal.thread_url)
+  end
 end

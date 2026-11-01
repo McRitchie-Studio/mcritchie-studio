@@ -2,7 +2,7 @@ module AgentMessages
   # The owner's word on an open proposal, handled IN CODE before any model sees
   # it (docs/agents/system/agent-message-loop.md, "Proposals and confirm").
   #
-  # DiscordIngest asks first: is this message in a thread (thread_key, channel,
+  # DiscordIngest (and Slack and Teams, through ChatIngest#confirm) asks first: is this message in a thread (thread_key, channel,
   # guild, channel ref, as the THREAD layer scopes it) with a pending
   # AgentProposal, and is its text exactly `go`, `no` or `change: …` (trimmed,
   # any case, leading @-mentions ignored)? Only then does this class store it:
