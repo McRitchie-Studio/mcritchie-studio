@@ -53,6 +53,8 @@ domains:
     # Avi, McRitchie Studio's CTO, is the front door (Alex McRitchie, 2026-10-15).
     # Mason and the specialists answer here from their role and this doc, with no
     # catalog; so does Alex, the client-facing agent, until alex_build seats him.
+    # On Slack, Alex McRitchie's own message to a scoped soul (Mason, Mack) also
+    # gets read-only tools inside its scope: config/agent_scopes.yml.
     soul: avi
     reply_name: Avi
     repos: [mcritchie-studio]

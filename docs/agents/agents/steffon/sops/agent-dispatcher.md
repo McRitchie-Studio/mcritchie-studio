@@ -91,6 +91,9 @@ The dispatcher will take it on its next poll; a hand claim only competes with it
 | What you watch | `/admin/agent_messages`: the dispatcher row (live, paused, silent) above the message list |
 
 **Billing.** Claude runs as `claude -p --safe-mode --tools "" --output-format json`
+(a scoped run, Alex McRitchie's own Slack message to Mason or Mack, swaps `--safe-mode`
+for `--restricted` and adds the read-only MCP tool server `bin/agent-scope-mcp`:
+[loop doc](../../../system/agent-message-loop.md#scoped-runs-the-owners-terminal-in-slack))
 under Alex McRitchie's claude.ai login (a web chat message with images or PDFs runs the same
 command with `--output-format stream-json --input-format stream-json --verbose`, and
 the Mac needs ImageMagick's `magick` on the launch agent's PATH to shrink and strip

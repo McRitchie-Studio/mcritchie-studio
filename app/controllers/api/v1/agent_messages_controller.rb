@@ -10,6 +10,8 @@ module Api
     #   POST /api/v1/agent_messages/claim      { soul | souls[], worker, channel?, wait? } -> the claimed message or null
     #   GET  /api/v1/agent_messages/:id/context?worker=W  the holder's context bundle (AgentMessages::MemoryBundle),
     #                                             with the message's files as expiring URLs (`attachments`)
+    #   GET  /api/v1/agent_messages/:id/lookup?worker=W&name=N&params=JSON  one bounded board read for a
+    #                                             SCOPED run (AgentScopes::Lookups); holder-only and owner-only
     #   POST /api/v1/agent_messages/:id/complete { worker, response_text, action_summary?,
     #                                             claude_session_id?, claude_cwd?, reasoning?, run_meta?,
     #                                             notes? }  notes: facts about the sender, filed under the message's author
@@ -38,8 +40,8 @@ module Api
       # Disk service need the request's host; R2 URLs do not.
       include ActiveStorage::SetCurrent
 
-      before_action :load_message, only: [ :show, :context, :complete, :release, :renew, :typing ]
-      before_action :require_soul_scope!, only: [ :next_message, :claim, :context, :complete, :release, :renew, :typing ]
+      before_action :load_message, only: [ :show, :context, :lookup, :complete, :release, :renew, :typing ]
+      before_action :require_soul_scope!, only: [ :next_message, :claim, :context, :lookup, :complete, :release, :renew, :typing ]
 
       LIST_LIMIT = 200
       WAIT_CAP = 20
@@ -140,6 +142,48 @@ module Api
         end
 
         render_data(AgentMessages::MemoryBundle.new(@message).bundle)
+      end
+
+      # One lookup for a SCOPED run (docs/agents/system/agent-message-loop.md,
+      # "Scoped runs: the owner's terminal in Slack"): the dispatcher's tool server
+      # (bin/agent-scope-mcp) calls it while the run that holds this message is
+      # answering. The board checks the floors again, whatever the dispatcher
+      # decided: only the holder; only a scoped channel; only a message whose
+      # person is the owner AND whose author is the configured owner platform id;
+      # never a released hold; only a soul cleared in the channel; only a lookup
+      # the soul's scope names, with params inside the catalog's bounds. A refusal
+      # is 409 (not the holder) or 403/422 and runs nothing. A run is recorded as
+      # a `scoped_lookup` event (name and params, never the answer).
+      def lookup
+        unless @message.claimed? && @message.claimed_by.present? && @message.claimed_by == params[:worker].to_s.strip
+          return render_refusal(AgentMessage::Refused.new(
+            "message #{@message.id} is #{@message.status}; only the worker holding the claim may look anything up",
+            code: "NOT_HOLDER"
+          ))
+        end
+        if (why = scoped_refusal)
+          return render_error("no scoped lookup for this message: #{why}", status: :forbidden, error_code: "NOT_SCOPED")
+        end
+
+        scope = scopes_config.scope_for(@message.soul_slug)
+        name, checked = AgentMailbox::Scopes.check_lookup(params[:name], lookup_params, allowed: scope.lookups)
+        # A fault is an ErrorLog (rescue_and_log re-raises it); an app or entity
+        # the lookup cannot read is an answer, not a fault.
+        unavailable = nil
+        text = rescue_and_log(target: @message) do
+          AgentScopes::Lookups.run(name, checked).tap do
+            @message.events.create!(kind: "scoped_lookup", actor: session_actor(acting_soul),
+                                    detail: { "name" => name, "params" => checked }, created_at: Time.current)
+          end
+        rescue AgentScopes::Lookups::Unavailable => e
+          unavailable = e
+          nil
+        end
+        raise unavailable if unavailable
+
+        render_data({ "name" => name, "params" => checked, "text" => text })
+      rescue AgentMailbox::Scopes::Refused, AgentScopes::Lookups::Unavailable => e
+        render_error(e.message, status: :unprocessable_entity, error_code: "LOOKUP_REFUSED")
       end
 
       def complete
@@ -248,6 +292,37 @@ module Api
         end
         render_refusal(refusal) if refusal
         value
+      end
+
+      def scopes_config = @scopes_config ||= AgentMailbox::Scopes::Config.load(Rails.root.to_s)
+
+      # Why this message may not be looked up for, or nil when it may. The same
+      # floors as AgentMailbox::Scopes.grant, read from the board's own rows.
+      def scoped_refusal
+        scope = scopes_config.scope_for(@message.soul_slug)
+        return "its soul has no lookups" unless scope && scope.lookups.any?
+        return "not on a scoped channel" unless scopes_config.channels.include?(@message.channel.to_s)
+        return "a released hold is never scoped" if @message.hold_released_at.present?
+        return "the sender is not the owner" unless AgentMessages::MemoryBundle.new(@message).audience["role"] == "owner"
+
+        routes = AgentMailbox::Scopes.load_routes(Rails.root.to_s)
+        owner = AgentMailbox::Scopes.owner_user_id(routes, @message.channel)
+        return "the author is not the owner's #{@message.channel} user" if owner.empty? || @message.author_ref.to_s != owner
+        return "the soul is not cleared in this channel" unless
+          AgentMailbox::Scopes.cleared?(routes, @message.channel, @message.channel_ref, @message.soul_slug)
+
+        nil
+      end
+
+      # `params` arrives as one JSON object (Client#lookup); anything else is none.
+      def lookup_params
+        raw = params[:params].to_s
+        return {} if raw.empty?
+
+        parsed = JSON.parse(raw)
+        parsed.is_a?(Hash) ? parsed : raise(AgentMailbox::Scopes::Refused, "params must be a JSON object")
+      rescue JSON::ParserError
+        raise AgentMailbox::Scopes::Refused, "params must be a JSON object"
       end
 
       def render_refusal(error)

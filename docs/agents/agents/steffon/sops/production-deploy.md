@@ -622,7 +622,7 @@ It makes, in order:
    each, and says a production smoke test follows. A repo with no channel (a gem,
    turf-vault) gets none.
 3. **The smoke verdict in that post's thread**, as the same soul. The smoke runs on
-   the conductor's machine (a dispatched soul has no tools): `/up` and home answer
+   the conductor's machine (a dispatched soul cannot reach an app itself): `/up` and home answer
    200, the app runs the shipped SHA, and for the hub the post-ship seal is green.
    **Green is one line** (`✅ smoke green: /up 200, home 200, 2 pages checked`).
    **Red names what failed with its evidence and @-mentions Alex McRitchie.**

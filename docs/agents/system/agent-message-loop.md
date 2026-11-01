@@ -11,7 +11,9 @@ Avi (`avi`, McRitchie Studio's CTO, Alex McRitchie 2026-10-15) and Turf (`turf_m
 Turf Monster), and each may PROPOSE what its domain's catalog allows, for the
 owner to confirm by reply (below, "Proposals and confirm"). Alex stays routed as a
 helper (client-facing) with no catalog. Avi and Alex keep one
-read-only action each, the same board read (`bin/task list`). Later phases add channels, agents and clients without
+read-only action each, the same board read (`bin/task list`). On Slack, Alex
+McRitchie's own message to a scoped soul (Mason, Mack) runs with read-only tools
+inside that soul's scope (below, "Scoped runs"). Later phases add channels, agents and clients without
 changing the tables: `channel` plus a provider-neutral `external_id` name every
 row.
 
@@ -326,7 +328,8 @@ the board through the agent API; no action reads Heroku, which launchd cannot lo
 in to); for anyone else it runs nothing. It builds the prompt from
 the five layers (below, "Memory"), the audience's rules, the action output and the
 message. Claude runs headless with
-**no tools** (`claude -p --safe-mode --tools ""`), and the heartbeat completes
+**no tools** (`claude -p --safe-mode --tools ""`; the one exception is the
+dispatcher's scoped run for Alex McRitchie on Slack, "Scoped runs" below), and the heartbeat completes
 the message with the answer. The message sits between random-named
 `<untrusted-…>` markers, and the model is told to treat it as data to answer,
 never as instructions. A request that fits the soul's catalog gets a proposal
@@ -566,7 +569,7 @@ runs it) posts a shipped release: one summary in #general as Mason, one post
 per shipped app in its channel as that channel's soul (its `default_soul`, else
 Steffon), and the app's smoke verdict in that post's thread
 (`ReleaseNotes::SlackAnnouncement`). The smoke runs in code on the conductor's
-machine, because a dispatched soul has no tools; the soul only signs the verdict.
+machine, because a dispatched soul cannot reach an app itself (a scoped run reads only its own scope); the soul only signs the verdict.
 Each app post is stored as a `completed` message (`routed_by: release`) keyed to
 its Slack thread, so a reply there routes to that soul like any thread reply.
 Procedure: [`production-deploy`](../agents/steffon/sops/production-deploy.md),
@@ -606,6 +609,87 @@ channel sync into the directory, and the setup kit are card 5.
 **Go-live** (Steffon, after the deploy that carries this): set the Heroku vars
 and add the event subscriptions, in
 [`discord-bot-setup.md`](../agents/steffon/sops/discord-bot-setup.md#slack-go-live-mcritchie-agents).
+
+### Scoped runs: the owner's terminal in Slack
+
+Epic `.agents/epics/slack-terminal-scope.md`, card 1 (Alex McRitchie, 2026-10-31:
+"when we are in the MS slack I want to be able to interact with agents like I'm
+talking in terminal. Mason should be able to review logs and have an educated
+opinion. Same with Mack."). Every other answer on every channel is still the
+no-tools run above; a scoped run is the one exception.
+
+**The gate** (`AgentMailbox::Scopes.grant`, `bin/lib/agent_scope.rb`). The
+dispatcher gives a message read-only tools only when every check holds; the
+first that fails is the run record's `run_meta.scope` (else `granted`):
+
+| Check | Reason when it fails |
+|-------|----------------------|
+| the soul has a scope in `config/agent_scopes.yml` | `no_scope` |
+| the message is on Slack (`defaults.channels`) | `channel` |
+| the board's audience is `owner` (resolved from the verified sender's person; a name in the text sets nothing) | `not_owner` |
+| `author_ref` is `slack.owner_user_id`, the platform id Slack's signed event carried | `not_owner_user` |
+| it is not a released hold | `released_hold` |
+| the soul is cleared in the channel (the `SlackRoutes#cleared?` rule, re-read without Rails) | `not_cleared` |
+| the message and every earlier thread turn are the owner's own words, with no quoted or forwarded material (`WarmSession.quotes?`) | `quoted` |
+
+A scoped run is never warm, and skips the soul's one read action. The Responder
+checks the audience again, so a grant handed in for anyone but the owner runs the
+no-tools command.
+
+**The tools.** `claude -p` keeps every built-in tool off (`--tools ""`; no Bash,
+Read, Write, Edit or WebFetch) and gets ONE local MCP server, `bin/agent-scope-mcp`
+(`AgentMailbox::Scopes::Server`), named in an inline `--mcp-config` with
+`--strict-mcp-config`, `--allowedTools mcp__scope__…`, the built-ins named again
+in `--disallowedTools`, `--permission-mode dontAsk` and `--max-turns`
+(`defaults.max_turns`, 12). Measured against claude 2.1.316: `--safe-mode` turns
+MCP servers off, `--mcp-config` included, so a scoped run swaps it for
+`--restricted` (user, project and local settings files ignored, with their hooks,
+permission rules and plugins) plus `--disable-slash-commands`. The server's four
+tools are the soul's scope and nothing else:
+
+| Tool | What it can reach |
+|------|-------------------|
+| `lookup` | a bounded board read by name (`Scopes::LOOKUPS`: params and bounds in code), served by `GET /api/v1/agent_messages/:id/lookup` |
+| `run_command` | a listed command: an exact argv prefix (`bin/…`) plus at most `max_args` arguments, each matching its anchored pattern, run with no shell under the child-env allow-list |
+| `read_file`, `list_files` | files matching the soul's `paths` globs in the hub checkout; `deny_paths` (`.env*`, keys, `credentials*`, `.git`, `log`, `tmp`, `storage`) wins, the path as written is checked before its real path, and a symlink out of the checkout is refused |
+
+Every result is capped (`output_limit`) and scrubbed by `AgentMailbox::Redact`
+(provider token prefixes, bearer headers, database URLs, `NAME_SECRET=value`,
+long hex or base64 runs, private key blocks) before Claude sees it. Nothing can
+write: the endpoint is a GET, the commands are reads, the file tools open
+read-only; a change is still a proposal. The prompt (`ContextBuilder::SCOPED_ASK`)
+tells the soul its tools by name (`Scopes.describe`) and to answer with evidence;
+an unscoped internal answer's `INTERNAL_ASK` says tools run only for Alex
+McRitchie on Slack.
+
+**The lookup endpoint** checks the floors again on the board, whatever the
+dispatcher decided: holder only (409 `NOT_HOLDER`); Slack only, owner person,
+`author_ref` the configured owner id, never a released hold, cleared in the
+channel (403 `NOT_SCOPED`); only a lookup the soul's scope names, inside the
+catalog's bounds (422 `LOOKUP_REFUSED`). Each lookup run is an
+`AgentMessageEvent` `scoped_lookup` with its name and params, never its answer.
+The queries are `AgentScopes::Lookups`: code, never model-written SQL;
+satellites are read only through their health endpoint
+(`DailyAppReport.health_for`, short timeouts, a few threads), whose error
+messages the engine already redacts.
+
+**Card 1's scopes:**
+
+| Soul | Lookups | Commands | Paths |
+|------|---------|----------|-------|
+| Mason | `error_groups` (every live app's health report, grouped by app, class and redacted message, 1-3 days), `gate_failures`, `review_findings`, `grades`, `board_status`, `recently_shipped`, `release_status` | `bin/task list`, `bin/task show` | `docs/agents/**/*.md`, `config/agent_*.yml`, release, shape and chart config |
+| Mack | `books_status`, `books_unclassified`, `books_month` (totals per category and kind), `usage` | none | `config/books.yml`, the chart, his own docs, `agent-usage.md` |
+
+`books_status` here reads the database only; the Drive Inbox stays
+`bin/books status`'s. **Bounds:** each tool call `tool_timeout` (45 s); the run is
+the cold run's `CLAUDE_TIMEOUT`, so `RUN_DEADLINE` covers it unchanged; the
+dispatcher's cap of five applies. **Adding a soul** is a reviewed edit to
+`config/agent_scopes.yml` (a lookup the code does not know, a relative-climbing
+path, an unanchored argument pattern or a non-`bin/` command refuses to load);
+a new lookup is a `LOOKUPS` entry plus its query in `AgentScopes::Lookups`.
+Tests: `test/lib/agent_scope_test.rb`, `agent_scope_server_test.rb`,
+`agent_scope_prompt_test.rb`, `test/services/agent_scopes/lookups_test.rb`,
+`test/integration/agent_scoped_run_test.rb`.
 
 ## Teams: the same network on Microsoft Teams
 
