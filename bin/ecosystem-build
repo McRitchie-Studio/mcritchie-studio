@@ -787,6 +787,7 @@ assert_nfl_contracts() {
 # ─── Phase 6: Bundles + databases ───────────────────────────────────────────
 phase_bundles_dbs() {
   log_phase "Phase 6: Bundles + databases"
+  ensure_checklist_file # the app loop is a subshell: its items need the file named here
 
   for app in "${RAILS_APPS[@]}"; do
     local path="$PROJECTS_DIR/$app"

@@ -57,13 +57,14 @@ class EcosystemBuildNflContractsTest < Minitest::Test
         source #{SCRIPT.shellescape} >/dev/null 2>&1
         PROJECTS_DIR=#{dir.shellescape}
         RAILS_APPS=(mcritchie-studio)
-        bundle() { case "$1 $2" in "check "*) return 0 ;; esac; echo 0; }
+        bundle() { [ "$1" = check ] && return 0; echo 0; }
         ruby() { echo some_db; }
         phase_bundles_dbs
         echo "REACHED STEADY STATE"
       BASH
       out, status = Open3.capture2e("bash", "-c", script)
       assert_equal 1, status.exitstatus, out
+      assert_includes out, "has no active NFL contracts"
       assert_includes out, "Stopped at Phase 6"
       refute_includes out, "REACHED STEADY STATE"
       assert_includes out, "Restore the hub's Spotrac contracts"
