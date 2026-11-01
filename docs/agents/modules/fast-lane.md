@@ -338,8 +338,9 @@ While building:
 4. Write the **test tiers your shape requires as you go**, unit-first. Record them
    tier-tagged: `bin/task update <task> --checks "[unit] ..." --checks
    "[integration] ..."`. For a **bug**, write the failing regression test FIRST,
-   at the lowest tier that reproduces it, as a case in the owning test when one
-   exists. A `ui+db` tier line names a test path, new or existing.
+   at the lowest tier that reproduces it, as a new test case in the owning file
+   when one exists. A `ui+db` tier line names a test path, new or existing: red on
+   revert for new logic, or the covering test, said so, for none.
 
 Before handoff:
 

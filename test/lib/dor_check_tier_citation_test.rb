@@ -55,8 +55,28 @@ class DorCheckTierCitationTest < Minitest::Test
     assert_match(/\[e2e\] line/, run_check(checks).errors.first)
   end
 
-  def test_a_capybara_system_test_answers_e2e_where_there_is_no_playwright
-    assert_empty run_check(CITED[0..2] + ["[e2e] test/system/upload_test.rb"]).errors
+  SYSTEM = "[e2e] test/system/upload_test.rb"
+
+  def test_a_system_test_answers_e2e_only_with_no_playwright_config
+    Dir.mktmpdir do |root|
+      assert_empty run_check(CITED[0..2] + [SYSTEM], root: root).errors, "no Playwright: the lane there is"
+    end
+  end
+
+  %w[playwright.config.js playwright.config.ts].each do |config|
+    define_method("test_#{config.tr(".", "_")}_means_a_system_test_does_not_answer_e2e") do
+      Dir.mktmpdir do |root|
+        File.write(File.join(root, config), "")
+        errors = run_check(CITED[0..2] + [SYSTEM], root: root).errors
+
+        assert_match(/\[e2e\] line .*this repo has Playwright/, errors.first)
+        assert_empty run_check(CITED, root: root).errors, "a spec still answers it"
+      end
+    end
+  end
+
+  def test_an_unreadable_root_holds_the_stricter_form
+    assert_match(/\[e2e\] line/, run_check(CITED[0..2] + [SYSTEM], root: "/no/such/root").errors.first)
   end
 
   def test_a_path_inside_a_longer_word_is_not_a_citation
@@ -90,6 +110,13 @@ class DorCheckTierCitationTest < Minitest::Test
       context = run_check(CITED, changed: ["test/models/upload_test.rb", "e2e/upload.spec.js"], root: root)
       assert_empty context.suggestions, "the :line suffix must not hide a real file"
     end
+  end
+
+  def test_the_refusal_states_both_halves_of_the_bar
+    message = run_check(["[unit] prose"]).errors.first
+
+    assert_match(/New logic at this tier: a test that goes red/, message)
+    assert_match(/No new logic: the test covering the surface/, message)
   end
 
   # ── [integration] the real gate reads the real config ───────────────────────

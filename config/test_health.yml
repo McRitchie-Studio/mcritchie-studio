@@ -28,12 +28,13 @@
 #
 #   line_budget     test lines per repo. REPORT-ONLY for now (enforce: false): at the
 #                   ceiling every PR that adds a test would redden, whatever it is for.
-#                   With enforce: true, a PR over the ceiling fails unless it cuts lines.
-#                   Hard today: the ceiling may only fall below the merge base's.
+#                   With enforce: true, a PR over the ceiling fails unless it adds no lines.
+#                   Hard today: both written limits, the ceiling and max_lines, may only
+#                   fall below the merge base's, and neither they nor a root may go.
 #                   Every run also prints the diff's net test and production lines.
 #
-# The merge base is the one copy of these counts an author's diff cannot move, so only
-# the budget's ceiling is written down, and that number is itself ratcheted.
+# The merge base is the one copy of these counts an author's diff cannot move. Only
+# the ceiling and max_lines are written down, and each is itself ratcheted against it.
 assertion_free: 0
 
 comment_blocks:

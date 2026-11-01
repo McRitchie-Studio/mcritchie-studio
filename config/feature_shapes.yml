@@ -59,8 +59,11 @@
 #     `bin/rails db:test:prepare test test:system`. So unit, component and integration ARE
 #     collected, and so is a REAL browser lane — but a Capybara `test:system` one, which is
 #     not the `e2e` tier this file means (playwright, chromium-only, per the ui+db note).
-#     A `ui+db` task in Industries therefore demands `e2e`, dor-check credits whatever tag a
-#     builder types, and the honest builder has nowhere to go. Hit live on 2026-08-13 by
+#     A `ui+db` task in Industries therefore demands `e2e` with no Playwright lane to meet
+#     it. Its one honest answer is `cited_tiers`' fallback: a `test/system/` path, credited
+#     only in a repo with no playwright.config, as the nearest lane rather than the tier.
+#     `onchain-vertical`, with no `cited_tiers`, still credits whatever tag a builder types.
+#     Hit live on 2026-08-13 by
 #     /tasks/recover-industries-engine-adoption, which was reclassified to `backend` rather
 #     than fabricate the tag — a correct call for that diff (no first-party UI code), and NOT
 #     a general escape: the next genuinely ui+db change here has no such out.
@@ -69,13 +72,13 @@
 #     Added 2026-10-12 with its QA copy. Industries' shape exactly: its ci.yml calls the
 #     hub's reusable-ci.yml with `playwright: false`, and its system lane runs
 #     `bin/rails db:test:prepare test test:system` (Capybara, test/system/). A `ui+db` task
-#     here has the same no-honest-out problem as Industries above.
+#     here has the same gap as Industries above, and the same `test/system/` fallback.
 #   · rolio           — NO playwright lane. NO e2e/ directory AT ALL.      e2e **NOT COLLECTED**.
-#     A `ui+db` task in rolio therefore demands the `e2e` tier that nothing in rolio runs, and
-#     bin/dor-check credits the `[e2e]` tag a builder types. That is THE ORIGINAL BUG of
-#     /tasks/e2e-tiers-are-decorative (raised 2026-07-13), still breathing, one repo over.
-#     Rolio rides the release on the three-rung ladder, so this is a live gap: a `ui+db`
-#     rolio task has no honest `e2e` line until rolio grows a playwright lane.
+#     A `ui+db` task in rolio therefore demands the `e2e` tier that nothing in rolio runs;
+#     it may cite `test/system/`, the same fallback, and no bare `[e2e]` tag is credited.
+#     That gap is the remainder of /tasks/e2e-tiers-are-decorative (raised 2026-07-13).
+#     Rolio rides the release on the three-rung ladder, so it stays live until rolio
+#     grows a playwright lane.
 #   · studio-engine, solana-studio, turf-vault — libraries/programs; no shape here demands e2e
 #     of them (`library`/`onchain` are unit+integration). NB this row is about TIER DEMAND,
 #     not lane absence: studio-engine added a playwright lane on 2026-08-12 (e2e/ +
@@ -139,11 +142,14 @@
 #
 #   cited_tiers: [<tier>, ...]
 #     Each listed tier needs a checks_run line that NAMES a test: `test/…` for unit,
-#     component and integration, `e2e/….spec.js` or `test/system/….rb` for e2e. The
-#     test may be new or existing. So a change with no new logic at a tier cites the
-#     test that already covers it instead of minting one; every tier stays demanded.
-#     The bar is the same either way: the cited test exercises this change and goes
-#     red if the change is reverted, and review re-runs one.
+#     component and integration; `e2e/….spec.js` for e2e, or `test/system/….rb` only in
+#     a repo with no playwright.config (bin/lib/dor/checks/tier_citation.rb reads the
+#     root). New or existing, every tier stays demanded. Two cases, one per tier:
+#       NEW LOGIC at this tier: the cited test goes red when the change is reverted.
+#       NO NEW LOGIC at this tier: cite the test covering the surface the change passes
+#       through, and say so on the line. It may stay green on revert; the tier that
+#       holds the logic is the one that must go red.
+#     Review opens every citation and reverts one (pr-review-primary.md, step 3).
 #
 #   claimable_when: test_only_diff | docs_with_guards_diff
 #     The shape may be claimed ONLY on a diff bin/dor-check OBSERVES to match it.
@@ -192,8 +198,10 @@ shapes:
     cited_tiers: [unit, component, integration, e2e]
     required_metadata: [acceptance, repositories, risk_tags, test_plan, local_url]
     notes: >-
-      Answer each tier by citing the test that covers the change there. Write a new
-      test only when none does: extend the owning test or table first.
+      Answer each tier by citing the test that covers the change there, under the
+      two cases in `cited_tiers` above. Write a new test only when none meets them:
+      extend the owning test or table first. In a repo with Playwright, a new flow
+      owes a spec under e2e/, new or extended; test/system does not answer it.
 
       e2e here is the happy path, CHROMIUM ONLY (playwright.config.js runs one project) —
       there is no browser matrix and no nightly backstop anywhere in the ecosystem. If a flow

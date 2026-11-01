@@ -270,6 +270,10 @@ bin/triage file --title "…" --prior-art "TM's deleted preview view carried the
 
 ### Review traps
 
+- **A cited tier is a claim to open.** The gate checks a `cited_tiers` line's form,
+  never its truth. The primary opens each cited test, reverts the change and re-runs
+  one citation from a tier claiming new logic, and scans new test comments for
+  blank-line splits ([step 3](../agents/carl/sops/pr-review-primary.md)).
 - **Pre-existing is not the same as non-blocking.** Ask whether the diff makes more
   paths depend on the defect; if it does, the defect blocks this PR.
 - **Grep call sites on the merge preview, not the fork point.** When a PR changes what

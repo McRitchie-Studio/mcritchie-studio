@@ -181,6 +181,11 @@ class TestHealthRatchetTest < Minitest::Test
     "file renamed"            => [{ "a.rb" => LONG }, { "b.rb" => LONG }, 0],
     "block edited, same size" => [{ "a.rb" => LONG }, { "a.rb" => LONG.sub("1", "x") }, 0],
     "block shrank"            => [{ "a.rb" => LONG }, { "a.rb" => LONG.lines.drop(4).join }, 0],
+    "block re-indented"       => [{ "a.rb" => LONG }, { "a.rb" => LONG.gsub(/^/, "    ") }, 0],
+    "reordered and edited"    => [{ "a.rb" => "#{LONG}#{LONG}#{LONG}\ncode\n\n#{LONG}" },
+                                  { "a.rb" => "#{LONG.upcase}\ncode\n\n#{(LONG * 3).sub("1", "x")}" }, 0],
+    "edited in another file"  => [{ "a.rb" => LONG, "b.rb" => "code\n" }, { "a.rb" => "code\n", "b.rb" => LONG.upcase }, 1],
+    "moved across and edited" => [{ "a.rb" => LONG }, { "b.rb" => LONG.upcase }, 1],
     "block moved in its file" => [{ "a.rb" => LONG }, { "a.rb" => "code\n\n#{LONG}" }, 0] }.each do |name, (base, now, count)|
     define_method("test_new_long_blocks_#{name.tr(" ,", "_")}") do
       assert_equal count, TestHealth.new_long_blocks(now, base, 8).size

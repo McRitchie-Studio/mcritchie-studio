@@ -133,6 +133,13 @@ tasks. If anything is missing, note it as a finding; do not guess.
      origin/accepted:<path>`, `git diff --diff-filter=D --name-only
      origin/accepted...HEAD`), and state the delta in one line. If you did not
      look, write `prior art: not investigated`.
+   - **cited tiers**: on a shape with `cited_tiers` (`ui+db`), open every test
+     `checks_run` cites and confirm it covers this change, then revert the change
+     and re-run one citation from a tier claiming new logic; it must go red. A
+     tier claiming no new logic must say so on its line and cite the surface the
+     change passes through. An unrelated test is a blocker.
+   - **comment splits**: scan new test comments for a long block split by blank
+     lines to dodge the eight-line cap, which `test_health` cannot see.
 
 4. **Collect the light's report and classify every finding.** **A blocker is a
    REACHABLE regression** (correctness, security, data loss, an unmet acceptance

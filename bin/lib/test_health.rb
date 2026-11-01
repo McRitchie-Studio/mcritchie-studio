@@ -215,19 +215,26 @@ module TestHealth
   end
 
   # Long blocks in `now` the base cannot account for. A block the base holds verbatim is
-  # a move; one no longer than a block it replaced in the same file is an edit. Each
-  # base block answers for one block only, so the count of long blocks can only fall.
+  # a move, re-indented or not; one no longer than a block it replaced in the same file
+  # is an edit. Each base block answers for one block only, so the count can only fall.
   def new_long_blocks(now, base, cap)
     changed = (now.keys | base.keys).reject { |path| now[path] == base[path] }
     gone = long_blocks(base.slice(*changed), cap)
     moved = ->(block) { claim(gone) { |old| old[:text] == block[:text] } }
-    edited = ->(block) { claim(gone) { |old| old[:file] == block[:file] && old[:lines] >= block[:lines] } }
+    edited = ->(block) { claim_smallest(gone, block) }
     long_blocks(now.slice(*changed), cap).reject(&moved).reject(&edited)
   end
 
   def claim(pool, &match)
     index = pool.index(&match)
     pool.delete_at(index) if index
+  end
+
+  # The smallest same-file base block that fits, so a reordered pair both find a home.
+  def claim_smallest(pool, block)
+    fits = pool.select { |old| old[:file] == block[:file] && old[:lines] >= block[:lines] }
+    best = fits.min_by { |old| old[:lines] }
+    claim(pool) { |old| old.equal?(best) } if best
   end
 
   # ---- the tree, as git sees it ----------------------------------------------
@@ -299,18 +306,25 @@ module TestHealth
     report[:enforce] && report[:over].positive? && report[:net_test].to_i.positive?
   end
 
-  # The ceiling at `ref`, or nil when the file or key is absent there. It may only fall.
-  def ceiling_at(root, ref)
+  # config/test_health.yml at `ref`, or {} when it is absent or unreadable there.
+  def config_at(root, ref)
     body = blobs(root, ["#{ref}:config/test_health.yml"]).first
-    body && YAML.safe_load(body)&.dig("line_budget", "ceiling")
+    (body && YAML.safe_load(body)) || {}
   rescue Psych::Exception
-    nil
+    {}
   end
 
-  def ceiling_raised?(root, config, ref)
-    before = ceiling_at(root, ref)
-    now = config.dig("line_budget", "ceiling")
-    !before.nil? && (now.nil? || now > before)
+  # What this diff loosened: a limit raised or deleted, or a root dropped from the scan.
+  def loosened(root, config, ref)
+    before = config_at(root, ref)
+    limits = [%w[line_budget ceiling], %w[comment_blocks max_lines]].select do |path|
+      was = before.dig(*path)
+      now = config.dig(*path)
+      !was.nil? && (now.nil? || now > was)
+    end
+    dropped = before["line_budget"] ? test_roots(before) - test_roots(config) : []
+    limits.map { |path| "#{path.last} rose above the merge base's" } +
+      dropped.map { |root_dir| "the test root #{root_dir} left the scan" }
   end
 
   # Everything the shared check reports, for any repo root: a sibling needs no config.
@@ -327,7 +341,7 @@ module TestHealth
       failures << "#{block[:file]}:#{block[:line]} is a #{block[:lines]}-line comment block, new or grown " \
                   "since the merge base; the cap is #{comment_cap(config)}. Keep the why, move the story to the PR."
     end
-    failures << "the test-line ceiling rose above the merge base's" if ref && ceiling_raised?(root, config, ref)
+    failures.concat(loosened(root, config, ref)) if ref
     failures << budget_summary(report) if budget_exceeded?(report)
     { report: report, failures: failures }
   end

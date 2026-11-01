@@ -144,30 +144,74 @@ class TestHealthRatchetIntegrationTest < Minitest::Test
     assert status.success?, "the PR that cuts lines must pass, or nothing can clear the ceiling:\n#{out}"
   end
 
-  def test_raising_the_ceiling_fails_the_build
-    out, status = run_guard(base: {}, budget: "enforce: false\n  ceiling: 100",
-                            now_budget: "enforce: false\n  ceiling: 101")
+  # Each written limit may only fall, and deleting one is raising it to infinity.
+  { "raised ceiling" => ["enforce: false\n  ceiling: 101", "max_lines: 8", /ceiling rose/],
+    "deleted ceiling" => ["enforce: false", "max_lines: 8", /ceiling rose/],
+    "raised cap" => ["enforce: false\n  ceiling: 100", "max_lines: 50", /max_lines rose/],
+    "deleted cap" => ["enforce: false\n  ceiling: 100", nil, /max_lines rose/],
+    "dropped root" => ["enforce: false\n  ceiling: 100\n  roots: [test]", "max_lines: 8", /e2e left the scan/] }
+    .each do |name, (budget, comments, message)|
+    define_method("test_#{name.tr(" ", "_")}_fails_the_build") do
+      out, status = run_guard(base: {}, budget: "enforce: false\n  ceiling: 100\n  roots: [test, e2e]",
+                              now_budget: budget, now_comments: comments)
 
-    refute status.success?, "the ceiling may only fall"
-    assert_match(/ceiling rose/, out)
+      refute status.success?, "#{name} must fail the build"
+      assert_match(message, out)
+    end
+  end
+
+  def test_lowering_both_limits_passes
+    out, status = run_guard(base: { "honest_test.rb" => CLEAN_TEST }, budget: "enforce: false\n  ceiling: 100",
+                            now_budget: "enforce: false\n  ceiling: 99", now_comments: "max_lines: 7")
+
+    assert status.success?, "a limit may always fall:\n#{out}"
   end
 
   # A sibling repo adopts the check with no config at all: real script, real exit code.
   def test_the_shared_script_runs_on_a_repo_with_no_config
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p(File.join(root, "test"))
+      FileUtils.mkdir_p(File.join(root, "e2e"))
       File.write(File.join(root, "test", "a_test.rb"), CLEAN_TEST)
+      File.write(File.join(root, "test", "image.bin"), "\0\n\n\n")
+      File.write(File.join(root, "e2e", "a.spec.js"), "go();\n")
       sha = commit_all(root)
       env = { "TEST_HEALTH_BASE" => sha }
 
       out, status = Open3.capture2e(env, File.join(ROOT, "bin", "test-health"), "--root", root)
       assert status.success?, out
-      assert_match(/^6 test lines \(no ceiling set\)/, out)
+      assert_match(/^7 test lines \(no ceiling set\)/, out)
 
       File.write(File.join(root, "test", "a_test.rb"), LONG_COMMENT + CLEAN_TEST)
       out, status = Open3.capture2e(env, File.join(ROOT, "bin", "test-health"), "--root", root)
       refute status.success?, out
       assert_match(/FAIL test\/a_test\.rb:1/, out)
+    end
+  end
+
+  # The default roots reach e2e/, so a sibling with no config still gets the cap there.
+  def test_the_shared_script_caps_e2e_with_no_config
+    Dir.mktmpdir do |root|
+      FileUtils.mkdir_p(File.join(root, "e2e"))
+      File.write(File.join(root, "e2e", "a.spec.js"), "go();\n")
+      sha = commit_all(root)
+      File.write(File.join(root, "e2e", "a.spec.js"), "#{"// note\n" * 9}go();\n")
+
+      out, status = Open3.capture2e({ "TEST_HEALTH_BASE" => sha }, File.join(ROOT, "bin", "test-health"), "--root", root)
+      refute status.success?, out
+      assert_match(/FAIL e2e\/a\.spec\.js:1/, out)
+    end
+  end
+
+  # Its only fail-closed: no baseline means no verdict, printed and non-zero.
+  def test_the_shared_script_fails_closed_with_no_merge_base
+    Dir.mktmpdir do |root|
+      commit_all(root)
+
+      out, status = Open3.capture2e({ "TEST_HEALTH_BASE" => "no-such-ref" }, File.join(ROOT, "bin", "test-health"),
+                                    "--root", root)
+      refute status.success?, out
+      assert_match(/FAIL no merge base/, out)
     end
   end
 
@@ -184,24 +228,25 @@ class TestHealthRatchetIntegrationTest < Minitest::Test
   # Commit `base` (test/lib files) as the merge base, then write `now` over the working
   # tree, point the REAL guard at it, and return [output, status]. `budget` is the
   # line_budget body at the base; `now_budget` replaces it in the working tree.
-  def run_guard(base:, now: {}, base_ref: nil, budget: "enforce: false", now_budget: budget)
+  def run_guard(base:, now: {}, base_ref: nil, budget: "enforce: false", now_budget: budget,
+                now_comments: "max_lines: 8")
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p(File.join(root, "test", "lib"))
       write_config(root, budget)
       base.each { |name, body| File.write(File.join(root, "test", "lib", name), body) }
       sha = commit_all(root)
       now.each { |name, body| File.write(File.join(root, "test", "lib", name), body) }
-      write_config(root, now_budget) if now_budget
+      write_config(root, now_budget, now_comments) if now_budget
 
       env = { "TEST_HEALTH_ROOT" => root, "TEST_HEALTH_BASE" => base_ref || sha }
       Open3.capture2e(env, RbConfig.ruby, "-I#{File.join(ROOT, "test")}", GUARD)
     end
   end
 
-  def write_config(root, budget)
+  def write_config(root, budget, comments = "max_lines: 8")
     FileUtils.mkdir_p(File.join(root, "config"))
     File.write(File.join(root, "config", "test_health.yml"),
-               "---\nassertion_free: 0\ncomment_blocks:\n  max_lines: 8\nline_budget:\n  #{budget}\n" \
+               "---\nassertion_free: 0\ncomment_blocks:\n  #{comments}\nline_budget:\n  #{budget}\n" \
                "frozen:\n  - #{HOTSPOT}\n")
   end
 
