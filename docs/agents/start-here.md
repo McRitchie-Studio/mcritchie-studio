@@ -84,8 +84,7 @@ its invocation exactly.
 | Prior final audit | `mcritchie-studio/docs/agents/audits/fresh-final-audit-2026-06-15.md` |
 | Prior ecosystem closeout | `mcritchie-studio/docs/agents/audits/final-closeout-2026-06-14.md` |
 | Latest ecosystem audit | `mcritchie-studio/docs/agents/audits/broader-ecosystem-audit-2026-06-14.md` |
-| Delete later ledger | `mcritchie-studio/docs/agents/maintenance/delete-later.md` |
-| Parking lot (kept, not on the board) | `mcritchie-studio/docs/agents/maintenance/parking-lot.md` |
+| Parking lot (kept, not on the board; holds the open removal items) | `mcritchie-studio/docs/agents/maintenance/parking-lot.md` |
 | Dependency decisions (Dependabot backlog verdicts) | `mcritchie-studio/docs/agents/maintenance/dependency-decisions.md` |
 
 ## SOPs and heartbeats

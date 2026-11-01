@@ -470,13 +470,14 @@ GET  /api/v1/desk_records         # read (filters: app, status, worktree_path, o
 ```
 
 **Why this exists.** `bin/agent-worktree` used to append its teardown row to
-`docs/agents/maintenance/delete-later.md`, resolved against the hub checkout. A cleanup
+a markdown ledger, resolved against the hub checkout. A cleanup
 is normally run from the **primary**, which sits on `main` — a branch nobody may commit
 to — so the audit row was created in the one place it could never be saved from. Twelve
 "restore later" stashes carrying 166 rows accumulated, plus the primary's own uncommitted
 tree, and none was ever restored. The records live here now and render on the **Desks
-panel at `/deployments`**. The board starts at 2026-09-01: `bin/harvest-desk-ledger` was never
-run against production, so the stranded rows are not on it.
+panel at `/deployments`**. The 166 stranded rows were imported on 2026-11-01 and carry
+`source: import`; that import path is retired, and a post naming `import_key` answers 410
+`DESK_IMPORT_RETIRED`. The older rows stay in git: [`parking-lot.md`](../maintenance/parking-lot.md#retired-delete-later-ledger).
 
 **Post the registry record verbatim.** The caller sends the hash
 `bin/agent-worktree snapshot` already builds; the server owns the mapping onto columns

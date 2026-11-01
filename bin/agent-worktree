@@ -50,12 +50,11 @@ require_relative "../lib/desk_activity"
 # The managed desk root rule, shared with the board (DeskRecord.sync!) so the two sides
 # cannot disagree about which desks the ledger tracks.
 require_relative "../lib/desk_root"
-# THE DESK LEDGER, on the board. This script no longer writes
-# docs/agents/maintenance/delete-later.md: that file is resolved against HUB_DIR, so a
-# teardown run from the PRIMARY checkout landed its audit row on `main` — a branch nobody
-# may commit to — and 166 rows were stranded in "restore later" stashes that were never
-# restored (recovered by bin/harvest-desk-ledger). The markdown ledger and its archive stay as TRACKED HISTORY and bin/ledger-guard
-# still guards them; new rows go here. See bin/lib/desk_ledger.rb.
+# THE DESK LEDGER, on the board. This script once wrote a markdown ledger resolved against
+# HUB_DIR, so a teardown run from the PRIMARY checkout landed its audit row on `main` — a
+# branch nobody may commit to — and 166 rows were stranded in "restore later" stashes. Those
+# rows reached the board on 2026-11-01 and the markdown ledger is retired. See
+# bin/lib/desk_ledger.rb.
 require_relative "lib/desk_ledger"
 require_relative "lib/projects_root"
 require_relative "lib/cli_arg_guard"

@@ -2,10 +2,10 @@
 
 # [integration] Does `bin/release archive` HONOUR bin/archive-docs' refusal? The bug lived in
 # the CALLER: sweep_docs returns `[out, status.success?]` and both call sites took `.first`, so
-# commit_artifact_to_accepted pushed the refused loss. test/lib/archive_docs_cli_test.rb cannot
-# see that, so this spawns the REAL bin/release.rb across a REAL Open3 boundary; only what the
-# child DOES is faked. A file of its own: the release CLI files are frozen hotspots in
-# `config/test_health.yml`.
+# commit_artifact_to_accepted pushed whatever the sweep left staged. A test of the sub-command's
+# exit code cannot see that, so this spawns the REAL bin/release.rb across a REAL Open3 boundary;
+# only what the child DOES is faked. A file of its own: the release CLI files are frozen hotspots
+# in `config/test_health.yml`.
 # History: task honour-archive-docs-refusal.
 
 require "minitest/autorun"
@@ -17,17 +17,17 @@ require_relative "../support/session_env"
 class ReleaseArchiveDocsRefusalTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 
-  # The marker the commit spy prints. `bin/release archive` reaching this line is the
-  # damage: it is where the lost ledger becomes a commit on `release`.
+  # The marker the commit spy prints. `bin/release archive` reaching this line after a
+  # failed sweep is the damage: a half-finished sweep becomes a commit on `accepted`.
   COMMITTED = "SPY-COMMIT-ARTIFACT-REACHED"
 
   # bin/release's three sweep helpers spawn CWD-RELATIVE commands (`bin/archive-docs`,
   # `bin/agent-worktree`, `bin/clean-artifacts`), so a scratch dir with its own `bin/` controls
-  # the child. `archive_docs_exit`: 0 = happy, 1 = refuses. A --dry-run PREVIEW reports and
-  # exits 0 even when rows are lost (a failing preview would wedge its callers); only an APPLY
-  # refuses.
+  # the child. `archive_docs_exit`: 0 = happy, 1 = fails. `moved` is what a happy sweep reports;
+  # the beat commits only when a doc moved.
   # History: task honour-archive-docs-refusal.
-  def with_stub_bin(archive_docs_exit:, dry_run_exit: 0)
+  def with_stub_bin(archive_docs_exit:, dry_run_exit: 0, moved: 1)
+    summary = %({"moved":#{moved},"moved_paths":#{moved.positive? ? '["docs/agents/audits/frozen-1.md"]' : '[]'}})
     Dir.mktmpdir("release-archive-refusal") do |dir|
       FileUtils.mkdir_p(File.join(dir, "bin"))
 
@@ -35,16 +35,15 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
         for arg in "$@"; do
           if [ "$arg" = "--dry-run" ]; then
             echo "==> Archiving frozen doc snapshots (dry-run — nothing will change)"
-            echo 'archive-docs-summary: {"moved":0,"ledger_rolled":0,"moved_paths":[]}'
+            echo 'archive-docs-summary: #{summary}'
             exit #{dry_run_exit}
           fi
         done
         if [ "#{archive_docs_exit}" -ne 0 ]; then
-          echo "==> DELETE-LATER LEDGER: rows destroyed (already lost before this sweep ran)" >&2
-          echo "delete-later ledger: 2 resolved row(s) DESTROYED against HEAD." >&2
+          echo "SWEEP-FAILED-MARKER" >&2
           exit #{archive_docs_exit}
         fi
-        echo 'archive-docs-summary: {"moved":0,"ledger_rolled":0,"moved_paths":[]}'
+        echo 'archive-docs-summary: #{summary}'
         exit 0
       SH
 
@@ -98,12 +97,10 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
       refute_predicate status, :success?,
                        "bin/release archive must EXIT NON-ZERO when archive-docs refuses — " \
                        "otherwise the refusal is a warning the beat walks past:\n#{out}"
-      assert_includes out, "DELETE-LATER LEDGER",
+      assert_includes out, "SWEEP-FAILED-MARKER",
                        "the refusal the child printed must reach the operator:\n#{out}"
       refute_includes out, COMMITTED,
-                       "commit_artifact_to_accepted MUST NOT run — this is the line that " \
-                       "commits the destroyed ledger to `release` and makes the loss " \
-                       "permanent:\n#{out}"
+                       "commit_artifact_to_accepted MUST NOT run after a failed sweep:\n#{out}"
     end
   end
 
@@ -120,11 +117,23 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
     end
   end
 
+  # [integration] A sweep that moved nothing has nothing to commit. The ledger paths used
+  # to be named on every run, which kept this call non-empty; an empty list now must not
+  # reach the commit at all, and the beat must still finish.
+  def test_release_archive_skips_the_commit_when_no_doc_moved
+    with_stub_bin(archive_docs_exit: 0, moved: 0) do |dir|
+      out, status = run_archive(dir)
+
+      assert_predicate status, :success?, "an empty sweep must not abort the archive beat:\n#{out}"
+      refute_includes out, COMMITTED, "no moved doc means no artifact commit:\n#{out}"
+      assert_includes out, "Retired 0 frozen doc(s)", "the beat still reports the sweep:\n#{out}"
+    end
+  end
+
   # [integration] The PREVIEW call site (the other `.first`). A failing preview must stop
   # the beat too — and it must stop BEFORE the confirm, while nothing has been mutated.
-  # This cannot be reached by the ledger-loss path (a dry run reports and exits 0 on
-  # purpose), so it fires only when the sweep tool itself is broken — exactly when
-  # confirming a sweep you could not preview is worst.
+  # It fires when the sweep tool itself is broken — exactly when confirming a sweep you
+  # could not preview is worst.
   def test_release_archive_halts_when_the_docs_preview_fails
     with_stub_bin(archive_docs_exit: 0, dry_run_exit: 1) do |dir|
       out, status = run_archive(dir)

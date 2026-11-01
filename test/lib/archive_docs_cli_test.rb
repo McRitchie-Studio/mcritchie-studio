@@ -43,23 +43,10 @@ class ArchiveDocsCliTest < Minitest::Test
       write(repo, "docs/agents/modules/live-guide.md", "see [it](../audits/cited-2026-05-02.md)\n")
       write(repo, "docs/agents/maintenance/kickoff-do-the-thing.md", "LIVE HANDOFF — undated\n")
       write(repo, "docs/agents/maintenance/parking-lot.md", "live\n")
-      write(repo, "docs/agents/maintenance/delete-later.md", ledger)
       git(repo, "add", "-A")
       git(repo, "commit", "--quiet", "-m", "fixture")
       yield repo
     end
-  end
-
-  def ledger
-    <<~MD
-      # Delete Later Ledger
-
-      | Path | Type | Why it is a candidate | Safe-delete condition | Status |
-      |------|------|-----------------------|-----------------------|--------|
-      | `/old/one` | worktree | old | done | removed 2026-06-13 |
-      | `/new/two` | worktree | recent | done | removed 2026-07-14 |
-      | `/unresolved/three` | worktree | waiting | needs approval | pending approval |
-    MD
   end
 
   def run_cli(repo, *flags)
@@ -148,59 +135,28 @@ class ArchiveDocsCliTest < Minitest::Test
 
       assert_equal 1, first[:moved]
       assert_equal 0, second[:moved], "a second sweep must find nothing left to retire"
-      assert_equal 0, second[:ledger_rolled]
       assert_empty git(repo, "status", "--porcelain").strip
     end
   end
 
-  # --- the ledger ----------------------------------------------------------
+  # --- the retired ledger ----------------------------------------------------
 
-  def test_the_ledger_rolls_resolved_rows_and_keeps_unresolved_ones
+  # The sweep runs in a real primary, where an old copy of the ledger could still be
+  # lying around in a branch or a working tree. It is an ordinary undated doc now: no
+  # roll, no refusal, nothing staged.
+  def test_a_leftover_ledger_file_is_left_alone
     with_repo do |repo|
-      _out, summary = run_cli(repo)
-
-      live = File.read(File.join(repo, "docs/agents/maintenance/delete-later.md"))
-      archived = File.read(File.join(repo, DocsArchive::LEDGER_ARCHIVE))
-
-      assert_equal 1, summary[:ledger_rolled]
-      assert_equal "2026-07-14", summary[:ledger_cutoff]
-      assert_includes archived, "/old/one"
-      refute_includes live, "/old/one"
-      assert_includes live, "/new/two", "the current cycle stays live"
-      assert_includes live, "pending approval", "unresolved rows never roll"
-      assert_includes live, "| Path | Type |", "the table header survives"
-    end
-  end
-
-  def test_an_explicit_cutoff_overrides_the_derived_one
-    with_repo do |repo|
-      _out, summary = run_cli(repo, "--ledger-cutoff=2026-06-01")
-
-      assert_equal "2026-06-01", summary[:ledger_cutoff]
-      assert_equal 0, summary[:ledger_rolled], "nothing predates 2026-06-01 in this fixture"
-    end
-  end
-
-  # Ledger FIRST, then the doc plan: a ledger row citing a dated doc pins it, so
-  # rolling that row over must free the doc in the SAME run.
-  def test_rolling_a_ledger_row_frees_the_doc_it_cited
-    with_repo do |repo|
-      write(repo, "docs/agents/audits/named-by-ledger-2026-05-03.md", "frozen\n")
-      write(repo, "docs/agents/maintenance/delete-later.md", <<~MD)
-        # Delete Later Ledger
-
-        | Path | Type | Why it is a candidate | Safe-delete condition | Status |
-        |------|------|-----------------------|-----------------------|--------|
-        | `docs/agents/audits/named-by-ledger-2026-05-03.md` | docs | old | done | removed 2026-06-13 |
-        | `/new/two` | worktree | recent | done | removed 2026-07-14 |
-      MD
+      body = "| `/new/two` | worktree | recent | done | removed 2026-07-14 |\n"
+      write(repo, "docs/agents/maintenance/delete-later.md", body)
       git(repo, "add", "-A")
-      git(repo, "commit", "--quiet", "-m", "ledger cites a dated doc")
+      git(repo, "commit", "--quiet", "-m", "stray ledger")
 
       _out, summary = run_cli(repo)
 
-      assert_includes summary[:moved_paths], "docs/agents/audits/named-by-ledger-2026-05-03.md",
-                      "the ledger row rolled over, so it no longer pins the doc it named"
+      assert_equal 1, summary[:moved], "the frozen snapshot still retires"
+      assert_equal body, File.read(File.join(repo, "docs/agents/maintenance/delete-later.md"))
+      refute File.exist?(File.join(repo, "docs/agents/archive/maintenance/delete-later-archive.md")),
+             "nothing may recreate the ledger's archive"
     end
   end
 
@@ -210,7 +166,7 @@ class ArchiveDocsCliTest < Minitest::Test
 
       summary = DocsArchive.parse_summary(out)
       refute_nil summary, "bin/release archive parses this line for its Exit Seam report"
-      %i[moved moved_paths skipped ledger_rolled ledger_cutoff].each do |key|
+      %i[moved moved_paths skipped].each do |key|
         assert summary.key?(key), "the archive summary needs #{key}"
       end
     end
@@ -221,63 +177,6 @@ class ArchiveDocsCliTest < Minitest::Test
       out, = run_cli(repo, "--dry-run", "--json")
 
       assert_equal 1, out.lines.reject { |l| l.strip.empty? }.size
-    end
-  end
-
-  # --- the move-never-delete invariant, at the beat that makes the loss permanent ------
-  # A stale bin/agent-worktree can overwrite dated rows in the hub's WORKING TREE, and
-  # `bin/release archive` commits the result. The roller archives what it is handed, so the
-  # refusal belongs in front of it, where the row is still one `git show HEAD:` away. The
-  # damage is produced as the stale writer does, a dated row replaced in place; nothing calls
-  # the fixed writer, which cannot be relied on.
-  # History: task guard-ledger-against-stale-desks.
-  def clobber_dated_row(repo)
-    path = File.join(repo, DocsArchive::LEDGER)
-    File.write(path, File.read(path).sub("| `/new/two` | worktree | recent | done | removed 2026-07-14 |",
-                                         "| `/new/two` | worktree | recycled | done | removed 2026-08-21 |"))
-  end
-
-  def test_the_sweep_refuses_a_ledger_that_has_already_lost_a_resolved_row
-    with_repo do |repo|
-      clobber_dated_row(repo)
-
-      out, err, status = Open3.capture3(RbConfig.ruby, CLI, "--repo=#{repo}")
-      combined = "#{out}#{err}"
-
-      refute status.success?, "the archive beat must refuse to sweep over a destroyed row"
-      assert_includes combined, "/new/two", "the refusal names the path that lost its row"
-      assert_includes combined, "removed 2026-07-14", "…and the teardown episode that is gone"
-      assert_includes combined, "git show HEAD:", "…and how to get it back"
-      refute_includes combined, "archive-docs-summary:",
-                      "it must refuse BEFORE reporting a successful sweep"
-      assert_empty git(repo, "diff", "--cached", "--name-only").strip,
-                   "and it must stage NOTHING on top of a ledger that has lost history"
-    end
-  end
-
-  # THE CONTROL, and it is the reason the check above is trustworthy: the same sweep, the
-  # same repo, an UNdamaged ledger — and the beat runs to completion. A guard that refused
-  # every sweep would be indistinguishable from a broken one.
-  def test_an_intact_ledger_sweeps_to_completion
-    with_repo do |repo|
-      out, summary = run_cli(repo)
-
-      assert_includes out, "Ledger rollover"
-      assert_operator summary[:ledger_rolled], :>, 0
-    end
-  end
-
-  # A dry run changes nothing, so it REPORTS the damage and still exits 0 — `bin/release
-  # archive` previews before it confirms, and a preview that returns failure wedges the
-  # beat rather than protecting it.
-  def test_a_dry_run_over_a_damaged_ledger_reports_but_does_not_refuse
-    with_repo do |repo|
-      clobber_dated_row(repo)
-
-      out, err, status = Open3.capture3(RbConfig.ruby, CLI, "--repo=#{repo}", "--dry-run")
-
-      assert status.success?, "a preview must not fail its caller:\n#{out}#{err}"
-      assert_includes "#{out}#{err}", "removed 2026-07-14", "…but it must still say what is gone"
     end
   end
 end

@@ -741,4 +741,4 @@ because it is arithmetic over what they publish.
 - **A fossil to clear.** `.agents/locks/gate-in-progress-rel-20260709-38f895`
   (2026-07-09) has **no writer anywhere in the tree** — a residue of a removed
   implementation. A marker no code writes is exactly the confusion this design
-  exists to end. Route it through the delete-later ledger.
+  exists to end. Route it through the parking lot.

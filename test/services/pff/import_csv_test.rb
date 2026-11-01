@@ -117,7 +117,7 @@ class Pff::ImportCsvTest < ActiveSupport::TestCase
 
     file = write_csv("defense_summary.csv",
       %w[player player_id position team_name player_game_count grades_defense grades_coverage_defense grades_pass_rush_defense grades_run_defense],
-      [["Calais Campbell", "4364", "DI", "MIA", "17", "82.3", "63.5", "66.2", "85.9"]]
+      [["Calais Campbell", "99364", "DI", "MIA", "17", "82.3", "63.5", "66.2", "85.9"]]
     )
     Pff::ImportCsv.new(csv_path: file, season_slug: "2025-nfl").call
 

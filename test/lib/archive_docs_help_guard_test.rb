@@ -49,34 +49,15 @@ class ArchiveDocsHelpGuardTest < Minitest::Test
       write(repo, "docs/agents/audits/frozen-2026-05-01.md", "frozen snapshot\n")
       # A live undated doc, which must survive either way.
       write(repo, "docs/agents/maintenance/parking-lot.md", "live\n")
-      write(repo, "docs/agents/maintenance/delete-later.md", ledger)
       git(repo, "add", "-A")
       git(repo, "commit", "--quiet", "-m", "fixture")
 
-      # DIRTY ON PURPOSE, the way the real tree was. The incident happened while the
-      # ledger carried uncommitted rows from that day's reclaim — content that exists
-      # in no commit, so a rewrite over it is unrecoverable. An APPENDED row is the
-      # honest shape: LedgerGuard refuses a tree that LOST a dated row, so appending
-      # keeps the guard green and lets the control run reach the mutation.
-      File.write(File.join(repo, "docs/agents/maintenance/delete-later.md"),
-                 File.read(File.join(repo, "docs/agents/maintenance/delete-later.md")) +
-                 "| `/uncommitted/today` | worktree | today's reclaim | done | removed 2026-08-31 |\n")
+      # DIRTY ON PURPOSE, the way the real tree was: content that exists in no commit,
+      # so a rewrite over it is unrecoverable.
       write(repo, "docs/agents/maintenance/scratch-notes.md", "untracked working notes\n")
 
       yield repo
     end
-  end
-
-  def ledger
-    <<~MD
-      # Delete Later Ledger
-
-      | Path | Type | Why it is a candidate | Safe-delete condition | Status |
-      |------|------|-----------------------|-----------------------|--------|
-      | `/old/one` | worktree | old | done | removed 2026-06-13 |
-      | `/new/two` | worktree | recent | done | removed 2026-07-14 |
-      | `/unresolved/three` | worktree | waiting | needs approval | pending approval |
-    MD
   end
 
   # --- the fingerprint -------------------------------------------------------
@@ -198,10 +179,10 @@ class ArchiveDocsHelpGuardTest < Minitest::Test
     with_repo do |repo|
       before = fingerprint(repo)
 
-      _out, err, status = run_cli(repo, "--ledger-cutoff")
+      _out, err, status = run_cli(repo, "--repo")
 
       refute_equal 0, status.exitstatus
-      assert_includes err, "--ledger-cutoff"
+      assert_includes err, "--repo"
       assert_equal before, fingerprint(repo)
     end
   end
@@ -232,16 +213,14 @@ class ArchiveDocsHelpGuardTest < Minitest::Test
   # real failure rather than merely "something changed".
   def test_control_the_mutation_is_the_one_the_incident_caused
     with_repo do |repo|
-      ledger_path = File.join(repo, "docs/agents/maintenance/delete-later.md")
-      before_ledger = File.read(ledger_path)
+      frozen = File.join(repo, "docs/agents/audits/frozen-2026-05-01.md")
 
       _out, _err, status = run_cli(repo)
       assert_equal 0, status.exitstatus
 
-      refute_equal before_ledger, File.read(ledger_path),
-                   "CONTROL: the roll rewrites the ledger — the -41 line damage"
+      refute File.exist?(frozen), "CONTROL: the sweep moves the frozen snapshot out of the live tree"
       refute_empty git(repo, "diff", "--cached", "--name-only").strip,
-                   "CONTROL: the roll STAGES files — the second half of the damage"
+                   "CONTROL: the sweep STAGES files — the second half of the damage"
     end
   end
 
@@ -258,9 +237,7 @@ class ArchiveDocsHelpGuardTest < Minitest::Test
     ["--json"],
     ["--dry-run", "--json"],
     ["--repo=REPO"],
-    ["--repo=REPO", "--dry-run"],
-    ["--ledger-cutoff=2026-08-09"],
-    ["--repo=REPO", "--ledger-cutoff=2026-06-01", "--dry-run"]
+    ["--repo=REPO", "--dry-run"]
   ].freeze
 
   def test_every_real_invocation_still_dispatches

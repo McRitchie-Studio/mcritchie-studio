@@ -948,7 +948,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
   end
 
   # THE CLEANUP LANE withholds it too — there is no "advisory" lane. `cleanup` prints a
-  # `remove … --yes` per candidate and `--write` files it in the delete-later ledger, so it
+  # `remove … --yes` per candidate and `--write` files it on the desk ledger, so it
   # NOMINATES for destruction just as surely as the sweep does.
   test "[integration] cleanup WITHHOLDS a bound desk whose board record cannot be read" do
     mark_worktree_merged_to_origin_main

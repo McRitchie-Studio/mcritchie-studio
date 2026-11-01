@@ -157,7 +157,7 @@ When finishing a meaningful feature:
    use **Alex McRitchie** (or "the owner") for Alexander Ray McRitchie, the
    owner/operator, **Mason** for the COO and orchestrator agent, and **Alex** for
    the client-facing Sales/Marketing agent. A bare "Alex" means the agent.
-4. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
+4. If an old doc is superseded but not safe to delete yet, add it to [`../maintenance/parking-lot.md`](../maintenance/parking-lot.md).
 5. Prefer deleting stale docs over preserving contradictory context.
 
 ## Closeout Checklist
@@ -193,7 +193,7 @@ getting there.
 
 Do this weekly, or after several agent sessions:
 
-1. Review [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
+1. Review [`../maintenance/parking-lot.md`](../maintenance/parking-lot.md).
 2. Check for visible sibling worktrees and hidden `.worktrees/` salvage dirs.
 3. Re-check root stray files under `/Users/alex/projects`.
 4. Search for old ports, domains, provider names, and LLM-specific references

@@ -1452,7 +1452,7 @@ TriageFinding.delete_all
 TriageFinding.create!(title: "E2E Promotable Finding", body: "A follow-up worth a task.",
                       source: "e2e-seed", repo: "mcritchie-studio")
 
-# The /deployments DESK PANEL. The desk ledger moved off docs/agents/maintenance/delete-later.md
+# The /deployments DESK PANEL. The desk ledger moved off a markdown file
 # and onto the board (a teardown row written from the primary checkout lands on `main` and can
 # never be committed — 98 rows were stranded that way), so the panel needs desks to show:
 # live ones with a safety account each, a finished one with the reason it was safe to take,

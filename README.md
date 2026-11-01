@@ -112,7 +112,7 @@ bin/rails db:create db:migrate db:seed
 bin/rails server
 ```
 
-Seeds load 9 agents with avatars, 35 skills, sample tasks, plus 32 NFL + 75 NCAA + 48 FIFA teams, 38 NFL schedule arenas, active contracts, PFF-graded athletes, and news articles. Visit http://localhost:3000.
+Seeds load 9 agents with avatars, 35 skills, sample tasks, plus 32 NFL + 75 NCAA + 48 FIFA teams, 38 NFL schedule arenas, active contracts, placeholder athlete grades (the repo ships no PFF data), and news articles. Visit http://localhost:3000.
 
 ## Prerequisites (single-app path)
 
@@ -170,4 +170,4 @@ scaled so Solid Queue can process durable mail/auth jobs. Required env vars:
 
 ## Development Notes
 
-See [`docs/agents/index.md`](docs/agents/index.md) for agent session context. Legacy LLM-specific files are migration sources only; track their removal in [`docs/agents/maintenance/delete-later.md`](docs/agents/maintenance/delete-later.md).
+See [`docs/agents/index.md`](docs/agents/index.md) for agent session context. Legacy LLM-specific files are migration sources only; track their removal in [`docs/agents/maintenance/parking-lot.md`](docs/agents/maintenance/parking-lot.md).

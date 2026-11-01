@@ -19,7 +19,7 @@ class BinHelpFlagClassTest < Minitest::Test
   #   :cli_arg_guard — calls CliArgGuard.guard!; help exits without acting and an
   #                    unaccounted-for argument REFUSES. The retrofit target.
   #   :own_guard     — carries its own equivalent guard (bin/task, bin/devops-shift,
-  #                    bin/ledger-guard, and the shell scripts fixed alongside them).
+  #                    and the shell scripts fixed alongside them).
   #   :optparse      — OptionParser with a -h/--help arm; an unknown flag raises
   #                    OptionParser::InvalidOption, which is never rescued.
   #   :subcommand    — dispatches on a subcommand and falls through to usage FOR
@@ -144,10 +144,6 @@ class BinHelpFlagClassTest < Minitest::Test
     # its own cache file, after the guard). Like agent-presence its exit status is a
     # VERDICT (0 every cluster current), so its help exits 3, never 0.
     "program-drift"          => :cli_arg_guard,
-    # The harvest WRITES desk records to the board, so it is guarded like the rest of
-    # the mutating flat scripts. Its help exits 1: exit 0 from it asserts "the stranded
-    # rows are recorded", which a probe never established.
-    "harvest-desk-ledger"    => :cli_arg_guard,
     # RECLASSIFIED FROM :subcommand_gap, NOT DELETED (/tasks/atomic-event-help-mutates). `run`
     # swallows every StandardError and the script always exits 0, so a probe that mutated would
     # report SUCCESS. Its dictionary is AgentActivityCli::COMMANDS, in bin/atomic-event itself
@@ -186,8 +182,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # `restore` OVERWRITES A FILE IN THE WORKING TREE and `save` can overwrite a restore point.
     # Its dictionary is COMMANDS in the script (four arms, same --owner/--root pair), fed to one
     # guard call ahead of the dispatcher. Help exits 1: `verify` makes exit 0 an ASSERTION, and
-    # a probe must never answer with an assertion, the same reasoning as
-    # bin/harvest-desk-ledger.
+    # a probe must never answer with an assertion.
     # History: task backup-collisions-are-silent.
     "scratch-backup"         => :cli_arg_guard,
     # --- NEW SCRIPT, guarded at birth (/tasks/local-dev-drops-prod-hub-key) ---
@@ -259,7 +254,6 @@ class BinHelpFlagClassTest < Minitest::Test
     # --- the three prior fixes -----------------------------------------------
     "task"                   => :own_guard,
     "devops-shift"           => :own_guard,
-    "ledger-guard"           => :own_guard,
     # Help anywhere prints usage; an argument it cannot place exits 2 before
     # `index --write`. test/lib/dream_cli_test.rb runs both.
     "dream"                  => :own_guard,
@@ -481,7 +475,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "client-bundle"       => "ClientAppBundle",
     "static-downgrade"    => "StaticCloudflare.downgrade_target",
     "program-drift"       => "ProgramDrift.readings",
-    "archive-docs"        => "DocsArchive.roll_ledger!",
+    "archive-docs"        => "DocsArchive.apply_moves!",
     "clean-artifacts"     => "ArtifactSweep",
     "control-check"       => "ControlReplay.partition",
     # Not a single call but the DISPATCHER: every mutation bin/release can perform

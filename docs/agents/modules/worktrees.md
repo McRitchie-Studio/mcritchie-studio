@@ -207,7 +207,7 @@ level down inside `@scope` and `.bin` as well, before git deletes anything. Neve
   **before** destroying anything. When the board does not answer, the record is queued
   at `<projects>/.agents/desk-ledger-queue.jsonl` and posts, in order, on the next
   ledger write; the teardown refuses only when the board answers with a refusal or the
-  queue cannot be written. [`../maintenance/delete-later.md`](../maintenance/delete-later.md) is history.
+  queue cannot be written.
 - The ledger tracks **managed desks only** (the root rule lives once, in `lib/desk_root.rb`).
   `snapshot` marks each desk `managed: true|false` and counts the rest as `unmanaged`; the
   board lists those but opens no ledger record for them, and closes an older open record

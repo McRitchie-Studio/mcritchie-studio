@@ -70,7 +70,7 @@ module ReleaseArchiveSeams
     end
     def sweep_docs(apply:)
       payload = { dry_run: !apply, moved: 1, moved_paths: ["docs/agents/audits/stub.md"],
-                  skipped: [], ledger_rolled: 2, ledger_cutoff: nil }
+                  skipped: [] }
       DocsSweep.new(
         repo: "/stub/mcritchie-studio",
         command: "bin/archive-docs --repo=/stub/mcritchie-studio\#{apply ? '' : ' --dry-run'}",

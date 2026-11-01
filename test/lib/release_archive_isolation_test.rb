@@ -63,7 +63,6 @@ class ReleaseArchiveIsolationTest < Minitest::Test
     assert_includes out, "Swept 1 KB of regenerable artifacts across 2 repo(s) / 3 worktree(s)",
                     "clean-artifacts-summary: JSON did not reach ArtifactSweep.parse_summary\n\n#{out}"
     assert_includes out, "Retired 1 frozen doc(s)", out
-    assert_includes out, "rolled 2 ledger row(s)", out
   end
 
   # [integration] THE EXIT SEAM MUST NEVER GO QUIET ABOUT THE LOG CAP. ISOLATION_STUB's payload

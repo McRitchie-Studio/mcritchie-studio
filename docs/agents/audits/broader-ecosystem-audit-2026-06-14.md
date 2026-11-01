@@ -391,7 +391,7 @@ Implemented:
    remaining archive-only docs, delete-later candidates, and recurring drift
    maintenance are tracked in
    [`final-closeout-2026-06-14.md`](final-closeout-2026-06-14.md) and
-   [`../maintenance/delete-later.md`](../maintenance/delete-later.md).
+   `../maintenance/delete-later.md`.
 
 2. Start the fresh final audit pass from the production deployment checkpoint:
    Turf Monster release `v90`, commit `4333f90`, Node `22.x`, Stripe retired by

@@ -1761,8 +1761,8 @@ class AgentWorktreeTest < Minitest::Test
                  "run_reclaim. The registered cases must keep reporting, or the guard is just off."
   end
 
-  # Every remediation line the sweep prints for a discovered desk goes into the delete-later
-  # ledger, so the command must resolve, and into the tree the desk lives in.
+  # Every remediation line the sweep prints for a discovered desk goes into the desk ledger as
+  # the archive record, so the command must resolve, and into the tree the desk lives in.
   # This drives the real `remove` DISPATCH: calling sweep_app_for directly stays green when
   # `remove` reverts to app_for.
   # Sharp case: if worktree_dir hard-codes ".worktrees", `remove <repo>.sibling <desk>` resolves

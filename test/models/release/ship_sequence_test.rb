@@ -500,15 +500,16 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
     assert_equal "x", offenders.first["repo"]
   end
 
-  # --- generated-artifact allowlist: a retro doc / the worktree ledger ------
-  # ship_preflight must NOT count KNOWN-GENERATED files as dirt (a retro-*.md or
-  # the delete-later.md ledger routinely sit uncommitted in the deploy checkout
-  # and blocked EVERY ship's ff). Narrow allowlist — real code dirt still gates.
+  # --- generated-artifact allowlist: a retro doc ----------------------------
+  # ship_preflight must NOT count KNOWN-GENERATED files as dirt (a retro-*.md
+  # routinely sits uncommitted in the deploy checkout and blocked EVERY ship's ff).
+  # Narrow allowlist — real code dirt still gates.
 
-  test "generated_artifact? matches a retro doc and the worktree ledger only" do
+  test "generated_artifact? matches a retro doc only" do
     assert S.generated_artifact?("docs/agents/audits/retro-rel-20260624-b2f18e.md")
-    assert S.generated_artifact?("docs/agents/maintenance/delete-later.md")
-    # NOT a blanket docs/ ignore — any other doc/code still counts as dirt.
+    # NOT a blanket docs/ ignore — any other doc/code still counts as dirt. That includes
+    # the retired delete-later ledger: nothing writes it now, so a copy of it is real dirt.
+    assert_not S.generated_artifact?("docs/agents/maintenance/delete-later.md")
     assert_not S.generated_artifact?("docs/agents/audits/some-other-audit.md")
     assert_not S.generated_artifact?("docs/agents/maintenance/keep-this.md")
     assert_not S.generated_artifact?("app/models/release.rb")
@@ -517,11 +518,10 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
 
   test "preflight_offenders ignores a clean-main checkout dirty ONLY with generated artifacts" do
     states = [state("mcritchie-studio", dirty_files: [
-      "docs/agents/audits/retro-rel-20260624-b2f18e.md",
-      "docs/agents/maintenance/delete-later.md"
+      "docs/agents/audits/retro-rel-20260624-b2f18e.md"
     ])]
     assert_empty S.preflight_offenders(states),
-                 "a retro doc + the worktree ledger are generated artifacts, not real dirt"
+                 "a retro doc is a generated artifact, not real dirt"
   end
 
   test "preflight_offenders still flags REAL dirt alongside a generated artifact" do
@@ -535,7 +535,7 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
 
   test "preflight_offenders still flags an off-main checkout even with only generated artifacts" do
     o = S.preflight_offenders([state("turf-monster", branch: "pr-9",
-                                      dirty_files: ["docs/agents/maintenance/delete-later.md"])]).first
+                                      dirty_files: ["docs/agents/audits/retro-rel-1.md"])]).first
     assert_not o["on_main"], "off-main is still an offender regardless of the artifact allowlist"
   end
 
@@ -605,8 +605,8 @@ class Release::ShipSequenceTest < ActiveSupport::TestCase
   end
 
   test "gem_build_offenders ignores the generated-artifact allowlist" do
-    states = [state("solana-studio", tracked_dirty: ["docs/agents/maintenance/delete-later.md"])]
-    assert_empty S.gem_build_offenders(states), "the worktree ledger is not real dirt"
+    states = [state("solana-studio", tracked_dirty: ["docs/agents/audits/retro-rel-1.md"])]
+    assert_empty S.gem_build_offenders(states), "a retro doc is not real dirt"
   end
 
   test "gem_build_offenders does not care which branch a gem primary is on" do

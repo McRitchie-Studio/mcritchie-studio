@@ -2,7 +2,7 @@ const { test, expect } = require("@playwright/test");
 
 // The /deployments DESK PANEL — the worktree desks and their teardown records.
 //
-// WHY IT EXISTS AT ALL. The desk ledger used to be docs/agents/maintenance/delete-later.md,
+// WHY IT EXISTS AT ALL. The desk ledger used to be a markdown file,
 // and `bin/agent-worktree` wrote its teardown rows into whatever checkout it ran from.
 // Cleanups run from the PRIMARY, which sits on `main` — a branch nobody may commit to — so
 // the audit row was created in the one place it could never be saved from. 98 rows were

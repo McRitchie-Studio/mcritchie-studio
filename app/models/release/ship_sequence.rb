@@ -1233,9 +1233,9 @@ class Release
       Array(states).filter_map do |s|
         branch    = (s["branch"] || s[:branch]).to_s
         all_files = Array(s["dirty_files"] || s[:dirty_files]).map(&:to_s).reject(&:empty?)
-        # Drop KNOWN-GENERATED artifacts (a `bin/release retro` doc, the
-        # agent-worktree ledger) — they routinely sit uncommitted in the deploy
-        # checkout and counting them as dirt blocked EVERY ship's fast-forward.
+        # Drop KNOWN-GENERATED artifacts (a `bin/release retro` doc) — they routinely
+        # sit uncommitted in the deploy checkout and counting them as dirt blocked
+        # EVERY ship's fast-forward.
         # Narrow allowlist (see GENERATED_ARTIFACT_GLOBS), NOT a blanket docs/
         # ignore — any other dirty file still gates the ship.
         files = all_files.reject { |f| generated_artifact?(f) }
@@ -1261,12 +1261,10 @@ class Release
     # are NOT real code dirt, so the ship preflight must not count them as dirty
     # (they blocked EVERY ship's fast-forward otherwise):
     #   * docs/agents/audits/retro-rel-*.md     — written by `bin/release retro`
-    #   * docs/agents/maintenance/delete-later.md — the `bin/agent-worktree` ledger
     # A NARROW allowlist of globs, NOT a blanket docs/ ignore: any other dirty
     # file — including other docs — still gates a gem build.
     GENERATED_ARTIFACT_GLOBS = [
-      "docs/agents/audits/retro-rel-*.md",
-      "docs/agents/maintenance/delete-later.md"
+      "docs/agents/audits/retro-rel-*.md"
     ].freeze
 
     # The worktree parent — the gate + ship workspaces, and the agent worktrees,

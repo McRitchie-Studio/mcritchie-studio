@@ -1252,6 +1252,7 @@ namespace :nfl do
   task assign_grades: :environment do
     season_slug = ENV["SEASON"] || "2025-nfl"
     Athletes::ComputeProprietaryGrades.new(season_slug: season_slug).call
+    Pff::SeedGrades.warn_unless_imported(season_slug, consequence: "these pass/run letter grades rest on placeholder and draft-tier inputs")
   end
 
   desc "Pull NFL season schedule from nflverse for YEAR (default 2026). Creates Season + Slates (PRE/REG/playoffs) + Games. Idempotent."
@@ -1296,6 +1297,11 @@ namespace :nfl do
             "The ranks written are ties in sort order, not a ranking. Set GRADES_FROM to " \
             "a season that has grades, or import them first."
     end
+
+    # NOT ALL ZERO IS NOT THE SAME AS MEANINGFUL. Without imported PFF stats the only
+    # sub-grades in the table are seed 30's draft-tier prospect grades, so every team
+    # has a score and the refusal above stays quiet while the order reflects rookies.
+    Pff::SeedGrades.warn_unless_imported(grades_slug || season_slug, consequence: "these TeamRanking scores rest on draft-tier prospect grades only")
   end
 
   desc "Snapshot current DepthChart → per-slate Roster+RosterSpot. SEASON=2026-nfl WEEK=N (default: current week)."

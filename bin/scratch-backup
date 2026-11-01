@@ -23,7 +23,7 @@
 #
 # --help EXITS 1, ON PURPOSE. `verify` makes exit 0 an ASSERTION — "this backup is
 # the one you saved" — so a probe must not answer with it. Same reasoning as
-# bin/harvest-desk-ledger and bin/qa-server.
+# bin/qa-server.
 
 require_relative "lib/cli_arg_guard"
 require_relative "lib/scratch_backup"

@@ -116,16 +116,16 @@ class FastCertFamilyTest < Minitest::Test
   # --- restraint: the family hop must not over-widen ----------------------------
 
   # PREFIX IS NOT PARENTHOOD. bin/lib/desk_ledger.rb's stem prefixes
-  # test/lib/desk_ledger_import_test.rb, but that file is the twin of
-  # bin/lib/desk_ledger_import.rb — a source file of its own the diff did not
+  # test/lib/desk_ledger_sync_test.rb in this fixture, but that file is the twin of
+  # bin/lib/desk_ledger_sync.rb — a source file of its own the diff did not
   # touch. Without this guard, every desk_ledger edit runs an unrelated tool's
   # tests.
   def test_sibling_with_its_own_source_is_not_claimed
     with_tree(
       "bin/lib/desk_ledger.rb" => "module DeskLedger; end\n",
-      "bin/lib/desk_ledger_import.rb" => "module DeskLedgerImport; end\n",
+      "bin/lib/desk_ledger_sync.rb" => "module DeskLedgerSync; end\n",
       "test/lib/desk_ledger_test.rb" => "class A; end\n",
-      "test/lib/desk_ledger_import_test.rb" => "class B; end\n"
+      "test/lib/desk_ledger_sync_test.rb" => "class B; end\n"
     ) do |dir|
       assert_equal ["test/lib/desk_ledger_test.rb"],
                    FastCert.select_tests(dir, ["bin/lib/desk_ledger.rb"])
