@@ -335,8 +335,6 @@ module AgentMailbox
       (Array(block["core_souls"]) + Array(override["souls"])).map(&:to_s).include?(soul.to_s)
     end
 
-    # The same own-words rule a warm turn uses (WarmSession.quotes?, `own`): a
-    # tool run's prompt carries only the owner's own text.
     # A file the model will read is not the owner's own words, for the same
     # reason quoted text is not: its text could steer the tools. The soul still
     # reads the file; it answers without tools, and the next message has them. A
@@ -347,6 +345,8 @@ module AgentMailbox
       [ list, skipped ].any? { |files| files.is_a?(Array) && files.any? }
     end
 
+    # The same own-words rule a warm turn uses (WarmSession.quotes?, `own`): a
+    # tool run's prompt carries only the owner's own text.
     def own_words?(message, context)
       return false if WarmSession.quotes?(message["content"])
 
