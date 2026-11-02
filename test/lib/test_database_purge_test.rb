@@ -98,15 +98,11 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
     assert_empty TestDatabasePurge.nonempty_tables([])
   end
 
-  # ---------------------------------------------------------------------------
-  # THE GUARD. purge! empties EVERY table of whatever database the connection
-  # holds, so it must PROVE that database is the test database before it fires.
-  #
-  # Every case below drives the guard with a FAKE connection (it records whether
-  # truncate_tables was called) or a stubbed config — so a REFUSAL is proved
-  # without ever pointing the real destructive path at a real database. A fake
-  # that was never truncated is the whole assertion.
-  # ---------------------------------------------------------------------------
+  # THE GUARD. purge! empties EVERY table of whatever database the connection holds, so it must
+  # PROVE that database is the test database before it fires. Every case drives it with a FAKE
+  # connection (it records whether truncate_tables was called) or a stubbed config, so a REFUSAL
+  # is proved without pointing the real destructive path at a real database.
+  # History: task e2e-seed-poisons-test-db.
 
   # Quacks like the two things purge! touches: pool.db_config.database, and the
   # truncate it must NOT reach on a refusal.
@@ -161,15 +157,12 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
   end
 
   test "GUARD 2 holds even when the resolved test config MOVED with the attack — the placebo case" do
-    # MEASURED, not assumed (probe: RAILS_ENV=test DATABASE_URL=…/mcritchie_studio_development):
-    # Rails merges DATABASE_URL into the config for the CURRENT env, and under the
-    # suite that env IS test. So configs_for(env_name: "test").database ALSO reads
-    # "mcritchie_studio_development" — a guard that compares the connection against
-    # THAT config compares a moved value against itself, passes, and stomps the dev DB.
-    #
-    # This case pins the fix: the anchor is the `database:` LITERAL in database.yml,
-    # which no ENV var can rewrite. Simulate the merge by moving the resolved config
-    # onto the dev DB too — the purge must STILL refuse.
+    # Rails merges DATABASE_URL into the config for the CURRENT env, under the suite test, so
+    # configs_for(env_name: "test").database moves too; comparing against THAT compares a moved
+    # value against itself and stomps the dev DB. The anchor is the `database:` LITERAL in
+    # database.yml, which no ENV var can rewrite. Simulate the merge: the purge must STILL
+    # refuse.
+    # History: task e2e-seed-poisons-test-db.
     connection = FakeConnection.new("mcritchie_studio_development")
 
     error = assert_raises(TestDatabasePurge::UnsafeDatabase) do
@@ -183,16 +176,11 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
   end
 
   test "GUARD 2: refuses a look-alike database name that only shares a prefix" do
-    # "app_testing_dev" shares the prefix "app_test" but is a DIFFERENT database.
-    # A bare `start_with?(base)` would wave it through; the required separator does not.
-    #
-    # Both names are stubbed to the SAME base ON PURPOSE. Written against the live
-    # lane instead, this case passed for the WRONG REASON: in a worktree the resolved
-    # test DB ("…_test_<worktree>") differs from the declared one, so the drift lock
-    # refused the look-alike and the separator rule was never exercised — the case
-    # would have gone red only in CI, where declared == configured. Mutation M5
-    # (bare prefix) exposed that; pinning both names makes the separator the only
-    # thing that can refuse, in EVERY lane.
+    # "app_testing_dev" shares the prefix "app_test" but is a DIFFERENT database. A bare
+    # `start_with?(base)` would wave it through; the required separator does not. Both names are
+    # stubbed to the SAME base ON PURPOSE: against the live lane, in a worktree, the drift lock
+    # refuses first and the separator is never exercised. This holds in EVERY lane.
+    # History: task e2e-seed-poisons-test-db.
     TestDatabasePurge.stub(:declared_test_database, "app_test") do
       TestDatabasePurge.stub(:configured_test_database, "app_test") do
         connection = FakeConnection.new("app_testing_dev")
@@ -268,17 +256,12 @@ class TestDatabasePurgeTest < ActiveSupport::TestCase
     end
   end
 
-  # ---------------------------------------------------------------------------
-  # THE RELEASE WORKSPACES. bin/release.rb runs the G3/G4 suites in isolated
-  # workspaces whose test DBs are named by Release::GateWorkspace:
-  # `<app>_gate_test` / `<app>_ship_test` — the role is INFIXED BEFORE `_test`,
-  # so these do NOT start with `<base>` ("mcritchie_studio_test") at all and the
-  # first cut of this guard FALSE-REFUSED them. That bricked every release.
-  #
-  # Both directions are pinned below, because this guard can fail two ways and
-  # each failure is bad: too tight bricks the release, too loose re-opens the
-  # dev-DB truncation hole the guard exists to close.
-  # ---------------------------------------------------------------------------
+  # THE RELEASE WORKSPACES. bin/release.rb runs the G3/G4 suites in workspaces whose test DBs
+  # are named by Release::GateWorkspace: `<app>_gate_test` / `<app>_ship_test`. The role is
+  # INFIXED BEFORE `_test`, so they do NOT start with `<base>` ("mcritchie_studio_test"). Both
+  # directions are pinned: too tight bricks the release, too loose re-opens the dev-DB
+  # truncation hole the guard exists to close.
+  # History: task purge-guard-bricks-gate-workspace.
 
   # How the gate workspace ACTUALLY presents itself to the guard (measured from
   # the failing gate run): `declared` is the YAML literal, which no ENV var can

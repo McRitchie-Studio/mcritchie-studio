@@ -1,18 +1,11 @@
 # frozen_string_literal: true
 
-# TaskPrSet — the PRs a task actually has, and which of their CI verdicts governs.
-# Standalone (no Rails):
-#   ruby -Itest test/lib/task_pr_set_test.rb
-#
-# The gate-level proof lives in test/lib/dor_check_multi_repo_pr_test.rb, which drives
-# the whole of bin/dor-check; this file pins the properties that file cannot cheaply
-# enumerate — every branch of the target resolver, and the ordering law of the fold.
-#
-# EVERY REGEX ALTERNATIVE IS SHOWN TO MATCH SOMETHING. A guard shipped in this repo
-# with /\bn't\b/ — which matches no English contraction — while claiming soundness
-# against negation, so a pattern here is never trusted for looking right: each shape
-# it is meant to accept is asserted to be accepted, and each shape it is meant to
-# reject is asserted to be rejected.
+# TaskPrSet: the PRs a task actually has, and which of their CI verdicts governs. Gate-level
+# proof: test/lib/dor_check_multi_repo_pr_test.rb. Here: every branch of the target resolver
+# and the ordering law of the fold.
+# EVERY REGEX ALTERNATIVE IS SHOWN TO MATCH SOMETHING, since a pattern is never trusted for
+# looking right: each accepted shape is asserted accepted, each rejected shape rejected.
+# History: task dor-check-reads-one-pr.
 require "minitest/autorun"
 require_relative "../../bin/lib/task_pr_set"
 

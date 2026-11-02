@@ -152,14 +152,11 @@ class ClaimLeaseTest < Minitest::Test
   end
 
   # --- ship-claim-blank-nonce: absence of a nonce is NOT a different instance ---
-  # A BLANK nonce on EITHER side means "instance unknown" (the SessionIdentity
-  # degrade contract), so a same-session claim still reads as the SAME instance.
-  # The live failure: a detached status-line heartbeat renewal blanked the STORED
-  # nonce, then the true owner's populated CURRENT nonce was compared against blank
-  # and the owner was locked out of its OWN task. Assert the POSITIVE invariant
-  # across the whole nonce-visibility matrix, not one spelling: two DISTINCT live
-  # instances are refused ONLY when BOTH nonces are known and differ; every case
-  # with a blank on either side degrades to session-level.
+  # A BLANK nonce on EITHER side means "instance unknown" (SessionIdentity's degrade contract), so
+  # a same-session claim reads as the SAME instance, or an owner is locked out of its OWN task.
+  # Two DISTINCT live instances are refused ONLY when BOTH nonces are known and differ; every
+  # blank case degrades to session-level. Assert this across the whole nonce-visibility matrix.
+  # History: task ship-claim-blank-nonce.
   def test_same_session_blank_nonce_on_either_side_is_the_same_instance
     good = "inst-A"
     { # [stored_nonce, current_nonce] => expected disposition, same session
@@ -309,14 +306,10 @@ class ClaimLeaseTest < Minitest::Test
   end
 
   # --- The threshold, asserted as a PROPERTY -------------------------------
-  #
-  # The previous cut of this file pinned the LITERAL — `assert_equal 7200,
-  # PROGRESS_QUIET_SECONDS` — and so it certified, green, a threshold sitting five
-  # minutes BELOW the p99 its own comment claimed to clear. A test that pins the
-  # spelling cannot see a constant drift under its evidence; only a test that
-  # asserts the INVARIANT can. The invariant: no measured HEALTHY window may ever
-  # render quiet. Drift the constant beneath the corpus and these go red, whatever
-  # number it drifts to.
+  # Do not pin the LITERAL (`assert_equal 7200, PROGRESS_QUIET_SECONDS`): that cannot see a
+  # constant drift under its evidence. The invariant: no measured HEALTHY window may ever render
+  # quiet. Drift the constant beneath the corpus and these go red, whatever number it drifts to.
+  # History: task claim-heartbeat-evidences-progress.
   def test_no_measured_healthy_window_ever_reads_quiet
     ClaimLease::MEASURED_SILENCE_SECONDS.each do |percentile, silence|
       refute ClaimLease.quiet?(live_claim, last_progress_at: NOW - silence, now: NOW),

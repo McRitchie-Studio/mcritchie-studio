@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# bin/dor-check's DUPLICATE MIGRATION INSTALL refusal. Standalone (no Rails — it
-# shells out to the script with --file fixtures):
-#   ruby -Itest test/lib/dor_check_migration_collision_test.rb
-#
-# WHY THE MERGE GATE NEEDS ITS OWN COPY. Rails groups migrations by CLASS NAME, so
-# two files under different timestamps that parse to one class raise
-# DuplicateMigrationNameError on every db:migrate — including the Heroku release
-# phase. bin/submit reports this at handoff, but it judges one branch against the
-# base at the moment it runs.
-# Neither can see the case that actually bit on 2026-08-13: two branches, each
-# honestly clean when it was certified, that collide only once the first one merges.
-# The handoff ran before the sibling PR existed. The gate before `accepted` takes both
-# is the only reader positioned to refuse, which is why `test_the_second_pr_sees_the
-# _first` is the load-bearing test in this file and not a nicety.
-#
-# THE CONTROL MATTERS AS MUCH AS THE REFUSALS. A gate that refuses everything would
-# pass every red test here, so `test_a_lone_migration_is_not_a_collision` and the
-# rename case exist to prove it still lets correct work through — the rename case
-# being the one a naive implementation gets wrong, because `git diff` with rename
-# detection ON hides the deleted path and the branch then collides with its own old
-# copy on the base ref.
+# bin/dor-check's DUPLICATE MIGRATION INSTALL refusal. Rails groups migrations by CLASS
+# NAME, so two timestamps parsing to one class raise DuplicateMigrationNameError on every
+# db:migrate, Heroku's release phase included. Two branches clean when certified can collide
+# once the first merges, so `test_the_second_pr_sees_the_first` is the load-bearing test.
+# THE CONTROL MATTERS AS MUCH: `test_a_lone_migration_is_not_a_collision` and the rename
+# case; `git diff` with rename detection ON hides the deleted path, so a branch collides
+# with its own old copy.
+# History: task catch-migration-collision-at-merge.
 require "minitest/autorun"
 require "json"
 require "tmpdir"

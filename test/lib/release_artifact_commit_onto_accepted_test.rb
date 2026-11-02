@@ -1,31 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] Does the archive/retro artifact commit land on origin/accepted when
-# the hub primary's LOCAL `accepted` is stale, and when a review merge moves
-# origin/accepted between the fetch and the push?
-#
-# THE DEFECT (harden-artifact-commit-onto-accepted, filed from the PR 1916 review).
-# commit_artifact_to_accepted used to `git checkout accepted` in the primary,
-# `merge --ff-only origin/accepted`, commit, push, and `ensure` back to `main`. On the
-# hub primary that day, local `accepted` sat 3,284 commits behind origin and its
-# delete-later.md differed from main's, so two things went wrong:
-#
-#   1. The checkout itself refuses ("your local changes would be overwritten") when
-#      the doc being committed differs between main and the stale local branch. The
-#      doc never reaches accepted.
-#   2. A push refused because a review merge landed meanwhile left the commit on the
-#      LOCAL `accepted`, and the ensure checked out main, so the doc left the working
-#      tree. The step still said "left uncommitted", and every later run failed its
-#      `merge --ff-only` until someone reset the branch.
-#
-# THE FIX builds the commit from origin/accepted directly, in a throwaway index, and
-# pushes it by SHA. No local branch is read or written, and HEAD never moves. A
-# refused push re-fetches and rebuilds once on the new tip; a second refusal leaves
-# the doc exactly where it was, in the primary's working tree, and says so.
-#
-# A FILE OF ITS OWN: the release CLI files are frozen append hotspots under
-# config/test_health.yml. The fixture is a bare origin plus a clone in a tmpdir, and
-# the child runs under OutboundSeams.
+# [integration] Does the archive/retro artifact commit land on origin/accepted when the hub
+# primary's LOCAL `accepted` is stale, or a review merge moves origin/accepted between fetch
+# and push? commit_artifact_to_accepted builds from origin/accepted in a throwaway index and
+# pushes by SHA. No local branch is read or written; HEAD never moves. A refused push
+# re-fetches and rebuilds once; a second refusal leaves the doc in the primary's working tree
+# and says so. A FILE OF ITS OWN: release CLI files are frozen append hotspots under
+# config/test_health.yml. The child runs under OutboundSeams.
+# History: task harden-artifact-commit-onto-accepted.
 
 require "minitest/autorun"
 require "fileutils"

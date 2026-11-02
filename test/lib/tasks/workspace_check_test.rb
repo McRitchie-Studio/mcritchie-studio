@@ -1,16 +1,11 @@
 require "test_helper"
 require "rake"
 
-# [integration] The `workspace:check` sweep — the exact path that could have
-# resurrected a revoked workspace. It probes a subject and, on a green probe,
-# flips the row active.
-#
-# Revocation is the one compensating control for holding the impersonation
-# allow-list as DATA rather than as a frozen constant, so the proof that it
-# holds belongs here, against the trigger, and not only against the model. Note
-# what the probe does in every test below: it SUCCEEDS. Revoking locally never
-# withdraws the Google-side grant, so a live grant is exactly what a revoked row
-# really meets.
+# [integration] The `workspace:check` sweep: a green probe flips the row active, so this is the
+# path that could resurrect a revoked workspace. Revocation is the compensating control for
+# holding the impersonation allow-list as DATA, so the proof belongs against the trigger. The
+# probe SUCCEEDS in every test: revoking locally never withdraws the Google-side grant.
+# History: task workspace-accounts-registry.
 class WorkspaceCheckRakeTest < ActiveSupport::TestCase
   KEY = { "client_email" => "sa@synthetic.iam.gserviceaccount.com", "client_id" => "100000000000000000000" }.freeze
 

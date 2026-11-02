@@ -1,17 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] The duplicate-migration-install detector. Pure by construction — the caller
-# supplies paths, first lines, and git output — so every rule is asserted with no
-# network, no gh, and no repo.
-#
-# THE SHAPE UNDER TEST, reproduced from the live 2026-08-13/14 incidents: two files
-# with DIFFERENT names and DIFFERENT timestamps that install ONE engine migration.
-# Git merges both cleanly (only db/schema.rb conflicts), and Rails then raises
-# DuplicateMigrationNameError on every db:migrate — including the Heroku release
-# phase — because it groups by CLASS NAME, not filename.
-#
-#   ruby -Itest test/lib/migration_collision_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [unit] The duplicate-migration-install detector. Pure: the caller supplies paths, first lines
+# and git output; no network, gh or repo.
+# THE SHAPE UNDER TEST: two files with DIFFERENT names and timestamps installing ONE engine
+# migration. Git merges both (only db/schema.rb conflicts), and Rails raises
+# DuplicateMigrationNameError on every db:migrate, including the Heroku release phase, because
+# it groups by CLASS NAME, not filename.
+# History: task detect-duplicate-migration-installs.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/migration_collision"

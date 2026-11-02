@@ -1,18 +1,13 @@
 # frozen_string_literal: true
 
-# Standalone test for bin/ci-scope-capture — the LOCAL-INGESTION half of test-scope
-# telemetry: it reads a PR's `gh pr checks` and self-reports one kind=test_scope
-# AgentAction per completed CI job through the SAME `bin/agent-activity action` verb
-# bin/release.rb uses. It shells out to the script with the
-# gh reads stubbed (CI_SCOPE_CHECKS_JSON / CI_SCOPE_HEAD_SHA) and the emit seam
-# pointed at a stub that logs argv (CI_SCOPE_AGENT_ACTIVITY), so the parse+emit is
-# exercised with NO network. Run directly:
-#   ruby -Itest test/lib/ci_scope_capture_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# Two tiers (backend shape):
-#   [unit]        the parse/normalize/skip/gate/idempotency-key logic, one job at a time.
-#   [integration] a full PR fixture (pass/fail/pending/cancel) self-reports the right lanes.
+# Standalone test for bin/ci-scope-capture, the LOCAL-INGESTION half of test-scope
+# telemetry: it reads `gh pr checks` and self-reports one kind=test_scope AgentAction per
+# completed CI job via `bin/agent-activity action`. gh reads are stubbed
+# (CI_SCOPE_CHECKS_JSON / CI_SCOPE_HEAD_SHA), the emit seam logs argv
+# (CI_SCOPE_AGENT_ACTIVITY), no network.
+# Two tiers: [unit] the parse/normalize/skip/gate/idempotency-key logic; [integration] a
+# full PR fixture (pass/fail/pending/cancel).
+# History: task test-telemetry-from-ci.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -114,15 +109,12 @@ class CiScopeCaptureTest < Minitest::Test
   end
 
   def test_a_matrix_shard_suffix_collapses_to_the_LANES_scope
-    # GitHub names a matrix job `rails (1)`, `rails (2)`, … The four shards of the Rails
-    # lane are FOUR RUNS OF ONE SCOPE — same command, disjoint slices — so they must all
-    # report under `ci_rails`. A scope per shard would mean editing
-    # config/devops_test_suites.yml every time the shard count moves, and the registry
-    # would describe an implementation detail instead of a lane.
-    #
-    # The four rows stay DISTINCT because the idempotency key is built from the RAW job
-    # name, not from this slug — asserted below so the collapse cannot quietly become a
-    # deduplication that drops three of the four.
+    # GitHub names a matrix job `rails (1)`, `rails (2)`, … The shards are RUNS OF ONE SCOPE, so
+    # all report under `ci_rails`. A scope per shard would mean editing
+    # config/devops_test_suites.yml every time the shard count moves. The rows stay DISTINCT
+    # because the idempotency key uses the RAW job name, asserted below so the collapse cannot
+    # become a deduplication that drops shards.
+    # History: task shard-the-rails-suite.
     Dir.mktmpdir do |dir|
       json = checks(
         ["rails (1)", "pass", "2026-07-06T10:00:00Z", "2026-07-06T10:02:00Z"],

@@ -16,15 +16,12 @@ require "fileutils"
 
 require File.expand_path("../../bin/lib/task_board", __dir__)
 require_relative "../support/op_binary_stub"
-# ARMS THE TASK-USAGE SANDBOX FOR THIS PROCESS, and it is load-bearing rather
-# than tidiness. This file drives TaskBoard.agent_secret, whose vault step is now
-# METERED (bin/lib/op_meter.rb), and OpMeter writes to the operator's REAL
-# <projects>/.agents/op-reads.log whenever the sandbox is not armed — a test
-# process that does not arm it is indistinguishable from a real agent run.
-# MEASURED: six phantom `op read / ok` rows per run, after which `bin/op-reads`
-# named THIS FILE the heaviest spender of a quota it never touched, ahead of the
-# only real spender. A log that answers the outage question with a lie is worse
-# than no log, so the guard is armed here where it cannot be forgotten.
+# ARMS THE TASK-USAGE SANDBOX FOR THIS PROCESS, and it is load-bearing. This file drives
+# TaskBoard.agent_secret, whose vault step is METERED (bin/lib/op_meter.rb), and OpMeter
+# writes to the operator's REAL <projects>/.agents/op-reads.log whenever the sandbox is not
+# armed. Unarmed, this file's phantom rows make `bin/op-reads` name it a heavy spender of a
+# quota it never touched.
+# History: task attribute-op-reads-to-caller.
 require_relative "../support/task_usage_sandbox"
 
 class TaskBoardTest < Minitest::Test
@@ -59,17 +56,11 @@ class TaskBoardTest < Minitest::Test
   end
 
   # ── [unit] rows!: the STRICT reader every COUNTING caller must use ──────────
-  #
-  # THE DEFECT THESE PIN. `parse_body` answers `{}` for a body it could not read,
-  # so `parse_body(res)["data"]` is nil, `Array(nil)` is `[]`, and the count is 0
-  # — no exception, no warning, and an answer shaped exactly like the good news
-  # the caller was hoping for. For a SAFETY count, empty IS the reassuring
-  # answer, so a broken read always resolves toward "proceed".
-  #
-  # So these assert the EFFECT, not the return type: a test that `rows!` gives
-  # back a collection would pass blind on the buggy version too. What is asserted
-  # is that the two readers DIVERGE on an unreadable body, and that `[]` from
-  # `rows!` means genuinely none.
+  # `parse_body` answers `{}` for an unreadable body, so `Array(parse_body(res)["data"])` is
+  # `[]` and the count is 0, and for a SAFETY count a broken read resolves toward "proceed".
+  # Assert the EFFECT, not the return type: the two readers DIVERGE on an unreadable body, and
+  # `[]` from `rows!` means genuinely none.
+  # History: task board-parse-silently-returns-empty.
 
   def test_unit_rows_refuses_a_non_json_body_where_the_lenient_parse_scores_zero
     html = FakeResponse.new("<html><title>502 Bad Gateway</title></html>", "502")
@@ -142,19 +133,12 @@ class TaskBoardTest < Minitest::Test
   end
 
   # ── [unit] agent_secret: the ORDER, measured in VAULT READS ─────────────────
-  #
-  # THE DEFECT THESE PIN. The chain used to run ENV → 1Password → .env. ENV is
-  # unset in agent shells, so the vault read SUCCEEDED and RETURNED, and the
-  # .env branch below it never ran on a provisioned machine. Every `bin/task`
-  # invocation therefore spent one credential against a 1,000/day cap shared
-  # account-wide by every lane — 1,308 invocations measured in one session — to
-  # fetch a secret sitting in the repo's own .env.
-  #
-  # So these count READS, not just return values. An assertion on the returned
-  # secret alone would pass on the BUGGY order too: in production the vault and
-  # the .env hold the SAME string, which is precisely why this went unseen. The
-  # stub prints a different value so the SOURCE is legible, and records every
-  # invocation so "was the vault consulted at all?" is answerable.
+  # The chain must not run ENV → 1Password → .env: ENV is unset in agent shells, so the vault
+  # read returns and `.env` never runs, spending credentials against a 1,000/day cap shared
+  # account-wide. These count READS: an assertion on the returned secret passes on the buggy
+  # order too, since vault and .env hold the SAME string in production. The stub prints a
+  # different value so the SOURCE is legible, and records every invocation.
+  # History: task board-reads-cost-credits.
 
   def test_unit_agent_secret_takes_the_dotenv_and_spends_no_vault_read
     Dir.mktmpdir do |dir|
@@ -224,32 +208,13 @@ class TaskBoardTest < Minitest::Test
   end
 
   # ── [unit] agent_secret: the .env branch's UNGUARDED EDGES ──────────────────
-  #
-  # THE DEFECT THESE PIN, and why it is a different one from the block above.
-  # The reorder above is correct and shipped. But it PROMOTED a branch that had
-  # sat unreachable behind a vault read that always returned, and an unreachable
-  # branch's edges are untested by construction. Each test below feeds a .env
-  # state that is malformed rather than absent, and asserts the SAME property:
-  # the resolver falls through to the vault (op.count == 1, "from-vault") instead
-  # of raising or — worse — answering with something blank.
-  #
-  # WHY THE VAULT READ IS THE ASSERTION. "Falls through" is the demotion's whole
-  # safety argument: 1Password stays LAST so a machine whose .env cannot be used
-  # can still authenticate. A test that only asserted "does not raise" would pass
-  # on a method that returned "" and left the caller unauthenticated, which is
-  # the sharper half of what was actually wrong here.
-  #
-  # THESE PIN THE CONTRACT, NOT ONE MECHANISM — stated plainly because mutation
-  # testing said so. dotenv_secret guards twice on purpose: the `File.file?` +
-  # `File.readable?` predicates, and a `rescue SystemCallError` for the TOCTOU
-  # remainder. Measured: dropping EITHER predicate leaves these tests GREEN,
-  # because the rescue catches what the missing predicate lets through; dropping
-  # a predicate AND the rescue turns the matching test RED. So each predicate is
-  # load-bearing only in the other guard's absence, and what is actually pinned
-  # here is the observable promise — every unusable .env resolves to the vault
-  # and nothing escapes as an exception. Reverting the method to its pre-fix
-  # form fails all five (two as raw Errno errors), which is the regression that
-  # matters. Do not read a surviving single-predicate mutation as dead code.
+  # A malformed .env must fall through to the vault (op.count == 1, "from-vault"), never raise
+  # or answer blank: 1Password stays LAST so an unusable .env can still authenticate, and
+  # "does not raise" passes on "". THESE PIN THE CONTRACT, NOT ONE MECHANISM. dotenv_secret
+  # guards twice on purpose: `File.file?` + `File.readable?`, and `rescue SystemCallError` for
+  # the TOCTOU remainder. Dropping EITHER predicate stays GREEN because the rescue catches it.
+  # Do not read a surviving single-predicate mutation as dead code.
+  # History: task finish-credential-demotion-sweep.
   def test_unit_agent_secret_strips_quotes_off_a_dotenv_value
     Dir.mktmpdir do |dir|
       { %(AGENT_API_SECRET="from-dotenv"\n) => "double",
@@ -559,18 +524,12 @@ class TaskBoardTest < Minitest::Test
   end
 
   def test_integration_a_malformed_dotenv_authenticates_from_the_vault_not_a_blank_secret
-    # THE CALLER-VISIBLE CONSEQUENCE of the blank-value edge, end to end.
-    #
-    # Before the fix, `AGENT_API_SECRET=` in .env resolved to "" and this exact
-    # sequence POSTed `{"secret":""}` — an unauthenticated call that the board
-    # answers 401, whereupon a caller doing `.fetch("token")` dies with
-    # `KeyError: key not found: "token"` and the operator is left debugging the
-    # wrong layer. The vault, which holds a working secret, was never consulted
-    # because "" is truthy.
-    #
-    # Asserted on the WIRE rather than the return value: what went wrong was the
-    # bytes that reached the board, and the point of the demotion is that a
-    # machine whose .env is unusable can still authenticate for real.
+    # THE CALLER-VISIBLE CONSEQUENCE of the blank-value edge. `AGENT_API_SECRET=` must not
+    # resolve to "" (truthy, so the vault is never consulted) and POST `{"secret":""}`: the
+    # board answers 401 and a caller's `.fetch("token")` dies with `KeyError: key not found:
+    # "token"`, on the wrong layer. Asserted on the WIRE, not the return value: the bytes that
+    # reach the board are the point.
+    # History: task finish-credential-demotion-sweep.
     Dir.mktmpdir do |dir|
       dotenv = File.join(dir, ".env")
       File.write(dotenv, "OTHER=1\nAGENT_API_SECRET=\n")

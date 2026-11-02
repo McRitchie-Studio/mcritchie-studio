@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] The UI budget evaluator (bin/lib/ui_budget.rb): it reads the collector's
-# JSON and config/ui_budget.yml and decides, row by row, whether a page is over.
-# Fixtures under test/fixtures/files/ui_budget/ hold one landing page and one
-# sign-in page at both widths: all under, one row of each metric over, and the
-# ways a page can go unmeasured. An unmeasured page must fail the run, or a dead
-# host would read as a clean night.
-#
-# Run directly:
-#   ruby -Itest test/lib/ui_budget_test.rb
+# [unit] The UI budget evaluator (bin/lib/ui_budget.rb): it reads the collector's JSON and
+# config/ui_budget.yml and decides, row by row, whether a page is over. Fixtures live under
+# test/fixtures/files/ui_budget/. An unmeasured page must fail the run, or a dead host reads
+# clean.
+# History: task ui-budget-nightly-pass.
 require "minitest/autorun"
 require "json"
 require "open3"

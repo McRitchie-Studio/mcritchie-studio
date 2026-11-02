@@ -1,18 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] The decision rules behind bin/submit-wait (bin/lib/ship_wait.rb).
-#
-# WHAT THESE ARE FOR, and why they are not "it waits" tests. A watcher test that
-# asserts the watcher WAITS passes on a watcher that waits FOREVER — which is
-# precisely the defect this family exists to kill (task ship-wait-has-no-primitive:
-# `while pgrep -f "bin/submit <slug>"` can never be false, and an immortal watcher is
-# indistinguishable from a slow job). So every test here pins a FIRING condition:
-# the exact input on which the verdict must be terminal, and the exact input on
-# which "ended" must NOT be read as "succeeded".
-#
-# Run directly:
-#   ruby -Itest test/lib/ship_wait_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [unit] The decision rules behind bin/submit-wait (bin/lib/ship_wait.rb). A test asserting the
+# watcher WAITS passes on a watcher that waits FOREVER, so every test pins a FIRING condition:
+# the exact input on which the verdict must be terminal, and on which "ended" must NOT read as
+# "succeeded".
+# History: task ship-wait-has-no-primitive.
 
 require "minitest/autorun"
 require_relative "../support/session_env"

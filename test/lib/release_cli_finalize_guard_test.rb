@@ -1,18 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] bin/release finalize's live-on-prod guard and the reads under it, with the
-# board, Heroku, GitHub and production stubbed in the child.
-#
-# THE INCIDENT — rel-20261029-00560a. The ship deployed every app, then a dry
-# `bin/release finalize` refused all of them: alex-build, voicebox and turf-monster
-# because the guard demanded the CURRENT Heroku release be the Deploy (turf's
-# bin/deploy sets EXPECTED_IDL_HASH after its push, and a dry run read no releases
-# at all), and the hub because an unreadable `gh run list` read as "no successful
-# run at the frozen SHA". The guard now asks the same through-config question as
-# `bin/release cycle`'s prod verify, reads live under --dry-run, and retries the run
-# list once on a credential refusal.
-#
-#   ruby -Itest test/lib/release_cli_finalize_guard_test.rb
+# [unit] bin/release finalize's live-on-prod guard and the reads under it, with the board,
+# Heroku, GitHub and production stubbed in the child. The guard must not demand the CURRENT
+# Heroku release be the Deploy (turf's bin/deploy sets EXPECTED_IDL_HASH after its push),
+# nor read an unreadable `gh run list` as "no successful run". It asks the same
+# through-config question as `bin/release cycle`'s prod verify, reads live under --dry-run,
+# and retries the run list once on a credential refusal.
+# History: release rel-20261029-00560a.
 require_relative "release_cli_harness"
 
 class ReleaseCliFinalizeGuardTest < ReleaseCliHarness

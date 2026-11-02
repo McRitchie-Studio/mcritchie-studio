@@ -1,62 +1,13 @@
 # frozen_string_literal: true
 
-# Guard test for config/feature_shapes.yml's `dor_tiers` — the contract that every tier
-# a shape DEMANDS is a tier some lane actually RUNS.
-#
-# Why this test exists: until 2026-07-13 the `e2e` tier (shapes ui+db, onchain-vertical)
-# and `e2e_onchain` (shapes onchain, onchain-vertical) were demanded by the shape file
-# and executed by NOTHING — not bin/fast-check, not CI, not
-# the G3/G4 release gates. The requirement was satisfied ENTIRELY by a builder typing an
-# `[e2e] ...` string into devops.checks_run, which bin/dor-check then credited. The gate
-# demanded evidence it never collected and accepted a self-declaration in its place —
-# the exact disease catalogued in
-# docs/agents/audits/release-gate-and-devops-process-review-2026-07-12.md. Here the gate
-# never even had a mechanism to lie WITH: the tier was a label, and always was.
-#
-# What an uncollected tier costs, MEASURED (2026-07-13, this repo, on an untouched
-# `release` checkout): the studio's 69-spec Playwright suite — the one the `e2e` tier
-# names — was 18 SPECS RED. Nobody had run it in long enough for a quarter of it to rot,
-# in precisely the areas that shipped that month (deployments-live, testing-gates,
-# board-order). A tier nobody collects does not stay honest and unused; it DECAYS, and
-# the first person to trust it inherits the decay. That is the concrete argument for
-# this guard.
-#
-# THE INVARIANT, POSITIVE (the house lesson from ci_workflow_triggers_test.rb, whose
-# blacklist was holed three times in review): this file does not enumerate the ways a
-# tier might go uncollected. It asserts the tier IS collected — some REAL RUNNER must
-# invoke a command that executes it. A tier that no runner runs fails, whatever the
-# reason, including reasons nobody has thought of yet.
-#
-# WHAT COUNTS AS A RUNNER — read before "fixing" a failure here by widening this list.
-# A runner is a file that EXECUTES a command in the pipeline:
-#   · .github/workflows/ci.yml   — the CI verdict (G2), every PR and both shippable tips
-#   · bin/fast-check             — the builder's default cert (G1)
-#
-# `config/devops_test_suites.yml` is deliberately NOT a runner. It is a CATALOG, and
-# trusting it is how this bug hides: that file has ALWAYS carried an entry
-# `studio_local_e2e` (tier: e2e, command: `npx playwright test`) — a lane no runner has
-# ever invoked. A guard that resolved tiers against the catalog would have passed, every
-# day, through the whole period the tier collected nothing. The catalog describes; only
-# a runner runs. Resolve against the thing that EXECUTES, never the thing that DECLARES
-# — that is the entire lesson of the 2026-07-12 wave, restated as a test.
-#
-# SCOPE — honest about its reach. The runners above are the ones that live in THIS repo,
-# so this guard speaks for mcritchie-studio. `dor_tiers` is ecosystem-wide config, and a
-# lane is a per-REPO capability: the same `ui+db` shape is honest in turf-monster (whose
-# ci.yml runs a real 3-shard `playwright` job) and was a lie here. Each satellite needs
-# its own copy of this guard against its own ci.yml; that is filed, not done here. What
-# this file guarantees is narrower and still worth having: the studio cannot DEMAND a
-# tier the studio cannot RUN.
-#
-# Run directly:
-#   ruby -Itest test/lib/feature_shape_tiers_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# Two tiers (backend shape):
-#   [unit]        tier extraction from shape YAML and command→tier matching, over
-#                 fixtures — including the catalog-is-not-a-runner trap above.
-#   [integration] the REAL committed feature_shapes.yml demands only tiers the REAL
-#                 committed runners execute.
+# Guard for config/feature_shapes.yml's `dor_tiers`: every tier a shape DEMANDS is a tier some
+# lane RUNS. Positive: a tier no real runner runs fails, whatever the reason. WHAT COUNTS AS A
+# RUNNER, read before "fixing" a failure by widening this list: a file that EXECUTES a
+# command, .github/workflows/ci.yml (G2) or bin/fast-check (G1). config/devops_test_suites.yml
+# is deliberately NOT a runner: it is a CATALOG. Resolve against what EXECUTES, never what
+# DECLARES. SCOPE: mcritchie-studio only; each satellite needs its own copy against its own
+# ci.yml. [unit] runs over fixtures; [integration] runs real config vs real runners.
+# History: task e2e-tiers-are-decorative.
 
 require "minitest/autorun"
 require "yaml"
@@ -73,23 +24,14 @@ class FeatureShapeTiersTest < Minitest::Test
   # to rot. See test_integration_the_canonical_spec_matches_the_shipped_config.
   DESIGN_DOC = File.join(ROOT, "docs/agents/system/devops-cycle-design.md")
 
-  # A tier → the command that CONSTITUTES running it. This is the load-bearing table:
-  # get a pattern wrong and the guard passes vacuously, asserting a lane that never
-  # existed (the failure mode ci_workflow_triggers_test.rb pins for its TEST_COMMAND).
-  # Every pattern here is matched against a runner's real command string below, and
+  # A tier maps to the command that CONSTITUTES running it. Load-bearing: a wrong pattern passes
+  # vacuously. Patterns are matched against real runner commands below;
   # test_unit_every_known_tier_has_a_command_pattern keeps the table total.
-  #
-  #   unit/component/integration — all three live in test/**, and the minitest sweep runs
-  #     every file there: CI's four `rails` shards (their union audited by
-  #     bin/rails-executed-set-check) plus its `system` job, and bin/fast-check's
-  #     mapped and spine lanes. One pattern, three tiers: the minitest suite does not
-  #     distinguish them, and neither can a command matcher. The tier TAG is the
-  #     builder's claim about WHICH file they wrote; the LANE is what proves the file
-  #     runs. This guard is about the lane.
-  #   e2e — Playwright. Needs a booted server, so it can never be a bare argless rails
-  #     lane; it is its own job.
-  #   e2e_onchain — a FRESH devnet run against a real cluster for the change under test.
-  #     No pattern, because no runner: see the constant below.
+  # unit/component/integration share one pattern: the minitest sweep runs all of test/**
+  # (audited by bin/rails-executed-set-check), so the tier TAG is the builder's claim and the
+  # LANE proves the file runs. e2e: Playwright needs a booted server, so it is its own job,
+  # never a bare argless rails lane. e2e_onchain: no pattern, no runner: see the constant below.
+  # History: task e2e-tiers-are-decorative.
   TIER_COMMANDS = {
     "unit" => %r{bin/rails\b[^\n]*\btest\b},
     "component" => %r{bin/rails\b[^\n]*\btest\b},
@@ -201,19 +143,11 @@ class FeatureShapeTiersTest < Minitest::Test
   end
 
   def test_unit_every_known_tier_has_a_command_pattern
-    # THE TABLE'S TOTALITY, and — until this PR — a test that DID NOT EXIST. The header
-    # above cited it by name as the thing "keeping the table total" while the only match in
-    # the repo was the citation itself. A guard file whose entire thesis is "a declaration
-    # is not evidence" cannot afford to declare a test it does not have; that is the bug,
-    # committed in the guard's own prose. Written now rather than deleted, because the
-    # invariant it claimed is a real one and worth holding.
-    #
-    # The claim: every tier this repo KNOWS ABOUT is classified — it has a command pattern
-    # (a lane can run it) XOR it is declared structurally unrunnable (no lane ever can). A
-    # tier in NEITHER set is the dangerous middle: `lanes_running` returns [] for it, which
-    # the primary guard reports as "no runner executes it" — true, but it buries the real
-    # story (nobody ever TOLD the table about this tier) under a message about wiring a
-    # lane. Force the classification at the table, where it is one line to fix.
+    # THE TABLE'S TOTALITY. Every tier this repo KNOWS ABOUT has a command pattern (a lane can run
+    # it) XOR is declared structurally unrunnable. A tier in NEITHER set gets [] from
+    # `lanes_running`, and the primary guard reports "no runner executes it", burying that nobody
+    # told the table. Force the classification at the table, where it is one line to fix.
+    # History: task e2e-tiers-are-decorative.
     known = (required_tiers(File.read(FEATURE_SHAPES)) + UNRUNNABLE_TIERS + TIER_COMMANDS.keys).uniq
 
     refute_empty known, "no tiers known at all — this guard would be vacuous"
@@ -271,24 +205,13 @@ class FeatureShapeTiersTest < Minitest::Test
   # --- [integration] the real committed config vs. the real committed runners ---------
 
   # ==== THE PRIMARY GUARD =============================================================
-  # Positive. Every tier the shape file demands must be RUN by a real runner. A tier
-  # that nothing executes is a requirement satisfied by typing — a gate that demands
-  # evidence it never collects, which is how every check in the 2026-07-12 wave came to
-  # lie. If this fails: either WIRE THE LANE, or STOP ASKING FOR THE TIER. Those are the
-  # only two honest moves, and no third one should be invented to make this green.
-  #
-  # THE NAME SAYS `_in_this_repo` AND IT MEANS IT — that suffix is the guard's honest
-  # confession of its own blind spot, and it was added the day I audited my own PR and found
-  # the disease alive behind it. config/feature_shapes.yml is ECOSYSTEM-WIDE (bin/dor-check
-  # reads it for a task in any repo), but RUNNER_FILES below are MCRITCHIE-STUDIO's runners,
-  # because sibling repos are not checked out in this repo's CI and cannot be. So this proves
-  # "every demanded tier has a lane HERE" and proves nothing whatsoever about rolio — which
-  # has no Playwright lane and no e2e/ directory, while `ui+db` demands `e2e` of it.
-  # An unqualified name here would be the same lie one level up, in the guard built to hunt it.
-  # The audit block in config/feature_shapes.yml carries the per-repo picture and the exact
-  # condition that would lift this qualifier. NO TASK CARRIES THAT WORK — the one this line
-  # used to cite was archived with the check unbuilt, which is why the pointer is now to the
-  # code and the audit rather than to a URL that can be closed without landing.
+  # Every tier the shape file demands must be RUN by a real runner. If this fails: either WIRE
+  # THE LANE, or STOP ASKING FOR THE TIER. No third move should be invented to make this green.
+  # THE NAME SAYS `_in_this_repo` AND MEANS IT: config/feature_shapes.yml is ECOSYSTEM-WIDE, but
+  # RUNNER_FILES below are MCRITCHIE-STUDIO's, so this proves nothing about sibling repos (rolio
+  # has no Playwright lane while `ui+db` demands `e2e`). The audit block in that config holds
+  # the per-repo picture and the condition that lifts this qualifier. NO TASK CARRIES THAT WORK.
+  # History: task e2e-tiers-are-decorative.
   def test_integration_every_required_tier_is_run_by_a_real_lane_in_this_repo
     commands = runner_commands
     tiers = required_tiers(File.read(FEATURE_SHAPES))
@@ -312,16 +235,10 @@ class FeatureShapeTiersTest < Minitest::Test
   # ====================================================================================
 
   # ==== A ZERO-TIER SHAPE MUST CHOOSE ITS SUITE GATE ON PURPOSE =======================
-  # The near-miss this pins, found 2026-08-11 while adding `test-only`. bin/dor-check
-  # used to decide whether to demand FULL-suite + rubocop evidence by asking
-  # `!dor_tiers.empty?`. That was right for the only zero-tier shape that existed —
-  # `docs` ships prose, there is no suite to certify — and it silently welded two
-  # unrelated questions together: "which tiers do you owe" and "must your code be
-  # certified at all".
-  #
-  # `test-only` is the shape that breaks the weld. It has NO tiers (a diff with no
-  # behavior has nothing for a tier to be evidence of) and it ships EXECUTABLE CODE.
-  # ====================================================================================
+  # bin/dor-check must not choose FULL-suite + rubocop evidence by asking `!dor_tiers.empty?`:
+  # that welds "which tiers do you owe" to "must your code be certified at all". `docs` ships
+  # prose; `test-only` has NO tiers and ships EXECUTABLE CODE.
+  # History: task add-test-only-shape.
 
   def test_integration_no_shape_demands_a_structurally_unrunnable_tier
     # Defense in depth behind the primary guard, and a louder error for the specific case
@@ -341,19 +258,12 @@ class FeatureShapeTiersTest < Minitest::Test
   end
 
   # ==== THE SAME LIE, IN THE OTHER COPY ===============================================
-  # This file resolved tiers against config/feature_shapes.yml and declared victory. But the
-  # doc an agent actually READS to size its testing — devops-cycle-design.md §3.2, in a table
-  # whose column is headed literally "Required tiers (DoR contract)" — carried its OWN copy of
-  # the matrix, and that copy still demanded `devnet E2E (nightly)` of `onchain` and
-  # `onchain-vertical` AFTER this PR deleted `e2e_onchain` from the config. A required tier
-  # with no lane behind it, sitting in the canonical spec, on the two shapes that move real
-  # money. The guard above could not see it: IT READS CONFIG, AND THE LIE HAD MOVED TO PROSE.
-  #
-  # THE STRUCTURAL FIX is not "also grep the doc for devnet" — that is another blacklist of
-  # another spelling, and it would miss the next one. It is to stop keeping TWO INDEPENDENT
-  # COPIES of one truth. The doc's tier names are backticked; this asserts the two copies are
-  # the SAME SET, both directions, for every shape. The doc may not demand a tier the config
-  # does not (the bug), and it may not quietly drop one the config does (the inverse bug).
+  # devops-cycle-design.md §3.2 ("Required tiers (DoR contract)") carries its own matrix, which
+  # a guard reading only config/feature_shapes.yml cannot see. Grepping the doc for one spelling
+  # is another blacklist. The doc's tier names are backticked, and this asserts the two copies
+  # are the SAME SET, both directions, for every shape: the doc may not demand a tier the config
+  # does not, nor drop one it does.
+  # History: task e2e-tiers-are-decorative.
   DOC_TIER_ROW = /^\|\s*\*\*(?<shape>[a-z+-]+)\*\*\s*\|[^|]*\|(?<tiers>[^|]*)\|/
 
   def doc_dor_tiers(markdown)
@@ -428,29 +338,12 @@ class FeatureShapeTiersTest < Minitest::Test
   end
 
   # ==== [unit] EVERY `claimable_when` IS A RULE THE GATE ACTUALLY IMPLEMENTS ==========
-  #
-  # `claimable_when` is what makes a zero-tier shape safe: it says the lighter
-  # contract must be EARNED from the observed diff rather than unlocked by typing the
-  # shape's name. That protection is worth exactly nothing if bin/dor-check does not
-  # implement the rule the config names — a shape would then carry a guard that reads
-  # as protection and enforces nothing, which is a WORSE state than declaring no
-  # guard at all, because the reviewer stops looking.
-  #
-  # This is the same class of drift test_integration_the_canonical_spec_matches_the_
-  # shipped_config catches between the config and the design doc: two files, one
-  # truth. Here the second copy is CODE.
-  #
-  # dor-check also refuses an unrecognized rule at RUNTIME (its `else` branch), so a
-  # typo fails closed rather than granting the claim. This guard is the earlier half:
-  # it catches the typo in CI, on the commit that introduces it, instead of on some
-  # future task that happens to claim the shape.
-  #
-  # STRUCTURAL, NOT A GREP FOR THE NAME. Both rule names appear in prose comments in
-  # that file (and in this one), so a substring search would match the DOCUMENTATION
-  # of a rule that was never wired up — the exact "assertion matches the comment"
-  # failure this repo has been bitten by. So it parses the `case claim_rule`
-  # dispatch and reads its `when` literals: the only place a rule is actually
-  # implemented.
+  # `claimable_when` makes a zero-tier shape safe: the lighter contract is EARNED from the
+  # observed diff. A rule bin/dor-check does not implement reads as protection and enforces
+  # nothing. dor-check also refuses an unrecognized rule at RUNTIME; this catches the typo
+  # earlier, in CI. STRUCTURAL, NOT A GREP FOR THE NAME: rule names appear in prose comments, so
+  # it parses the `case claim_rule` dispatch and reads its `when` literals.
+  # History: task docs-shape-admits-test-code.
   DOR_CHECK = File.join(ROOT, "bin/dor-check")
 
   def implemented_claim_rules(source)

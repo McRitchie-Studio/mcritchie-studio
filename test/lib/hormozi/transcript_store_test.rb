@@ -4,23 +4,13 @@ require "minitest/autorun"
 require "tmpdir"
 require_relative "../../../lib/hormozi/transcript_store"
 
-# [unit] AN INTERRUPTED PREP MUST NOT LEAVE A TRANSCRIPT THAT LOOKS FINISHED.
-#
-# THE SHAPE OF THE DEFECT. Reuse asked File.exist? — existence, not completeness
-# — and the write it paired that with was a plain File.write, which is not
-# atomic. A prep interrupted mid-write during a 516-file clean therefore left a
-# truncated or zero-byte .txt that satisfied that check FOREVER: every later run
-# reused it, counted it as "reused" in a cheerful summary, exited 0, and the
-# extraction wave read an empty transcript for a tier-1 episode.
-#
-# WHAT MAKES IT EXPENSIVE. Nothing is loud. The manifest reports 0 words for a
-# real episode, which reads like a short video rather than a failure, and no
-# later run ever re-cleans it because the file is right there.
-#
-# BOTH HALVES OF THE FIX ARE PINNED HERE, because either alone still loses:
-# completeness-based reuse without an atomic write re-cleans the same truncated
-# file forever, and an atomic write without completeness-based reuse still trusts
-# whatever the pre-fix runs already stranded on disk.
+# [unit] AN INTERRUPTED PREP MUST NOT LEAVE A TRANSCRIPT THAT LOOKS FINISHED. Reuse by
+# File.exist? plus a non-atomic File.write leaves a truncated or zero-byte .txt that every
+# later run reuses, exiting 0; the manifest's 0 words reads like a short video. BOTH HALVES
+# ARE PINNED, because either alone loses: completeness-based reuse without an atomic write
+# re-cleans the same truncated file forever, and an atomic write without completeness-based
+# reuse trusts what earlier runs stranded on disk.
+# History: task harden-hormozi-corpus-scripts.
 class TranscriptStoreTest < Minitest::Test
   def test_a_zero_byte_transcript_is_not_reusable
     with_transcript("") do |path|

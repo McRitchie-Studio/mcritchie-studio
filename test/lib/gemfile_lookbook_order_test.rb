@@ -3,22 +3,14 @@
 require "minitest/autorun"
 require "bundler"
 
-# [unit] The hub's Gemfile keeps the component gallery's load order
-# (task hub-shows-lookbook-gallery-live).
-#
-# studio-engine never requires lookbook; the hub opts in by bundling it. Two
-# rules hold for that to work on the live hub:
-#
-#   1. lookbook is listed AFTER studio-engine. Bundler.require loads gems in
-#      Gemfile order, and ViewComponent (pulled in by the engine) must decide
-#      its preview routes before Lookbook turns previews on. Listed first, the
-#      engine warns at boot (Studio::ComponentGallery.load_order_ok?).
-#   2. lookbook is in the default group and auto-required, so production
-#      loads it. In a development group, or with `require: false`, production
-#      has no Lookbook::Engine and Studio.lookbook_in_production draws nothing.
-#
-# Parsed with Bundler's own DSL, so a comment or a string mentioning lookbook
-# cannot satisfy it. Standalone: bundle exec ruby -Itest test/lib/gemfile_lookbook_order_test.rb
+# [unit] The hub's Gemfile keeps the component gallery's load order; the hub opts in by bundling
+# lookbook.
+#   1. lookbook is listed AFTER studio-engine: Bundler.require loads in Gemfile order and
+#      ViewComponent must decide its preview routes first, or the engine warns
+#      (Studio::ComponentGallery.load_order_ok?).
+#   2. lookbook is in the default group and auto-required, or production has no
+#      Lookbook::Engine and Studio.lookbook_in_production draws nothing.
+# History: task hub-shows-lookbook-gallery-live.
 class GemfileLookbookOrderTest < Minitest::Test
   GEMFILE = File.expand_path("../../Gemfile", __dir__)
 

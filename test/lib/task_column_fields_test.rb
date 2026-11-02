@@ -1,21 +1,13 @@
 # frozen_string_literal: true
 
-# Tests for bin/lib/task_column_fields.rb — the three-state rendering of the
-# task fields that live as TOP-LEVEL Task COLUMNS (`merged`, `release_slug`)
-# rather than in `metadata["devops"]` like their neighbours.
-#
-# The property under test is NOT "merged is printed". It is that the three
-# states stay DISTINGUISHABLE, because the defect this module exists for was an
-# agent reading "no output" as "the write dropped":
-#
+# Tests for bin/lib/task_column_fields.rb: three-state rendering of TOP-LEVEL Task COLUMNS
+# (`merged`, `release_slug`), not in `metadata["devops"]`. The three states stay
+# DISTINGUISHABLE:
 #   SET        the value
-#   UNSET      a definite negative in words — never a bare "-"
+#   UNSET      a definite negative in words, never a bare "-"
 #   UNREPORTED the payload carries no such key, so the tool cannot say
-#
 # UNSET and UNREPORTED collapsing back into one rendering is the regression.
-#
-#   ruby -Itest test/lib/task_column_fields_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# History: task show-prints-merged-field.
 
 require "minitest/autorun"
 

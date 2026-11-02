@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] bin/ecosystem-build's phase 6c verdict, EXECUTED.
-#
-# WHY IT IS NOT ENOUGH TO TEST ImportRun.fresh_success?. That predicate has its
-# own unit matrix (test/models/import_run_test.rb) and it is right. This file
-# asks the other question, the one a unit test structurally cannot: is it WIRED?
-# A correct predicate the phase does not call is exactly as useful as no
-# predicate, and the defect being fixed here was precisely a wiring defect —
-# the phase graded a service by `&&` on an exit code that had stopped meaning
-# anything.
-#
-# THE REGRESSION, in one sentence. Nflverse::SeedPlayers rescues a feed outage
-# and RETURNS rather than raising — deliberately, because it is a declared
-# post_deploy_cmd and a dead upstream must not abort a ship — so
-# `rails nfl:players_seed` exits 0 whether it read the feed or never reached it.
-# Chained with `&&`, phase 6c therefore logged a GREEN "0 athletes with espn_id"
-# on a fresh-Mac rebuild during an outage, where it used to log FAILED.
-#
-# So `bundle` is stubbed, and the phase is asked for its verdict in both worlds.
-# The stub makes the SEED SUCCEED in both — that is the whole point, and a stub
-# that failed the seed on the outage path would be testing a world this bug does
-# not live in.
+# [integration] bin/ecosystem-build's phase 6c verdict, EXECUTED. ImportRun.fresh_success? has
+# its own matrix (test/models/import_run_test.rb); this asks whether it is WIRED.
+# Nflverse::SeedPlayers rescues a feed outage and RETURNS, deliberately (a declared
+# post_deploy_cmd; a dead upstream must not abort a ship), so `rails nfl:players_seed` exits 0
+# either way and `&&` on it grades nothing. So `bundle` is stubbed and the phase gives its
+# verdict in both worlds. The stub makes the SEED SUCCEED in both: failing it on the outage
+# path tests a world this bug does not live in.
+# History: task import-run-drops-skip-stats.
 require "bundler/setup"
 require "minitest/autorun"
 require "open3"
@@ -64,16 +51,11 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
                  "declined to write two humans")
   end
 
-  # stderr is the channel the service uses for FEED UNAVAILABLE and for its
-  # refusals, and the old chain's `2>&1` threw it away — leaving a number as the
-  # only surviving signal. Assert the phase no longer swallows it.
-  # ASSERTED ON "data not refreshed", NOT ON "FEED UNAVAILABLE", and the
-  # difference is the whole test. The phase's own log_fail line says "read the
-  # FEED UNAVAILABLE line above", so an assertion on that phrase matches the
-  # phase's text whether or not the service's stderr survived — it passes in
-  # both worlds and proves nothing. Measured: with `2>&1` restored so stderr IS
-  # discarded, the obvious version of this test stayed GREEN. The tail of the
-  # warning appears only in what the service wrote.
+  # stderr carries FEED UNAVAILABLE and the service's refusals, and `2>&1` throws it away.
+  # ASSERTED ON "data not refreshed", NOT ON "FEED UNAVAILABLE": the phase's own log_fail line
+  # says "read the FEED UNAVAILABLE line above", so that phrase matches whether or not stderr
+  # survived and proves nothing. The tail of the warning appears only in what the service wrote.
+  # History: task import-run-drops-skip-stats.
   def test_the_feed_unavailable_warning_reaches_the_rebuild_log
     warning = "nflverse seed: FEED UNAVAILABLE — data not refreshed (SocketError: getaddrinfo)"
     out = phase(fresh_success: false, seed_stderr: warning)
@@ -95,17 +77,13 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
                  "because an earlier run that day left a fresh ImportRun")
   end
 
-  # THE CELL BOTH SIGNALS STILL GOT WRONG, and the reason `since` exists. On the
-  # SECOND rebuild of a day the seed can exit 0 with its own run recorded
-  # `failed` — Nflverse::SeedPlayers rescues FeedUnavailable and returns — while
-  # this morning's `ok` row still satisfies a bare 24-hour window. Measured
-  # against the real service before the fix: exit 0, rows "ok | failed",
-  # fresh_success? true, phase GREEN through a total outage.
-  #
-  # The stub answers the freshness question the way the DATABASE would in that
-  # world: a whole-day question finds this morning's success, a question pinned
-  # to this run's start finds nothing. A phase that forgot to pass a boundary
-  # therefore gets the green it used to get, and this test fails.
+  # THE CELL BOTH SIGNALS STILL GOT WRONG, and the reason `since` exists. On a day's SECOND
+  # rebuild the seed can exit 0 with its own run recorded `failed` (Nflverse::SeedPlayers
+  # rescues FeedUnavailable and returns) while this morning's `ok` row satisfies a bare 24-hour
+  # window. The stub answers as the DATABASE would: a whole-day question finds that success, one
+  # pinned to this run's start finds nothing. A phase that forgets the boundary gets green, and
+  # this test fails.
+  # History: task rebuild-lane-grades-dead-exitcodes.
   def test_an_earlier_success_that_day_no_longer_excuses_a_rescued_outage
     out = phase(fresh_success: true, bounded_fresh_success: false)
 
@@ -193,16 +171,11 @@ class EcosystemBuildImportVerdictTest < Minitest::Test
 
   private
 
-  # Drive phase_nfl_headshots with a stubbed `bundle`.
-  #
-  # The stub answers by INSPECTING ITS ARGUMENTS, so it does not care what order
-  # the phase runs its commands in — a positional stub would have to be rewritten
-  # by anyone who reorders the phase, and would pass for the wrong reason if they
-  # forgot.
-  #
-  # `bounded_fresh_success` is the answer the DB would give once the question is
-  # pinned to this run's start; it defaults to `fresh_success` so every existing
-  # case keeps describing the world it was written for.
+  # Drive phase_nfl_headshots with a stubbed `bundle`. The stub answers by INSPECTING ITS
+  # ARGUMENTS, so command order does not matter: a positional stub needs rewriting on any
+  # reorder and would pass for the wrong reason. `bounded_fresh_success` is the DB's answer once
+  # the question is pinned to this run's start; it defaults to `fresh_success`.
+  # History: task import-run-drops-skip-stats.
   def phase(fresh_success:, refused: 0, seed_stderr: nil, seed_exit: 0,
             bounded_fresh_success: nil, capture_boundary: nil, headshots_exit: 0,
             headshots_stderr: nil)

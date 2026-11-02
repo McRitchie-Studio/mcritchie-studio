@@ -1,44 +1,13 @@
 # frozen_string_literal: true
 
-# THE DURABLE GATE RECORD for the REST of the no-verdict family. Standalone (no
-# Rails — it shells bin/dor-check with --file fixtures):
-#   ruby -Itest test/lib/gate_record_no_verdict_ci_test.rb
-#
-# THE DEFECT (/tasks/refused-review-records-fail). /tasks/gate-logs-auth-as-red
-# moved ONE member of CiGate::CI_NO_VERDICT_STATES off the flat "fail": :unreadable.
-# The other two stayed on it. So a `dor_review` gate-zero that refused a review
-# because CI had NOTHING TO SAY closed its attempt with
-#
-#   {"sop":"ci","result":"fail"}
-#
-# for a PR whose CI was never red — :none is "the PR reports no checks YET" and
-# :unverified is "`gh` itself fell over". Both are non-answers. Neither is a failure.
-# `bin/gate show` prints `ci:fail` and the task's gates card paints a rose ✗, so the
-# task's PERMANENT gate history claims a red-CI bounce that never happened.
-#
-# WHY IT IS THE DANGEROUS DIRECTION. Most defects in this family make a task look
-# GREENER than it was. This one INVENTS A RED, in the one artifact that outlives
-# Heroku's log retention — and an invented red is what a later auditor reads as "this
-# task bounced on CI", concluding the builder shipped a broken tree.
-#
-# MEASURED BEFORE THE FIX (2026-09-09, through the live chain below): :none, :unverified
-# and a genuinely RED CI all persisted the identical row `{"sop":"ci","result":"fail"}`.
-# Three different facts, one word, no way back to which.
-#
-# THE SECOND HALF IS IN THE VIEW, and it is the half that inverts the bug rather than
-# fixing it. The gates card's glyph chain is `fail → ✗`, `running → ◌`, DEFAULT → ✓, so
-# a new result value with no arm of its own is painted with the PASS glyph — trading a
-# manufactured failure for a manufactured success. That arm and its proof live in
-# test/integration/gates_card_no_verdict_ci_test.rb, which can load both halves.
-#
-# WHY THESE TESTS READ THE RECORD AND NOT STDOUT. A gate that PRINTS the right thing
-# and STORES the wrong thing is precisely this defect: dor-check's stdout already said
-# "GitHub CI has produced no verdict yet" in full while the row it persisted said fail,
-# so asserting the printed refusal passes on the broken build. Every integration test
-# here recovers the argv the gate CLI was actually handed, parses the `{"sop":"ci"}`
-# entry out of it, and asserts on that — and refuses to conclude anything when no such
-# entry was recorded at all (see ci_sop_entry's guard: an absent row is not a passing
-# row, and without that guard every `refute_equal "fail"` below passes vacuously).
+# THE DURABLE GATE RECORD for the REST of the no-verdict family. Shells bin/dor-check with
+# --file fixtures. A review refused because CI had NOTHING TO SAY must not store
+# {"sop":"ci","result":"fail"}: :none and :unverified are non-answers. The glyph chain is `fail
+# -> ✗`, `running -> ◌`, DEFAULT -> ✓: a new value needs its own arm
+# (test/integration/gates_card_no_verdict_ci_test.rb). READ THE RECORD, NOT STDOUT: a gate can
+# print right and store wrong. Tests parse the {"sop":"ci"} entry from the gate CLI's argv and
+# conclude nothing when absent (ci_sop_entry's guard).
+# History: task refused-review-records-fail.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -92,19 +61,13 @@ class GateRecordNoVerdictCiTest < Minitest::Test
                  "two no-verdict states share one row value, so the record cannot say which: #{rows.inspect}"
     refute_includes rows, "fail", "no member of the no-verdict family may claim a CI failure"
 
-    # CORRECTED BY /tasks/no-pr-records-as-fail, and the correction is the finding.
-    # This used to read `assert_equal GATE_ROW_NO_VERDICT.sort, rows.sort` — an EQUALITY
-    # between the row set and the STATE family, which held only because the three states
-    # that arrived first happened to belong to both. :no_pr broke it on purpose: it
-    # records a no-verdict ROW (there was no CI to have a verdict) while staying OUT of
-    # CI_NO_VERDICT_STATES (no cert may stand in for a PR that was never opened). See
-    # CiGate::GATE_ROW_NO_VERDICT for the full argument.
-    #
-    # THE GUARANTEE IS UNCHANGED, and is what this assertion still buys: no state that
-    # produces a no-verdict row may fall through gate_row's `else`, and no value may be
-    # DECLARED no-verdict that gate_row cannot actually produce — either drift paints a
-    # CI-with-no-verdict green. It is now stated over the states that produce such a row
-    # rather than over the cert-waiver family, which is the set it always meant.
+    # CORRECTED BY /tasks/no-pr-records-as-fail. Not an EQUALITY between the row set and the state
+    # family: :no_pr records a no-verdict ROW while staying OUT of CI_NO_VERDICT_STATES (no cert may
+    # stand in for a PR never opened). See CiGate::GATE_ROW_NO_VERDICT.
+    # THE GUARANTEE: no state producing a no-verdict row may fall through gate_row's `else`, and no
+    # value may be DECLARED no-verdict that gate_row cannot produce. Either drift paints a
+    # CI-with-no-verdict green.
+    # History: task no-pr-records-as-fail.
     producing_states = CiGate::CI_NO_VERDICT_STATES + [:no_pr]
     produced = producing_states.map do |state|
       CiGate.gate_row({ state: state }, review_role: true, review_refused: true)
@@ -147,22 +110,12 @@ class GateRecordNoVerdictCiTest < Minitest::Test
     assert_equal "pass", CiGate.gate_row({ state: :green }, review_role: true, review_refused: false)
   end
 
-  # THE BOUNDARY, stated so the next reader does not mistake it for an oversight — and
-  # MOVED by /tasks/no-pr-records-as-fail, because this test had it in the wrong place.
-  #
-  # It used to pin `:no_pr` here as the worked example of "outside the family, so it
-  # keeps the `else`". The premise was half right and the conclusion was wrong. :no_pr
-  # is indeed NOT a member of CI_NO_VERDICT_STATES (a cert cannot stand in for a PR that
-  # was never opened) — but it does not follow that it belongs on the DEFAULT, and the
-  # default is not a neutral place to leave a state: it answered "fail" to a reviewer
-  # and "unverified" to a builder for the same world, so this assertion was pinning a
-  # manufactured red. It now has its own arm and its own row value; the cert-waiver
-  # question and the row-value question are answered separately (see
-  # CiGate::GATE_ROW_NO_VERDICT).
-  #
-  # WHAT IS LEFT ON THE DEFAULT IS THE UNCLASSIFIED, and that is the boundary worth
-  # pinning: an allow-list must default to refuse, so a state nobody has classified
-  # answers with the failing words rather than a considered-looking amber.
+  # THE BOUNDARY, stated so the next reader does not mistake it for an oversight. :no_pr is
+  # outside CI_NO_VERDICT_STATES yet has its own arm and row value: the cert-waiver question and
+  # the row-value question are answered separately (see CiGate::GATE_ROW_NO_VERDICT).
+  # WHAT IS LEFT ON THE DEFAULT IS THE UNCLASSIFIED: an allow-list must default to refuse, so a
+  # state nobody classified answers with the failing words rather than a considered-looking amber.
+  # History: task no-pr-records-as-fail.
   def test_unit_states_outside_the_no_verdict_family_keep_the_default
     assert_equal "fail", CiGate.gate_row({ state: :quantum_flux }, review_role: true, review_refused: true)
     assert_equal "unverified", CiGate.gate_row({ state: :quantum_flux }, review_role: false, review_refused: false),
@@ -341,16 +294,13 @@ class GateRecordNoVerdictCiTest < Minitest::Test
   end
 
   # The two `gh` worlds, in gh's own words.
-  #
-  #   none        — `pr view` answers (OPEN, MERGEABLE) and `pr checks` reports no
-  #                 checks. CiStatus.parse matches /no checks/ → :none. It dispatches
-  #                 on the SUBCOMMAND because both calls happen and they must answer
-  #                 differently; a stub that failed both would land :unverified and
-  #                 this test would silently be a duplicate of the one below.
-  #   unverified  — a transport fault on the FIRST call. It must not match any
-  #                 UNREADABLE_CAUSES pattern (no 401/403, no "bad credentials", no
-  #                 "requires authentication") or CiStatus classifies it :unreadable,
-  #                 which already has its own arm and would make this test inert.
+  #   none: `pr view` answers (OPEN, MERGEABLE), `pr checks` reports no checks; CiStatus.parse
+  #     matches /no checks/ -> :none. It dispatches on the SUBCOMMAND: a stub failing both lands
+  #     :unverified and duplicates the case below.
+  #   unverified: a transport fault on the FIRST call. It must match no UNREADABLE_CAUSES pattern
+  #     (no 401/403, "bad credentials", "requires authentication") or it classifies :unreadable
+  #     and this test is inert.
+  # History: task refused-review-records-fail.
   def gh_stub_body(mode)
     case mode
     when "none"

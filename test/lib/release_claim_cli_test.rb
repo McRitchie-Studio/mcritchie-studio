@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] tests for the release-conductor-claim CLI (ReleaseClaimCli). The board
-# behavior is covered by
-# test/controllers/api/v1/release_conductor_claims_controller_test.rb; here we pin the
-# CLI's own logic: exit-code branching on the acquire verdict (0 held / 10 stood down /
-# 1 fail-open), the held-claim marker, the detached renewer + the identity it carries,
-# and the graceful no-session/no-slug/no-role fallbacks — with a fake API so no server
-# is needed.
-#
-#   ruby -Itest test/lib/release_claim_cli_test.rb
+# [unit] tests for the release-conductor-claim CLI (ReleaseClaimCli), with a fake API. Board
+# behavior: test/controllers/api/v1/release_conductor_claims_controller_test.rb. Here: exit-code
+# branching (0 held / 10 stood down / 1 fail-open), the held-claim marker, the detached renewer
+# and its identity, and the no-session/no-slug/no-role fallbacks.
+# History: task release-conductor-claims.
 
 require "minitest/autorun"
 require "json"
@@ -448,25 +444,12 @@ class ReleaseClaimCliTest < Minitest::Test
   end
 
   # --- the renew loop must die with its RELEASE, not only with its session --------
-  #
-  # THE DEFECT (found 2026-08-30 alongside its review-lane twin, and deliberately
-  # left for its own task because a production ship was running through this exact
-  # machinery at the time). `renew-loop` passed ShiftRenewer only `alive:`, so a
-  # CONDUCTOR claim renewer stopped on its anchor session dying and on NOTHING else.
-  # A conductor session runs many acts, so after a release shipped the loop went on
-  # renewing a claim over finished work for as long as the anchor lived — bounded
-  # only by ShiftRenewer::MAX_LIFETIME_SECONDS, twelve hours.
-  #
-  # WHY IT BITES HARDER THAN THE REVIEW TWIN: a stale review claim wastes polls, but a
-  # stale ASSEMBLER or DEPLOYER claim makes the next `bin/release prepare` print
-  # "🛑 assembler already held — STAND DOWN" and ABORT before merging or deploying
-  # anything, and it pins the fixed-path `_ship`/`_gate` workspaces against reclaim.
-  # One finished session can wedge the whole qa-release lane.
-  #
-  # THE CONFOUND THESE TESTS ARE BUILT AROUND: every one anchors to Process.pid — THIS
-  # test process, unarguably alive throughout. So a loop that exits here cannot have
-  # exited for the OLD reason, and the control below proves the wiring runs at all
-  # rather than failing open into silence.
+  # A conductor session runs many acts, so with `alive:` alone the loop renews a finished claim,
+  # bounded only by ShiftRenewer::MAX_LIFETIME_SECONDS. A stale ASSEMBLER or DEPLOYER claim
+  # makes the next `bin/release prepare` STAND DOWN and abort, and pins the `_ship`/`_gate`
+  # workspaces. THE CONFOUND: every test anchors to Process.pid, alive throughout, so an exit
+  # here cannot be for the OLD reason; the control below proves the wiring runs at all.
+  # History: task release-renewer-outlives-ship.
 
   def anchor_flags
     ["--anchor-pid", Process.pid.to_s, "--anchor-start", SessionIdentity.proc_start(Process.pid)]
@@ -584,28 +567,13 @@ class ReleaseClaimCliTest < Minitest::Test
   end
 
   # ── A MALFORMED PAYLOAD MUST NOT KILL THE RENEWER ───────────────────────────
-  #
-  # `parse_data` hands back `body["data"]` UNTOUCHED whenever the body itself is a
-  # Hash, so a 200 shaped `{"data": [...]}` or `{"data": 7}` reaches this method with a
-  # non-Hash `data`. Without `return false unless data.is_a?(Hash)` the very next line
-  # (`data["release_state"]`) raises TypeError on both — Array#[] and Integer#[] each
-  # demand an Integer index. That exception does not stay local: ShiftRenewer.run does
-  # NOT rescue `finished.call` (bin/lib/shift_renewer.rb), so the renewer PROCESS dies,
-  # nothing renews the lease, and the claim lapses at ClaimLease::DEFAULT_TTL_SECONDS
-  # (120s) — fail-CLOSED, the exact inversion of this method's documented fail-open
-  # intent, on the lane where a lapsed claim means a CONCURRENT PRODUCTION DEPLOY.
-  #
-  # The guard is unreachable through the board's own render_data today, which is
-  # precisely why it needs a test rather than trust: nothing else in this file pinned
-  # it, and deleting the line left all 41 CLI unit tests plus the renewer integration
-  # tests GREEN (reproduced twice, independently).
-  #
-  # ONE HONEST CAVEAT about the String case, so it is never read as more coverage than
-  # it is: String#[] accepts a String and answers with a SUBSTRING, so
-  # `"shipped"["release_state"]` returns nil instead of raising. That assertion
-  # therefore holds with OR without the guard — it pins the fail-open contract for the
-  # shape, but only the Array and Integer assertions can kill a mutant that deletes
-  # the line. Do not "simplify" them away into the loop below's sibling.
+  # Without `return false unless data.is_a?(Hash)`, a non-Hash `data` from `parse_data` makes
+  # `data["release_state"]` raise TypeError on Array and Integer; ShiftRenewer.run does NOT
+  # rescue `finished.call` (bin/lib/shift_renewer.rb), so the renewer dies and the claim lapses
+  # at ClaimLease::DEFAULT_TTL_SECONDS, on the lane where that means a CONCURRENT PRODUCTION
+  # DEPLOY. CAVEAT: `"shipped"["release_state"]` returns nil, so the String case holds without
+  # the guard; only Array and Integer kill the mutant. Do not "simplify" them away.
+  # History: task cover-renewer-payload-guard.
   def test_unit_a_malformed_payload_never_kills_the_renewer
     Dir.mktmpdir do |proj|
       # The RAISING shapes — the ones the guard exists for. An Array of records is the
@@ -639,14 +607,11 @@ class ReleaseClaimCliTest < Minitest::Test
   end
 
   # ── SHIPPED IS NOT FINISHED WHILE MEMBER WORK REMAINS ───────────────────────
-  #
-  # The unit counterpart of the integration regression. A DEPLOYER legitimately
-  # holds a claim on an ALREADY-`shipped` release on two supported paths — a
-  # `bin/release ship` re-run resuming member flips, and `bin/release finalize` on
-  # a partial. Reading the state alone called those finished, so the renewer
-  # exited before its first heartbeat and the claim lapsed 120s into a run needing
-  # many minutes. Note every OTHER test in this file passes under either rule,
-  # which is exactly why the first version looked correct.
+  # A DEPLOYER legitimately holds a claim on a `shipped` release on two paths: a `bin/release
+  # ship` re-run resuming member flips, and `bin/release finalize` on a partial. Reading state
+  # alone exits before the first heartbeat. Every OTHER test in this file passes under either
+  # rule.
+  # History: task release-renewer-outlives-ship.
   def test_unit_a_shipped_release_with_work_left_is_not_finished
     Dir.mktmpdir do |proj|
       refute cli(projects_dir: proj,

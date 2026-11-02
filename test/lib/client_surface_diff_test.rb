@@ -112,17 +112,11 @@ class ClientSurfaceDiffTest < Minitest::Test
   end
 
   # ==== VENDORED DEPENDENCY SOURCE IS NOT THIS APP'S BROWSER SURFACE ================
-  #
-  # THE VECTOR THIS SUITE DID NOT IMAGINE. The first cut of these tests killed 16 of
-  # 16 mutations and was still wrong, because every fixture path was one WE would
-  # write. CI supplied the one we would not: `vendor/` is not in .gitignore, so
-  # `git ls-files --others` reports the whole vendored bundle as untracked, and a
-  # vendored gem's rescues/*.html.erb is a real ERB template carrying a real
-  # <script>. Three previously-green DorCheckTest cases went red (PR #801).
-  #
-  # The gate was proven correct on the inputs its author imagined. So the fixtures
-  # now contain the input he did not — and this test is the reason the next person
-  # cannot quietly re-anchor template? on extension alone.
+  # `vendor/` is not in .gitignore, so `git ls-files --others` reports the vendored bundle as
+  # untracked, and a vendored gem's rescues/*.html.erb is a real ERB template with a real
+  # <script>. These fixtures are why the next person cannot quietly re-anchor template? on
+  # extension alone.
+  # History: task gate-client-side-behavior.
   VENDORED = %w[
     vendor/bundle/ruby/3.3.0/gems/actionpack-8.1.3/lib/action_dispatch/middleware/templates/rescues/diagnostics.html.erb
     vendor/bundle/ruby/3.3.0/gems/actionpack-8.1.3/lib/action_dispatch/middleware/templates/rescues/_source.html.erb
@@ -200,14 +194,11 @@ class ClientSurfaceDiffTest < Minitest::Test
   end
 
   # ==== A TAG, NOT THE WORD =========================================================
-  #
-  # THE THIRD VECTOR NOBODY IMAGINED — after vendored paths and vendor/javascript/.
-  # The detector matched the TEXT `<script` anywhere, so an ERB comment SAYING there
-  # is no script demanded a Playwright spec. Every one of these is LIVE in the
-  # ecosystem today, and the first is multi-line: the offending line carries no
-  # `<%#` at all, because the comment opened two lines earlier. That is why the
-  # classifier compares masked FILE VERSIONS and not hunk lines — no per-line or
-  # per-hunk rule can see context that sits outside the hunk.
+  # Matching the TEXT `<script` anywhere makes an ERB comment SAYING there is no script demand a
+  # Playwright spec. The first example is multi-line: the offending line has no `<%#`. So the
+  # classifier compares masked FILE VERSIONS; no per-line or per-hunk rule sees context outside
+  # the hunk.
+  # History: task gate-client-side-behavior.
   TURF_GOAL_FEED = <<~ERB
     <%# A data-only node appended to the hidden goal feed on the live page. The
         page's MutationObserver reads these data-* attrs, fires a toast, then removes

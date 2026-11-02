@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] The REAL `bin/lib/release_claim_cli.rb` process must never touch the
-# board on an argument it did not understand.
-#
-# The class's guard logic is unit-covered in test/lib/release_claim_argument_guard_test.rb
-# with a fake API. This file pins the seam an operator (or bin/release) actually crosses:
-# a real ruby process, real ARGV, real AgentApi, real HTTP — and asserts the only thing
-# that matters, that NO CLAIM REQUEST LEFT THE PROCESS. Printed usage text is not the
-# property: before the guard, a line with an unknown flag printed a stand-down message
-# and exited 10 having already POSTed.
-#
-# ATOMIC_CAPTURE_URL IS THE LOAD-BEARING PIN, and the sibling PR's first integration
-# test passed for the wrong reason without it. The claim CLIs do not speak TASK_API_BASE
-# at all — they go through AgentApi, which reads ATOMIC_CAPTURE_URL. Pin only
-# TASK_API_BASE and the child talks to a closed port, where "the stub saw no claim"
-# is just as true with the bug still in place. Pointing it at the stub is what makes a
-# request that happens a request this test SEES, and the positive control is what
-# proves the stub is genuinely being reached.
-#
-# NOTHING HERE TOUCHES THE PRODUCTION BOARD. Taking a real conductor lease is precisely
-# the defect under test; the stub answers every claim as NOT acquired, so no code path
-# below can anchor a detached renewer.
-#
-#   ruby -Itest test/lib/release_claim_flags_test.rb
+# [integration] The REAL `bin/lib/release_claim_cli.rb` process must never touch the board
+# on an argument it did not understand; NO CLAIM REQUEST LEFT THE PROCESS is the property,
+# not printed text. Guard logic: test/lib/release_claim_argument_guard_test.rb.
+# ATOMIC_CAPTURE_URL IS THE LOAD-BEARING PIN: the claim CLIs use AgentApi, not
+# TASK_API_BASE, so pinning only TASK_API_BASE leaves "the stub saw no claim" true with the
+# bug; the positive control proves the stub is reached. The stub answers every claim NOT
+# acquired, so nothing anchors a renewer.
+# History: task refuse-unknown-release-claim-flags.
 
 require "minitest/autorun"
 require "json"

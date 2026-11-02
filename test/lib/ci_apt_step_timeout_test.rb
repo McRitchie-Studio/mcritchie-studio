@@ -1,46 +1,13 @@
 # frozen_string_literal: true
 
 # Guard: every apt fetch in CI is BOUNDED AT THE STEP and RETRIES.
-#
-# test/lib/ci_job_timeout_test.rb is the sibling of this file and bounds the JOB.
-# Read them together; they are the same incident at two grains, and the distinction
-# is the entire reason this file exists.
-#
-# WHAT THE JOB-LEVEL BOUND ALREADY DID. `timeout-minutes: 45` on every job replaced
-# GitHub's six-hour default, which is why a stalled fetch dies in 45 minutes instead
-# of running until someone cancels it by hand. That mattered: a hung run cannot be
-# `gh run rerun`, so before it, a stall blocked the retry as well as the run.
-#
-# WHAT IT COULD NOT DO. It turns "hangs forever" into "fails", and stops there. On
-# 2026-08-19 that was not enough — the same fetch stalled four times across five PRs,
-# every one on the same line:
-#
-#   Get:5 https://archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
-#   ...42 minutes of total silence...
-#   ##[error]The operation was canceled.
-#
-# Five green branches went red, each costing ~45 minutes of runner time per affected
-# job plus a human to work out that nothing was wrong with the code. Bounding the
-# FETCH and retrying turns that into "recovers in 90 seconds" — measured live on the
-# very first run carrying the fix, PR #939's island_animator: attempt 1 killed at
-# 90s, attempt 2 succeeded at 277s, job green in 6m07s where the unfixed branch took
-# 25m00s for the same step against the same mirror.
-#
-# WHY THIS TEST RUNS THE REAL SCRIPT RATHER THAN GREPPING FOR IT. A guard that only
-# asserts `timeout-minutes` is present cannot tell a loop that retries from a loop
-# that runs once, and the retry is the half that does the work. So the behavioural
-# tests EXECUTE .github/scripts/apt-retry — the actual file CI runs, unmodified —
-# against a stubbed apt-get that stalls on command. Two things are faked, and
-# nothing else:
-#
-#   * the BUDGETS, via the script's own APT_RETRY_BUDGETS override, so the suite
-#     takes a second instead of 22 minutes. Nothing in CI sets it, and the default
-#     is asserted below, so the override cannot quietly become the shipped bound.
-#   * `timeout` ITSELF, which is GNU coreutils and absent from a developer Mac.
-#     Faking it is what lets this file run everywhere instead of skipping into
-#     decoration on half the machines that matter — and the stub RECORDS its
-#     arguments, so deleting `timeout -k 10` from the script is caught by the
-#     assertion that it was invoked, not merely by the loop misbehaving.
+# test/lib/ci_job_timeout_test.rb bounds the JOB, which only turns "hangs forever" into "fails".
+# A grep cannot tell a loop that retries from one that runs once, so the tests EXECUTE
+# .github/scripts/apt-retry, unmodified, against a stubbed apt-get. Two things are faked: the
+# BUDGETS, via APT_RETRY_BUDGETS (nothing in CI sets it, and the default is asserted below), and
+# `timeout` (GNU coreutils, absent from a Mac), whose stub RECORDS its arguments, so deleting
+# `timeout -k 10` is caught by the invocation assertion.
+# History: task bound-and-retry-apt-fetches.
 require "minitest/autorun"
 require "yaml"
 require "tmpdir"
@@ -169,19 +136,11 @@ class CiAptStepTimeoutTest < Minitest::Test
   end
 
   def test_the_checkout_precedes_every_fetch
-    # THE REGRESSION THIS CATCHES, which also shipped and also went red. Moving the
-    # loop into a script made the workflow legible again — and instantly broke the
-    # `test` and `playwright` jobs, because in BOTH of them `Install packages` was
-    # the FIRST step in the job, running BEFORE `actions/checkout`. An inline `run:`
-    # block needs nothing from the repo; a script invocation needs the repo to exist.
-    # So all four jobs died in ~30 seconds on "No such file or directory".
-    #
-    # island_animator is why the cause was findable in one look: it checks out FIRST,
-    # so it passed on the very same commit that failed everywhere else — the one job
-    # whose order was already right.
-    #
-    # This is not a stylistic preference about step order. It is the precondition the
-    # script form introduced, and nothing else in the file states it.
+    # A script invocation needs the repo to exist, so `actions/checkout` must precede every
+    # fetch; an inline `run:` block did not need that. This is the precondition the script form
+    # introduced, and nothing else in the file states it. Violated, jobs die in ~30 seconds on
+    # "No such file or directory".
+    # History: task bound-and-retry-apt-fetches.
     offenders = []
 
     Dir[WORKFLOW_GLOB].sort.each do |path|

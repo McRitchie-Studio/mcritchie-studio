@@ -1,14 +1,11 @@
 require "test_helper"
 
-# The hub serves its assets through Propshaft (moved off Sprockets 2026-10-25,
-# task hub-moves-to-propshaft; the recipe is rolio's docs/RUNBOOK.md "Asset
-# pipeline (Propshaft)"). This guard fails if Sprockets, or a piece of its
-# configuration that Propshaft silently ignores, comes back.
-#
-# Why a guard and not just "the suite is green": every Sprockets-only knob is a
-# NO-OP under Propshaft, not an error. A `//= link` manifest, a `*= require_tree`
-# directive or `config.assets.precompile += …` boots fine and does nothing, so a
-# stylesheet the directive used to pull in simply stops reaching the browser.
+# The hub serves its assets through Propshaft (recipe: rolio's docs/RUNBOOK.md "Asset pipeline
+# (Propshaft)"). This fails if Sprockets, or configuration Propshaft silently ignores, comes
+# back. Every Sprockets-only knob is a NO-OP, not an error: a `//= link` manifest, a `*=
+# require_tree` directive or `config.assets.precompile += …` boots fine, and the stylesheet
+# stops reaching the browser.
+# History: task hub-moves-to-propshaft.
 class AssetPipelineTest < ActiveSupport::TestCase
   ROOT = Rails.root
 

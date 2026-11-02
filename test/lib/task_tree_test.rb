@@ -1,15 +1,12 @@
 # frozen_string_literal: true
 
-# Unit tests for bin/lib/task_tree.rb — the task-tree check bin/fast-check
-# consults before running against an IMPLICITLY-resolved root, and the desk
-# resolver bin/submit and bin/dor-check re-root through. A root is the task's tree
-# when its checked-out branch is the task's branch (board devops.branch, else the
-# feat/<slug> convention) or it is the task's .worktrees/<worktree_slug> dir;
-# anything else refuses — the 2026-07-12 fail-GREEN certified the hub primary's
-# main for an unrelated task. The shelled end-to-end refusal lives in
+# Unit tests for bin/lib/task_tree.rb: the task-tree check bin/fast-check consults before
+# running against an IMPLICITLY-resolved root, and the desk resolver bin/submit and
+# bin/dor-check re-root through. A root is the task's tree when its checked-out branch is the
+# task's branch (board devops.branch, else the feat/<slug> convention) or it is the task's
+# .worktrees/<worktree_slug> dir; anything else refuses. The shelled refusal is in
 # test/lib/fast_check_test.rb.
-#   ruby -Itest test/lib/task_tree_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# History: task cert-must-root-at-task.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -222,19 +219,13 @@ class TaskTreeTest < Minitest::Test
   end
 
   # ── [unit] BOTH desk layouts ─────────────────────────────────────────────────
-  # A desk is written two ways on this machine, and the guard used to know one:
-  #
   #   <projects>/<repo>/.worktrees/<slug>   the MANAGED layout bin/agent-worktree builds
   #   <projects>/<repo>.worktrees/<slug>    the SIBLING tree the gem repos use
-  #
-  # The sibling tree exists because bin/agent-worktree manages only the registered
-  # Rails apps, so studio-engine and solana-studio desks are cut with a plain
-  # `git worktree add` and land beside the repo. Reading only the managed layout made
-  # the guard refuse a REAL desk while reporting it was not on disk — a refusal that
-  # is right about the verdict, wrong about the reason, and whose remedy line pointed
-  # somewhere the desk was not. Reviewers answered it by exporting
-  # DOR_CHECK_DIFF_ROOT on every engine review, which is a guard training people to
-  # override it.
+  # bin/agent-worktree manages only the registered Rails apps, so studio-engine and
+  # solana-studio desks are cut with a plain `git worktree add`. Reading only the managed layout
+  # refuses a REAL desk with the wrong reason and remedy, and reviewers then export
+  # DOR_CHECK_DIFF_ROOT: a guard training people to override it.
+  # History: task root-guard-knows-both-conventions.
 
   # A desk in the SIBLING tree. Yields [projects, desk].
   def with_sibling_desk(app: "studio-engine", slug: "task-x", branch: "feat/task-x")
@@ -335,15 +326,13 @@ class TaskTreeTest < Minitest::Test
     cd
   ].freeze
 
-  # The no-desk refusal must carry no `cd <path>` INSTRUCTION — cd_advice's shape,
-  # which is honest only when a desk exists. Test that intent, not a bare "cd "
-  # substring. The message is REQUIRED to name the root it searched, and a root whose
-  # name ends in "cd" then supplies "cd " for free: on 2026-09-06 that collision
-  # failed shard 2/4 and red-sealed the studio-engine 0.69.5 publish. Redact the
-  # strings we asked the message to interpolate, then hold the line on everything
-  # else. Returns the redacted text so a caller can prove the redaction took only that.
-  # Pass EVERY path the message was asked to interpolate. A missed one re-opens the
-  # very collision this helper closes, at that path's own draw rate.
+  # The no-desk refusal must carry no `cd <path>` INSTRUCTION (cd_advice's shape, honest only
+  # when a desk exists). Test that intent, not a bare "cd " substring: the message must name the
+  # root it searched, and a root ending in "cd" supplies "cd " for free. Redact the strings the
+  # message was asked to interpolate, then hold the line on the rest; returns the redacted text
+  # so a caller can prove the redaction took only that. Pass EVERY interpolated path: a missed
+  # one re-opens the collision.
+  # History: task tmpdir-name-fails-cert-guard.
   def refute_cd_instruction(message, *interpolated)
     residue = interpolated.reduce(message.to_s.dup) do |text, value|
       text.gsub(value.to_s, "<interpolated>")

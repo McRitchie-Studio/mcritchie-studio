@@ -1,15 +1,11 @@
 require "test_helper"
 
-# The hub builds Tailwind CSS-first through studio-engine's host.css
-# (studio-engine README "Tailwind", CHANGELOG 0.114.2; task
-# hub-adopts-css-first-tailwind). One import brings the theme, the engine's
-# @source scan and the motion layer, so the hub carries no @config, no JS
-# preset, no content glob over the gem and no motion import of its own.
-#
-# Each of those is SILENT when it comes back: an @config still builds (and its
-# safelist does nothing under Tailwind 4, which is how the hub's 231-class
-# primary safelist sat inert in production), and a second motion import only
+# The hub builds Tailwind CSS-first through studio-engine's host.css. One import brings the
+# theme, the @source scan and the motion layer, so the hub carries no @config, JS preset,
+# content glob over the gem, or motion import. Each is SILENT when it comes back: an @config
+# still builds (its safelist does nothing under Tailwind 4) and a second motion import
 # duplicates the layer. So the shape is held here, and the build is read.
+# History: task hub-adopts-css-first-tailwind.
 class TailwindCssFirstTest < ActiveSupport::TestCase
   ROOT = Rails.root
   MOTION_CSS = Pathname(Gem.loaded_specs.fetch("studio-engine").gem_dir)

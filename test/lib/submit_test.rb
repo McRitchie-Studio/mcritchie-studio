@@ -1,16 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] Harness tests for bin/submit — the fast-lane handoff wrapper
-# (commit → push → non-draft PR into accepted → record pr_url → optional
-# pre-flight → CI wait → dor-check → move submitted → read-back verify). Follows the house seam
-# pattern (test/lib/fast_check_test.rb): the REAL script is shelled via Open3
-# against a throwaway git repo (with a real bare `origin`, so the push lane is
-# exercised for real), with the board/cert/gate/GitHub CLIs stubbed via SHIP_*
-# env seams. The skip decisions themselves are unit-tested in
+# [integration] Harness tests for bin/submit, the fast-lane handoff wrapper (commit, push,
+# non-draft PR into accepted, record pr_url, optional pre-flight, CI wait, dor-check, move
+# submitted, read-back verify). House seam pattern (test/lib/fast_check_test.rb): the REAL
+# script is shelled via Open3 against a throwaway git repo with a real bare `origin`, with the
+# board/cert/gate/GitHub CLIs stubbed via SHIP_* env seams. Skip decisions are unit-tested in
 # test/lib/fast_lane_test.rb.
-# Run directly:
-#   ruby -Itest test/lib/submit_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# History: task fast-lane-begin-ship.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/ship_wait"
@@ -76,15 +72,13 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # A stub CLI following the fast_check_test pattern: logs "<MARKER>\t<argv...>"
-  # to STUB_LOG; exits 1 when FAIL_<MARKER>=1 (after logging + printing). The
-  # TASK stub serves `show` from TASK_SHOW_JSON — and from TASK_SHOW_JSON_MOVED
-  # once a `move` call has been logged, modeling board persistence for the
-  # read-back verify. The GH stub serves the `--head` `pr list` (is MY PR already
-  # open?) from GH_PR_LIST_JSON and the un-headed one (which OTHER PRs are open?)
-  # from GH_PR_LIST_SIBLINGS_JSON — two different questions that must be able to
-  # carry two different answers. The GH stub serves `pr list` from GH_PR_LIST_JSON and
-  # prints a PR URL on `pr create`.
+  # A stub CLI following the fast_check_test pattern: logs "<MARKER>\t<argv...>" to STUB_LOG;
+  # exits 1 when FAIL_<MARKER>=1 (after logging + printing). The TASK stub serves `show` from
+  # TASK_SHOW_JSON, and from TASK_SHOW_JSON_MOVED once a `move` is logged, for the read-back
+  # verify. The GH stub serves the `--head` `pr list` from GH_PR_LIST_JSON and the un-headed one
+  # from GH_PR_LIST_SIBLINGS_JSON: two questions that must carry two answers. It prints a PR URL
+  # on `pr create`.
+  # History: task fast-lane-begin-ship.
   def write_stub(dir, name, marker)
     stub = File.join(dir, name)
     File.write(stub, <<~RUBY)
@@ -426,15 +420,13 @@ class SubmitTest < Minitest::Test
       out, err, status, lines = run_ship(dir)
 
       assert status.success?, "expected green ship, got:\n#{err}\n#{out}"
-      # Three GH calls, not two: `pr list` (is one already open?), `pr create`, then
-      # the same-file OVERLAP ADVISORY's own `pr list` — asked after the PR exists so
-      # it can exclude this one, and before the DoR verdict so the builder reads it
-      # while a deliberate choice is still cheap. See bin/lib/pr_overlap.rb.
-      # The second `TASK show` is 5/8 asking the board whether it already derives the
-      # PR url; this board (the stub) predates the field, so ship writes it itself.
-      # The DoR pre-check (PRECHECK) and the pre-flight (FAST) come BEFORE the push and
-      # the PR: they stop a push CI would turn red. The verdict (DOR) still follows CI.
-      # The intent-scout read (TASK scout-brief) rides 0/8 too, and only ever warns.
+      # Three GH calls: `pr list` (is one already open?), `pr create`, then the same-file OVERLAP
+      # ADVISORY's own `pr list`, asked after the PR exists so it can exclude this one, and before
+      # the DoR verdict (bin/lib/pr_overlap.rb). The second `TASK show` is 5/8 asking the board
+      # whether it derives the PR url; this stub predates the field, so ship writes it. PRECHECK and
+      # FAST come BEFORE the push and the PR; DOR still follows CI. TASK scout-brief rides 0/8 and
+      # only warns.
+      # History: task ship-checks-overlap-and-auth.
       assert_equal ["TASK show", "PRECHECK #{SLUG}", "TASK scout-brief", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show",
                     "TASK update", "DOR #{SLUG}", "TASK move"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
@@ -657,18 +649,11 @@ class SubmitTest < Minitest::Test
 
   # --- idempotent resume -------------------------------------------------------
 
-  # ── A DELIBERATE STACK IS NOT A MISTAKE (/tasks/ship-retargets-stacked-prs) ────
-  #
-  # MEASURED 2026-09-13 on turf #701, stacked on turf #624 by the operator's decision:
-  # step 3/8 retargeted it to `accepted` because the base was not `accepted`, and that
-  # ONE action produced three false refusals — the test-only claim broke (the observed
-  # diff swelled to the parent's 6 files), the PR went DIRTY so GitHub queued no run at
-  # all, and the [control] line "named no file from this diff". The ship had to be
-  # finished by hand.
-  #
-  # The tell is on GitHub, not in the record: a base that is ANOTHER OPEN PR'S HEAD is a
-  # stack. A merged parent, a closed-unmerged one, or a deleted branch is not — none of
-  # them is open — so those stay repaired, which is what the retarget exists for.
+  # ── A DELIBERATE STACK IS NOT A MISTAKE ────
+  # Step 3/8 must not retarget a stack to `accepted`. The tell is on GitHub, not in the record:
+  # a base that is ANOTHER OPEN PR'S HEAD is a stack. A merged parent, a closed-unmerged one, or
+  # a deleted branch is not open, so those stay repaired, which is what the retarget exists for.
+  # History: task ship-retargets-stacked-prs.
   def stacked_pr(base) = JSON.generate([{ "number" => 999, "url" => PR_URL, "isDraft" => false,
                                           "baseRefName" => base }])
 
@@ -1379,24 +1364,13 @@ class SubmitTest < Minitest::Test
   end
 
   # ── the ROOT-GUARD lane ────────────────────────────────────────────────────
-  #
-  # Every test above pins SHIP_ROOT, which short-circuits the root guard entirely —
-  # so ship's guard branch had NO coverage at all. That gap is the reason a wrong
-  # claim about this lane survived a round of review: with nothing exercising it,
-  # "it still ships" could be asserted without ever being observed.
-  #
-  # WHAT IS ACTUALLY TRUE, measured (2026-08-09): ship REFUSES a detached HEAD at the
-  # task's own desk, and always has. It dies at the branch guard in bin/submit — which
-  # is PRE-EXISTING, live on `main`, and untouched by this PR — because a detached
-  # HEAD is not the task branch. There was never a regression here to restore, and
-  # these tests assert the refusal, not a lane that does not exist.
-  #
-  # What the root-guard line in bin/submit does change is WHICH refusal you get. Without
-  # it the root guard speaks first and says the desk "is not <slug>'s tree", which is
-  # false — it IS the task's desk; only HEAD is detached — and it sends the builder
-  # somewhere else. With it, ship falls through to the branch guard, which names the
-  # real problem and the real fix (finish the rebase). Same exit code, same steps run,
-  # better diagnosis. That is the whole of its effect, and it is what these tests pin.
+  # Every test above pins SHIP_ROOT, which short-circuits the root guard. ship REFUSES a
+  # detached HEAD at the task's own desk, at the branch guard in bin/submit; these assert the
+  # refusal, not a lane that does not exist. The root-guard line in bin/submit changes only
+  # WHICH refusal you get: without it the root guard says the desk "is not <slug>'s tree", which
+  # is false; with it ship reaches the branch guard, which names the real fix (finish the
+  # rebase). Same exit code, same steps run.
+  # History: task dor-check-review-rooting.
 
   # Run ship from `cwd` with NO SHIP_ROOT, so the real root guard runs.
   def run_ship_from(cwd, dir, projects)
@@ -1504,18 +1478,11 @@ class SubmitTest < Minitest::Test
   end
 
   # --- presence: the phase this run is in, published for peers to READ ---------
-  #
-  # THE DEFECT, measured on this box on 2026-09-01 with the slice-1 reader
-  # (bin/agent-presence) pointed at a live machine: FIVE `bin/submit` groups, every
-  # one at 0.0% CPU, all reported UNATTRIBUTED and the machine called BUSY. Four
-  # were parked in a CI wait costing nothing; the fifth had spawned bin/fast-check
-  # eleven seconds earlier and was about to take a core-set for ten minutes.
-  # Nothing on disk told them apart, because the PROCESS NAME is identical in both
-  # states — the check that usually gets this right is right by coincidence.
-  #
-  # These prove the writer half: the ship publishes WHICH state it is in, at the
-  # boundaries it already prints, and the record is gradeable by a reader that
-  # trusts nothing it says about being alive.
+  # A `bin/submit` parked in a CI wait and one spawning a cert have an identical PROCESS NAME,
+  # and nothing else on disk told them apart. These prove the writer half: the ship publishes
+  # WHICH state it is in, at the boundaries it already prints, and the record is gradeable by a
+  # reader that trusts nothing it says about being alive.
+  # History: task certs-publish-no-phase.
 
   def test_the_cert_phase_publishes_a_suite_claim_and_the_ci_wait_publishes_an_idle_one
     with_repo do |dir|
@@ -1598,17 +1565,13 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # THE KILLED-WRITER RULE, asserted against a real SIGKILL — the constraint the
-  # original ticket set, and the reason this is not a heartbeat: "a stale
-  # cert-running file that never clears would make every future agent wait forever,
-  # strictly worse than the grep it replaces."
-  #
-  # The answer is that the file's only claim to being live is a pid and a start
-  # time the OS contradicts on the very next read. There is no timeout to elapse
-  # and no renewal to miss, so THE WEDGE WINDOW IS ZERO. This kills a ship parked
-  # in its cert phase and asserts both halves: the claim SURVIVES (so the workload
-  # is still nameable) and the process it names is GONE (so any reader grades it a
-  # corpse immediately).
+  # THE KILLED-WRITER RULE, against a real SIGKILL, and why this is not a heartbeat: a stale
+  # cert-running file that never clears would make every future agent wait forever. The file's
+  # only claim to being live is a pid and start time the OS contradicts on the next read: no
+  # timeout, no renewal, THE WEDGE WINDOW IS ZERO. This kills a ship parked in its cert phase
+  # and asserts both halves: the claim SURVIVES (the workload is nameable) and the process it
+  # names is GONE (graded a corpse immediately).
+  # History: task certs-publish-no-phase.
   def test_a_KILLED_ship_leaves_a_claim_that_grades_as_a_corpse_on_the_next_read
     with_repo do |dir|
       slow_fast_check = File.join(dir, "slow-fast")
@@ -1676,15 +1639,11 @@ class SubmitTest < Minitest::Test
   end
 
   # --- 1/8 commit authorship (desk-commits-wrong-soul) ------------------------
-  #
-  # THE BEHAVIOUR PROOF for lib/commit_identity.rb. Its own unit tests drive the
-  # module directly; these two run the REAL bin/submit and read the author back OUT
-  # OF GIT, which is the only thing that shows the identity actually reached the
-  # commit rather than merely being computed.
-  #
-  # with_repo sets a REPO-LEVEL `user.name tester` — the same shape as
-  # turf-monster's "Steffon (Claude)" relic, and the identity that authored the
-  # commit before this change.
+  # THE BEHAVIOUR PROOF for lib/commit_identity.rb: these run the REAL bin/submit and read the
+  # author back OUT OF GIT, the only thing that shows the identity reached the commit. with_repo
+  # sets a REPO-LEVEL `user.name tester`, the same shape as turf-monster's "Steffon (Claude)"
+  # relic.
+  # History: task desk-commits-wrong-soul.
 
   def test_ship_authors_its_commit_as_the_claiming_soul
     with_repo do |dir|

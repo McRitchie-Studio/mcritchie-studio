@@ -1,15 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] The intent scout end to end, against one stub board: `bin/task begin`
-# records the owed scout and prints the launch, `bin/task scout-brief` reads the
-# task's notes, and `bin/submit`'s 0/8 pre-check WARNS when no brief is on the task
-# and is quiet once Avi has posted one with `bin/task note --comment`. Every board
-# CLI here is the REAL script; only the desk tools, the DoR gate and the pre-flight
-# are stubs. The pre-flight stub fails on purpose, so each submit stops at 2/8, after
-# the pre-check this test is about and before any push. The SOP:
+# [integration] The intent scout end to end: `bin/task begin` records the owed scout and
+# prints the launch, `bin/task scout-brief` reads the notes, and `bin/submit`'s 0/8
+# pre-check WARNS with no brief and is quiet once Avi posts one with `bin/task note
+# --comment`. Board CLIs are REAL; desk tools, DoR gate and pre-flight are stubs. The
+# pre-flight stub fails on purpose, so each submit stops at 2/8, before any push. SOP:
 # docs/agents/agents/avi/sops/intent-scout.md.
-# Run directly:
-#   ruby -Itest test/lib/intent_scout_flow_test.rb
+# History: task avi-intent-scout.
 
 require "minitest/autorun"
 require "json"

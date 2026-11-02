@@ -1,27 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] The UPSTREAM changelog misfile — an ABSOLUTE state check of one
-# tree, against real git (/tasks/detect-upstream-changelog-misfiles).
-#
-# THE HAZARD, and why it needs a SECOND reader rather than a wider first one.
-# bin/release.rb's refuse_misfiled_changelog! is DIFFERENTIAL by construction: it
-# predicts the promote with `git merge-tree` and compares the result against the two
-# sides, so it can only ever see a line ONE side brought. A branch that forks BEFORE
-# `accepted` absorbs a roll, keeps writing bullets into its own `## Unreleased` and is
-# merged AFTER puts those bullets inside a version section that already shipped — and
-# from then on BOTH sides carry them, the diff shows nothing, and the guard reads it
-# as an ordinary post-release edit. test_the_differential_guard_is_blind_to_it below
-# asserts that blindness on the very tree this detector catches, so the two readers'
-# division of labour is a measured fact and not a claim in a comment.
-#
-# THE MERGE THAT CREATES IT IS THE REVIEW MERGE (feat → accepted), not the promote —
-# which is why the detector is wired into bin/pr-review's post-merge step and not
-# beside its differential sibling in bin/release prepare.
-#
-# REAL, not mocked: a bare origin, a clone, an `accepted` that absorbed the roll and
-# was tagged, a branch forked before it, and a real `git merge`. No network.
-#
-#   ruby -Itest test/lib/release_changelog_upstream_misfile_test.rb
+# [integration] The UPSTREAM changelog misfile, an ABSOLUTE state check of one tree, against
+# real git (no network). bin/release.rb's refuse_misfiled_changelog! is DIFFERENTIAL: it can
+# only see a line ONE side brought. A branch forked BEFORE `accepted` absorbs a roll and
+# merged AFTER puts bullets inside a shipped version section, and then BOTH sides carry
+# them. test_the_differential_guard_is_blind_to_it asserts that blindness on this tree.
+# THE MERGE THAT CREATES IT IS THE REVIEW MERGE (feat → accepted), not the promote, so the
+# detector is wired into bin/pr-review's post-merge step, not bin/release prepare.
+# History: task detect-upstream-changelog-misfiles.
 
 require "minitest/autorun"
 require "open3"

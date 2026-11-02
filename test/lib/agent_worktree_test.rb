@@ -23,31 +23,14 @@ class AgentWorktreeTest < Minitest::Test
   # See run_in_script for why a deterministic computation is safe to retry.
   SUBPROCESS_ATTEMPTS = 3
 
-  # Load the script (dispatch suppressed by its main guard), run `body`, return
-  # the printed value.
-  #
-  # The COMPUTATION here is deterministic — every check stubs the I/O helpers and
-  # exercises pure allocation logic over the static APP_OVERRIDES/satellites config,
-  # so a correct run ALWAYS prints the same thing. The PROCESS SPAWN is not: under
-  # CI's parallel-fork harness a child occasionally got reaped/killed before it
-  # flushed stdout, and the old helper discarded both stderr (`err: File::NULL`) and
-  # the exit status, so that transient surfaced as a bare, undiagnosable `Actual: ""`
-  # (the flake this test was named for).
-  #
-  # Hardening, both halves:
-  #   * Open3.capture3 blocking-reads stdout AND stderr and waits for the child to
-  #     exit, so there is no early-read / unflushed-output race.
-  #   * Because the output is deterministic, a transient empty/failed spawn is
-  #     RETRIED up to SUBPROCESS_ATTEMPTS times. A real logic error fails every
-  #     attempt (deterministically), so the retry cannot mask a genuine regression —
-  #     it only absorbs the non-deterministic spawn hiccup.
-  #   * If every attempt yields no usable output it FLUNKS with the captured
-  #     exit/signal + stderr, so the empty-output mode can never again recur
-  #     silently. (rubygems "already initialized" warnings land on the child's
-  #     stderr but are ignored on success — we only surface stderr when flunking.)
-  # `env:` merges OVER the neutralized base, for the checks that must control where
-  # the script believes the projects root is (PROJECTS_DIR is read into a constant at
-  # load, so it cannot be stubbed after the fact — it has to be in the child's env).
+  # Load the script (dispatch suppressed by its main guard), run `body`, return the printed value.
+  # Checks stub the I/O, so output is deterministic and only the spawn can flake. Open3.capture3
+  # blocking-reads stdout and stderr and waits for exit; an empty or failed spawn retries up to
+  # SUBPROCESS_ATTEMPTS times (a real logic error fails every attempt, so retry cannot mask it);
+  # if all fail it FLUNKS with exit/signal + stderr, never a bare `Actual: ""`.
+  # `env:` merges OVER the neutralized base: PROJECTS_DIR is read into a constant at load, so it
+  # has to be in the child's env.
+  # History: task stabilize-worktree-port-test.
   def run_in_script(body, env: {})
     script = "load #{BIN.inspect}\n#{body}"
     last = nil
@@ -296,15 +279,12 @@ class AgentWorktreeTest < Minitest::Test
   # fails open. A BOUND-but-unreadable record is WITHHELD on every lane — there is no
   # "advisory" lane, because every caller's answer is consumed to destroy.
 
-  # WHY EVERY FIXTURE RECORD BELOW NAMES A `stage`. The board-stage channel (added
-  # 2026-09-20) withholds a desk whose bound task has not reached `shipped`/`archived`, and
-  # it treats a record carrying NO stage as an unanswered read rather than a clean one — a
-  # readable task record always has a stage, so its absence means the payload is not one.
-  # That is the right posture on a destroy path, and it means a fixture that omits the
-  # stage is now an INCOMPLETE record, not a minimal one: it would be withheld as
-  # `:stageless` before the channel under test was ever consulted. `shipped` is the stage a
-  # finished, reclaimable desk actually carries, so stamping it here makes these fixtures
-  # more faithful to a real board record, not less.
+  # WHY EVERY FIXTURE RECORD BELOW NAMES A `stage`. The board-stage channel withholds a desk whose
+  # bound task has not reached `shipped`/`archived`, and treats a record with NO stage as an
+  # unanswered read. A fixture omitting the stage is INCOMPLETE: it is withheld as `:stageless`
+  # before the channel under test is consulted. `shipped` is what a finished, reclaimable desk
+  # carries.
+  # History: task reclaim-gate-reads-board.
 
   # A BOUND desk (it has a task slug) — an UNBOUND one short-circuits to "free" before the
   # claim is even consulted, which is its own case below.
@@ -344,14 +324,13 @@ class AgentWorktreeTest < Minitest::Test
   end
 
   # THE ASYMMETRY. Three "no live claim found" cases, and they are NOT alike:
-  #   unbound  — we cannot identify the desk. Forced fail-open (withholding every
-  #              unidentifiable desk would wedge cleanup entirely).
-  #   lapsed   — we checked; the builder is gone. Free.
-  #   bound + UNREADABLE — we know the desk COULD be claimed and failed to find out.
-  # There is no "advisory" lane: every caller answers "is this a cleanup candidate?", and that
-  # answer is consumed to destroy (the registry feeds qa-intake, which prints `remove --yes`).
-  # So an unverifiable desk is withheld EVERYWHERE. During an outage the truthful answer is
-  # "I cannot tell" — withholding IS that answer; nominating is the lie.
+  #   unbound: we cannot identify the desk. Forced fail-open (else cleanup wedges entirely).
+  #   lapsed: we checked; the builder is gone. Free.
+  #   bound + UNREADABLE: the desk COULD be claimed and we failed to find out. Withheld
+  #     EVERYWHERE.
+  # There is no "advisory" lane: the answer is consumed to destroy (registry -> qa-intake ->
+  # `remove --yes`).
+  # History: task reclaim-guard-live-claim.
   def test_bound_but_unreadable_is_withheld_everywhere
     hold = run_in_script(<<~RUBY)
       def task_record_for_pr(_r, fresh: false); nil; end
@@ -393,17 +372,13 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "[false, nil]", verdict_for(held: false, dirty: true)
   end
 
-  # The CLAIM-focused checks drive records with no desk ON DISK, so the desk channel
-  # (below) would withhold every one of them for "could not be dated" and they would
-  # stop testing the thing they are named for. Stub the desk to a long-abandoned,
-  # quiet one so the claim decision is what decides here. The desk decision has its
-  # own checks below, and the REAL filesystem path is driven end to end against a
-  # staged git worktree in test/commands/agent_worktree_test.rb.
-  #
-  # The same records have no repo on disk either, so the managed-root check (a desk outside
-  # <repo>/.worktrees is never nominated) would hold every one of them too; they stand in a
-  # managed root here. That check is driven against real worktrees in
+  # The CLAIM-focused checks drive records with no desk or repo on disk, so the desk channel
+  # (below) would withhold them as undatable and the managed-root check (a desk outside
+  # <repo>/.worktrees is never nominated) would hold them too. So stub a long-abandoned quiet desk
+  # in a managed root and the claim decides.
+  # The real paths are driven in test/commands/agent_worktree_test.rb and
   # test/lib/agent_worktree_desk_discovery_test.rb.
+  # History: task reclaim-eats-fresh-desks.
   ABANDONED_DESK = <<~RUBY
     def desk_age_seconds(_r); ClaimLease::DESK_IDLE_SECONDS * 10; end
     def desk_touched_recently?(_r); false; end
@@ -432,24 +407,14 @@ class AgentWorktreeTest < Minitest::Test
                  "unclaimed is still reclaimable, or the sweep is silently wedged"
   end
 
-  # --- reclaim guard: the DESK channel (fresh-desk fix) ------------------------------------
-  #
-  # THE HOLE THE CLAIM CHANNEL COULD NOT COVER. On 2026-08-13 a `cleanup --reclaim` sweep
-  # destroyed a desk a builder had just created and was working in. Nothing malfunctioned:
-  # a brand-new worktree is CLEAN (nobody has committed yet) and carries NOTHING ahead of
-  # its base, so cleanup_ready? passes on it VACUOUSLY — a fresh desk and a fast-forward-
-  # merged one are byte-identical to git. And the claim above cannot rescue it, because the
-  # desks most at risk are exactly the ones with no live claim to read: inside the `new` →
-  # `bind-task` → `move building` window, or half-allocated by a failed bind, or simply
-  # between lease renewals.
-  #
-  # So every check below runs with NO claim on the record (`{}` devops). The claim channel
-  # says "free" for all of them; what is under test is whether the DESK channel still holds
-  # them back — and, in the control, still lets a genuinely abandoned one go.
-  #
-  # The two filesystem seams are stubbed here so every combination is reachable in a unit;
-  # the real mtimes and the real `.git` marker are driven end to end against a staged git
-  # worktree in test/commands/agent_worktree_test.rb.
+  # --- reclaim guard: the DESK channel (fresh-desk fix) ---
+  # A brand-new worktree is CLEAN with nothing ahead of base, so cleanup_ready? passes VACUOUSLY:
+  # a fresh desk and a fast-forward-merged one are byte-identical to git, and the desks most at
+  # risk have no live claim to read.
+  # So every check runs with NO claim (`{}` devops): the test is whether the DESK channel still
+  # holds them back and, in the control, lets an abandoned one go. The filesystem seams are
+  # stubbed; real mtimes and `.git` marker: test/commands/agent_worktree_test.rb.
+  # History: task reclaim-eats-fresh-desks.
 
   def desk_verdict(age:, touched:, task_json: %({ "stage" => "shipped", "metadata" => { "devops" => {} } }), env: %({ "TASK_RECORD_SLUG" => "t" }))
     run_in_script(<<~RUBY)
@@ -741,17 +706,12 @@ class AgentWorktreeTest < Minitest::Test
                  "a cert workspace being written into is in use, release claim or no release claim")
   end
 
-  # --- THE 2026-08-14 REGRESSION: the guard asked ONE role of a TWO-role lifecycle -------
-  #
-  # `_ship` is not "the tree the deploy works in". `bin/release prepare` — the ASSEMBLER,
-  # Avi's qa-release sweep — merges release branches forward and runs `bundle lock` for
-  # every consumer inside the very same workspace. While that ran, the deployer claim was
-  # legitimately free, so a deployer-only check answered :none and a `cleanup --reclaim`
-  # listed BOTH repos' `_ship` desks as "safe: merged on origin/accepted (clean)".
-  #
-  # This drives the REAL compute_release_claim_liveness with only the ASSEMBLER role live
-  # (the CLI answers exit 0 for assembler, exit 3 — "no live claim" — for deployer). A guard
-  # that asks only about the deployer reads :none here and nominates the workspace.
+  # --- THE 2026-08-14 REGRESSION: the guard asked ONE role of a TWO-role lifecycle ---
+  # `bin/release prepare` (the ASSEMBLER, Avi's qa-release sweep) merges and runs `bundle lock` in
+  # `_ship` while the deployer claim is free. This drives the REAL compute_release_claim_liveness
+  # with only the ASSEMBLER role live (CLI: exit 0 for assembler, exit 3 "no live claim" for
+  # deployer). A deployer-only guard reads :none and nominates the workspace.
+  # History: task close-residual-claim-coverage.
   def test_release_liveness_is_live_when_only_the_assembler_role_is_held
     out = run_in_script(<<~RUBY)
       def File.exist?(_p); true; end                       # the CLI is present
@@ -807,21 +767,14 @@ class AgentWorktreeTest < Minitest::Test
                  "only an all-none answer frees, and asking nothing is not an answer"
   end
 
-  # --- reclaim TOCTOU: fresh: true RE-READS the release claim under-lock -----------------
-  #
-  # release_claim_liveness memoizes @release_claim_liveness PROCESS-WIDE (one board read per
-  # command). The reclaim under-lock re-verify (reclaim_verdict → claim_hold, fresh: true)
-  # exists to catch a claim taken AFTER the candidate list was selected — but the
-  # ship-workspace path used to IGNORE `fresh:`, so a release STARTING mid `cleanup
-  # --reclaim --yes` loop was read from the memoized stale :none and its `_ship`/`_gate`
-  # reclaimed, breaking the in-flight deploy. The build-claim guard already bypasses its own
-  # memo on the re-verify (task_record_for_pr fresh:); this pins the SAME parity here.
-  #
-  # The EFFECT under test — not a branch, not "a method was called": with the memo seeded
-  # :none and the LIVE state then changed to a held release claim, a non-fresh re-check
-  # STILL reads the stale :none (reclaimable), while fresh: true RE-READS and returns the
-  # CURRENT held value (WITHHELD). compute_release_claim_liveness is stubbed to a mutable
-  # state so the memo/bypass distinction is observable through the REAL memoization logic.
+  # --- reclaim TOCTOU: fresh: true RE-READS the release claim under-lock ---
+  # release_claim_liveness memoizes @release_claim_liveness PROCESS-WIDE. The under-lock re-verify
+  # (reclaim_verdict -> claim_hold, fresh: true) must catch a claim taken after selection, the
+  # same parity as task_record_for_pr fresh:.
+  # Test the EFFECT: memo seeded :none, LIVE state then held. Non-fresh STILL reads stale :none
+  # (reclaimable); fresh: true returns held (WITHHELD). compute_release_claim_liveness is stubbed
+  # to a mutable state so the REAL memo logic is observable.
+  # History: task close-residual-claim-coverage.
   def test_reclaim_toctou_fresh_reverify_rereads_the_live_release_claim
     out = run_in_script(<<~RUBY)
       $live = :none
@@ -838,18 +791,12 @@ class AgentWorktreeTest < Minitest::Test
                  "even though the process-wide memo was seeded :none and a non-fresh re-check still reads that stale :none")
   end
 
-  # --- the held-desk PROSE must not invert under a substring test -------------------------
-  #
-  # The doctor/registry issue text for a held desk used to read "…; not a cleanup candidate".
-  # bin/qa-intake joins the issue list into ONE STRING and tests `include?("cleanup
-  # candidate")`, so the negation matched and the conductor's front door recommended
-  # `remove … --yes` for a desk with a LIVE builder at it — the exact incident this guard
-  # exists to prevent, re-entered through the one path that deliberately does not block.
-  #
-  # qa-intake now reads the structured verdict instead (pinned in qa_intake_command_test),
-  # but the phrase stays OUT of the negative branch regardless. Prose that inverts its
-  # meaning under a substring match is a landmine for the next consumer, and the answer this
-  # message carries is consumed to DESTROY. Belt and braces: fix the reader, disarm the text.
+  # --- the held-desk PROSE must not invert under a substring test ---
+  # bin/qa-intake once tested `include?("cleanup candidate")` on the joined issues, so a negated
+  # "not a cleanup candidate" matched and it recommended `remove ... --yes` for a live builder's
+  # desk. qa-intake now reads the structured verdict (pinned in qa_intake_command_test), but the
+  # phrase stays OUT of the negative branch regardless: this answer is consumed to DESTROY.
+  # History: task reclaim-guard-live-claim.
   def test_the_held_desk_message_never_contains_the_phrase_cleanup_candidate
     source = File.read(BIN)
     held_line = source.lines.find { |line| line.include?("clean and landed on") }
@@ -863,17 +810,13 @@ class AgentWorktreeTest < Minitest::Test
                     "the held-desk message must still say plainly that the desk is off-limits"
   end
 
-  # --- reclaim guard: the PR channel (open, unmerged work is not litter) ------------------
-  #
-  # THE PROPERTY: a desk whose branch still carries an OPEN, UNMERGED pull request is
-  # withheld, however finished it looks to git. Git-eligibility asks whether the CONTENT is
-  # represented on the base; a branch whose diff against the base is empty (the base moved
-  # on, an equivalent change landed another way) satisfies that while its PR is still open
-  # and a reviewer is still working it.
-  #
-  # The checks below drive the PURE decision so every cell of the matrix is reachable —
-  # including the two that are not about GitHub at all: when gh cannot be asked, the BOARD
-  # decides, because a task carrying a pr_url with no merged stamp is unlanded work.
+  # --- reclaim guard: the PR channel (open, unmerged work is not litter) ---
+  # THE PROPERTY: a desk whose branch carries an OPEN, UNMERGED PR is withheld, however finished
+  # it looks to git: an empty diff against base satisfies git-eligibility while a reviewer is
+  # still working it.
+  # The checks drive the PURE decision so every matrix cell is reachable. When gh cannot be asked,
+  # the BOARD decides: a task with a pr_url and no merged stamp is unlanded work.
+  # History: task cleanup-sweep-orphans-live-work.
 
   def pr_reason(gh_status, pr_ref: "41", board_pr_url: nil, board_merged: false)
     run_in_script(<<~RUBY)
@@ -977,22 +920,14 @@ class AgentWorktreeTest < Minitest::Test
                  "the control: review over, desk quiet, nothing open — ordinary litter"
   end
 
-  # --- reclaim guard: the BOARD-STAGE channel (the 2026-09-20 mid-release sweep) ----------
-  #
-  # THE HOLE THE OTHER FIVE COULD NOT COVER. On 2026-09-20 a `cleanup --reclaim` dry run
-  # offered 19 candidates, and 5 of them were tasks at `reviewed` riding a release that was
-  # still assembling (hormozi-corpus-pipeline, rex-cmo-soul,
-  # bind-wallet-signal-through-registry, correct-retry-cap-rationale,
-  # log-slack-ingest-failures). Every channel was honestly clear: `reviewed` MEANS the
-  # branch is merged onto accepted, review closed the PR on the way there, the builder's
-  # lease lapsed at the handoff, the reviewer had finished, and nobody had typed in the
-  # desk for hours. So the gate printed `safe: merged on origin/accepted (clean)` over
-  # five live desks, and `--yes` would have taken all five.
-  #
-  # The board's `stage` is the only field that can see the rungs ABOVE accepted — the
-  # release sweep, QA, the production ship — which is why no combination of the other five
-  # substitutes for it. These checks drive the whole verdict, so removing the channel
-  # from reclaim_hold turns the withhold checks into `[true, nil]` and reddens them.
+  # --- reclaim guard: the BOARD-STAGE channel (the 2026-09-20 mid-release sweep) ---
+  # A task at `reviewed` riding an assembling release reads clear on every other channel (merged
+  # onto accepted, PR closed, lease lapsed, reviewer finished, desk quiet), so the gate would
+  # print `safe: merged on origin/accepted (clean)` over a live desk.
+  # The board's `stage` is the only field that sees the rungs ABOVE accepted (release sweep, QA,
+  # production ship). These checks drive the whole verdict, so removing the channel from
+  # reclaim_hold turns the withhold checks into `[true, nil]` and reddens them.
+  # History: task reclaim-gate-reads-board.
 
   # Every other channel deliberately CLEAR: long-abandoned quiet desk, no open PR, no
   # claim, no reviewer, diff-empty against base. The stage is the only thing left deciding.
@@ -1189,15 +1124,13 @@ class AgentWorktreeTest < Minitest::Test
                  "a refusal carries the reason, never a clearance"
   end
 
-  # --- 404 classification: only the API's OWN "task not found" means the task is gone ------
-  #
-  # bin/task renders every non-2xx as "<METHOD> <path> -> <code>: <body>", so matching the
-  # STATUS alone accepts any 404 — including a Heroku ROUTER 404 (board renamed/deleted) or a
-  # Rails ROUTE 404 (path moved, or a stale local board). Those are FAILED READS, and because
-  # they are board-WIDE an over-broad match makes EVERY bound desk read free at once, silently
-  # disarming the guard on the destroy path. Hence the checks below assert BOTH directions —
-  # a test that only proves the happy 404 passes on the broken form too, which is exactly how
-  # the `||` slipped through.
+  # --- 404 classification: only the API's OWN "task not found" means the task is gone ---
+  # bin/task renders every non-2xx as "<METHOD> <path> -> <code>: <body>", so matching STATUS
+  # alone accepts a Heroku ROUTER 404 or a Rails ROUTE 404. Those are FAILED READS and board-WIDE:
+  # an over-broad match makes EVERY bound desk read free, disarming the guard on the destroy path.
+  # So the checks assert BOTH directions: proving only the happy 404 also passes on the broken
+  # form.
+  # History: task reclaim-guard-live-claim.
   def hold_for(stderr)
     run_in_script(<<~RUBY)
       def capture_status(*_cmd, **_kw); [false, "", #{stderr.inspect}]; end
@@ -1234,15 +1167,13 @@ class AgentWorktreeTest < Minitest::Test
     assert_match(/could not be read/, hold, "the outage that motivated this guard is still withheld")
   end
 
-  # --- exit-code classification: the guard reads bin/task's EXIT CODE first ----
-  #
-  # bin/task exits EXIT_TASK_NOT_FOUND (4) ONLY when the board positively answered
-  # "there is no such task" — it verifies the HTTP 404 + the API's own body at the
-  # source, where the response is still structured. fetch_task_record classifies on
-  # that code, demoting the stringly stderr match above to a FALLBACK for an older
-  # bin/task (which exits 1 for every failure). These cases run a REAL fake bin/task
-  # executable through capture_status, so the whole seam — spawn, timeout plumbing,
-  # exit status, classification — is exercised, not stubbed.
+  # --- exit-code classification: the guard reads bin/task's EXIT CODE first ---
+  # bin/task exits EXIT_TASK_NOT_FOUND (4) ONLY when the board positively answered "there is no
+  # such task" (HTTP 404 + the API's own body). fetch_task_record classifies on that code; the
+  # stderr match above is a FALLBACK for an older bin/task (which exits 1 for every failure).
+  # These cases run a REAL fake bin/task through capture_status, so the whole seam (spawn, timeout
+  # plumbing, exit status, classification) is exercised, not stubbed.
+  # History: task task-cli-exit-codes.
   def hold_for_fake_task_cli(script)
     run_in_script(<<~RUBY)
       def command_env(*_a); {}; end
@@ -1304,30 +1235,14 @@ class AgentWorktreeTest < Minitest::Test
                  "which classifies as a failed read, never as not-found"
   end
 
-  # --- the board read must be REALLY bounded ---------------------------------
-  # Timeout.timeout around Open3.capture3 bounds NOTHING: capture3's ensure joins the wait
-  # thread, which blocks until the child exits, swallowing the Timeout::Error (a 2s guard
-  # around `sleep 6` returned after 6.01s on Ruby 3.3.11). A hung board would have stalled a
-  # whole sweep while the code claimed to be bounded. The bound must KILL the child.
-  #
-  # Asserted by BEHAVIOUR, not wall-clock — and the behaviour is the KILL ITSELF, not a
-  # proxy for it. The old guard measured `elapsed < 3` around a SPAWNED subprocess (3x
-  # headroom, spawn latency inflated ~2.75x under load -> red on a busy box). But observing
-  # the timeout BRANCH is not enough (a no-op terminate_group STILL returns the timed-out
-  # verdict — the unbounded popen3 ensure just waits the child out), and observing the grace
-  # POLL is not enough either (a run that TERMs and polls but never sends the KILL still ran
-  # the poll). So the child itself reports whether it was killed: it IGNORES SIGTERM and,
-  # only if it SURVIVES its sleep, writes a marker on natural exit. The marker's ABSENCE is
-  # the witness — the child was stopped before it could finish, which on a TERM-ignoring
-  # child ONLY the escalation KILL can do.
-  #
-  # An injected clock elapses the grace deadline at once, so the correct path polls once
-  # then KILLs and returns fast — no wall-clock. The assertion: the read FAILED (ok=false)
-  # through the timeout branch, the marker is ABSENT (killed, not waited out), and
-  # terminate_group never slept beyond its 0.05s quantum. Every mutation goes RED: drop the
-  # bound (join without the timeout) -> ok:true; remove ONLY the escalation KILL (keep
-  # TERM+poll) -> the child sleeps out and writes the marker -> present; no-op terminate ->
-  # present too; sleep past the quantum -> slept.max > 0.05.
+  # --- the board read must be REALLY bounded ---
+  # Timeout.timeout around Open3.capture3 bounds NOTHING: capture3's ensure joins the wait thread
+  # until the child exits, swallowing Timeout::Error. The bound must KILL the child. Asserted by
+  # BEHAVIOUR, not wall-clock: the child IGNORES SIGTERM and writes a marker only if it survives
+  # its sleep, so ABSENCE proves the escalation KILL. An injected clock elapses the grace deadline
+  # at once. Mutations go RED: no bound -> ok:true; no KILL or no-op terminate -> marker present;
+  # sleep past the quantum -> slept.max > 0.05.
+  # History: task reclaim-guard-live-claim.
   def test_capture_status_timeout_actually_kills_the_child
     out = run_in_script(<<~'RUBY')
       require "tmpdir"
@@ -1386,15 +1301,12 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal '["/repo/main", "/repo/.worktrees/task"]', out
   end
 
-  # --- regression: the silent empty-output flake --------------------------------
-  #
-  # A subprocess that produces NO usable output must fail LOUD with its stderr
-  # surfaced — it must never slip through as a bare `Actual: ""` (how the original
-  # CI flake masqueraded, because the old helper discarded stderr + exit status).
-  # We force that mode deterministically: a body that writes to stderr and exits
-  # nonzero on every attempt. The old IO.popen(err: File::NULL) helper would return
-  # "" silently (no raise) and fail THIS assertion; the hardened helper flunks with
-  # the stderr included.
+  # --- regression: the silent empty-output flake ---
+  # A subprocess with NO usable output must fail LOUD with its stderr surfaced, never a bare
+  # `Actual: ""`. Forced deterministically: a body that writes to stderr and exits nonzero on
+  # every attempt. An IO.popen(err: File::NULL) helper returns "" silently and fails this
+  # assertion.
+  # History: task stabilize-worktree-port-test.
   def test_run_in_script_flunks_loudly_when_subprocess_yields_no_output
     error = assert_raises(Minitest::Assertion) do
       run_in_script("STDERR.puts 'forced-subprocess-failure'; exit 1")
@@ -1404,17 +1316,13 @@ class AgentWorktreeTest < Minitest::Test
     assert_match(/no usable output/, error.message)
   end
 
-  # Regression (build-assets-on-worktree-bringup): `new` provisions the isolated test DB
-  # so a fresh worktree "runs bin/rails test out of the box" — but app/assets/builds/ is
-  # GITIGNORED, so a virgin worktree carries no built CSS, and `db:test:prepare` does not
-  # build it (tailwindcss-rails enhances `test:prepare`, falling back to db:test:prepare
-  # only when test:prepare is undefined — it never is in a Rails app). Any run that passes
-  # explicit test paths — `bin/agent-worktree test <app> <task> test/models/x_test.rb`, and
-  # every bin/fast-check lane — makes Rails SKIP test:prepare (Rails::Command::TestCommand
-  # only runs it `if self.args.none?(EXACT_TEST_ARGUMENT_PATTERN)`), so nothing ever built
-  # the asset and every view-rendering test errored with `The asset "tailwind.css" is not
-  # present in the asset pipeline`. Preparing the test env means the DB *and* the bundler
-  # hook, in one boot.
+  # Regression (build-assets-on-worktree-bringup): `new` must leave a worktree that runs tests.
+  # app/assets/builds/ is GITIGNORED, `db:test:prepare` does not build it, and any run with
+  # explicit test paths (`bin/agent-worktree test <app> <task> test/models/x_test.rb`, every
+  # bin/fast-check lane) makes Rails SKIP test:prepare, so view tests error with `The asset
+  # "tailwind.css" is not present in the asset pipeline`. Preparing the test env means the DB
+  # *and* the bundler hook, in one boot.
+  # History: task build-assets-on-worktree-bringup.
   def test_prepare_test_env_runs_the_bundler_hook_alongside_the_db_prepare
     out = run_in_script(<<~RUBY)
       CALLS = []
@@ -1446,18 +1354,14 @@ class AgentWorktreeTest < Minitest::Test
                  "no test DB skips db:test:prepare ONLY — the bundled-asset build still runs"
   end
 
-  # --- sweep coverage: every worktree tree on disk, not just the registry ------
-  #
-  # The sweep enumerated desks from config/satellites.yml, which registers satellite
-  # APPS (navbar, SSO role, ecosystem-build). Repos that carry worktrees but are not
-  # satellites — the gem/library repos above all — were therefore invisible to it, and
-  # `cleanup --reclaim studio-engine` answered "unknown app". Not a slow sweep: NO
-  # sweep, silently. studio-engine had accumulated 64 unswept desks, more than any
-  # registered app, while the registered ones looked tidy.
-  #
-  # The fix is NOT to add those slugs to satellites.yml — that file drives the navbar,
-  # SSO roles and ecosystem-build, so registering a repo there is a product decision.
-  # Coverage is derived from what has .worktrees/ ON DISK.
+  # --- sweep coverage: every worktree tree on disk, not just the registry ---
+  # config/satellites.yml registers satellite APPS, so repos with worktrees that are not
+  # satellites (the gem/library repos) would get NO sweep, silently (`cleanup --reclaim
+  # studio-engine` answered "unknown app").
+  # The fix is NOT to add those slugs to satellites.yml: that file drives the navbar, SSO roles
+  # and ecosystem-build, so registering a repo there is a product decision. Coverage derives from
+  # what has .worktrees/ ON DISK.
+  # History: task sweep-discovered-repos-safely.
   def test_stack_records_covers_a_worktree_tree_missing_from_the_registry
     Dir.mktmpdir do |root|
       # studio-engine is deliberately NOT a satellite: it is a gem, with no port and
@@ -1480,15 +1384,13 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
-  # --- identity's missing-desk remedy: a command that can actually cut the desk --
-  #
-  # `identity` resolves through sweep_app_for, so it reaches repos `new` cannot desk:
-  # `new` resolves registered apps and, since gem-repos-get-desks, the gems
-  # (studio-engine, solana-studio); it answers "unknown app" for anything else, such as
-  # turf-vault. A missing desk there was told to run `new` anyway, the one remedy
-  # guaranteed to fail. The lane is read off the lookups `new` uses, so a registered app
-  # or a gem keeps `new` and anything else gets the `git worktree add` that cuts the desk
-  # where identity looks, sibling tree included.
+  # --- identity's missing-desk remedy: a command that can actually cut the desk ---
+  # `identity` resolves through sweep_app_for, so it reaches repos `new` cannot desk: `new`
+  # resolves registered apps and the gems (studio-engine, solana-studio) and answers "unknown app"
+  # otherwise, such as turf-vault. The lane is read off the lookups `new` uses: a registered app
+  # or a gem keeps `new`; anything else gets the `git worktree add` that cuts the desk where
+  # identity looks, sibling tree included.
+  # History: task identity-hint-for-gem-desks.
   def test_missing_desk_remedy_follows_the_registry_new_resolves_through
     Dir.mktmpdir do |root|
       out = run_in_script(<<~RUBY, env: { "PROJECTS_DIR" => root })
@@ -1520,22 +1422,13 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
-  # --- sweep scale: board reads must not scale with desk count ----------------
-  #
-  # reclaim_evidence resolves the build claim per desk, and task_record_for_pr spawns
-  # `bin/task show <slug> --json` — one subprocess AND one HTTPS round-trip EACH. At 141
-  # desks the full-suite scan ran past ten minutes at 0% CPU and never emitted a single
-  # candidate; the same sweep scoped to one repo finished in 1-3 minutes.
-  #
-  # Parallelising is the WRONG fix and the file already says why: the board 500s under
-  # Postgres connection pressure during heavy parallel devops, and mass-reclaim is
-  # CORRELATED with that pressure, not independent of it. So the reads are batched
-  # instead — one board read for all bound slugs, then decide locally.
-  #
-  # The property asserted is the one that matters and survives a change of mechanism:
-  # resolving N bound desks does not cost N board reads.
-  # A payload shaped like the one the API SHOW serves — carrying the derived fields
-  # every hold channel reads. Anything less must not reach the cache.
+  # --- sweep scale: board reads must not scale with desk count ---
+  # task_record_for_pr spawns `bin/task show <slug> --json` per desk. Parallelising is the WRONG
+  # fix: the board 500s under Postgres connection pressure, and mass-reclaim is CORRELATED with
+  # it. So reads are batched: resolving N bound desks must not cost N board reads.
+  # A payload shaped like the one the API SHOW serves, carrying the derived fields every hold
+  # channel reads. Anything less must not reach the cache.
+  # History: task sweeper-covers-every-desk.
   def self.show_shaped(slug)
     { "slug" => slug, "stage" => "building", "metadata" => {}, "merged" => nil,
       "review_in_progress" => false, "gate_in_flight" => nil, "holder_gate_in_flight" => nil,
@@ -1688,21 +1581,14 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal "0", out, "five dirty desks never reach claim_hold, so they must cost no board read"
   end
 
-  # --- the batch must never blind a hold channel -------------------------------
-  #
-  # THE DEFECT THIS EXISTS FOR. The batch reads the API index; every consumer of
-  # @task_record_cache was written against the API show. Those are different
-  # serializers — show merges derived fields, the index keeps the raw column — so an
-  # index row is a complete, well-formed Task with review_in_progress,
-  # gate_in_flight, holder_gate_in_flight, progress_seconds_ago and
-  # holder_liveness_seconds_ago simply ABSENT. Absent reads as nil, and each of
-  # those guards treats nil as a negative, so three of the four hold channels went
-  # quiet at once and a desk whose builder was mid-cert read as abandoned.
-  #
-  # Asserting "the batch caches something" would have passed on the broken code.
-  # What has to be asserted is the WITHHOLDING: an incomplete record never enters
-  # the cache, so the desk falls through to the per-slug show read and unknown
-  # holds. Absence of a field must never be evidence of absence of a claim.
+  # --- the batch must never blind a hold channel ---
+  # The batch reads the API index; @task_record_cache consumers expect the API show. An index row
+  # has review_in_progress, gate_in_flight, holder_gate_in_flight, progress_seconds_ago and
+  # holder_liveness_seconds_ago ABSENT, and guards read nil as a negative.
+  # So assert the WITHHOLDING: an incomplete record never enters the cache, the desk falls through
+  # to the per-slug show read, and unknown holds. Absence of a field is never evidence of absence
+  # of a claim.
+  # History: task sweeper-covers-every-desk.
   def test_batch_refuses_to_cache_a_record_missing_a_guard_field
     out = run_in_script(<<~RUBY)
       # EXACTLY what the raw index returns: a real row, derived fields absent.
@@ -1740,18 +1626,14 @@ class AgentWorktreeTest < Minitest::Test
                  "what makes the batch self-activating once the board serves full=1"
   end
 
-  # --- stackless teardown is a BRANCH, not a comment ---------------------------
-  #
-  # discovered_worktree_configs used to omit the keys teardown fetches, and
-  # STACKLESS_STACK was set at its construction site and never read. So the generic
-  # Rails teardown ran against a gem repo and died on `app.fetch("sidekiq")` —
-  # inside with_worktree_lock, after earlier candidates were already destroyed,
-  # leaving a half-finished sweep and a stale registry.
-  # Builds the tree it inspects. An earlier cut read discovered_worktree_configs.first
-  # from the real projects root — which passed on a laptop with desks on disk and
-  # returned nil in a fresh CI checkout, so the check was green exactly where it was
-  # not needed and NoMethodError where it was. A test for discovery must own the
-  # thing being discovered.
+  # --- stackless teardown is a BRANCH, not a comment ---
+  # discovered_worktree_configs must carry the keys teardown fetches and STACKLESS_STACK must be
+  # read, or the generic Rails teardown dies on `app.fetch("sidekiq")` inside with_worktree_lock,
+  # after earlier candidates are destroyed, leaving a half-finished sweep and a stale registry.
+  # Builds the tree it inspects: reading discovered_worktree_configs.first from the real projects
+  # root returns nil in a fresh CI checkout. A test for discovery must own the thing being
+  # discovered.
+  # History: task sweep-discovered-repos-safely.
   def test_a_discovered_config_carries_every_key_teardown_fetches
     Dir.mktmpdir do |root|
       FileUtils.mkdir_p(File.join(root, "studio-engine", ".worktrees", "a-desk"))
@@ -1805,15 +1687,13 @@ class AgentWorktreeTest < Minitest::Test
                  "would orphan its server and its Redis DB"
   end
 
-  # THE WITHHOLD, now judged by GIT. A discovered repo's desk can never carry a bound task
-  # (bind-task routes through the registry), so the board channels have nothing to read and
-  # mtimes alone cannot prove a gem desk abandoned. Until 2026-09 that meant EVERY discovered
-  # desk was withheld (66 of 70 held desks, ~50 clean and merged); now git decides
-  # (discovered_git_hold), and a desk git cannot even inspect — no directory — is withheld.
-  #
-  # Both halves matter. Widening the hold to every unbound desk would wedge cleanup entirely
-  # (the registered fail-open exists for a reason), so this asserts the REGISTERED unbound
-  # desk still reads free in the same breath.
+  # THE WITHHOLD, judged by GIT. A discovered repo's desk can never carry a bound task (bind-task
+  # routes through the registry), so board channels have nothing to read and mtimes alone cannot
+  # prove a gem desk abandoned. git decides (discovered_git_hold), and a desk git cannot inspect
+  # (no directory) is withheld.
+  # Both halves matter: widening the hold to every unbound desk would wedge cleanup entirely, so
+  # this asserts the REGISTERED unbound desk still reads free.
+  # History: task sweep-discovered-repos-safely.
   def test_a_discovered_desk_git_cannot_inspect_is_withheld_while_a_registered_unbound_desk_still_frees
     out = run_in_script(<<~RUBY)
       def worktree_label(_r) = "a-repo/a-desk"
@@ -1881,17 +1761,14 @@ class AgentWorktreeTest < Minitest::Test
                  "run_reclaim. The registered cases must keep reporting, or the guard is just off."
   end
 
-  # Every remediation line the sweep prints for a discovered desk goes into the desk
-  # ledger as the archive record, so BOTH halves have to hold: the command must resolve, and
-  # it must resolve into the tree the desk actually lives in.
-  #
-  # This drives the real `remove` DISPATCH. An earlier cut called sweep_app_for directly and
-  # was worthless: reverting `remove` to app_for — the exact defect its own comment named —
-  # left it green.
-  #
-  # The sibling tree is the sharp case. worktree_dir hard-coded ".worktrees", so
-  # `remove <repo>.sibling <desk>` resolved into the MANAGED tree: an abort when the name is
-  # unique, and a teardown of the WRONG DESK the moment the same name exists in both trees.
+  # Every remediation line the sweep prints for a discovered desk goes into the desk ledger as
+  # the archive record, so the command must resolve, and into the tree the desk lives in.
+  # This drives the real `remove` DISPATCH: calling sweep_app_for directly stays green when
+  # `remove` reverts to app_for.
+  # Sharp case: if worktree_dir hard-codes ".worktrees", `remove <repo>.sibling <desk>` resolves
+  # into the MANAGED tree: an abort on a unique name, a teardown of the WRONG DESK when it exists
+  # in both.
+  # History: task sweep-discovered-repos-safely.
   def test_remove_resolves_a_sibling_tree_desk_into_the_sibling_tree
     Dir.mktmpdir do |root|
       managed = File.join(root, "studio-engine", ".worktrees", "shared-name")
@@ -1990,21 +1867,13 @@ class AgentWorktreeTest < Minitest::Test
     end
   end
 
-  # --- the desk ledger: recorded on the board, and recorded BEFORE anything is destroyed --
-  #
-  # `bin/agent-worktree remove` used to append its audit row to
-  # docs/agents/maintenance/delete-later.md, resolved against HUB_DIR. A cleanup is normally
-  # run from the PRIMARY checkout, and the primary sits on `main` — a branch nobody may
-  # commit to — so the record was created in the one place it could never be saved from. Six
-  # stashes of "restore later" ledger content piled up between 2026-07-02 and 2026-08-31 (98
-  # rows); not one was ever restored, and a reclaim sweep stranded 25 more DURING the
-  # conversation about the defect. The row goes to the board now (bin/lib/desk_ledger.rb).
-  #
-  # The episode semantics those rows carried — one row per TEARDOWN not per PATH, a teardown
-  # closes its own pending row in place, a dated row is history — moved with them and are
-  # asserted in test/models/desk_record_test.rb. What is asserted HERE is the property that
-  # only this script can hold: the write happens FIRST, and a write it cannot make stops the
-  # teardown instead of proceeding without a record.
+  # --- the desk ledger: recorded on the board, and recorded BEFORE anything is destroyed ---
+  # The row goes to the board (bin/lib/desk_ledger.rb), not
+  # docs/agents/maintenance/delete-later.md: a cleanup runs from the PRIMARY on `main`, a branch
+  # nobody may commit to. Episode semantics (one row per TEARDOWN not per PATH, a teardown closes
+  # its own pending row, a dated row is history) are asserted in test/models/desk_record_test.rb.
+  # Asserted HERE: the write happens FIRST, and a write it cannot make stops the teardown.
+  # History: task append-ledger-rows-per-teardown.
 
   # The teardown fixture: every destructive helper replaced by a recorder, so the check can
   # read the ORDER things happened in rather than trusting a comment about it.

@@ -2,16 +2,14 @@ require "test_helper"
 require "tmpdir"
 require Rails.root.join("bin/lib/agent_dispatcher").to_s
 
-# [unit] The dispatcher's half of chat attachments (AgentMailbox::Media, the
-# Responder's media path, ClaudeRun.parse stream: true): a message's images and
-# PDFs become image and document blocks in ONE stream-json user message, sent to
-# the same tool-less, --safe-mode Claude; the reply is read from the stream's
-# `result` line only; ImageMagick is told to shrink and strip (EXIF and GPS)
-# every image before the model sees it (the conversion itself needs `magick`,
-# which CI does not have: it was measured on the dispatcher Mac, 2026-10-17, a
-# 3000x2000 JPEG with a GPS tag came out 1568x1045 with no EXIF, and HEIC as JPEG); and a file that cannot be read is skipped and named, never
-# fatal. A message with no files keeps today's command and prompt (the warm
+# [unit] The dispatcher's half of chat attachments (AgentMailbox::Media, the Responder's
+# media path, ClaudeRun.parse stream: true): images and PDFs become image and document
+# blocks in ONE stream-json user message, to the same tool-less, --safe-mode Claude; the
+# reply comes from the stream's `result` line only; ImageMagick shrinks and strips (EXIF,
+# GPS) every image (conversion needs `magick`, absent in CI); an unreadable file is skipped
+# and named, never fatal. A message with no files keeps today's command and prompt (the warm
 # session test pins that byte for byte).
+# History: task chat-attachments-images-pdf.
 class AgentMediaTest < ActiveSupport::TestCase
   M = AgentMailbox::Media
   FIXTURES = Rails.root.join("test/fixtures/files/chat")

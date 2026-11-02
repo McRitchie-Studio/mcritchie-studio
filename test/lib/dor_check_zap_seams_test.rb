@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] The reviewer-zap seams, at the GATE (/tasks/reviewer-zap-has-unmapped-seams).
-#   ruby -Itest test/lib/dor_check_zap_seams_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# test/lib/review_tree_guard_test.rb proves the CLASSIFIER answers correctly. This file
-# proves bin/dor-check ASKS it and acts on the answer — the pairing that matters, since
-# a correct guard wired to nothing is the failure mode worth more than either half. It
-# is the same split as test_only_diff_test.rb (classifier) vs dor_check_test.rb (gate).
-#
-# THE TWO SEVERITIES ARE THE SUBJECT, not an implementation detail, and both directions
-# are pinned below:
-#   seam 1 (graded tree ≠ PR head)  FETCHED — the review fetches the branch first
-#                                   (guard catalog row 2.9); a leftover mismatch reports.
-#   seam 2 (the base has moved)     REPORTS — `accepted` moves constantly, and refusing
-#                                   every review whose base gained a commit would wedge
-#                                   the lane for a fact that is usually harmless.
-# Flip either one and a test here goes red, which is the point: the choice was argued,
-# so it should not be changeable by accident.
-#
-# SEAM 3 IS DELIBERATELY ABSENT. A reviewer zap was believed to demote a task out of
-# `submitted`; that was FALSIFIED (turf #518 took a zap and stayed `submitted`, breaker
-# clear), and what moved #513 is still unidentified. Nothing here encodes a demotion
-# mechanism, and nothing should until someone measures one.
+# [integration] The reviewer-zap seams, at the GATE: bin/dor-check acts on the classifier. THE
+# TWO SEVERITIES ARE THE SUBJECT:
+#   seam 1 (graded tree != PR head): FETCHED first (guard catalog row 2.9); leftover mismatch
+#     reports.
+#   seam 2 (the base has moved): REPORTS; refusing every moved base wedges the lane.
+# SEAM 3 IS DELIBERATELY ABSENT: a zap demoting out of `submitted` was FALSIFIED. Encode no
+# demotion until measured.
+# History: task reviewer-zap-has-unmapped-seams.
 
 require "minitest/autorun"
 require "json"
@@ -49,17 +34,14 @@ class DorCheckZapSeamsTest < Minitest::Test
     File.write(full, body)
   end
 
-  # A BUILDER'S DESK, which is what `--gate-role review` re-roots to: on feat/x, with
-  # refs/remotes/origin/feat/x pointing where the builder last pushed. A reviewer's zap
-  # pushed from a checkout with INDEPENDENT refs — a separate clone, which is what this
-  # fixture's `seed` is — does not move that ref, which is the seam, so the fixture
-  # models it by simply never moving it. A zap from a SIBLING WORKTREE would move it and
-  # the cert would go STALE unaided; that half is not this seam, and it is pinned in
+  # A BUILDER'S DESK, what `--gate-role review` re-roots to: on feat/x, with
+  # refs/remotes/origin/feat/x where the builder last pushed. A zap from a checkout with
+  # INDEPENDENT refs (a separate clone, this fixture's `seed`) does not move that ref, which is
+  # the seam. A zap from a SIBLING WORKTREE moves it and stales the cert: not this seam, pinned in
   # test/docs/zap_cert_freshness_docs_test.rb.
-  #
-  # `origin/accepted` is a real ref here so the base re-derivation has something to
-  # read. `base_moved: true` advances it past the branch, reproducing turf #517 merging
-  # while #519's checks were still running.
+  # `origin/accepted` is a real ref so base re-derivation can read it. `base_moved: true` advances
+  # it past the branch.
+  # History: task reviewer-zap-has-unmapped-seams.
   def with_desk(base_moved: false)
     Dir.mktmpdir do |raw|
       dir = File.realpath(raw)

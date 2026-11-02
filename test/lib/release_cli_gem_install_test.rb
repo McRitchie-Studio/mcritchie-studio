@@ -1,20 +1,12 @@
 # frozen_string_literal: true
 
-# bin/release.rb's publish → SERVED → INSTALLED wait, the half that makes prepare
-# install each published gem on THIS machine before anything reads it. Standalone:
-#   ruby -Itest test/lib/release_cli_gem_install_test.rb
-#
-# THE INCIDENT, rel-20261007-f8453b (2026-10-07). solana-studio 0.12.3 was already
-# live, so an idempotent re-run skipped its publish; studio-engine's lock pinned it,
-# and studio-engine's `bin/release-check --build` died at boot with
-# `Could not find solana-studio-0.12.3 in locally installed gems`. The operator
-# installed it by hand. The CDN half of the wait (release_cli_gem_await_test.rb)
-# already existed and passed; nothing installed the gem.
-#
-# A FILE OF ITS OWN: the release CLI files are frozen at their size by
-# config/test_health.yml. It subclasses the shared harness, and every case drives
-# the REAL script with `sh`, `curl` and the publish stubbed, so no test reaches
-# RubyGems or publishes anything.
+# bin/release.rb's publish, SERVED, INSTALLED wait: prepare installs each published gem on
+# THIS machine before anything reads it, including after an idempotent re-run skipped the
+# publish of a version already live. The CDN half is release_cli_gem_await_test.rb.
+# A FILE OF ITS OWN: release CLI files are frozen at their size by config/test_health.yml. It
+# subclasses the shared harness; every case drives the REAL script with `sh`, `curl` and the
+# publish stubbed, so no test reaches RubyGems or publishes anything.
+# History: release rel-20261007-f8453b.
 require_relative "release_cli_harness"
 
 class ReleaseCliGemInstallTest < ReleaseCliHarness

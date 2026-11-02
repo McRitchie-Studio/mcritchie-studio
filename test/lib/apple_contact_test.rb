@@ -1,17 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] + [integration] AppleContact — the helper that writes a signature into
-# the operator's Apple Contacts (bin/apple-contact, docs/agents/modules/contact-capture.md).
-#
-# The unit tier covers the pure half: normalizing the card an agent read,
-# matching it against the address book, and the diff the operator is asked
-# about. The integration tier runs the REAL bin/apple-contact against a fake
-# `osascript` on PATH that records its argv, because the property that matters
-# most — a signature value reaches Contacts as data, never as script — is a
-# property of the command line, and only a recorded command line can show it.
-# Nothing here touches the real Contacts app.
-#
-#   ruby -Itest test/lib/apple_contact_test.rb
+# [unit] + [integration] AppleContact writes a signature into the operator's Apple Contacts
+# (bin/apple-contact, docs/agents/modules/contact-capture.md). Unit: normalizing the card,
+# matching the address book, the diff. Integration: the REAL bin/apple-contact against a
+# fake `osascript` on PATH recording argv, because "a signature value reaches Contacts as
+# data, never as script" is a property of the command line. Nothing touches the real
+# Contacts app.
+# History: task contact-capture-from-signatures.
 
 require "minitest/autorun"
 require "tmpdir"

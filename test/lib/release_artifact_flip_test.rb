@@ -1,29 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] Does the artifact commit FLIP the shared primary checkout? Never,
-# since harden-artifact-commit-onto-accepted; this file first pinned the no-work case.
-#
-# THE DEFECT. `Release::ArtifactCommit.safe_to_commit?` was
-# `other_dirty_paths(...).empty?`, which a CLEAN tree satisfies vacuously — while
-# the comment directly above it always claimed the stronger conjunction, "the
-# expected doc(s) are the ONLY things dirty". So `commit_artifact_to_accepted` ran
-# its `checkout <branch>` → `git commit` (silently a no-op with nothing staged) →
-# `ensure { checkout main }` dance on every run with nothing to commit. Measured
-# on the hub primary 2026-09-10: 191 flip pairs and ZERO `commit:` entries across
-# 400 reflog records, median dwell on the target branch 1s. The target is `accepted`.
-#
-# WHY A FLIP COSTS ANYTHING. The primary is SHARED. `git checkout` unlinks each
-# file and writes it afresh, so every tracked file is briefly absent — measured
-# ~0.4-0.7s per checkout, about 68% of the operation — and desk-side commands and
-# git's own credential helper read that tree while it happens.
-#
-# WHY THIS IS A FILE OF ITS OWN. The release CLI files are frozen APPEND hotspots,
-# and `TestHealthRatchetTest` refuses a PR that grows one. Named for its concern
-# instead.
-#
-# NOTHING HERE TOUCHES a real repo: the fixture is a bare origin plus a clone in
-# a tmpdir, and the child runs under OutboundSeams so a forgotten stub resolves
-# `gh`/`heroku`/`op` to a sealed no-op rather than the real binary.
+# [integration] Does the artifact commit FLIP the shared primary checkout? Never. Trap:
+# `Release::ArtifactCommit.safe_to_commit?` as `other_dirty_paths(...).empty?` is vacuously true
+# on a CLEAN tree, so `commit_artifact_to_accepted` would dance checkout, no-op commit, checkout
+# main. A FLIP COSTS: `git checkout` rewrites each file, briefly absent, and desk-side commands
+# and git's credential helper read that shared tree. A file of its own: `TestHealthRatchetTest`
+# freezes release CLI files. Fixture is a bare origin plus a tmpdir clone; OutboundSeams seals
+# `gh`/`heroku`/`op`.
+# History: task artifact-commit-flips-clean-tree.
 
 require "minitest/autorun"
 require "fileutils"

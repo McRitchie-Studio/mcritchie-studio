@@ -1,16 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] bin/release's `sh` and its read helpers are BOUNDED (BoundedCommand,
-# process-group SIGKILL), and each class of step reads its own bound:
-#
-#   * sh, captured or streamed, kills a hung child that ignores SIGALRM and its
-#     grandchild with it, and reads as a failure with a line naming the bound;
-#   * a post_deploy scope runs under RELEASE_POST_DEPLOY_DEADLINE, not the
-#     working-step bound;
-#   * the archive's board write is not cut at the 300 s record-op bound: it takes
-#     RELEASE_ARCHIVE_STEP_DEADLINE, and grows with the number of tasks it flips.
-#
-#   ruby -Itest test/lib/release_sh_deadline_test.rb
+# [unit] bin/release's `sh` and its read helpers are BOUNDED (BoundedCommand, process-group
+# SIGKILL):
+#   * sh, captured or streamed, kills a hung child ignoring SIGALRM and its grandchild, and
+#     reads as a failure with a line naming the bound;
+#   * a post_deploy scope runs under RELEASE_POST_DEPLOY_DEADLINE, not the working-step bound;
+#   * the archive's board write takes RELEASE_ARCHIVE_STEP_DEADLINE, grows with its tasks.
+# History: task release-tooling-bounds-every-call.
 
 require_relative "release_cli_harness"
 

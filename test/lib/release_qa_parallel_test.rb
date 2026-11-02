@@ -1,15 +1,9 @@
 # frozen_string_literal: true
 
-# [unit] prepare's QA deploys run concurrently, and Turf's devnet gauntlet starts as
-# soon as Turf QA boots (task release-pins-swept-sha, part 2; run_qa_deploys).
-#
-# Before: Turf QA deploy, its boot poll, then the hub's qa-deploy.yml run and its
-# boot poll, then the gauntlet — the release log of 2026-10-30 spent minutes waiting
-# on a hub deploy the gauntlet never needed. These stub every outside seam in the
-# child (the deploy commands, the boot poll, the hooks, the gauntlet, the board) and
-# read the ORDER the threads printed in.
-#
-#   ruby -Itest test/lib/release_qa_parallel_test.rb
+# [unit] prepare's QA deploys run concurrently, and Turf's devnet gauntlet starts as soon as
+# Turf QA boots (run_qa_deploys). These stub every outside seam in the child (deploy commands,
+# boot poll, hooks, gauntlet, board) and read the ORDER the threads printed in.
+# History: task release-pins-swept-sha.
 require_relative "release_cli_harness"
 
 class ReleaseQaParallelTest < ReleaseCliHarness

@@ -1,22 +1,11 @@
 # frozen_string_literal: true
 
-# [integration] `bin/task claim-next-review` must never CLAIM on an argument it did
-# not understand.
-#
-# THE SCAR: `bin/task claim-next-review --help` — typed by an agent expecting usage
-# text — printed a task slug. It had CLAIMED. bin/task hands that branch raw ARGV to
-# ReviewClaimCli, which dispatched `claim-next` with an unvalidated flags hash, so the
-# unrecognized flag was discarded and the atomic server pop ran anyway: a live review
-# lease on a real task, a crew seat filled by a reviewer that did not exist, undone by
-# hand with `bin/task review-claim release <slug>`.
-#
-# The CLI class's own unit coverage lives in test/lib/review_claim_cli_test.rb. This
-# file pins the seam the operator actually types — the real bin/task process, its real
-# dispatch — and asserts the only thing that matters: NO POP LEFT THE PROCESS. Printed
-# usage text is not the property; the pre-fix CLI printed a slug and exited 0 too.
-#
-#   ruby -Itest test/lib/claim_next_review_flags_test.rb
-# It is also picked up by the normal `bin/rails test` sweep.
+# [integration] `bin/task claim-next-review` must never CLAIM on an argument it did not
+# understand: `--help` once took a live review lease, undone with `bin/task review-claim
+# release <slug>`. Unit coverage is in test/lib/review_claim_cli_test.rb. This pins the seam
+# the operator types, the real bin/task process and dispatch, and asserts only that NO POP
+# LEFT THE PROCESS. Printed usage text is not the property.
+# History: task refuse-unknown-claim-flags.
 
 require "minitest/autorun"
 require "json"
@@ -39,15 +28,11 @@ class ClaimNextReviewFlagsTest < Minitest::Test
   # reason. The positive control proves this one really does reach the pop.
   SESSION = "3bb327a7-8676-4cf5-ce12-81804d9cb728"
 
-  # Shells out to the REAL bin/task against a localhost stub board, and returns the
-  # requests that reached it. No Rails, no network.
-  #
-  # ATOMIC_CAPTURE_URL IS THE LOAD-BEARING PIN. The claim CLIs do not speak
-  # TASK_API_BASE at all — they go through AgentApi, which reads ATOMIC_CAPTURE_URL,
-  # and requiring session_env pins THAT one unroutable for every child. Correct as a
-  # floor, and a trap for a test like this: pin only TASK_API_BASE and the child talks
-  # to a closed port, where "the stub saw no claim" would be just as true with the bug
-  # still in place. Pointing it here makes a pop that happens a pop this test SEES.
+  # Shells out to the REAL bin/task against a localhost stub board and returns the requests
+  # that reached it. ATOMIC_CAPTURE_URL IS THE LOAD-BEARING PIN: the claim CLIs go through
+  # AgentApi, not TASK_API_BASE, and session_env pins it unroutable for every child. Pin only
+  # TASK_API_BASE and "the stub saw no claim" stays true with the bug in place.
+  # History: task refuse-unknown-claim-flags.
   def run_task(args, session: SESSION)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]

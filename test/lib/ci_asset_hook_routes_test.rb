@@ -3,34 +3,14 @@ require "shellwords"
 require "yaml"
 require Rails.root.join("bin/lib/ci_suite_workflow").to_s
 
-# WHO BUILDS THE CSS ON A VIRGIN CI RUNNER — asserted against ci.yml, not described.
-#
-# app/assets/builds/ is gitignored, so a CI runner starts with no tailwind.css and every
-# view-rendering test 500s without one. `test:prepare` is what builds it (tailwindcss-rails'
-# build.rake enhances the first DEFINED of test:prepare / spec:prepare / db:test:prepare, and
-# railties always defines the first), and a run reaches that task by exactly TWO routes:
-#
-#   1. INVOKE IT — the command names `test:prepare` itself.
-#   2. SPAWN INTO IT — the command names a rake TEST TASK (`test`, `test:system`, …) and the
-#      `rails <task>` that task's body spawns carries no path and no `-n`, so
-#      Rails::Command::TestCommand's `run_prepare_task if
-#      self.args.none?(EXACT_TEST_ARGUMENT_PATTERN)` fires. A path argument, a `-n` filter, or
-#      TEST=/TESTOPTS= on the line silences it while the command still READS the same.
-#
-# WHY THIS FILE EXISTS. Three comments in this repo credited CI with running an ARGLESS
-# `bin/rails test`, and CI has never run one: its Rails lane shards through bin/ci-shard
-# (route 1) and its system job is rake-routed (route 2). The words were retired by
-# retire-argless-rails-test-claim; prose alone would rot again the next time the invocation
-# changes, so the claim is pinned HERE instead. Change ci.yml to a path-arg run with no
-# prepare and this reddens, naming the step — a virgin-runner CSS failure caught at the
-# cause rather than as dozens of unexplained asset errors.
-#
-# The companion guard is test/lib/tasks/test_prepare_asset_hook_test.rb, which pins the
-# rake/railties/tailwindcss links this file's ROUTES depend on. This one pins which routes
-# CI's own steps take.
-#
-# Run directly:
-#   bin/rails test test/lib/ci_asset_hook_routes_test.rb
+# WHO BUILDS THE CSS ON A VIRGIN CI RUNNER, asserted against ci.yml. app/assets/builds/ is
+# gitignored, and every view-rendering test 500s without tailwind.css. `test:prepare` builds it:
+#   1. INVOKE IT: the command names `test:prepare` itself.
+#   2. SPAWN INTO IT: the command names a rake TEST TASK and its spawned `rails <task>` has no
+#      path and no `-n`. A path, a `-n` filter or TEST=/TESTOPTS= silences it, reading the same.
+# CI never runs an ARGLESS `bin/rails test`. A ci.yml path-arg run with no prepare reddens here.
+# test/lib/tasks/test_prepare_asset_hook_test.rb pins the rake/railties/tailwindcss links.
+# History: task retire-argless-rails-test-claim.
 class CiAssetHookRoutesTest < ActiveSupport::TestCase
   # The suite steps live in the called workflow; ci.yml only calls it.
   CI_YML = Rails.root.join(".github", "workflows", "reusable-ci.yml")

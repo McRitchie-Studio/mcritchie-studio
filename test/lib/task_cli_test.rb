@@ -92,19 +92,14 @@ class TaskCliTest < Minitest::Test
     requests = []
     thread = Thread.new { serve(server, requests) }
 
-    # SessionEnv.neutralized: bin/task resolves SessionIdentity for actor/persona
-    # defaulting, so the child must name NO session unless a case opts one in via
-    # `env:` (which merges on top). See test/support/session_env.rb — without this
-    # the CLI reads the LIVE agent session and this file goes red from an agent run.
-    #
-    # TaskUsageSandboxEnv.child_env: PIN THE WRITE ROOTS. bin/task resolves two
-    # stores by fallback — the usage/cost baselines (TASK_USAGE_DIR) and the session
-    # marker (CLAUDE_PROJECTS_DIR) — and this file used to pin neither, so a case
-    # that opted a session in wrote a fixture row straight into the operator's real
-    # cost store (see the sandbox section below for the damage). HOME is pinned with
-    # them because it is the READ half: SESSION is a real past session id, and an
-    # unpinned HOME let the child glob the operator's actual 30MB transcript.
-    # A case may still override any of the three (with_session_transcript does).
+    # SessionEnv.neutralized: bin/task resolves SessionIdentity for actor/persona defaulting, so
+    # the child must name NO session unless a case opts in via `env:`
+    # (test/support/session_env.rb). TaskUsageSandboxEnv.child_env: PIN THE WRITE ROOTS.
+    # TASK_USAGE_DIR and CLAUDE_PROJECTS_DIR resolve by fallback, so an unpinned one writes into
+    # the operator's real cost store (see the sandbox section below). HOME is the READ half:
+    # SESSION is a real past session id whose transcript an unpinned child would glob. A case may
+    # override any of the three (with_session_transcript does).
+    # History: task share-test-session-env-neutralizer.
     base_env = SessionEnv.neutralized({
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
@@ -398,14 +393,11 @@ class TaskCliTest < Minitest::Test
   end
 
   # --- a move must never report success on a stage that did not persist --------
-  # THE BUG: `bin/task move <slug> submitted` PRINTED "[submitted]" and exited 0
-  # while a fresh read still showed "building" — the stage PATCH 200'd (echoing
-  # the assigned-but-unsaved in-memory record) but never persisted. The stranded
-  # task is invisible to reviewers and skipped by the qa-release sweep, and it
-  # once made a supervisor misread the failed write as a rival session re-claiming
-  # the task. The move now reads the task back and confirms the persisted stage
-  # matches the requested one before reporting success. stub_persist:false models
-  # the board that 200s the PATCH but does NOT advance the persisted stage.
+  # A stage PATCH can 200 (echoing the unsaved in-memory record) without persisting. The move
+  # reads the task back and confirms the persisted stage matches the requested one before
+  # reporting success; a stranded task is invisible to reviewers and skipped by the qa-release
+  # sweep. stub_persist:false models that board.
+  # History: task task-writes-report-false-success.
   def test_move_that_does_not_persist_exits_nonzero_not_false_success
     requests, out, err, status = run_task(
       ["move", "demo-task", "submitted"],
@@ -652,32 +644,13 @@ class TaskCliTest < Minitest::Test
   end
 
   # --- The sandbox: a test child may NEVER write the operator's real store ----
-  #
-  # THE BUG THIS FILE *WAS*. bin/task resolves two write roots by FALLBACK:
-  #
-  #   usage/cost store   TASK_USAGE_DIR     else <projects>/.agents/task-usage
+  # bin/task resolves two write roots by FALLBACK:
+  #   usage/cost store   TASK_USAGE_DIR      else <projects>/.agents/task-usage
   #   session marker     CLAUDE_PROJECTS_DIR else <projects>/.agents/sessions
-  #
-  # and this file pinned NEITHER. Worse, SESSION above is a REAL past session id
-  # whose 30MB transcript still sits in the operator's ~/.claude — HOME was not
-  # pinned either — so a plain `bin/task create` under this suite globbed that
-  # transcript and wrote its ~1.9-BILLION-token cumulative totals into the
-  # operator's LIVE cost store, keyed by the stub's slug ("demo-task"). That
-  # fixture row then poisons every consumer of measured $cost: Task#actual_size
-  # (which buckets on it) and the reviewer-select baselines.
-  #
-  # The fix is two-layered, and this is the layer that must never rot:
-  #   1. CONFIGURED — base_env now pins all three (TASK_USAGE_DIR,
-  #      CLAUDE_PROJECTS_DIR, HOME) into a per-test tmpdir.
-  #   2. ASSERTED — TASK_USAGE_SANDBOX (set process-wide by test/support/
-  #      task_usage_sandbox.rb, so every child inherits it) makes the CLI FAIL
-  #      CLOSED: with the sandbox on, an unpinned write root ABORTS the command
-  #      instead of falling back to the real one. Configuration alone is not a
-  #      guarantee — the next test to forget a pin would silently pollute again.
-  #
-  # This case proves layer 2 end-to-end. It hands the child a STAND-IN projects
-  # root (never the real one) and deletes the usage pin: today's code happily
-  # writes a baseline there, which in production IS the operator's store.
+  # base_env pins those two and HOME into a tmpdir. The layer that must never rot:
+  # TASK_USAGE_SANDBOX (test/support/task_usage_sandbox.rb) makes the CLI FAIL CLOSED on an
+  # unpinned write root. This proves it with a STAND-IN projects root.
+  # History: task sandbox-test-task-usage-writes.
   def test_sandboxed_run_refuses_to_fall_back_to_the_projects_root_usage_store
     Dir.mktmpdir do |projects|
       _requests, _out, err, status = run_task(
@@ -874,15 +847,14 @@ class TaskCliTest < Minitest::Test
     })
   end
 
-  # The fix for the zeroed first-move baseline: a review INTENT seeds the baseline
-  # at the session's CURRENT totals, so the reviewer's FIRST move (submitted→
-  # reviewed) records the real work delta instead of model-only. Contrast with
-  # test_first_move_with_no_baseline_records_model_only (no intent → model only),
-  # which is exactly the Submitted→Reviewed chip bug this task fixes. End-to-end
-  # through bin/task against the stub board, sharing the on-disk usage baseline
-  # across the two invocations (same HOME + TASK_USAGE_DIR).
-  # The review lane's intent comes from the claim. A claim-less `intent --to reviewed`
-  # says so itself, so no doc has to forbid it; the deploy lane's intents stay quiet.
+  # A review INTENT seeds the baseline at the session's CURRENT totals, so the reviewer's FIRST
+  # move (submitted to reviewed) records the real work delta. Contrast
+  # test_first_move_with_no_baseline_records_model_only (no intent, model only). End-to-end
+  # through bin/task against the stub board, sharing the on-disk baseline across invocations
+  # (same HOME + TASK_USAGE_DIR).
+  # The review lane's intent comes from the claim. A claim-less `intent --to reviewed` says so
+  # itself, so no doc has to forbid it; the deploy lane's intents stay quiet.
+  # History: task usage-capture-hardening.
   def test_intent_to_reviewed_points_at_the_review_claim
     _req, _out, err, status = run_task(["intent", "demo-task", "--to", "reviewed"])
     assert status.success?, err
@@ -918,16 +890,12 @@ class TaskCliTest < Minitest::Test
     end
   end
 
-  # The DESIGN-PHASE analog of the intent-seed fix: `bin/task create` seeds the
-  # baseline at the session's CURRENT totals, so the FIRST work transition
-  # (designed→building) records the real design-phase delta instead of model-only.
-  # Before this fix the create handler seeded nothing, so the designed→building
-  # move had no baseline to diff and dropped to the model-only chip — TOKENS — /
-  # COST — on the "Designed → Building" card even though MODEL/DURATION populated.
-  # End-to-end through bin/task against the stub board (whose create POST returns
-  # slug "demo-task"), sharing the on-disk baseline across the two invocations
-  # (same HOME + TASK_USAGE_DIR). Contrast test_first_move_with_no_baseline_records_
-  # model_only — that's the bug this closes for the build CLAIM move.
+  # `bin/task create` seeds the baseline at the session's CURRENT totals, so the FIRST work
+  # transition (designed to building) records the real design-phase delta, not model-only.
+  # End-to-end through bin/task against the stub board (whose create POST returns slug
+  # "demo-task"), sharing the on-disk baseline (same HOME + TASK_USAGE_DIR). Contrast
+  # test_first_move_with_no_baseline_records_model_only.
+  # History: task seed-usage-baseline-at-create.
   def test_create_seeds_baseline_so_first_build_move_records_a_delta
     Dir.mktmpdir do |home|
       proj = File.join(home, ".claude", "projects", "-Users-xan-projects")
@@ -1131,14 +1099,11 @@ class TaskCliTest < Minitest::Test
   end
 
   # --- the top-level columns in --verbose (merged / release_slug) -------------
-  #
-  # `merged` is the stamp the release sweep reads to decide whether a `reviewed`
-  # task rides the candidate, so it is read back constantly — and --verbose used
-  # to print every devops neighbour around it and not the field itself. Agents
-  # looked in `metadata.devops.merged`, found null (nothing writes there, ever),
-  # and read that as a dropped write; three did inside 24 hours. These cases pin
-  # the three states apart THROUGH THE REAL CLI, so the fix cannot regress into
-  # "prints something" while losing the distinction that is the actual fix.
+  # `merged` is the stamp the release sweep reads to decide whether a `reviewed` task rides the
+  # candidate. `metadata.devops.merged` is always null (nothing writes there), so null there is
+  # not a dropped write. These cases pin the three states apart THROUGH THE REAL CLI, so the
+  # output cannot regress into "prints something".
+  # History: task show-prints-merged-field.
 
   def test_show_verbose_prints_the_merged_stamp_from_the_top_level_column
     _requests, out, _err, status = run_task(
@@ -1214,24 +1179,13 @@ class TaskCliTest < Minitest::Test
   end
 
   # --- WHO BUILT IT vs WHO IT IS ASSIGNED TO -----------------------------------
-  #
-  # `show` printed ONE line beginning `agent:`, rendering the top-level
-  # `agent_slug` COLUMN — the ASSIGNEE. The field review actually reads is
-  # `metadata.devops.built_by`, and `bin/task move <slug> building --actor <soul>`
-  # stamps that and sets no agent_slug at all. Measured 2026-08-30, three of four
-  # actor-stamped tasks printed `agent: -` while correctly stamped; two agents
-  # reported the blank as a review-integrity incident and a third was avoided only
-  # because a conductor knew to read `--json`.
-  #
-  # These cases pin it THROUGH THE REAL CLI so the fix cannot regress into
-  # "prints something" while losing the distinction that IS the fix.
-  #
-  # THEY ANCHOR ON STRUCTURE, NOT ON A BARE SUBSTRING. The words `agent` and
-  # `built_by` appear all over this output — in `agent_context`, in the locator,
-  # in the CLI's own prose — so a `assert_match(/carl/, out)` would pass on a
-  # build that printed the author nowhere near a label. Every case below reads the
-  # SUMMARY LINE by position (line 2 of print_task, the line that used to carry
-  # `agent:`) and asserts on that line alone.
+  # `show` must separate the assignee (the `agent_slug` column) from the builder
+  # (`metadata.devops.built_by`); `bin/task move <slug> building --actor <soul>` stamps built_by
+  # and sets no agent_slug. Pinned THROUGH THE REAL CLI.
+  # THEY ANCHOR ON STRUCTURE: `agent` and `built_by` appear all over this output, so a bare
+  # substring match would pass with the author missing. Every case reads print_task's SUMMARY
+  # LINE by position (line 2) and asserts on that line alone.
+  # History: task show-prints-wrong-builder.
 
   # print_task's summary line, addressed by POSITION — deliberately not by its
   # labels, which are the thing under test.
@@ -1891,15 +1845,13 @@ class TaskCliTest < Minitest::Test
     assert_equal "🧪", marker["mascot_emoji"]
   end
 
-  # The board-fallback path: when BOTH the response and the on-disk marker lack a
-  # mascot, marker_mascot falls through to a board API read (board_mascot). That
-  # read MUST NOT be able to abort the command. board_mascot used to call api()
-  # in-process, so a non-2xx board read → api's die! → exit 1 → SystemExit, which
-  # is NOT a StandardError and so escaped BOTH board_mascot's and
-  # write_feature_marker's `rescue StandardError` — killing the whole move with
-  # exit 1 AFTER its stage PATCH had already landed (a false command failure on a
-  # transient board 429 / 5xx). A non-building move isolates the board read as the
-  # only task GET, so fail_get hits exactly that read. Regression for PR #158.
+  # The board-fallback path: when BOTH the response and the marker lack a mascot, marker_mascot
+  # falls through to board_mascot, whose read MUST NOT be able to abort the command. api()'s
+  # die! exits via SystemExit, NOT a StandardError, which escapes board_mascot's and
+  # write_feature_marker's `rescue StandardError` and kills the move AFTER its stage PATCH
+  # landed. A non-building move isolates the board read as the only task GET, so fail_get hits
+  # exactly that read.
+  # History: task mascot-marker-no-downgrade-fallback.
   def test_a_board_read_failure_never_aborts_the_command
     marker, status = run_with_marker(
       ["move", "demo-task", "reviewed"],     # non-building: the board read is the only task GET
@@ -2283,14 +2235,12 @@ class TaskCliTest < Minitest::Test
   end
 
   # --- the `maps = scalars` ALIASING INVARIANT --------------------------------
-  # Map flags ride in the SAME hash as scalar flags so parse_flags' four-wide
-  # [positionals, scalars, lists, top] contract survives. The cost is one shared
-  # devops namespace: a future map flag whose devops key collides with a scalar
-  # flag's silently overwrites it, whichever came last in argv. The trick was
-  # documented at bin/task's `maps = scalars` and asserted nowhere.
-  #
-  # Asserted at the SOURCE because bin/task is a standalone script this process
-  # cannot load — it dispatches on ARGV at the top level the moment it is read.
+  # Map flags ride in the SAME hash as scalar flags so parse_flags' four-wide [positionals,
+  # scalars, lists, top] contract survives. The cost: a map flag whose devops key collides with
+  # a scalar flag's silently overwrites it, whichever came last in argv. Asserted at the SOURCE
+  # because bin/task dispatches on ARGV at the top level the moment it is read, so this process
+  # cannot load it.
+  # History: task record-per-repo-prs.
   def test_map_and_scalar_flags_never_share_a_devops_key
     source = File.read(BIN)
     scalar_literal = source[/^SCALAR_FLAGS = (\{.*?^\})\.freeze$/m, 1]
@@ -2664,14 +2614,12 @@ class TaskCliTest < Minitest::Test
   end
 
   # --- exit codes are a CONTRACT: 4 = the board ANSWERED "no such task" --------
-  #
-  # bin/agent-worktree's reclaim guard frees a desk when the board positively
-  # answers "there is no such task" and WITHHOLDS it when the read failed — and it
-  # classifies on bin/task's exit code (EXIT_TASK_NOT_FOUND = 4). These pins are
-  # load-bearing on a destroy path: 4 must fire ONLY on the API's own not-found
-  # answer (HTTP 404 + its exact "task not found" body), and every FAILED read —
-  # 5xx, a Heroku router 404, a route-level 404 — must stay on 1, or an outage
-  # reclassifies as "task gone → free to tear the desk down".
+  # bin/agent-worktree's reclaim guard frees a desk on a positive "no such task" and withholds
+  # it when the read failed, classifying on EXIT_TASK_NOT_FOUND = 4. Load-bearing on a destroy
+  # path: 4 fires ONLY on the API's own not-found (HTTP 404 + its exact "task not found" body);
+  # every FAILED read (5xx, a Heroku router 404, a route-level 404) stays on 1, or an outage
+  # reclassifies as "task gone, free to tear the desk down".
+  # History: task task-cli-exit-codes.
 
   TASK_NOT_FOUND_BODY = JSON.generate("error" => "task not found", "error_code" => "NOT_FOUND")
 

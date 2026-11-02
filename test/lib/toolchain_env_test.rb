@@ -1,16 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] tests for bin/lib/toolchain_env.rb — the pre-toolchain environment
-# restore that bin/clean-artifacts hands each audited app.
-#
-# Every case here feeds a SYNTHETIC parent hash rather than reading ENV, because
-# the property under test is "what does this do with a parent of shape X" and the
-# real ENV is whichever shape the runner happens to have. The end-to-end proof
-# that a restored child reaches the same verdict as a clean one — both arms of
-# the ablation — lives in test/lib/clean_artifacts_cli_test.rb, which spawns the
-# real CLI against real processes.
-# Run directly:
-#   ruby -Itest test/lib/toolchain_env_test.rb
+# [unit] tests for bin/lib/toolchain_env.rb, the pre-toolchain environment restore
+# bin/clean-artifacts hands each audited app. Every case feeds a SYNTHETIC parent hash, not
+# ENV, since the property is what this does with a parent of shape X. The end-to-end proof
+# lives in test/lib/clean_artifacts_cli_test.rb.
+# History: task cap-uncapped-app-logs.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/toolchain_env"
@@ -23,15 +17,12 @@ class ToolchainEnvTest < Minitest::Test
   def restored(env) = ToolchainEnv.restored(env)
 
   # ── THE CONSTANTS ARE BUNDLER'S, NOT OURS ──────────────────────────────────
-  #
-  # This module reimplements `Bundler.original_env` instead of requiring bundler,
-  # because it runs in a process that must not be bound to any bundle. The cost
-  # of that choice is two spellings typed by hand — and the first draft got the
-  # sentinel wrong, writing "BUNDLER_ENV_PRESERVED". Nothing raised: every
-  # preserved variable was SET TO THE SENTENCE instead of deleted, `ruby` died on
-  # the resulting RUBYOPT before any app boot began, and four fixture apps went
-  # from OK to unbootable. A guessed protocol constant fails silently in exactly
-  # the direction this module exists to prevent, so it is pinned to the source.
+  # This module reimplements `Bundler.original_env` because its process must not be bound to
+  # any bundle, so two spellings are typed by hand. A wrong sentinel raises nothing: every
+  # preserved variable is SET TO THE SENTENCE instead of deleted, and `ruby` dies on the
+  # resulting RUBYOPT before app boot. A guessed protocol constant fails silently, so it is
+  # pinned to the source.
+  # History: task cap-uncapped-app-logs.
   def test_the_sentinel_and_prefix_match_bundlers_own
     require "bundler"
     require "bundler/environment_preserver"
@@ -138,17 +129,13 @@ class ToolchainEnvTest < Minitest::Test
                  "the BUNDLE_ namespace sweep consumed BUNDLER_ORIG_PATH before it could be read"
   end
 
-  # ...and the case the test above CANNOT reach. It probes with PATH, which is
-  # outside both namespaces, and step 1 reads the records out of the SOURCE hash
-  # before the sweep runs — so PATH is restored either way and that assertion
-  # passes on a widened regex as readily as on the real one. Measured in review
-  # 2026-09-22: widening BUNDLE_NAMESPACE by ONE character (/\ABUNDLE/, or
-  # /\ABUNDLER?_/) left all 14 cases green while silently dropping this restore.
-  # BUNDLER_VERSION is the probe because it is load-bearing TWICE — a real
-  # Bundler::EnvironmentPreserver::BUNDLER_KEYS member that a widened regex
-  # clears after step 1 restored it, AND a RESIDUAL_KEYS name, so it also reds
-  # if step 3's `unless overrides.key?` floor guard is dropped. Both guards are
-  # asserted here; neither had a test that could fail.
+  # ...and the case the test above CANNOT reach: it probes with PATH, outside both namespaces,
+  # so that assertion passes on a widened regex (/\ABUNDLE/, /\ABUNDLER?_/). BUNDLER_VERSION
+  # is the probe because it is load-bearing TWICE: a real
+  # Bundler::EnvironmentPreserver::BUNDLER_KEYS member a widened regex clears after step 1
+  # restored it, AND a RESIDUAL_KEYS name, so it also reds if step 3's `unless overrides.key?`
+  # floor guard is dropped.
+  # History: task cap-uncapped-app-logs.
   def test_a_bundler_prefixed_target_survives_the_sweep_and_the_floor
     child = restored({ "BUNDLER_VERSION" => "2.6.9", "#{ORIG}BUNDLER_VERSION" => "2.5.23" })
 

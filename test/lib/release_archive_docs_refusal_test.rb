@@ -1,22 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] Does `bin/release archive` HONOUR bin/archive-docs' refusal?
-#
-# sweep_docs used to return `[out, status.success?]` and BOTH call sites took `.first`,
-# dropping the boolean on the floor. So a failed sweep printed its warning, the beat
-# carried on, and commit_artifact_to_accepted pushed whatever the sweep had left staged.
-#
-# WHY THIS TEST DRIVES bin/release AND NOT bin/archive-docs. The bug lived entirely in the CALLER's handling of the
-# verdict, so a test that re-checks the sub-command's exit code proves nothing about it.
-# This spawns the REAL bin/release.rb, calls its REAL `archive` entrypoint, and lets its
-# REAL sweep_docs cross a REAL Open3 process boundary. The only thing faked is what the
-# child process DOES — which is precisely the variable under test.
-#
-# Run directly:  ruby -Itest test/lib/release_archive_docs_refusal_test.rb
-#
-# A file of its own, named for its concern: the release CLI files are frozen hotspots in
-# config/test_health.yml, and the ratchet's remedy for "I need to add something" is a
-# new named home, not an append.
+# [integration] Does `bin/release archive` HONOUR bin/archive-docs' refusal? The bug lived in
+# the CALLER: sweep_docs returns `[out, status.success?]` and both call sites took `.first`, so
+# commit_artifact_to_accepted pushed whatever the sweep left staged. A test of the sub-command's
+# exit code cannot see that, so this spawns the REAL bin/release.rb across a REAL Open3 boundary;
+# only what the child DOES is faked. A file of its own: the release CLI files are frozen hotspots
+# in `config/test_health.yml`.
+# History: task honour-archive-docs-refusal.
 
 require "minitest/autorun"
 require "open3"
@@ -31,13 +21,11 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
   # failed sweep is the damage: a half-finished sweep becomes a commit on `accepted`.
   COMMITTED = "SPY-COMMIT-ARTIFACT-REACHED"
 
-  # bin/release's three sweep helpers each spawn a CWD-RELATIVE command
-  # (`bin/archive-docs`, `bin/agent-worktree`, `bin/clean-artifacts`). Running the CLI
-  # from a scratch dir that carries its own `bin/` is what lets the real Open3 boundary
-  # run while the child's behaviour stays under the test's control.
-  #
-  # `archive_docs_exit` is the whole experiment: 0 = the sweep is happy, 1 = it fails.
-  # `moved` is what a happy sweep reports; the beat commits only when a doc moved.
+  # bin/release's three sweep helpers spawn CWD-RELATIVE commands (`bin/archive-docs`,
+  # `bin/agent-worktree`, `bin/clean-artifacts`), so a scratch dir with its own `bin/` controls
+  # the child. `archive_docs_exit`: 0 = happy, 1 = fails. `moved` is what a happy sweep reports;
+  # the beat commits only when a doc moved.
+  # History: task honour-archive-docs-refusal.
   def with_stub_bin(archive_docs_exit:, dry_run_exit: 0, moved: 1)
     summary = %({"moved":#{moved},"moved_paths":#{moved.positive? ? '["docs/agents/audits/frozen-1.md"]' : '[]'}})
     Dir.mktmpdir("release-archive-refusal") do |dir|

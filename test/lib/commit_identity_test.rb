@@ -1,50 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] A commit made from a desk must name the SOUL that claimed it.
-#
-# THE DEFECT THIS EXISTS TO CATCH (measured 2026-09-06/07). Every commit a desk
-# makes is authored by whatever git identity the CHECKOUT happens to carry, and
-# that identity has nothing to do with the soul on the task board:
-#
-#   file:/Users/alex/.gitconfig                        -> Alex McRitchie    (the operator)
-#   file:/Users/alex/projects/turf-monster/.git/config -> Steffon (Claude)  (a relic)
-#
-# turf-monster PR 573 was built by `shannon` and every commit on it reads
-# "Steffon (Claude)". Commit 599c5327 on the same desk carries the identical
-# mis-stamp, and a second desk shared by two builders produced six commits that
-# all read "Steffon (Claude)" — the author field carried ZERO information about
-# who wrote what.
-#
-# WHY NOT `git config user.name` IN THE DESK. A git worktree has NO config file
-# of its own: `git rev-parse --git-dir` is .git/worktrees/<name>, but config
-# resolves through --git-common-dir, so every desk of a repo SHARES
-# .git/config. Writing an identity "into a desk" renames all 30 turf-monster
-# desks at once. That is the defect, not the fix — and it is why
-# test_two_desks_of_one_repo_do_not_share_an_identity below is the load-bearing
-# test in this file rather than a nicety.
-#
-# TWO LAYERS, BOTH PROVED HERE. bin/submit's own commit is authored PER COMMIT,
-# from the environment, which outranks every config file — the only grain that
-# matches two souls taking turns at one desk. Every OTHER desk commit (the
-# builder's mid-build commits, merge-forwards, rebases) never passes through
-# bin/submit, so the desk is also stamped PER DESK, in its own config.worktree via
-# extensions.worktreeConfig (turf-monster-git-identity-wrong, approved
-# 2026-09-16). That is a DIFFERENT file from the shared .git/config, which is why
-# the sibling-isolation property below still holds for the stamp. The "desk
-# layer" section at the bottom proves it against real repos with the global
-# config pinned to a scratch file.
-#
-# WHERE THE WIRING IS PROVED. Not here, and not by reading bin/submit's source: a
-# source scan asserts a string, not a behaviour. test/lib/submit_test.rb runs the
-# REAL bin/submit against a repo whose repo-level identity is `tester` and asserts
-# the resulting commit's author out of git.
-#
-# WHAT THIS MUST NEVER DO. `devops.builders` is the AUTHOR SET bin/reviewer-select
-# reads to keep a soul off their own PR, and its incompleteness is what makes
-# that selector REFUSE — a loud, fail-closed refusal that is the system working.
-# This code is READ-ONLY with respect to that set: it reads built_by and writes
-# nothing back. A fix that made the field merely LOOK right would remove the
-# refusal without restoring the property.
+# [unit] A commit made from a desk must name the SOUL that claimed it, not the checkout's
+# identity. NOT `git config user.name` IN THE DESK: every desk SHARES .git/config;
+# test_two_desks_of_one_repo_do_not_share_an_identity is load-bearing. TWO LAYERS:
+# bin/submit's commit is authored PER COMMIT, from the environment; other desk commits are
+# stamped PER DESK, in config.worktree via extensions.worktreeConfig. NEVER write back:
+# `devops.builders` is the AUTHOR SET bin/reviewer-select reads, and its incompleteness makes
+# it REFUSE. This code only reads built_by. Wiring: test/lib/submit_test.rb.
+# History: task desk-commits-wrong-soul.
 
 require "bundler/setup"
 require "minitest/autorun"

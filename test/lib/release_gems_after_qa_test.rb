@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
-# THE CANDIDATE FLOW (RELEASE_GEM_FLOW=candidate, kept for one release as a rollback
-# lever; the default is the final flow, test/lib/release_gem_final_at_prepare_test.rb).
-# `bin/release prepare` publishes a gem's RELEASE CANDIDATE (x.y.z.rcN) and never its
-# final version; `bin/release ship` publishes the final after QA. This file holds the
-# prepare half. Standalone:
-#   ruby -Itest test/lib/release_gems_after_qa_test.rb
-#
-# Every case drives the real script with `sh`, git and RubyGems stubbed: nothing is
-# built, pushed or tagged outside the test process.
+# THE CANDIDATE FLOW (RELEASE_GEM_FLOW=candidate, a rollback lever; the default is the final
+# flow, test/lib/release_gem_final_at_prepare_test.rb). `bin/release prepare` publishes a gem's
+# RELEASE CANDIDATE (x.y.z.rcN), never its final; `bin/release ship` publishes the final after
+# QA. Prepare half only. Every case stubs `sh`, git and RubyGems: nothing is built, pushed or
+# tagged.
+# History: task publish-gems-after-qa.
 require_relative "release_cli_harness"
 
 class ReleaseGemsAfterQaTest < ReleaseCliHarness

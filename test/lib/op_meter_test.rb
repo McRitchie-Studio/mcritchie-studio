@@ -1,19 +1,10 @@
 # frozen_string_literal: true
 
-# OpMeter — the 1Password read-attribution log.
-#
-#   bin/rails test test/lib/op_meter_test.rb
-#
-# THE TWO CONSTRAINTS THAT OUTRANK THE FEATURE get the most tests here, because
-# they are the ones that make this instrument worth having at all:
-#
-#   1. IT MUST NOT COST A READ. An instrument that consumes the quota it measures
-#      is worse than none. Asserted with a RECORDING `op` stub (OpBinaryStub) and
-#      a count of ZERO — not by reading the source and believing it.
-#   2. IT MUST NOT BREAK A CONSUMER WHEN op IS ABSENT OR RATE-LIMITED. Every
-#      consumer has a working fallback and the ecosystem ran a full-day 1Password
-#      outage on those fallbacks. The bash half of this is proven in
-#      test/commands/op_meter_fallback_test.rb with a booby-trapped `op`.
+# OpMeter: the 1Password read-attribution log. THE TWO CONSTRAINTS THAT OUTRANK THE FEATURE:
+#   1. IT MUST NOT COST A READ. Asserted with a RECORDING `op` stub (OpBinaryStub), count ZERO.
+#   2. IT MUST NOT BREAK A CONSUMER WHEN op IS ABSENT OR RATE-LIMITED: every consumer has a
+#      working fallback. Bash: test/commands/op_meter_fallback_test.rb, a booby-trapped `op`.
+# History: task attribute-op-reads-to-caller.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -309,18 +300,13 @@ class OpMeterTest < Minitest::Test
 
   # ── the meter must LOAD wherever bin/ travels ────────────────────────────────
 
-  # THE REGRESSION. This file lives in bin/lib; the sandbox guard lives in lib/,
-  # one directory OUTSIDE the bin/ tree — and the bin/ tree travels alone.
-  # bin/session-preflight runs from a HUB checkout against an unrelated --root,
-  # and test/commands/session_preflight_test.rb copies only `hub/bin` to a temp
-  # root and asserts the helpers still resolve there.
-  #
-  # MEASURED on PR #1113: a plain `require_relative "../../lib/task_usage_sandbox"`
-  # raised LoadError in that tree — and since bin/lib/task_board.rb requires this
-  # file, it took THE ENTIRE BOARD CLI down with it. Telemetry that can break the
-  # thing it measures is worse than no telemetry, and it must hold at LOAD time,
-  # not merely at call time. A fresh process is required: `require` is cached, so
-  # this cannot be observed in-process.
+  # THE REGRESSION. The meter lives in bin/lib; the sandbox guard lives in lib/, OUTSIDE the
+  # bin/ tree, and the bin/ tree travels alone (bin/session-preflight runs from a HUB checkout;
+  # test/commands/session_preflight_test.rb copies only `hub/bin`). A plain `require_relative
+  # "../../lib/task_usage_sandbox"` raises LoadError there and, since bin/lib/task_board.rb
+  # requires the meter, takes THE ENTIRE BOARD CLI down. It must hold at LOAD time. A fresh
+  # process is required: `require` is cached.
+  # History: task attribute-op-reads-to-caller.
   def test_integration_the_board_cli_still_loads_in_a_bin_only_tree
     Dir.mktmpdir do |dir|
       FileUtils.cp_r(File.join(ROOT, "bin"), dir) # bin/ ONLY — deliberately no lib/
@@ -440,21 +426,14 @@ class OpMeterTest < Minitest::Test
 
   private
 
-  # ESTABLISH THE PREMISE, DO NOT ASSUME IT. TaskBoard#agent_secret reads the REAL
-  # process ENV first (bin/lib/task_board.rb#agent_secret), so a set AGENT_API_SECRET
-  # short-circuits the .env and the vault both. The two cases that assert on the
-  # chain's COST and on its .env FALLBACK are only meaningful with it unset.
-  #
-  # Nothing in this file sets it — dotenv does, from the repo's .env, the moment ANY
-  # Rails-loading test shares the process. So both cases passed alone, and passed in
-  # CI (which has no .env), and failed the moment bin/fast-check mapped them beside
-  # an integration test: the chain answered from ENV, spending zero reads and
-  # returning the developer's real secret instead of the fixture's "from-dotenv".
-  # Measured 2026-08-31 against three separate co-residents.
-  #
-  # nil is UNSET, not blank: `ENV[k] = nil` deletes the key, and with_env restores
-  # whatever was there afterwards. A blank string would be a different test — the
-  # set-but-blank case the chain deliberately treats as absent.
+  # ESTABLISH THE PREMISE. TaskBoard#agent_secret reads the REAL process ENV first
+  # (bin/lib/task_board.rb#agent_secret), so a set AGENT_API_SECRET short-circuits .env and
+  # vault. The cases on the chain's COST and .env FALLBACK need it unset. dotenv sets it from
+  # the repo's .env once ANY Rails-loading test shares the process, so they pass alone and in CI
+  # and fail beside an integration test under bin/fast-check.
+  # nil is UNSET, not blank: `ENV[k] = nil` deletes the key and with_env restores it. A blank
+  # string is the set-but-blank case the chain treats as absent.
+  # History: task credential-helper-help-mints.
   def unset_ambient_secret(env) = env.merge("AGENT_API_SECRET" => nil)
 
   def with_env(overrides)

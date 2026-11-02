@@ -2,72 +2,14 @@
 
 require "test_helper"
 
-# A test method defined below a bare `private` is NEVER RUN. Minitest collects only
-# PUBLIC `test_*` methods, so such a test is silently skipped — the file still reports
-# green, the run count still goes up by the tests that DID run, and nothing anywhere
-# says the others are missing.
-#
-#   bin/rails test test/lib/no_dead_tests_test.rb   (or any full-suite run)
-#
-# FOUND THE HARD WAY (PR #549). Fourteen tests across three files were dead:
-#
-#   * atomic_event_cli_test  — including the TWO sandbox integration tests that the
-#     PR's own checks_run cited as proof an unpinned spawn aborts. The reviewer read
-#     that evidence and believed it. It had never executed.
-#   * agent_worktree_test    — and a `-n /registry/` filter run still reported "2 runs,
-#     green", because it matched two OTHER tests whose names contain "registry". A
-#     filtered green is not proof that YOUR test ran.
-#   * atomic_capture_hook_test — eight, including the hook's SECRET-REDACTION tests. A
-#     redaction test that never runs is worse than no test, because the suite reports
-#     the behaviour as covered.
-#
-# All fourteen passed once made public — they were correct tests, silently uncollected.
-#
-# HOW THIS CHECK WORKS — and why it was rewritten (PR #777 / the nesting bug).
-#
-# The first three versions of this guard were a TEXT SCANNER: read each `*_test.rb`
-# as a string and flip a single `visibility` flag on any bare `private` line. It kept
-# being wrong in a new way each time, and every fix patched the one spelling that had
-# just bitten:
-#
-#   1. bare `private` at a test class's top level          — the real PR #549 bug.
-#   2. `private` inside a HEREDOC body (a STRING, not a     — falsely stranded two live
-#      keyword; a fixture that quotes Ruby source)            tests; "fixed" by blanking
-#                                                              heredoc bodies before scanning.
-#   3. `private` inside a NESTED class or module            — a nested Stub's `private`
-#      (Ruby scopes default visibility to the enclosing       poisoned every `def` to end
-#      body; it does NOT leak to the outer class)             of file, so PR #607's public
-#                                                              integration test read as dead
-#                                                              and its correct PR was blocked
-#                                                              at review gate-zero.
-#
-# Three spellings of ONE disease: the scanner asserted a REMEMBERED EXAMPLE of what a
-# dead test looked like (a flat file, no strings, no nesting) instead of the INVARIANT
-# it actually cares about — *is this test method collected by Minitest?* Text can never
-# answer that; only the runtime can. So the guard now ASKS THE RUNTIME.
-#
-# THE INVARIANT: every `test_*` method DEFINED on a loaded Minitest::Test subclass must
-# be PUBLIC, because Minitest collects public `test_*` methods only (see
-# Minitest::Test.runnable_methods). A `test_*` that exists on the class as a PRIVATE or
-# PROTECTED instance method is defined-but-uncollected — dead. `#dead_test_methods`
-# asks exactly that, by reflection. It reads no source text, so it is immune to
-# nesting, heredocs, comments, string literals, `__END__` data, and every future
-# spelling — Ruby has already applied its real visibility rules by the time the classes
-# are loaded, and we simply read the result.
-#
-# COMPLETE UNDER A FULL-SUITE RUN. Reflection sees a class only once it is loaded. A
-# full run — CI, `bin/rails test` — requires every `*_test.rb`
-# before running any test, so by the time this guard executes, EVERY test class is
-# present in `Minitest::Runnable.runnables` and the sweep is exhaustive. (Running this
-# one file in isolation only reflects over what that invocation loaded; it cannot
-# false-RED, it simply sees less. The gate that matters — CI — runs the whole suite.)
-#
-# NOTHING IS EXEMPT — not even this file. The old scanner had to SKIP itself, because it
-# carried a permanently-stranded dead test as a fixture and would have flagged it ("a
-# checker exempt from itself cannot see its own disease"). Reflection needs no such
-# fixture: this class's own tests are all public, so the sweep passes over it honestly,
-# and the detector's power to catch a real dead test is RE-PROVEN every run by the
-# mutation tests below (which build throwaway classes, never registered as runnables).
+# A test method defined below a bare `private` is NEVER RUN: Minitest collects only PUBLIC
+# `test_*` methods, so the file stays green. THE INVARIANT: every `test_*` method DEFINED on a
+# loaded Minitest::Test subclass must be PUBLIC (Minitest::Test.runnable_methods).
+# `#dead_test_methods` asks by reflection and reads no source text; a text scanner fails on
+# heredocs and nesting. COMPLETE UNDER A FULL-SUITE RUN: this file alone cannot false-RED, it
+# sees less. NOTHING IS EXEMPT, not even this file; the mutation tests below (throwaway classes,
+# never registered) RE-PROVE the detector.
+# History: task guard-narration-marker-writes.
 class NoDeadTestsTest < Minitest::Test
   # The invariant, by reflection: the `test_*` methods DEFINED directly on `klass`
   # (the `false` — inherited base-class methods are not this class's concern) that

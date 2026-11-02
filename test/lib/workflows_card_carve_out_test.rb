@@ -1,25 +1,13 @@
 require "test_helper"
 
-# [unit] AN ACT KEPT OFF THE WORKFLOWS CARD MUST SAY SO IN THE PLACE PEOPLE EDIT.
-#
-# Chip membership is decided in two files, and the reason for a MISSING chip lives in
-# a comment. A comment cannot fail, so the reason drifts silently — which is exactly
-# what happened: PR #1322 registered `sleeper-auction-watch` as deliberately off the
-# card and corrected four sites, and the fifth — the comment sitting directly above
-# `card_actions` in tasks/_heartbeats_card, the first thing a developer editing chip
-# membership reads — kept telling the old two-act story. Silence is what let that
-# drift happen, so the silence is what this file ends.
-#
-# The carve-out set is DERIVED from the helper docblock's "+act+ is deliberately
-# ABSENT" convention rather than restated here, so a third carve-out is pinned the
-# day it is written instead of the day someone remembers to add an assertion.
-#
-# It also closes a hole the existing pin cannot see. The helper test asserts
-# `assert_not_includes heartbeat_launchers.flat_map { _1[:actions] }` — but the card
-# does NOT render that list for three of the five souls. tasks/_heartbeats_card
-# overrides Carl, Avi and Steffon with its own `card_actions` case literals, so a
-# chip added THERE renders on the card while every helper assertion stays green.
-# Both sources are checked below.
+# [unit] AN ACT KEPT OFF THE WORKFLOWS CARD MUST SAY SO IN THE PLACE PEOPLE EDIT. The reason for
+# a MISSING chip lives in a comment, and a comment cannot fail. The carve-out set is DERIVED
+# from the helper docblock's "+act+ is deliberately ABSENT" convention, so a new carve-out is
+# pinned the day it is written. The card does NOT render `heartbeat_launchers` for three souls:
+# tasks/_heartbeats_card overrides Carl, Avi and Steffon with `card_actions` case literals, so a
+# chip added THERE renders while every helper assertion stays green. Both sources are checked
+# below.
+# History: task card-omits-auction-carve-out.
 class WorkflowsCardCarveOutTest < ActiveSupport::TestCase
   HELPER = Rails.root.join("app/helpers/application_helper.rb")
   CARD   = Rails.root.join("app/views/tasks/_heartbeats_card.html.erb")

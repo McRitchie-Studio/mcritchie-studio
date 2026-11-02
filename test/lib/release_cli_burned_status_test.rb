@@ -1,14 +1,12 @@
 # frozen_string_literal: true
 
-# `bin/release status` lists each registered gem's BURNED versions: finals a
-# prepare published that no release shipped, recorded as `burned-v<x.y.z>` tags
-# (record_burned_finals!). Display only and read-only: origin by `git ls-remote`,
-# the clone's own tags when origin does not answer.
-#
-# Part of the bin/release CLI suite (shared harness: test/lib/release_cli_harness.rb).
-# The ladder is stubbed as release_cli_status_test.rb stubs it; only the git reads
-# are stubbed, so the REAL burned_gems_report, burned_gem_read and status run.
-#   ruby -Itest test/lib/release_cli_burned_status_test.rb
+# `bin/release status` lists each registered gem's BURNED versions: finals a prepare
+# published that no release shipped, `burned-v<x.y.z>` tags (record_burned_finals!).
+# Read-only: origin by `git ls-remote`, else the clone's tags. Shared harness:
+# test/lib/release_cli_harness.rb. Only git reads are stubbed (ladder as in
+# release_cli_status_test.rb), so the REAL burned_gems_report, burned_gem_read and status
+# run.
+# History: task release-docs-second-pass.
 
 require_relative "release_cli_harness"
 

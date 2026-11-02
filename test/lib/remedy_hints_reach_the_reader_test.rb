@@ -1,18 +1,11 @@
 # frozen_string_literal: true
 
-# [integration] A sample of the scripts PRINT their remedy hints through Remedy.
-#
-# test/lib/remedy_test.rb pins the helper. A correct helper the scripts never call
-# fixes nothing, so this file runs real scripts (or calls the composers they speak
-# through) and asks the DISK about each printed command: is the script absolute, and
-# is it an executable. A substring assertion is blind here, because an absolute path
-# contains the bare `bin/<script>` form (measured on PR #1341).
-#
-# Every run is read-only: `agent-worktree whereami` from an empty dir, `qa-intake`
-# against a registry that does not exist, and `submit` refused by another session's
-# dirty desk before it roots.
-#
-#   ruby -Itest test/lib/remedy_hints_reach_the_reader_test.rb
+# [integration] A sample of the scripts PRINT their remedy hints through Remedy;
+# test/lib/remedy_test.rb pins the helper. This asks the DISK about each printed command: is the
+# script absolute, and an executable. A substring is blind: an absolute path contains the bare
+# `bin/<script>` form. Every run is read-only (`agent-worktree whereami`, `qa-intake`, `submit`
+# refused before it roots).
+# History: task remedy-hints-through-one-helper.
 
 require "minitest/autorun"
 require "open3"
@@ -91,14 +84,11 @@ class RemedyHintsReachTheReaderTest < Minitest::Test
   end
 
   # --- end to end: what bin/submit ACTUALLY PRINTS -------------------------------
-  #
-  # The claim refusal is the highest-traffic remedy in the house and the one that
-  # fires EARLIEST — before ship has rooted — so its reader is the most likely to
-  # be standing somewhere the bare form cannot resolve. It is also reachable from
-  # a test without a board: a task bound to another session's dirty desk.
-  #
-  # The assertion is deliberately not a substring match. It splits the printed
-  # command, takes the script, and asks the DISK.
+  # The claim refusal fires EARLIEST, before ship has rooted, so its reader may stand where the
+  # bare form cannot resolve. Reachable without a board: a task bound to another session's dirty
+  # desk. Not a substring match: it splits the printed command, takes the script, and asks the
+  # DISK.
+  # History: task remedy-hints-print-bare-paths.
   def test_submits_claim_refusal_prints_commands_that_resolve_on_disk
     Dir.mktmpdir do |root|
       work = File.join(root, "work")

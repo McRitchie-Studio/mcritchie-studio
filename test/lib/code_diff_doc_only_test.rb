@@ -1,24 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] CodeDiff.doc_only? and docs_with_guards? — the classifier behind the
-# `docs` shape's claim guard (`claimable_when: docs_with_guards_diff` since
-# 2026-09-03; doc_only? is kept as the deliberate orphan stating the rule the
-# exempt-KIND gate re-derives inline — this suite pins the two against each
-# other, and docs_with_guards? is its behavioural superset, not a caller).
-# Run directly:
-#   ruby -Itest test/lib/code_diff_doc_only_test.rb
-#
-# WHAT IT IS GUARDING. Until 2026-09-02 the `docs` shape's zero tiers and waived
-# full-suite cert were unlocked by TYPING `docs` — the diff was never consulted.
-# Measured on PR #1172: a `docs`-shaped diff carrying test/integration/
-# open_pr_receipt_visibility_test.rb was told "DoR-to-Merge met", with no tier and
-# no cert demanded and no line saying either had been skipped.
-#
-# The fix reuses CodeDiff, the classifier bin/dor-check's exempt-KIND gate already
-# runs on the same diff — so the two can never answer one question two ways. That
-# reuse is the whole design, and it is what these tests pin: the positive predicate
-# has to agree with code_files, and it has to REFUSE the empty list, which
-# code_files alone cannot express.
+# [unit] CodeDiff.doc_only? and docs_with_guards?, the classifier behind the `docs` shape's
+# claim guard (`claimable_when: docs_with_guards_diff`). doc_only? is a deliberate orphan
+# stating the rule the exempt-KIND gate re-derives inline; this suite pins the two against
+# each other. `docs`' waived cert must not unlock by TYPING `docs`. CodeDiff is reused so
+# bin/dor-check's gate and this answer one question once: the positive predicate must agree
+# with code_files and REFUSE the empty list, which code_files alone cannot express.
+# History: task docs-shape-admits-test-code.
 require "minitest/autorun"
 require_relative "../../bin/lib/code_diff"
 

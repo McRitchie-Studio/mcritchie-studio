@@ -1,20 +1,12 @@
 # frozen_string_literal: true
 
-# Guard: every CI job runs on a PINNED runner image, never the floating label.
-#
-# `ubuntu-latest` is a moving alias. When GitHub repointed it at Ubuntu 26.04,
-# `npx playwright install --with-deps chromium` died with "Playwright does not
-# support chromium on ubuntu26.04-x64" and every browser lane went red on a
-# tree nobody had touched (/tasks/pin-ci-runner-image). A pinned image moves
-# only when a PR moves it, so a runner upgrade becomes a reviewed diff whose
-# own CI proves the new image, instead of an outage.
-#
-# The rule: every job that names a runner names PIN, and no file under
-# .github mentions the floating `ubuntu-latest` at all (matrix entries,
-# reusable workflows and composite actions included). A job that calls a
-# reusable workflow (`uses:`) has no runner of its own and is skipped; the
-# workflow it calls is checked in its own right. To move the pin, change PIN
+# Guard: every CI job runs on a PINNED runner image, never the floating label. `ubuntu-latest`
+# is a moving alias; a pinned image moves only by a reviewed PR. The rule: every job that names
+# a runner names PIN, and no file under .github mentions `ubuntu-latest` at all (matrix entries,
+# reusable workflows, composite actions). A job calling a reusable workflow (`uses:`) has no
+# runner and is skipped; the workflow is checked in its own right. To move the pin, change PIN
 # here and every runs-on in the same PR.
+# History: task pin-ci-runner-image.
 require "minitest/autorun"
 require "yaml"
 

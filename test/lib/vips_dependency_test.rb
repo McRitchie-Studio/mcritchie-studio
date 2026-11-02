@@ -3,25 +3,12 @@
 require "test_helper"
 
 # Guards the DEPENDENCY-GRAPH half of Active Storage's libvips hardening.
-#
-# Rails hardens libvips against untrusted content in
-# activestorage/lib/active_storage/vips.rb: it requires ruby-vips, and ONLY if
-# that require succeeds does it call Vips.block_untrusted(true). When the require
-# raises, the file swallows the error, sets ActiveStorage::VIPS_AVAILABLE = false,
-# and the hardening never runs. Nothing warns. The app boots clean and goes on
-# handling images through mini_magick, so the loss leaves no trace to notice.
-#
-# That makes the hardening exactly as durable as ruby-vips' place in this app's
-# dependency graph — and that place used to be on loan. image_processing 1.14.0
-# declares `ruby-vips (>= 2.0.17, < 3)` as a runtime dependency; image_processing
-# 2.0.x declares NONE. An app that reaches vips only THROUGH image_processing
-# therefore loses the gem outright the moment it takes the 2.0 bump.
-#
-# WHY THIS ASSERTS DIRECTNESS AND NOT PRESENCE: measured on this repo before the
-# fix, ruby-vips was ALREADY in Gemfile.lock — transitively, via image_processing.
-# So a "ruby-vips appears in the lockfile" assertion was GREEN in precisely the
-# state this guard exists to catch, and would have gone on being green until the
-# day it mattered. Directness is the property that actually bites.
+# activestorage/lib/active_storage/vips.rb calls Vips.block_untrusted(true) ONLY if
+# requiring ruby-vips succeeds; otherwise it sets ActiveStorage::VIPS_AVAILABLE = false and
+# nothing warns. image_processing 1.14.0 declares ruby-vips as a runtime dependency; 2.0.x
+# declares NONE. ASSERTS DIRECTNESS, NOT PRESENCE: "ruby-vips appears in the lockfile" is
+# GREEN transitively, in precisely the state this guard exists to catch.
+# History: task pin-ruby-vips-explicitly.
 class VipsDependencyTest < ActiveSupport::TestCase
   # Bundler.load reads this app's Gemfile — the DIRECT declarations, and only
   # those. Gems pulled in transitively never appear here, which is the point.

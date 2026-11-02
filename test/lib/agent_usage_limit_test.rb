@@ -1,14 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] What bin/dispatcher reads from one headless `claude -p --output-format
-# json` run (AgentMailbox::ClaudeRun), and the two matchers that act on it
-# (UsageLimit, ClaudeAuth). The rule under test: only CLI-authored text from a
-# FAILED run (an error envelope, stderr) is ever matched. A successful answer is
-# the model replying to untrusted chat text, so a planted "usage limit reached"
-# in it must never pause the dispatcher or refund a message. Real-looking error
-# envelopes are pinned as hits; planted answers as misses. Also: the child
-# environment allow-list, and TERM-then-KILL on a run that ignores TERM.
-#   ruby -Itest test/lib/agent_usage_limit_test.rb
+# [unit] What bin/dispatcher reads from one headless `claude -p --output-format json` run
+# (AgentMailbox::ClaudeRun), and the two matchers acting on it (UsageLimit, ClaudeAuth). Only
+# CLI-authored text from a FAILED run (an error envelope, stderr) is ever matched. A successful
+# answer is the model replying to untrusted chat text, so a planted "usage limit reached" must
+# never pause the dispatcher or refund a message. Also: the child env allow-list, and
+# TERM-then-KILL.
+# History: task agent-dispatcher-service.
 require "minitest/autorun"
 require "json"
 require_relative "../../bin/lib/agent_mailbox"

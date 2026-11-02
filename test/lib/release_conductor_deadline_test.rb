@@ -1,18 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] bin/release's RECORD-OP DEADLINE (conductor → run_record_op).
-#
-# On 2026-10-27 a `heroku run` record op hung for 26 minutes after its one-off
-# dyno was gone, and `bin/release ship` froze with it. These cases plant a fake
-# `heroku` on PATH and drive the real `conductor` with a one-second deadline:
-#
-#   * a hung client is killed, its grandchild with it, and the run takes the
-#     "record op failed" abort instead of waiting;
+# [unit] bin/release's RECORD-OP DEADLINE (conductor → run_record_op). A fake `heroku` on PATH
+# drives the real `conductor` with a one-second deadline:
+#   * a hung client is killed, grandchild too, and the run takes the "record op failed" abort;
 #   * a best-effort write (record_release_event) warns and continues past it;
-#   * a client that answers in time still returns its JSON (the bound changes
-#     nothing on the happy path).
-#
-#   ruby -Itest test/lib/release_conductor_deadline_test.rb
+#   * a client answering in time still returns its JSON (nothing changes on the happy path).
+# History: task release-tooling-survives-hangs.
 
 require_relative "release_cli_harness"
 

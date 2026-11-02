@@ -1,15 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] bin/ui-lint and bin/lib/ui_lint.rb: the five front-end house rules,
-# counted over a repo tree's templates, reported and never enforced unless --strict.
-#
-# Each rule has a fixture pair under test/fixtures/files/ui_lint/: <rule>.html.erb
-# carries the offenses the rule must flag (and how many), <rule>_clean.html.erb the
-# near misses it must not (a commented-out offense, a token class, a nonced script,
-# a JSON data block, a short x-data). A clean twin is clean of EVERY rule, so a rule
-# that starts matching its neighbours' near misses fails here too.
-#
-#   ruby -Itest test/lib/ui_lint_test.rb
+# [unit] bin/ui-lint and bin/lib/ui_lint.rb: the five front-end house rules, counted over a
+# repo tree's templates, reported and never enforced unless --strict. Fixture pairs under
+# test/fixtures/files/ui_lint/: <rule>.html.erb carries the offenses to flag (and how many),
+# <rule>_clean.html.erb the near misses not to. A clean twin is clean of EVERY rule, so a rule
+# matching its neighbours' near misses fails here too.
+# History: task front-end-lint-lane-report-only.
 
 require "minitest/autorun"
 require "tmpdir"

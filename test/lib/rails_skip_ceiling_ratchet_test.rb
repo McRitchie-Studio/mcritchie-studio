@@ -1,38 +1,13 @@
 # frozen_string_literal: true
 
-# THE RAILS LANE'S SKIP CEILING, RATCHETED.
-#
-# config/rails_lane.yml carries `max_skips`, the number of skipped tests
-# bin/rails-executed-set-check tolerates before it calls the sharded lane red. It was
-# MEASURED (11, identical on runs 32329490149 and 32326010830) and it was honest about
-# itself: the file said, in the comment this test replaces,
-#
-#   "HONEST ABOUT ITS STRENGTH: this is a PIN, not a ratchet. It can be raised in the same
-#    commit that adds the skip."
-#
-# That is the whole bug, and it is the same one config/e2e_lane.yml's `quarantined` was
-# beaten by in round 4 of its own review: A GUARD THAT READS ONLY WHAT THE AUTHOR WROTE CAN
-# ONLY EVER CONFIRM THAT THE AUTHOR WROTE IT. Measured there — tagging one more spec and
-# bumping the contract to match passed with zero failures, and the runtime receipt went
-# green right behind it, because the receipt was checked against the number that had just
-# moved. The hole grew with every guard in the repo green.
-#
-# So the reference value is read from OUTSIDE THE DIFF: `origin/release`, the branch this
-# PR must merge into, which no edit in this working tree can touch. Skips may FALL freely
-# and may not RISE without a reviewer seeing the number change against a value the author
-# could not reach.
-#
-# FAIL CLOSED. If the baseline cannot be resolved this goes RED rather than shrugging — a
-# ratchet that cannot see its baseline cannot certify monotonicity, and a green light it has
-# no basis for is exactly the lie being hunted. That is why the `rails` shards check out
-# with `fetch-depth: 0` (pinned by test/lib/ci_workflow_triggers_test.rb): drop it and this
-# turns the lane red and loud instead of quietly demoting itself back to a pin.
-#
-# Run directly:
-#   ruby -Itest test/lib/rails_skip_ceiling_ratchet_test.rb
-#
-# One tier (backend shape):
-#   [unit] the ceiling's monotonicity against its value on origin/release.
+# THE RAILS LANE'S SKIP CEILING, RATCHETED. config/rails_lane.yml carries `max_skips`, what
+# bin/rails-executed-set-check tolerates. A GUARD THAT READS ONLY WHAT THE AUTHOR WROTE CAN ONLY
+# EVER CONFIRM THAT THE AUTHOR WROTE IT (the same bug as `quarantined` in config/e2e_lane.yml).
+# So the reference is read from OUTSIDE THE DIFF: `origin/release`. Skips may FALL freely and
+# may not RISE without a reviewer seeing the number change. FAIL CLOSED: an unresolved baseline
+# goes RED, so the `rails` shards check out with `fetch-depth: 0` (pinned by
+# test/lib/ci_workflow_triggers_test.rb).
+# History: task ratchet-the-rails-skip-ceiling.
 
 require "minitest/autorun"
 require "yaml"
@@ -79,16 +54,10 @@ class RailsSkipCeilingRatchetTest < Minitest::Test
     return [nil, "`#{BASELINE_REF}:#{CONTRACT_REL}` has no readable `max_skips:`"] if released && ceiling_in(released).nil?
     return [ceiling_in(released), "#{BASELINE_REF}:#{CONTRACT_REL}"] if released
 
-    # The contract is not on the baseline branch at all. That is NOT a special case to be
-    # waved through: a ratchet that cannot see its baseline cannot certify monotonicity,
-    # whether the reason is a missing ref or a missing file. It fails closed like any other
-    # unreadable baseline.
-    #
-    # (An earlier draft skipped here instead, to let the very first PR introducing a
-    # contract through. That `skip` was a SKIP CALL SITE, and config/test_health.yml
-    # ratchets those — so the existing guard caught it and refused the build. Correctly:
-    # adding a skip to a file whose whole purpose is restraining skips is exactly the shape
-    # that ratchet exists to stop.)
+    # The contract missing from the baseline branch is NOT a special case: it fails closed like
+    # any other unreadable baseline. Do not `skip` here: that is a SKIP CALL SITE, which
+    # config/test_health.yml ratchets.
+    # History: task ratchet-the-rails-skip-ceiling.
     [nil, "`#{BASELINE_REF}:#{CONTRACT_REL}` does not exist — the contract is not on the " \
           "baseline branch, so there is nothing to certify monotonicity against"]
   end

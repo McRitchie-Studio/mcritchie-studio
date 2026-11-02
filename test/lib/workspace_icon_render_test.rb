@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# [integration] WorkspaceIcon draws real PNGs through ImageMagick (IM7 `magick`
-# on a Mac, IM6 `convert` on CI — the CI rails job installs `imagemagick` for
-# this file), then reads them back.
-#
-# The pixel probes are the point. An ImageMagick run that exits 0 proves only
-# that ImageMagick ran; what we ship is a TRANSPARENT icon with the badge in the
-# lower-right, ringed in the accent, and each of those is a pixel we can read.
-#
-#   ruby -Itest test/lib/workspace_icon_render_test.rb
+# [integration] WorkspaceIcon draws real PNGs through ImageMagick (IM7 `magick` on a Mac, IM6
+# `convert` on CI, whose rails job installs `imagemagick` for this file), then reads them
+# back. The pixel probes are the point: exit 0 proves only that ImageMagick ran. We ship a
+# TRANSPARENT icon with the badge lower-right, ringed in the accent, each a pixel we can read.
+# History: task onepass-vault-icons.
 
 require "minitest/autorun"
 require "open3"

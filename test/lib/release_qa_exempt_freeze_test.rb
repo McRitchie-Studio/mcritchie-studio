@@ -1,17 +1,11 @@
 # frozen_string_literal: true
 
-# QA-EXEMPT REPOS ARE FROZEN TOO (task faster-steadier-production-ship, part 3a).
-#
-# THE FAILURE, twice on 2026-10-25/26 (rel-20261025-3f919b, rel-20261026-61874c).
-# rantly and moms-app have no QA environment (config/qa_environments.yml), so
-# `prepare` skipped them before recording a qa_sha. The ship then froze each at
-# origin/release LIVE (frozen_sha_for's fallback). On a RESUMED ship that head is
-# the ship's own final-gem re-lock, while every QA'd repo still freezes at its
-# candidate lock, so the gem candidate preflight refused: "some consumers lock
-# 0.114.1 and others a candidate of it". Both times it was fixed by hand with
-# Release::Conductor.record_qa_shas.
-#
-#   ruby -Itest test/lib/release_qa_exempt_freeze_test.rb
+# QA-EXEMPT REPOS ARE FROZEN TOO (task faster-steadier-production-ship, part 3a). rantly and
+# moms-app have no QA environment (config/qa_environments.yml), so `prepare` skips them before a
+# qa_sha, and the ship froze each at origin/release LIVE (frozen_sha_for's fallback). On a
+# RESUMED ship that head is the final-gem re-lock while QA'd repos freeze at the candidate lock,
+# so the gem candidate preflight refuses. The hand fix was Release::Conductor.record_qa_shas.
+# History: task faster-steadier-production-ship.
 
 require_relative "release_cli_harness"
 

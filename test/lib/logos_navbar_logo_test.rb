@@ -28,15 +28,12 @@ class LogosNavbarLogoTest < Minitest::Test
   # 5.87, welding 5.98 and 8.52.
   # Re-measured by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"): were turf 4.303 and 5.965, welding 6.867 and 9.859.
   ADDED_RATIOS = { ["turf", 3] => 4.413, ["turf", 4] => 6.075, ["welding", 3] => 6.869, ["welding", 4] => 9.861 }.freeze
-  # Commercial Welding v1 was 6.065 and 8.657 as COMMERCIAL WELDING, before it took LLC (task welding-llc-and-v2-helmet).
-  # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in `examples` order): neither
-  # brand's logos may change by a byte. Taken on `accepted` at 4368b9183 (task stacked-tagline-and-ghost-grid), where
-  # the earlier digests over examples WITH guides (b3dd0ef4…, 087d05d8…, a75b407b… since task add-turf-and-welding-logos)
-  # still passed; guide drawings are construction drawings and are free to change. Re-taken DELIBERATELY by task
-  # navbar-spacing-and-rotated-guides, after Alex McRitchie's item 4c made the icon gap and the word gap each half a cap height
-  # (was 39266841…; the turf and welding digest was 315197c0…, the watermark digest 6d1da5ed…).
-  # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 57f95414…. Studio's icon lost its 2-unit margin; Industries' kit icon
-  # was already its ink and did not move by a byte (INDUSTRIES_DIGEST, taken before and after).
+  # SHA-256 over every Studio and Industries example WITHOUT guides ("<key>\n<svg>" each, in
+  # `examples` order): neither brand's logos may change by a byte. Guide drawings are construction
+  # drawings and are free to change.
+  # Re-taken DELIBERATELY by tasks navbar-spacing-and-rotated-guides and stacked-rule-of-three;
+  # the Industries kit icon did not move (INDUSTRIES_DIGEST, taken before and after).
+  # History: task stacked-tagline-and-ghost-grid.
   ORIGINAL_BRANDS_DIGEST = "bc11bc1639faed52693625dc8269744ca55f410d398366384ab4c48efee9b7b0"
   INDUSTRIES_DIGEST = "d9798cd297cc06e06b5910ae89fe1cb3628d92eb2efa9439e740c24da6296c6b"
   # The same digest over every Turf Monster and Commercial Welding example without guides.

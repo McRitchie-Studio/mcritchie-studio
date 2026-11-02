@@ -2,24 +2,14 @@
 
 require "test_helper"
 
-# config/feature_shapes.yml carries a HAND-AUDITED list of which repos actually
-# collect an e2e lane, because bin/dor-check credits any `[e2e]` tag a builder
-# types and a repo with no playwright job can only ever supply a fabricated one.
-#
-# The file already told the next person what to do — "DO re-check when a repo is
-# added" — and that instruction is exactly what failed. mcritchie-industries
-# joined the ecosystem after the 2026-07-14 audit and sat unlisted until a task
-# in it demanded a tier it cannot run (2026-08-13,
-# /tasks/recover-industries-engine-adoption). An instruction in a comment is not
-# a mechanism; this is the mechanism.
-#
-# SCOPE: staleness only. This does NOT check that the audit's VERDICT is right —
-# proving "this repo runs no playwright lane" needs that repo checked out, and NOTHING DOES
-# IT. That per-repo tier-collectability work is UNBUILT and unowned; the task this line once
-# named was archived without it landing, so naming a task here read as "handled" and was not.
-# config/feature_shapes.yml's header states the limitation and the condition that would lift
-# it. This asserts something weaker and durable: every app the studio manages has a
-# LINE in the audit, so adding an app cannot silently skip the question.
+# config/feature_shapes.yml carries a HAND-AUDITED list of which repos collect an e2e lane,
+# because bin/dor-check credits any `[e2e]` tag and a repo with no playwright job can only
+# supply a fabricated one. A comment's "re-check" failed (2026-08-13,
+# /tasks/recover-industries-engine-adoption); this is the mechanism. SCOPE: staleness only.
+# It does NOT check the audit's VERDICT: that needs the repo checked out, NOTHING DOES IT,
+# and that work is UNBUILT and unowned (the yml's header states the limit). It asserts every
+# app the studio manages has a LINE in the audit.
+# History: task recover-industries-engine-adoption.
 class FeatureShapesAuditTest < ActiveSupport::TestCase
   SHAPES = Rails.root.join("config/feature_shapes.yml")
   # The app registry this repo already keeps. Using an existing source rather
@@ -39,16 +29,12 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
     audit_block.lines.find { |line| line.include?(BULLET) && line.include?(app) }
   end
 
-  # "qa_environments", not "apps" — the first version fetched a key that does not
-  # exist, so this returned [] and BOTH tests below passed vacuously. A guard
-  # that cannot fail is the exact disease this file documents, so the empty case
-  # is now an explicit failure rather than a silent pass.
-  # The LOOKBEHIND is what fixes this, not the case. /COLLECTED/i let
-  # "unCOLLECTED" through because the word sat inside another word; rejecting any
-  # letter immediately before it kills "uncollected", "recollected" and
-  # "precollected" whatever their case. So `i` stays — a verdict written in lower
-  # case is still a verdict, and failing it would be pedantry rather than a
-  # guard.
+  # "qa_environments", not "apps": a key that does not exist returns [] and BOTH tests below
+  # pass vacuously, so the empty case is an explicit failure.
+  # The LOOKBEHIND is what fixes this, not the case. /COLLECTED/i let "unCOLLECTED" through;
+  # rejecting any letter before the word kills "uncollected", "recollected" and "precollected"
+  # in any case. `i` stays: a verdict in lower case is still a verdict.
+  # History: task audit-industries-tier-collectability.
   VERDICT = /(?<![A-Za-z])(NOT )?COLLECTED/i
 
   def registered_apps
@@ -91,41 +77,14 @@ class FeatureShapesAuditTest < ActiveSupport::TestCase
       "NOT COLLECTED. Naming a repo without a verdict reads as audited and is not."
   end
 
-  # THE HOLE THIS TASK EXISTS TO CLOSE, exercised on the regex directly.
-  #
-  # Neither test above can tell /COLLECTED/i from the corrected pattern, because
-  # every line in the real file happens to carry a well-formed verdict — so the
-  # bug was invisible to them and stayed invisible through a full review. Carl
-  # found it by writing "e2e uncollected, unverified." into a line and watching
-  # the suite stay green.
-  #
-  # A verdict is the WORD. "uncollected" is not a verdict; it is the absence of
-  # one wearing the letters of one.
+  # THE HOLE THIS TASK EXISTS TO CLOSE: every real line has a well-formed verdict, so tests
+  # above cannot tell /COLLECTED/i from the fix. "uncollected" is not a verdict.
   # ==== A TASK CITATION IS PROVENANCE, NEVER A PROMISE ================================
-  # Measured 2026-09-07: this file family carried FIVE live citations of TWO archived
-  # tasks, and the two worst were not dead links — they were promises. The header of
-  # config/feature_shapes.yml — the file that decides which tiers a shape demands — read
-  # "/tasks/<slug>. Until it lands, this header claims only what it can prove." The slug was
-  # dor-check-tiers-per-repo, raised 2026-07-14; it was archived and the per-repo check was
-  # NEVER BUILT. (The example is written with a placeholder on purpose: spelled in full it
-  # would be an undated, deferring citation, and this guard would flag its own comment —
-  # which is the rule holding, not a bug in it.) A dead link costs a reader a click. A
-  # promise costs the next person their planning: they read a limitation as temporary, and
-  # nobody is working on it.
-  #
-  # WHY THIS GUARD DOES NOT ASK THE BOARD. A guard that hardcoded "these slugs are archived"
-  # would be the same disease one level up — a snapshot that rots — and CI cannot reach the
-  # board anyway. So the rule is stated as a CONDITION on the prose itself, which is offline,
-  # durable, and true whatever any task's state becomes:
-  #
-  #   1. DATED. Every citation carries a date within one line of itself, which is what makes
-  #      it read as history. An undated citation reads as a live pointer, and a live pointer
-  #      to a task is a bet that the task will land.
-  #   2. NOT DEFERRING. No citation shares a window with language that hands a described
-  #      limitation to that task. State the limitation, or land the fix.
-  #
-  # Rule 1 is the invariant (no vocabulary, so it cannot be talked around); rule 2 is a net
-  # for the dated-but-still-deferring sentence rule 1 waves through.
+  # A promise makes a limitation read as temporary. The guard cannot ask the board, so the
+  # rule is a CONDITION on the prose. 1. DATED: a date within one line of every citation. 2.
+  # NOT DEFERRING: no citation shares a window with language handing a limitation to that
+  # task. Rule 1 is the invariant; rule 2 nets the dated-but-deferring.
+  # History: task audit-verdict-matches-uncollected.
   CITED_FILES = [
     Rails.root.join("config/feature_shapes.yml"),
     Rails.root.join("test/lib/feature_shape_tiers_test.rb"),

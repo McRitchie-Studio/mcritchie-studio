@@ -1,39 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] DevopsShiftCli must account for EVERY argument before it takes a shift.
-#
-# THE DEFECT — the third and last member of the family PR #974 (review_claim_cli) and
-# PR #980 (release_claim_cli) closed. bin/devops-shift resolved its lane with a bare
-# `argv.find { |a| !a.start_with?("--") }`, scanned for no help flag, and let
-# parse_flags drop every unrecognized token into an ignored key. So:
-#
-#   bin/devops-shift acquire avi --help
-#
-# printed no usage, TOOK A REAL SHIFT LEASE on the avi lane, wrote the held-shift
-# marker, and spawned a detached renewer to hold it — from a probe whose entire
-# purpose was to ask what the command does. A single-dash token was worse still: the
-# parser only ever looked at "--", so `-h` was not even recorded as an ignored key.
-# It vanished, side effect and all.
-#
-# WHY THIS CLI IS THE ONE WHERE HELP EXITS 1, NOT 0. See
-# test_help_never_answers_with_a_shift_state_code below: here exit 0 is not "the
-# command worked", it is the ASSERTION "you are on shift", and it is the ONLY channel
-# that assertion travels on.
-#
-# WHAT THIS FILE PROTECTS MOST IS THE OTHER DIRECTION. A guard that refuses
-# everything looks exactly like a guard that works, and the failure is silent and
-# expensive: refuse the DETACHED RENEWER's own spawned argv and every shift lease
-# lapses ~120s into a multi-minute act, so two same-lane conductors run concurrently
-# — the precise 2026-07-20 incident bin/lib/shift_renewer.rb exists to prevent. So
-# REAL_ARGV below is the centerpiece: every real invocation of this CLI anywhere in
-# the ecosystem, replayed through the guard, asserted to dispatch with its lane and
-# flag VALUES intact.
-#
-# The CLI's board behavior lives in test/lib/devops_shift_cli_test.rb; the operator
-# seam (a real process, a real stub board, a real detached renewer) in
-# test/lib/devops_shift_flags_test.rb.
-#
-#   ruby -Itest test/lib/devops_shift_argument_guard_test.rb
+# [unit] DevopsShiftCli must account for EVERY argument before it takes a shift:
+# `bin/devops-shift acquire avi --help` must not take a lease, and `-h` must not vanish. THE
+# OTHER DIRECTION matters most: refuse the DETACHED RENEWER's own argv and every lease
+# lapses ~120s into a long act, so two same-lane conductors run concurrently
+# (bin/lib/shift_renewer.rb). So REAL_ARGV is the centerpiece: every real invocation must
+# dispatch with lane and flag VALUES intact. Board behavior:
+# test/lib/devops_shift_cli_test.rb. Seam: test/lib/devops_shift_flags_test.rb.
+# History: task refuse-unknown-shift-flags.
 
 require "minitest/autorun"
 require "json"
@@ -99,24 +73,13 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
   end
 
   # ── THE ARGV INVENTORY ───────────────────────────────────────────────────────
-  #
-  # Every way this CLI is invoked anywhere, with the source that builds each line.
-  # Grepped UNCAPPED for `devops-shift` / `devops_shift` / `DevopsShiftCli` /
-  # `SHIFT_BIN` across the WHOLE projects root — every sibling repo (turf-monster,
-  # rolio, studio-engine, solana-studio, turf-vault, chain-ops), every worktree, the
-  # `.agents` narration store, and ~/.claude — not just this repo's bin/.
-  #
-  # THE RESULT OF THAT SWEEP IS ITSELF LOAD-BEARING: bin/devops-shift is HUB-ONLY.
-  # No sibling repo, no hook, and no agent skill invokes it; the only non-hub
-  # reference anywhere is the operator's permission allowlist
-  # (~/projects/.claude/settings.local.json:1134,1145 — `Bash(bin/devops-shift
-  # acquire *)` and `Bash(bin/devops-shift release *)`), which corroborates rows 1
-  # and 2 rather than adding a shape. Knowing that mattered on the release-claim
-  # sibling and it matters here: it is what bounds the wall risk to this table.
-  #
-  # The renewer's line is NOT hand-copied into this table; it is captured from a real
-  # acquire in test_the_detached_renewers_own_argv_survives_the_guard_it_reenters,
-  # because a hand copy proves the transcription, not the code.
+  # Every way this CLI is invoked anywhere, from an uncapped grep for `devops-shift` /
+  # `devops_shift` / `DevopsShiftCli` / `SHIFT_BIN` across the whole projects root.
+  # bin/devops-shift is HUB-ONLY: no sibling repo, hook or skill invokes it, and that bounds
+  # the wall risk to this table. The renewer's line is NOT hand-copied here;
+  # test_the_detached_renewers_own_argv_survives_the_guard_it_reenters captures it from a real
+  # acquire, because a hand copy proves the transcription, not the code.
+  # History: task refuse-unknown-shift-flags.
   REAL_ARGV = [
     { source: "docs/agents/agents/mason/sops/clean-up.md — clean-up takes the avi shift",
       argv: %w[acquire avi],
@@ -391,15 +354,12 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
 
   # ── --help from any position ─────────────────────────────────────────────────
 
-  # THE HEADLINE REGRESSION, standing alone so nothing can mask it. `bin/devops-shift
-  # acquire avi --help` — an agent asking what the command does — printed no usage and
-  # TOOK THE avi SHIFT: it POSTed the acquire, wrote the held-shift marker, and
-  # spawned a detached renewer to hold the lane for the life of the session.
-  #
-  # The assertions are ordered mutation-FIRST on purpose. Pre-fix this line also
-  # printed a plausible message and exited 0 — it exited 0 HAVING TAKEN THE LEASE, so
-  # printed text and exit code are both compatible with the bug. The absent POST is
-  # the only thing a regression breaks.
+  # THE HEADLINE REGRESSION, standing alone so nothing can mask it: `bin/devops-shift acquire
+  # avi --help` must not POST the acquire, write the held-shift marker or spawn a renewer. The
+  # assertions are ordered mutation-FIRST: the bug also printed a plausible message and exited
+  # 0, so text and exit code are both compatible with it. The absent POST is the only thing a
+  # regression breaks.
+  # History: task refuse-unknown-shift-flags.
   def test_help_after_a_lane_does_not_take_the_shift
     Dir.mktmpdir do |proj|
       c = cli(projects_dir: proj, data: { "acquired" => true, "holder" => {} })
@@ -439,26 +399,14 @@ class DevopsShiftArgumentGuardTest < Minitest::Test
     end
   end
 
-  # WHY HELP EXITS 1 AND NOT 0 — the deliberate divergence from ReviewClaimCli (PR
-  # #974), and the same call ReleaseClaimCli made (PR #980), for a reason that is
-  # STRONGER here than in either sibling.
-  #
-  # In this CLI exit 0 is not "the command worked", it is the assertion "YOU ARE ON
-  # SHIFT" — and it is the ONLY channel that assertion travels on. ReviewClaimCli
-  # could afford 0 because its claim rides on STDOUT (a caller reads
-  # `slug=$(bin/task claim-next-review)`, so a 0 with empty stdout is self-evidently
-  # not a claim). devops-shift has no such second channel: `acquire` prints prose for
-  # a human and hands the machine 0-vs-10, nothing else. A help probe answered with 0
-  # is indistinguishable from a real acquisition, and the caller that reads it —
-  # clean-up's review wave, which acquires the avi lane and then spins reviewers —
-  # would proceed believing it holds a lane it does not. That is exactly the
-  # two-concurrent-supervisors failure the lease exists to prevent.
-  #
-  # CANT_RUN is where every other usage error already lands (usage_lane, cant_run),
-  # and it is safe for every caller: bin/statusline discards the exit code entirely
-  # (`>/dev/null 2>&1`), the detached renewer is spawned and never reaped for status,
-  # and a conductor SOP reading 1 fails OPEN — proceeding while KNOWING it holds no
-  # shift, which is the honest state, with usage text on stderr saying so.
+  # WHY HELP EXITS 1 AND NOT 0, diverging from ReviewClaimCli, as ReleaseClaimCli does. Here
+  # exit 0 is the assertion "YOU ARE ON SHIFT", on the ONLY channel it has: `acquire` hands
+  # the machine 0-vs-10. A help probe answering 0 looks like an acquisition, and clean-up's
+  # review wave would proceed believing it holds the lane. CANT_RUN is where every other usage
+  # error lands (usage_lane, cant_run), and it is safe for every caller: bin/statusline
+  # discards the code, the detached renewer is never reaped for status, and a conductor SOP
+  # reading 1 fails OPEN, KNOWING it holds no shift.
+  # History: task refuse-unknown-shift-flags.
   def test_help_never_answers_with_a_shift_state_code
     Dir.mktmpdir do |proj|
       assert_equal DevopsShiftCli::CANT_RUN, cli(projects_dir: proj).run(%w[acquire --help]),

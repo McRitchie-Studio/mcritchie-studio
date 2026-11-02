@@ -4,38 +4,14 @@ require "minitest/autorun"
 require "shellwords"
 require_relative "../../bin/lib/block_recipe"
 
-# [unit] EVERY RECIPE IN THE TABLE NAMES ITS ACTING SOUL — enumerated from the table
-# itself, so a row added next year is covered the moment it exists.
-#
-# THE DEFECT (/tasks/breaker-remedy-omits-agent). The two-bounce breaker printed two
-# copy-pasteable `bin/task block` commands and NEITHER carried `--agent`. A bare block
-# does not run as whoever pastes it — `resolved_block_actor` falls through an unset
-# session persona to `default_block_actor`, which returns the literal "avi" for
-# rework-on-submitted and NIL for every other kind — so the escalation landed a block
-# with no actor at all.
-#
-# WHAT THAT COSTS (corrected 2026-09-08 in bin/lib/block_recipe.rb and
-# test/commands/breaker_remedy_names_its_soul_test.rb; this header was the third copy
-# and was missed by that sweep). An earlier draft said the unattributed entry joins the
-# task's AUTHOR SET and makes `bin/reviewer-select` refuse to pick. It does not.
-# `Task#block!` sets `blocked_at`, which `build_claim_save?` rejects and `submit_save?`
-# never matches, so `enforce_builder_stamp` writes no author on the block PATCH at all.
-# Misattributed audit row: real, and worth this file.
-# Disarmed no-self-review guard: not this seam.
-#
-# WHY THIS FILE ENUMERATES RATHER THAN NAMES. The ticket named ONE coordinate,
-# bin/task's breaker-ack line. The escalation printed three lines above it was the
-# same shape and the worse of the two — it was the one that actually wrote an
-# unattributed block — and a test naming only the filed coordinate would have shipped
-# green beside it. So the assertion walks `TEMPLATES` and the FLOOR below is what makes
-# a green run mean something: if the table is ever emptied or renamed, the loop runs
-# zero times and every property here would pass vacuously.
-#
-# The recipes are also EXECUTED, end to end, in
-# test/commands/breaker_remedy_names_its_soul_test.rb — a recipe can carry `--agent`
-# and still not land it. This file holds the table's shape; that one holds the write.
-#
-#   ruby -Itest test/lib/block_recipe_test.rb
+# [unit] EVERY RECIPE IN THE TABLE NAMES ITS ACTING SOUL, enumerated from the table itself. A
+# bare `bin/task block` does not run as whoever pastes it: `resolved_block_actor` falls through
+# to `default_block_actor`, the literal "avi" for rework-on-submitted and NIL otherwise. The
+# cost is a misattributed audit row, NOT a disarmed no-self-review guard:
+# `enforce_builder_stamp` writes no author on the block PATCH. The assertion walks `TEMPLATES`;
+# the FLOOR below stops an emptied table passing vacuously. This holds the table's shape;
+# test/commands/breaker_remedy_names_its_soul_test.rb EXECUTES the recipes and holds the write.
+# History: task breaker-remedy-omits-agent.
 class BlockRecipeTest < Minitest::Test
   SLUG = "some-task-slug"
   SOUL = "carl"

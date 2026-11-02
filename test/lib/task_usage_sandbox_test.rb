@@ -1,20 +1,13 @@
 # frozen_string_literal: true
 
-# Unit cover for the fail-closed sandbox on the operator's real .agents state, and
-# for the read-only audit that surfaces the rows a leak already left there.
-#
-#   ruby -Itest test/lib/task_usage_sandbox_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# THE RULE UNDER TEST (lib/task_usage_sandbox.rb): with TASK_USAGE_SANDBOX on, a
-# write to the usage/cost store or the session-marker store must be (1) PINNED by
-# its env var — the fallback to <projects>/.agents is forbidden — and (2) OUTSIDE
-# the real <projects>/.agents, whatever pointed it there.
-#
-# Rule 2 is proven against an INJECTED stand-in state dir. Proving it against the
-# real one would mean asking the code to attempt the very write the guard exists
-# to prevent, and a red run (or a broken fix) would then do the damage. The rule
-# is a pure function of (path, state_dir), so the stand-in proves it exactly.
+# Unit cover for the fail-closed sandbox on the operator's real .agents state, and the read-only
+# audit of rows a leak left there.
+# THE RULE UNDER TEST (lib/task_usage_sandbox.rb): with TASK_USAGE_SANDBOX on, a write to the
+# usage/cost store or session-marker store must be (1) PINNED by its env var (no fallback to
+# <projects>/.agents) and (2) OUTSIDE the real <projects>/.agents, whatever pointed it there.
+# Rule 2 is proven against an INJECTED stand-in state dir: against the real one a red run would
+# do the damage.
+# History: task sandbox-test-task-usage-writes.
 
 require "minitest/autorun"
 require "json"
@@ -51,17 +44,12 @@ class TaskUsageSandboxTest < Minitest::Test
 
   # --- rule 1: PINNED (the actual bug) ---------------------------------------
 
-  # --- the WHOLE family, not the two stores someone remembered ----------------
-  #
-  # Both leaks in this family (cost store PR #525, narration markers PR #549) were
-  # closed store-by-store, and each fix left live unguarded stores behind — the
-  # #549 review found three more, and the containment test found two beyond THOSE
-  # (the worktree flock and the Redis band). So the rules are asserted over STORES
-  # itself: register a store without both rules holding and this goes red, instead
-  # of the guard silently covering five of seven.
-  #
-  # (That every store's write SEAM actually calls enforce! is the other half, and it
-  # is asserted statically — test/lib/state_store_containment_test.rb.)
+  # --- the WHOLE family, not the two stores someone remembered ---
+  # The rules are asserted over STORES itself: register a store without both rules holding and
+  # this goes red, instead of the guard silently covering only some.
+  # (That every store's write SEAM calls enforce! is the other half, asserted statically:
+  # test/lib/state_store_containment_test.rb.)
+  # History: task guard-narration-marker-writes.
 
   def test_every_registered_store_refuses_an_unpinned_write
     TaskUsageSandbox::STORES.each do |store, pins|

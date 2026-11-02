@@ -3,19 +3,14 @@
 require "test_helper"
 require "time"
 
-# [unit] ClaimHolder — the role, the freshness, and the observation.
-#
-# THE DEFECT, restated as the two things this file asserts:
-#
-#   1. A refusal that describes EVERY holder as a rival builder, and offers
-#      `--steal`. The holder is often a REVIEWER, and stealing mid-review voids
-#      the no-self-review guarantee and strands the verdict.
-#   2. A lease rendered as a BARE TIMESTAMP, so an expired claim and a live one
-#      are the same picture. Measured: `expires 2026-09-02T04:12:26Z` printed at
-#      04:14:28Z with no mark.
-#
-# The near-miss's own numbers are used as fixtures below, so the case that
-# produced this file is the case the file demonstrably covers.
+# [unit] ClaimHolder: the role, the freshness, and the observation. This file asserts:
+#   1. A refusal must not describe EVERY holder as a rival builder and offer `--steal`: the
+#     holder is often a REVIEWER, and stealing mid-review voids the no-self-review guarantee and
+#     strands the verdict.
+#   2. A lease must not render as a BARE TIMESTAMP, where an expired claim and a live one look
+#     alike.
+# The near-miss's own numbers are the fixtures below.
+# History: task refusal-misnames-claim-holder.
 class ClaimHolderTest < ActiveSupport::TestCase
   # The measured moment: the reader was looking at 04:14:28Z, and the lease had
   # lapsed at 04:12:26Z — two minutes and two seconds earlier.

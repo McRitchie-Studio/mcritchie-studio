@@ -1,19 +1,11 @@
 # frozen_string_literal: true
 
-# bin/triage — the triage-inbox CLI.
-#
-# Covered here because `bin/release retro` now depends on `list --json` to decide
-# whether a follow-up is already open. That guard is only as good as the read
-# behind it, and the read has TWO ways to silently under-report:
-#
-#   1. the human `list` output drops the BODY, so a caller matching on title+body
-#      cannot use it — hence --json; and
-#   2. Api::Paginatable caps per_page at 100 while the open inbox already holds
-#      ~86, so a single-page read goes blind past the cap with NO error. A guard
-#      that stops guarding at 101 findings, quietly, is exactly the failure mode
-#      the retro fix exists to prevent — so the paging is asserted, not assumed.
-#
+# bin/triage, the triage-inbox CLI. `bin/release retro` depends on `list --json` to decide
+# whether a follow-up is open, and the read can silently under-report two ways: (1) human
+# `list` drops the BODY, hence --json; (2) Api::Paginatable caps per_page at 100, so a
+# single-page read goes blind past the cap with NO error, so the paging is asserted.
 # Stub-server shape borrowed from test/lib/task_cli_test.rb.
+# History: task retro-refiles-duplicate-findings.
 
 require "minitest/autorun"
 require "open3"
@@ -349,18 +341,12 @@ class TriageCliTest < Minitest::Test
   end
 
   # ── [integration] an UNREADABLE inbox is not an EMPTY one ───────────────────
-  #
-  # The third way this read silently under-reports, and the one the two above did
-  # not cover: the status is 200, the paging is right, and the BODY is not JSON.
-  # `TaskBoard.parse_body` scored that `{}`, so `payload["data"] || []` was `[]`,
-  # the loop broke on page one, and the CLI printed "(0 finding(s))" — the same
-  # sentence a genuinely empty inbox prints. `bin/release retro`'s duplicate guard
-  # reads this list, so a false empty makes it file a follow-up it already has.
-  #
-  # Asserted as the EFFECT, not the exit code: a test that only checked `refute
-  # status.success?` would pass on a bare JSON::ParserError backtrace too, and
-  # would have passed on the buggy version had it merely crashed elsewhere. What
-  # must be true is that the reassuring COUNT never prints.
+  # Status 200, right paging, non-JSON BODY: `TaskBoard.parse_body` scores it `{}`, so
+  # `payload["data"] || []` is `[]` and the CLI could print "(0 finding(s))". `bin/release
+  # retro`'s duplicate guard reads this list, so a false empty files a duplicate follow-up.
+  # Asserted as the EFFECT, not the exit code, which a bare JSON::ParserError backtrace also
+  # satisfies: the reassuring COUNT never prints.
+  # History: task board-parse-silently-returns-empty.
 
   def test_a_non_json_findings_page_refuses_instead_of_reporting_an_empty_inbox
     _reqs, out, err, status = run_triage("list", findings_payload: "<html><body>502 Bad Gateway</body></html>")

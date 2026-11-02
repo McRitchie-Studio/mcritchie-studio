@@ -1,24 +1,13 @@
 # frozen_string_literal: true
 
-# Guard: every hub spec that studio-engine's CI runs still exists in this tree.
-#
-# WHY. studio-engine's consumer-ci.yml has a `hub-browser` job that runs a listed subset
-# of this repo's Playwright specs against each engine commit. The list lives in the
-# engine (.github/hub-e2e-subset.txt), the files live here. Before this guard, a hub PR
-# that renamed or deleted a listed spec went green here and turned the ENGINE's lane red
-# later, in an engine PR whose author had touched nothing of the hub. This reads the
-# list from the installed gem and fails the hub PR that breaks it, by path.
-#
-# The engine ships the list from the release after 0.115.3 (studio-engine.gemspec;
-# guarded there by test/lib/consumer_ci_hub_browser_test.rb). On 0.115.3 and older the
-# gem has no list, so the live check below asserts the version instead; once the lock
-# moves past it, a missing list is red too.
-#
-# Run directly:
-#   bundle exec ruby -Itest test/lib/hub_e2e_subset_guard_test.rb
-#
-# One tier here: [unit] the list reader and the missing-file check against fixtures,
-# and the same check against the real list and this tree.
+# Guard: every hub spec studio-engine's CI runs still exists in this tree. consumer-ci.yml's
+# `hub-browser` job runs a listed subset of these Playwright specs; the list lives in the
+# engine (.github/hub-e2e-subset.txt). Otherwise a hub PR renaming a listed spec goes green
+# here and reddens an engine PR later. This reads the list from the installed gem and fails
+# the hub PR, by path. The engine ships the list after 0.115.3
+# (test/lib/consumer_ci_hub_browser_test.rb there). On 0.115.3 and older the live check
+# asserts the version instead; past it, a missing list is red too.
+# History: task consumer-ci-follow-ups.
 
 require "bundler/setup"
 require "minitest/autorun"

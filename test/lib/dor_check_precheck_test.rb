@@ -1,17 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] bin/dor-check --precheck: the merge gate's rules minus its CI read, which
-# bin/submit asks at 0/8 before it commits or pushes (/tasks/submit-checks-before-push).
-# Standalone — no Rails; shells bin/dor-check with --file fixtures:
-#   ruby -Itest test/lib/dor_check_precheck_test.rb
-#
-# What it must hold, each pinned below:
-#   * it refuses what 7/8 would refuse on metadata and tiers (the 96 tier refusals
-#     that used to cost a CI round trip each);
-#   * it never reads CI — a RED injected CI does not refuse it, because 7/8 owns that;
-#   * it records no GateRun, so a pre-check never lands on the board as an attempt;
-#   * it names itself in every line, so its pass cannot be read as the verdict;
-#   * it is the builder's merge gate only — review's gate-zero exists to read CI.
+# [unit] bin/dor-check --precheck: the merge gate's rules minus its CI read, asked by bin/submit
+# at 0/8 before it commits or pushes (/tasks/submit-checks-before-push). What it must hold:
+#   * it refuses what 7/8 would refuse on metadata and tiers;
+#   * it never reads CI: a RED injected CI does not refuse it, because 7/8 owns that;
+#   * it records no GateRun, and it names itself in every line, so its pass is not the verdict;
+#   * it is the builder's merge gate only: review's gate-zero exists to read CI.
+# History: task submit-checks-before-push.
 require "minitest/autorun"
 require "json"
 require "tmpdir"

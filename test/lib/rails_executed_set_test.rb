@@ -1,26 +1,11 @@
 # frozen_string_literal: true
 
-# Unit tests for bin/lib/rails_executed_set.rb — THE SHARDED LANE'S VERDICT GATE.
-#
-# THE PROPERTY UNDER TEST, on every axis at once:
-#
+# Unit tests for bin/lib/rails_executed_set.rb, THE SHARDED LANE'S VERDICT GATE. THE PROPERTY:
 #     EVERY COMMITTED TEST FILE THE LANE OWNS RAN AT LEAST ONE TEST, IN A SHARD WHOSE
 #     RECEIPT WE ACTUALLY HAVE.
-#
-# The gate is proved end-to-end by CI itself; these prove its LOGIC over synthetic
-# receipts, so the failure modes can be exercised in milliseconds instead of a four-shard
-# CI run — including the ones that are expensive or impossible to stage for real, like a
-# runner that died after reporting success, or a bin-packing bug that assigns a file to
-# no bucket.
-#
-# WHY EACH CASE BELOW EXISTS: every one of them is a way four GREEN shard checks can sit
-# over less than the whole suite. That is the only thing this gate is for.
-#
-# Run directly:
-#   ruby -Itest test/lib/rails_executed_set_test.rb
-#
-# One tier (backend shape):
-#   [unit] the gate's verdict over hand-built shard receipts.
+# Each case below is a way four GREEN shard checks can sit over less than the whole suite.
+# [unit] the gate's verdict over hand-built shard receipts.
+# History: task shard-the-rails-suite.
 
 require "minitest/autorun"
 require "tmpdir"

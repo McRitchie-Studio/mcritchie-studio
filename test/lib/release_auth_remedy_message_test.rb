@@ -1,26 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] What `bin/release ship` tells an operator when a push is refused on AUTH.
-#
-#   ruby -Itest test/lib/release_auth_remedy_message_test.rb
-#
-# THE INCIDENT THIS PINS, 2026-08-30. A production ship was refused on credentials.
-# The message named the FILE — "~/.zprofile.admin, installed by
-# bin/setup-1pass-token --admin" — while PRESCRIBING THE INSTALL, which prompts the
-# operator for a credential they had already supplied two days earlier. An agent read
-# it, concluded the ship lane was not self-service, and put a hand-mint chore on Mr.
-# McRitchie while the deploy waited. `source ~/.zprofile.admin` was the whole fix.
-#
-# A refusal that names the wrong remedy is worse than one that names none: the reader
-# ACTS on it. That is why these assertions are about ORDER as much as content — the
-# install is still named, because a machine that has never been provisioned genuinely
-# needs it, but it must come second and conditionally.
-#
-# WHY THIS FILE EXISTS SEPARATELY. The release CLI files are the suite's APPEND
-# hotspots, and the test-health ratchet refuses their growth by design. It offers two
-# outs: a new file named for its concern, or a documented ceiling raise; this is the
-# first. `eval_helper` is re-implemented here rather than shared, exactly as
-# test/lib/release_consumer_checkout_test.rb does.
+# [unit] What `bin/release ship` tells an operator when a push is refused on AUTH. A refusal
+# that names the wrong remedy is worse than none: the reader ACTS on it. So these assert ORDER
+# as much as content: `source ~/.zprofile.admin` is the fix, and `bin/setup-1pass-token
+# --admin` (an install that prompts for a credential) is still named for an unprovisioned
+# machine, but second and conditionally.
+# Its own file: release CLI files are APPEND hotspots under the test-health ratchet.
+# `eval_helper` is re-implemented here, as in test/lib/release_consumer_checkout_test.rb.
+# History: task finish-the-admin-remedy-sweep.
 require "minitest/autorun"
 require "open3"
 require_relative "../support/session_env"

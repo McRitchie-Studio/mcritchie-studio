@@ -1,17 +1,13 @@
 # frozen_string_literal: true
 
 # [unit] The hub on studio-engine's Node tooling package (/tasks/hub-adopts-node-tooling):
-#
-# 1. The pins hold: Studio::NodeTooling.drift is what `bin/rails studio:node:check`
-#    runs, so this is that check in the Rails lane.
-# 2. No workflow hard-codes Node's major. The engine's check reads .tool-versions and
-#    package.json only, so a `node-version: 20` in a workflow would slip past it.
-# 3. node_tooling:link (lib/node_tooling_link.rb) links a plain checkout, and never
-#    writes through a node_modules shared with another checkout, or on Heroku.
+# 1. The pins hold: Studio::NodeTooling.drift is what `bin/rails studio:node:check` runs.
+# 2. No workflow hard-codes Node's major: the engine reads only .tool-versions and package.json.
+# 3. node_tooling:link (lib/node_tooling_link.rb) links a plain checkout, and never writes
+#    through a node_modules shared with another checkout, or on Heroku.
 # 4. playwright.config.js and the node:test register build on the linked package.
-#
 # Plain Minitest, no Rails boot: it needs only the bundled gem's lib.
-#   ruby -Itest test/lib/node_tooling_adoption_test.rb
+# History: task hub-adopts-node-tooling.
 require "bundler/setup"
 require "minitest/autorun"
 require "pathname"

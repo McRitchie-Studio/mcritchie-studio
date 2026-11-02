@@ -201,15 +201,11 @@ class ArtifactSweepTest < Minitest::Test
                     "the engine's 16 MB development cap must land comfortably inside healthy"
   end
 
-  # --- coverage: is every managed app PROVEN capped? -----------------------
-  # [unit] The filed test plan for cap-loose-app-logs: "the audit reports LOOSE
-  # for an app with no cap" — and the half that plan is really about, which is
-  # that an app the audit could NOT prove must not come back looking capped.
-  #
-  # The bug these lock down is an ABSENCE, so every case below asserts against
-  # :capped rather than merely asserting the happy path. Three different
-  # situations emit `rotation_missing: []`, and only ONE of them is a clean
-  # machine; before this classifier the other two printed the same nothing.
+  # --- coverage: is every managed app PROVEN capped? ---
+  # [unit] The audit reports LOOSE for an app with no cap, and an app it could NOT prove must not
+  # look capped. Three situations emit `rotation_missing: []` and only ONE is a clean machine, so
+  # every case asserts against :capped rather than the happy path.
+  # History: task cap-loose-app-logs.
 
   def test_an_audit_that_reached_every_app_and_found_them_capped_is_the_only_pass
     summary = { audited_envs: %w[development], rotation_missing: [], rotation_unknown: [] }

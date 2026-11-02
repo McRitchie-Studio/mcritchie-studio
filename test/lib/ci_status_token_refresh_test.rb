@@ -1,19 +1,12 @@
 # frozen_string_literal: true
 
-# CiStatus re-mints its GitHub App read token when the token ages or a read is refused
-# (task ci-poll-refreshes-its-token).
-#
-# THE DEFECT. gh_read_status minted ONE token per process. An installation token lives
-# 3600 s, and the release gates now hold a pending verdict for up to ~105 minutes
-# (bin/lib/ci_poll_budget.rb). So a wait past the hour read :unreadable and aborted with
-# a message blaming credentials that one re-mint would have fixed.
-#
-# Both seams are stubs: CI_STATUS_GH_BIN for gh and GH_AUTH_TOKEN_BIN for the broker.
-# The clock is CiStatus.clock, so an hour passes in no time. The stub gh accepts a
-# token only while it is in its `valid` file, the way GitHub accepts one only until
-# it expires.
-#
-#   ruby -Itest test/lib/ci_status_token_refresh_test.rb
+# CiStatus re-mints its GitHub App read token when the token ages or a read is refused. An
+# installation token lives 3600 s and release gates hold a pending verdict up to ~105 minutes
+# (bin/lib/ci_poll_budget.rb), so one token per process reads :unreadable past the hour.
+# Both seams are stubs: CI_STATUS_GH_BIN for gh, GH_AUTH_TOKEN_BIN for the broker. The clock is
+# CiStatus.clock. The stub gh accepts a token only while it is in its `valid` file, as GitHub
+# does until expiry.
+# History: task ci-poll-refreshes-its-token.
 
 require "minitest/autorun"
 require "tmpdir"

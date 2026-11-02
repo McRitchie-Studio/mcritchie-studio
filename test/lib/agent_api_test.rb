@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
-# Tests for bin/lib/agent_api.rb — the shared agent-API client (token mint +
-# on-disk cache + bearer HTTP + base_url) that bin/atomic-event,
-# bin/atomic-capture-hook and bin/session-insights collapse onto.
-#   ruby -Itest test/lib/agent_api_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# Two tiers (library shape):
-#   [unit]        base_url / projects_dir / present? resolution, the token-cache
-#                 read/expiry/invalidations, the secret ENV precedence, and the
-#                 PINNED per-script timeout divergence (2/5 · 2/4 · 1/2).
-#   [integration] the client against a localhost stub — mint writes the SHARED
-#                 cache once, a second client reuses it without re-minting; the
-#                 bearer/JSON request shape; unreachable endpoints degrade to nil.
-#
-# NOTE: `require` (not `load`) — the bin scripts require_relative this same file,
-# so a `load` here would re-execute it and spray constant-redefinition warnings
-# when the whole sweep runs in one process.
+# Tests for bin/lib/agent_api.rb, the shared agent-API client (token mint + on-disk cache +
+# bearer HTTP + base_url) of bin/atomic-event, bin/atomic-capture-hook and bin/session-insights.
+#   [unit] resolution, token cache, secret ENV precedence, the PINNED timeouts (2/5, 2/4, 1/2).
+#   [integration] a localhost stub: mint writes the SHARED cache once; a second client reuses
+#     it.
+# NOTE: `require`, not `load`: the bin scripts require_relative this file, so `load` re-executes
+# it and sprays constant-redefinition warnings.
+# History: task extract-shared-agent-api-client.
 
 require "minitest/autorun"
 require "json"
@@ -122,22 +113,14 @@ class AgentApiTest < Minitest::Test
     end
   end
 
-  # ── [unit] the token cache is state in the operator's real .agents ────────────
-  #
-  # Same family as the cost store (PR #525) and the narration markers (PR #549):
-  # <projects>/.agents/atomic-capture/token.json is resolved by the SAME
-  # CLAUDE_PROJECTS_DIR-else-real-root fallback, and it was unguarded. It is not an
-  # exotic path either — the narration leak fired an authenticated GET at the
-  # PRODUCTION board on every unpinned suite run, and a 401 on that GET drives
-  # invalidate_token! straight into this delete.
-  #
-  # SEVERITY, stated honestly: token.json is a RE-MINTABLE CACHE, not a credential.
-  # `token` re-mints from the 1Password/env secret on the next call, so a stray delete
-  # is a self-healing eviction — a wasted `op read`, not credential destruction. It is
-  # guarded because an unguarded write into the real store is the bug, not because it
-  # is an emergency.
-  #
+  # --- [unit] the token cache is state in the operator's real .agents ---
+  # <projects>/.agents/atomic-capture/token.json resolves by the
+  # CLAUDE_PROJECTS_DIR-else-real-root fallback, and a 401 drives invalidate_token! into this
+  # delete. token.json is a RE-MINTABLE CACHE, not a credential: a stray delete is a self-healing
+  # eviction. It is guarded because an unguarded write into the real store is the bug, not an
+  # emergency.
   # The guard aborts BEFORE any IO, so this proves the refusal without attempting it.
+  # History: task guard-narration-marker-writes.
   def test_unit_an_unpinned_token_cache_mutation_aborts_instead_of_touching_the_real_store
     real = File.join(TaskUsageSandbox.real_state_dir, "atomic-capture", "token.json")
     existed = File.exist?(real)
@@ -212,15 +195,12 @@ class AgentApiTest < Minitest::Test
     $stderr = original
   end
 
-  # ── [unit] secret order: ENV, then the repo .env, then the VAULT LAST ────────
-  #
-  # Counted in vault reads, for the same reason as bin/lib/task_board.rb's twin:
-  # ENV, .env and 1Password hold the SAME string in production, so asserting the
-  # returned value alone passes on every ordering. What distinguishes a correct
-  # chain from the one that drained a 1,000/day account-wide cap is whether the
-  # metered step was CONSULTED, so that is what these assert. The stub is a real
-  # executable at the repointed OP constant, so a green run can never be a run
-  # that quietly reached the operator's live vault.
+  # --- [unit] secret order: ENV, then the repo .env, then the VAULT LAST ---
+  # Counted in vault reads, like bin/lib/task_board.rb's twin: ENV, .env and 1Password hold the
+  # SAME string in production, so asserting the returned value passes on every ordering. Assert
+  # whether the metered step was CONSULTED. The stub is a real executable at the repointed OP
+  # constant, so a green run cannot have reached the live vault.
+  # History: task board-reads-cost-credits.
 
   def test_unit_agent_secret_prefers_the_env_verbatim
     assert_equal "from-env", client("AGENT_API_SECRET" => "from-env").send(:agent_secret)
@@ -252,20 +232,13 @@ class AgentApiTest < Minitest::Test
     end
   end
 
-  # ── [unit] the .env branch's UNGUARDED EDGES, mirrored from TaskBoard ────────
-  #
-  # These are the twin of the block in test/lib/task_board_test.rb, and they
-  # exist SEPARATELY rather than by a shared helper on purpose: the two chains
-  # are independent implementations of one rule, and the bug being fixed here is
-  # precisely that they had DRIFTED (task_board guarded with File.exist?, this
-  # one with File.file?, and neither stripped quotes). A shared helper would
-  # re-couple them and hide the next divergence; two copies of the same
-  # assertions catch it.
-  #
-  # This client wraps #agent_secret in `rescue StandardError`, so an EISDIR or
-  # EACCES here never crashed — it degraded to nil, which reads as "no secret
-  # anywhere" and sends the caller to the vault. That is the right destination
-  # for the wrong reason, and it hid the defect rather than handling it.
+  # --- [unit] the .env branch's UNGUARDED EDGES, mirrored from TaskBoard ---
+  # Twin of the block in test/lib/task_board_test.rb, SEPARATE on purpose: the two chains are
+  # independent implementations of one rule, and a shared helper would re-couple them and hide the
+  # next divergence.
+  # This client wraps #agent_secret in `rescue StandardError`, so EISDIR or EACCES degrades to nil
+  # ("no secret anywhere") and goes to the vault: the right destination for the wrong reason.
+  # History: task finish-credential-demotion-sweep.
   def test_unit_agent_secret_strips_quotes_off_the_repo_dotenv
     Dir.mktmpdir do |repo|
       File.write(File.join(repo, ".env"), %(AGENT_API_SECRET="from-dotenv"\n))

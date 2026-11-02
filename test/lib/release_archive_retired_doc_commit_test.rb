@@ -1,24 +1,13 @@
 # frozen_string_literal: true
 
-# Does the archive beat's artifact commit carry a retired doc's REMOVAL to `accepted`,
-# or only its archive copy?
-#
-# THE DEFECT (rel-20261006-f6a119, commit e8f121d4). Step 10 of `bin/release archive`
-# named DocsArchive.archive_path_for(rel) for each moved doc but never `rel` itself.
-# That happened to work while the staged `git mv` deletion rode the checkout flip. On
-# the hub primary that morning, the local `release` (dcc53183) was OLDER than `main`
-# and predated the doc, so the staged deletion carried over as nothing. The
-# `merge --ff-only origin/release` then wrote the doc back, and the commit
-# carried only the archive copy, and `release` held the doc at both paths.
-#
-# Naming the source in `git add` cannot fix this alone, because by then the path
-# exists on disk again. The fix names the source at the call site, and
-# commit_artifact_to_accepted reads it as a removal (absent on `main` before the flip)
-# and `git rm`s it after the ff.
-#
-# WHY A FILE OF ITS OWN: the release CLI files are frozen append hotspots under the
-# suite's size ratchet. Nothing here touches a real repo: the integration
-# fixture is a bare origin plus a clone in a tmpdir, under OutboundSeams.
+# Does the archive beat's artifact commit carry a retired doc's REMOVAL to `accepted`, or only
+# its archive copy? Step 10 of `bin/release archive` must name `rel` as well as
+# DocsArchive.archive_path_for(rel). Naming the source in `git add` cannot fix this alone: by
+# then the path exists on disk again. The call site names the source, and
+# commit_artifact_to_accepted reads it as a removal (absent on `main` before the flip) and `git
+# rm`s it after the ff. A file of its own under the size ratchet; the fixture is a bare origin
+# plus a tmpdir clone.
+# History: release rel-20261006-f6a119.
 
 require "bundler/setup"
 require "minitest/autorun"

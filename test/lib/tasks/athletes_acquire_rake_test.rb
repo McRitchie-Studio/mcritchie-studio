@@ -1,24 +1,13 @@
 require "test_helper"
 require "rake"
 
-# [integration] THE OPERATOR'S DOOR ONTO Athletes::AcquireOrValidate, driven twice around
-# the loop its refusal used to print.
-#
-# WHY THIS TIER AND NOT ONLY THE SERVICE TEST. A refusal is only worth anything if the
-# person reading it can act on it, and what that person reads is `print_report`'s stdout —
-# not a `Report` struct. The service test proves the message's Ruby runs; this proves the
-# operator ever SEES it, on the path the docs tell them to take:
-#
-#     DRY_RUN=1 bin/rails athletes:acquire_or_validate TEAM=lv
-#
-# That documented sweep walks ESPN's Las Vegas roster, and A.J. Cole is the Raiders'
-# punter — on file as `a-j-cole` for years while ESPN says "AJ Cole" — so the refusal and
-# its remedy are what the sweep hands back for him. Before this task the printed
-# instruction returned the byte-identical refusal, which a stdout test is the only tier
-# that could have caught from the operator's side.
-#
-# ONLY THE PROVIDER IS SWAPPED, so the real rake body, the real service, the real
-# `print_report` and the real verdict tally all run, and nothing leaves the machine.
+# [integration] THE OPERATOR'S DOOR ONTO Athletes::AcquireOrValidate, driven twice around the
+# loop its refusal prints. The operator reads `print_report`'s stdout, not a `Report`: the
+# service test proves the message's Ruby runs; this proves it is SEEN on `DRY_RUN=1 bin/rails
+# athletes:acquire_or_validate TEAM=lv`. A.J. Cole is on file as `a-j-cole` while ESPN says "AJ
+# Cole", so that sweep returns the refusal and remedy. ONLY THE PROVIDER IS SWAPPED: real rake
+# body, service, `print_report` and tally.
+# History: task repair-acquire-validate-remedy.
 class AthletesAcquireRakeTest < ActiveSupport::TestCase
   TASK = "athletes:acquire_or_validate".freeze
 

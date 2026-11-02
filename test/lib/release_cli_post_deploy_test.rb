@@ -71,16 +71,11 @@ class ReleaseCliPostDeployTest < ReleaseCliHarness
     assert_includes out, "install-agent-docs", "the dry run prints the installer command"
   end
 
-  # sync_agent_docs installs from the hub's SHIP WORKSPACE (the tree pinned at the
-  # SHA that just shipped), falling back to the primary only when no such workspace
-  # exists — see the method's comment. The branch is chosen by whether
-  # `<ship-workspace>/bin/install-agent-docs` exists, and GateWorkspace.path is an
-  # ABSOLUTE path, so a raw run's outcome depends on the HOST filesystem: CI (no
-  # _ship) always hit the primary; a gate box that had materialized _ship hit the
-  # ship-workspace branch. The old single test asserted the primary path + refuted
-  # ".worktrees", so it FAILED on any host with a _ship workspace (env-divergence,
-  # not a regression). These two stub GateWorkspace.path to fix the branch on every
-  # host and assert the DESIGN: ship-workspace preferred, primary fallback.
+  # sync_agent_docs installs from the hub's SHIP WORKSPACE, falling back to the primary only
+  # when none exists. The branch is chosen by whether `<ship-workspace>/bin/install-agent-docs`
+  # exists, and GateWorkspace.path is ABSOLUTE, so a raw run depends on the HOST filesystem.
+  # These two stub GateWorkspace.path to fix the branch on every host and assert the DESIGN.
+  # History: task harden-sync-agent-docs-test.
 
   def test_sync_agent_docs_installs_from_the_shipped_ship_workspace
     setup = <<~RUBY

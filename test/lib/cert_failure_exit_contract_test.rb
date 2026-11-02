@@ -1,29 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] THE EXIT-CODE CONTRACT of the handoff lane, executed.
-#
-# The rule, stated once: **a step that failed must never yield exit 0.** A caller
-# that trusts the exit status — a harness, a background task notification, the
-# next command in a chain — has nothing else to go on, and a silent success is
-# the one failure nobody investigates, because nothing asks them to.
-#
-# WHAT THIS FILE IS, AND IS NOT. `bin/submit` and `bin/fast-check` were reported on
-# 2026-08-29 to exit 0 after failing at the pre-flight in a repo with no `bin/rails`.
-# Re-measured on this tree they BOTH exit 1, and the paths that made them exit
-# correctly are dated: `b4f8fce8` (2026-08-25) turned an unlaunchable lane from an
-# unrescued Errno::ENOENT into a red lane with a diagnosis. So these are not tests
-# for a bug being fixed here — they are the regression net that was never under
-# the contract, which is why the contract could be reported broken with no test to
-# consult. There is no other executable statement of it anywhere in the repo.
-#
-# AND EVERY TEST HERE HAS A CONTROL. A file asserting "the exit code is 1" passes
-# just as happily against a command that can only ever exit 1, and would then
-# prove the opposite of what it claims. Each failure case is paired with a real
-# success path through the same binary.
-#
-# READ `$?` BARE. The reported exit-0 could not be reproduced, and the likeliest
-# explanation is the measurement: `bin/submit ... | tail -20` reports TAIL's status,
-# which is 0 for every command on earth. These cases run the binary with no pipe.
+# [integration] THE EXIT-CODE CONTRACT of the handoff lane, executed: **a step that failed
+# must never yield exit 0.** A caller that trusts the exit status has nothing else to go on. A
+# regression net for `bin/submit` and `bin/fast-check`, the contract's only executable
+# statement in the repo. EVERY TEST HERE HAS A CONTROL: "the exit code is 1" passes against a
+# command that can only exit 1, so each failure pairs with a real success through the same
+# binary. READ `$?` BARE: `bin/submit ... | tail -20` reports TAIL's status. These run with no
+# pipe.
+# History: task ship-must-not-exit-zero.
 
 require "bundler/setup"
 require "minitest/autorun"
@@ -269,20 +253,13 @@ class CertFailureExitContractTest < Minitest::Test
       path
     end
 
-    # NO PIPE. The whole reason the contract could be reported broken while holding
-    # is that `cmd | tail -20` reports tail's status. capture2e reads the child's
-    # own status.
-    #
-    # HERMETIC, and this cost a red cert to learn. `Open3.capture2e` MERGES its env
-    # onto the parent's, and when this file runs as one lane of a real
-    # `bin/fast-check` the parent is a `bin/rails test` holding the desk's test
-    # database with `DATABASE_URL` exported. The child inherited it and resolved the
-    # DESK rather than the throwaway repo this test built (the retired orphan guard
-    # then refused it for its own parent's connection). Every fast-check case failed
-    # for a reason that had nothing to do with what they assert, and they passed
-    # standalone, which is the worst combination: green on the desk, red in the
-    # suite. So the child starts from a SCRUBBED env — every FAST_CHECK_*/SHIP_*
-    # and the database/Rails vars removed — and receives only what the case sets.
+    # NO PIPE: `cmd | tail -20` reports tail's status; capture2e reads the child's own.
+    # HERMETIC. `Open3.capture2e` MERGES its env onto the parent's, and as one lane of a real
+    # `bin/fast-check` the parent is a `bin/rails test` holding the desk's test database with
+    # `DATABASE_URL` exported. The child would then resolve the DESK, not this throwaway repo:
+    # green on the desk, red in the suite. So it starts from a SCRUBBED env: every
+    # FAST_CHECK_*/SHIP_* and the database/Rails vars removed, receiving only what the case sets.
+    # History: task ship-must-not-exit-zero.
     INHERITED_PREFIXES = %w[FAST_CHECK_ SHIP_].freeze
     # TEST_DATABASE_URL is the one that actually did it: an inherited value points the
     # child's desk guard at the DESK's test database, which this test's parent holds.

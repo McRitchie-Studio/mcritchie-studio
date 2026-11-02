@@ -1,25 +1,12 @@
 # frozen_string_literal: true
 
-# Tests for bin/lib/task_author_fields.rb — the rendering that separates WHO A
-# TASK IS ASSIGNED TO from WHO ACTUALLY BUILT IT.
-#
-# The property under test is NOT "built_by is printed". It is that the two facts
-# stay TELLABLE APART, because the defect this module exists for was an agent
-# reading the assignee under a label it took for the author:
-#
-#   `bin/task show <slug>` printed `agent: <agent_slug>`. The field review reads
-#   is `metadata.devops.built_by`, and `bin/task move <slug> building --actor
-#   <soul>` stamps that WITHOUT setting agent_slug — so three of four tasks
-#   measured on 2026-08-30 printed `agent: -` while correctly stamped, and two
-#   agents reported the blank as a review-integrity incident.
-#
-# So plumbing built_by to the same `agent:` label would have been the same defect
-# wearing new plumbing. The regressions these cases guard against are therefore
-# (a) the author set vanishing from the summary again, and (b) the two facts
-# collapsing back into one name or one glyph.
-#
-#   ruby -Itest test/lib/task_author_fields_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# Tests for bin/lib/task_author_fields.rb: separating WHO A TASK IS ASSIGNED TO from WHO BUILT
+# IT. The property is that the two facts stay TELLABLE APART, not that built_by is printed.
+# `bin/task move <slug> building --actor <soul>` stamps `metadata.devops.built_by` WITHOUT
+# setting agent_slug, so an `agent: -` line reads as an integrity incident. Plumbing built_by to
+# that label is the same defect. Guards (a) the author set vanishing from the summary, (b) the
+# facts collapsing into one name or glyph.
+# History: task show-prints-wrong-builder.
 
 require "minitest/autorun"
 

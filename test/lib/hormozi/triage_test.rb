@@ -3,19 +3,11 @@
 require "minitest/autorun"
 require_relative "../../../lib/hormozi/triage"
 
-# [unit] A CMO BUILT ON THE WHOLE ARCHIVE ANSWERS A HOOK QUESTION WITH AN
-# ANECDOTE ABOUT FIRING SOMEONE.
-#
-# THE SHAPE OF THE DEFECT. The corpus is roughly 1,700 videos and most of them
-# are not about marketing — hiring, operations, mindset, morning routines,
-# personal stories. The method is for one job: demand. Extracting evenly across
-# the archive buys a general-purpose life coach at four times the price of the
-# specialist we asked for.
-#
-# WHAT THIS PROTECTS. Tier 1 is what earns a deep extraction pass, so these
-# assertions are the actual boundary of the demand method's education (Rex's, folded into Alex 2026-10-28). The negative cases
-# matter most: a title can carry a commercial word like "sales" and still be an
-# operations lesson, and it must not buy its way into tier 1 on that alone.
+# [unit] A CMO BUILT ON THE WHOLE ARCHIVE ANSWERS A HOOK QUESTION WITH AN ANECDOTE ABOUT FIRING
+# SOMEONE. Tier 1 earns a deep extraction pass, so these assertions are the boundary of the
+# demand method's education. The negative cases matter most: a title can carry a commercial word
+# like "sales" and still be an operations lesson, and it must not reach tier 1 on that alone.
+# History: task hormozi-corpus-pipeline.
 class TriageTest < Minitest::Test
   def test_a_marketing_title_reaches_tier_one
     verdict = Hormozi::Triage.score("How To Make Your Offer Irresistible")

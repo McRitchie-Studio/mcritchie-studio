@@ -1,25 +1,13 @@
 require "test_helper"
 
-# [unit] The standard profile columns, and the MIGRATION NAME that keeps this app
-# out of the engine's red window.
-#
-# WHY THE NAME MATTERS MORE THAN THE COLUMNS. Engine migrations are install-COPIED
-# (`bin/rails studio_engine:install:migrations`), never referenced, and the copy is
-# a manual step a gem bump does not perform. So between the engine SHIPPING a
-# migration and every consumer INSTALLING it, `test/lib/engine_pin_contract_test.rb`
-# goes red here — it asserts `engine_migration_names - installed_migration_names`
-# is empty.
-#
-# Going consumer-FIRST closes that window, and it works because that gate compares
-# BARE names: leading timestamp stripped, `.studio_engine` suffix stripped. An app
-# already holding a migration of the engine's name is satisfied the moment the
-# engine ships, and `install:migrations` then skips it ("Migration with the same
-# name already exists"). `create_studio_links` is already in exactly this state.
-#
-# All of which rests on the two names matching CHARACTER FOR CHARACTER. Rename
-# either side and the arrangement silently collapses back into the red window it
-# exists to avoid — silently, because nothing goes red until the engine ships,
-# which may be days later and in a different repo. That is what this file pins.
+# [unit] The standard profile columns, and the MIGRATION NAME that keeps this app out of the
+# engine's red window. Engine migrations are install-COPIED (`bin/rails
+# studio_engine:install:migrations`), so test/lib/engine_pin_contract_test.rb goes red between
+# ship and install. Going consumer-FIRST closes that, because the gate compares BARE names
+# (leading timestamp and `.studio_engine` suffix stripped) and `install:migrations` skips a name
+# already held. The two names must match CHARACTER FOR CHARACTER: rename either and it collapses
+# silently until the engine ships. That is what this pins.
+# History: task install-standard-profile-columns.
 class StandardProfileColumnsTest < ActiveSupport::TestCase
   # The engine will ship a migration of exactly this bare name. Changing it here
   # without changing it there — or the reverse — reopens the red window.

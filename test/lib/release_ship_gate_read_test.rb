@@ -1,29 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] G4's tree-verdict READ on the FROZEN ship SHA (devops-v3 §5, task
-# ship-gate-reads-tree-verdict). Standalone (no Rails):
-#   ruby -Itest test/lib/release_ship_gate_read_test.rb
-#
-# One tree earns one verdict. bin/release's test_gate resolves the frozen ship SHA
-# through the SAME credit-or-poll path G3 runs on the release tip
-# (resolve_release_ci_verdict) and classifies what it read
-# (Release::ShipSequence.ship_gate_kind — the pure state table is unit-tested in
-# test/models/release/ship_sequence_test.rb; THIS is the wiring). These drive the
-# REAL test_gate with injected verdicts and a stubbed git, one case per row: green
-# (its own run), credited same-SHA, credited same-tree, red, held past the poll bound
-# (pending / none / unverified), unreadable, diverged, and a G3 record that must not
-# talk a red past the gate. In EVERY row the local suite never runs and no workspace
-# is pinned — the self-skip against release.metadata["qa_gates"] (ship_gate_skip?)
-# went with the local suite it used to spare.
-#
-# WHY THIS FILE EXISTS SEPARATELY. The release CLI ship tests own the ship lane's
-# integration coverage and are an APPEND hotspot — frozen at their ceiling
-# in the suite's health ratchet (`test_health.yml`, named without its directory on
-# purpose: spelling that path maps this file onto the ratchet's own fast-check lane,
-# which is at its cap). The ratchet's stated out is a new file named for its concern,
-# which is what this is; `run_cli` and the canned git stub are
-# re-implemented from it rather than shared, as test/lib/release_pre_qa_remedy_test.rb
-# does, so loading this file never loads the shared release CLI harness.
+# [integration] G4's tree-verdict READ on the FROZEN ship SHA (devops-v3 §5). One tree earns
+# one verdict: test_gate uses G3's path (resolve_release_ci_verdict) and
+# Release::ShipSequence.ship_gate_kind, unit-tested in
+# test/models/release/ship_sequence_test.rb; THIS is the wiring. Its own file: the ship
+# tests are frozen in the ratchet (`test_health.yml`, named WITHOUT its directory on
+# purpose: spelling that path maps this file onto the ratchet's lane, at its cap). `run_cli`
+# and the git stub are re-implemented so this never loads the shared harness.
+# History: task ship-gate-reads-tree-verdict.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
@@ -88,23 +72,13 @@ class ReleaseShipGateReadTest < Minitest::Test
   end
 
   # --- G4 ship gate: the tree-verdict READ on the FROZEN SHA (devops-v3 §5) --------
-  #
-  # One tree earns one verdict. test_gate resolves the frozen ship SHA through the SAME
-  # credit-or-poll path G3 runs on the release tip (resolve_release_ci_verdict) and
-  # classifies what it read (Release::ShipSequence.ship_gate_kind — the pure state table
-  # is unit-tested there; THIS is the wiring). These drive the REAL test_gate with
-  # injected verdicts and a stubbed git, one case per row: green (its own run), credited
-  # same-SHA, credited same-tree, red, held past the poll bound (pending / none /
-  # unverified), unreadable, diverged. In EVERY row the local suite never runs, and no
-  # G3 record is consulted — the self-skip against release.metadata["qa_gates"]
-  # (ship_gate_skip?) went with the local suite it used to spare.
-  #
-  # `accepted:` is what `git rev-parse origin/accepted` answers (GATE_SHA = the frozen
-  # SHA IS the accepted head, a fast-forward; ACC_SHA = a distinct head); the two
-  # `*_tree:` values decide tree identity; `verdicts` maps a SHA to the ci_verdict Hash
-  # it answers, and `ci_status` injects RELEASE_CI_STATUS (a token, or the same-SHA
-  # credit payload). The poll window is collapsed to ONE read, so a pass on a pending
-  # own-run can ONLY come from a credit.
+  # These drive the REAL test_gate with injected verdicts and a stubbed git, one case per
+  # ship_gate_kind row. In EVERY row the local suite never runs and no G3 record is consulted.
+  # `accepted:` is what `git rev-parse origin/accepted` answers (GATE_SHA = a fast-forward;
+  # ACC_SHA = a distinct head); the `*_tree:` values decide tree identity; `verdicts` maps a
+  # SHA to its ci_verdict Hash; `ci_status` injects RELEASE_CI_STATUS. The poll window is ONE
+  # read, so a pass on a pending own-run can ONLY come from a credit.
+  # History: task ship-gate-reads-tree-verdict.
   def ship_read_stub(dir, accepted: GATE_SHA, accepted_tree: SHARED_TREE, frozen_tree: SHARED_TREE,
                      ci_status: nil, verdicts: nil)
     env = ci_status ? %(ENV["RELEASE_CI_STATUS"] = #{ci_status.inspect}\n) : ""

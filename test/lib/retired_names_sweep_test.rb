@@ -1,14 +1,9 @@
 # frozen_string_literal: true
 
-# [unit] No live file names a retired route or a deleted file. robots.txt,
-# test/timings.yml, the fast-cert comments and the test file names once named
-# paths and files that no longer exist; this keeps them from coming back.
-#
-# test/integration/retired_routes_test.rb is the one file allowed to name the
-# retired paths: it lists them on purpose, to prove each one answers 404.
-#
-#   ruby -Itest test/lib/retired_names_sweep_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [unit] No live file names a retired route or a deleted file.
+# test/integration/retired_routes_test.rb is the one file allowed to name the retired paths: it
+# lists them on purpose, to prove each one answers 404.
+# History: task sweep-retired-route-leftovers.
 
 require "minitest/autorun"
 

@@ -1,31 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] tests for the TEST FAMILY hop in bin/lib/fast_cert.rb — the widening
-# that lets a diff touching a tool reach the tool's whole test family, not just
-# its same-named twin.
-#
-# THE DEFECT THIS PINS, measured 2026-09-06 from the task desk:
-#
-#   FAST_CHECK_CHANGED_FILES=bin/dor-check bin/fast-check --list
-#   -> 1 changed file(s) -> 1 mapped test path(s)
-#   -> mapped  test/lib/dor_check_test.rb
-#
-# There were fifteen test/lib/dor_check_*_test.rb files (fourteen since
-# /tasks/dor-reads-settled-ci-verdict retired five and added one). Fourteen were unreachable
-# from a diff touching only bin/dor-check, because the convention hop stopped at
-# the twin and the grep fallback fires only when the twin is ABSENT. Among the
-# fourteen is dor_check_exempt_ci_test.rb, which holds a self-checking registry
-# over bin/dor-check's own source — so the one test guaranteed to notice a new
-# call site was the one test the local cert could never run. It reddened PR
-# #1236's first push in CI instead.
-#
-# Two directions are pinned here, because a widening is only as good as its
-# restraint: the family must be REACHED (below), and an ordinary source edit must
-# not suddenly pull in unrelated files (see the guard tests).
-#
-# Run directly:
-#   ruby -Itest test/lib/fast_cert_family_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [unit] tests for the TEST FAMILY hop in bin/lib/fast_cert.rb: a diff touching a tool reaches
+# the tool's whole test family, not just its same-named twin. The convention hop stops at the
+# twin and the grep fallback fires only when the twin is ABSENT, so without this hop
+# dor_check_exempt_ci_test.rb (a self-checking registry over bin/dor-check's source) is
+# unreachable from a bin/dor-check diff. Two directions are pinned: the family must be REACHED
+# (below), and an ordinary source edit must not pull in unrelated files (see the guard tests).
+# History: task dor-reads-settled-ci-verdict.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -91,18 +72,12 @@ class FastCertFamilyTest < Minitest::Test
     end
   end
 
-  # THE CASE THAT BIT, against the REAL repo rather than a fixture — a fixture
-  # can only prove the rule, not that the rule reaches the file that reddened CI.
-  # Derived from the tree rather than hard-listed, so adding a sixteenth
-  # dor_check test does not red-seal an unrelated PR.
-  #
-  # AND IT NO LONGER RED-SEALS AN EXCLUDED ONE. This asserted `present == selected`
-  # EXACTLY, where `present` is a raw glob. The ownership guard correctly withholds a
-  # sibling that has its own source — so the day somebody adds `bin/dor-check-foo` with
-  # a `test/lib/dor_check_foo_test.rb`, the glob counts it, the guard rightly refuses to
-  # claim it, and THIS test fails on an unrelated PR that did nothing wrong. A guard
-  # that fires on correct behaviour trains people to edit the guard. The expectation is
-  # now `present` MINUS what the ownership rule excludes, stated independently above.
+  # THE CASE THAT BIT, against the REAL repo: a fixture can only prove the rule, not that it
+  # reaches the file. Derived from the tree, so a new dor_check test does not red-seal an
+  # unrelated PR. The expectation is `present` MINUS what the ownership rule excludes, never
+  # `present == selected`: the guard rightly withholds a sibling with its own source
+  # (`bin/dor-check-foo`).
+  # History: task convention-mapping-misses-test-family.
   def test_real_repo_dor_check_diff_reaches_the_registry_test
     selected = FastCert.select_tests(REPO_ROOT, ["bin/dor-check"])
 
@@ -268,18 +243,12 @@ class FastCertFamilyTest < Minitest::Test
     end
   end
 
-  # THE GREP IS EXCLUDED FROM THE FALLBACK, and this is the whole reason the fallback
-  # is bounded. The cap exists BECAUSE of the grep — config/initializers/studio.rb had
-  # no convention target, grepped "Studio" and matched 48 files at 39m34s. Degrading to
-  # "twins OR grep" would re-run exactly that. A file with no twin contributes nothing.
-  #
-  # THE FIXTURE MOVED FROM AN INITIALIZER TO A MODEL, and the reason is worth keeping:
-  # a config file is now named by its PATH, not by its camelized basename, so
-  # config/initializers/widget.rb greps for "config/initializers/widget.rb" and can no
-  # longer explode at all (that is #grep_tokens doing its job). A twin-less MODEL still
-  # greps its bare constant — app/models/agent_activity.rb really does map 29 files in
-  # the hub today — so it is what still reproduces the shape this test is about. The
-  # PROPERTY under test is unchanged: whatever the grep matched, the fallback ignores it.
+  # THE GREP IS EXCLUDED FROM THE FALLBACK: the cap exists BECAUSE of the grep, since
+  # config/initializers/studio.rb grepped "Studio" and matched 48 files. A file with no twin
+  # contributes nothing. The fixture is a MODEL, not an initializer: a config file is named by
+  # its PATH, so config/initializers/widget.rb cannot explode (#grep_tokens). A twin-less MODEL
+  # still greps its bare constant. PROPERTY: whatever the grep matched, the fallback ignores it.
+  # History: task capped-lane-falls-to-nothing.
   def test_the_fallback_never_reopens_the_grep_explosion
     files = { "app/models/widget.rb" => "class Widget; end\n" }
     20.times { |i| files["test/lib/wide_#{i}_test.rb"] = "Widget.reset\n" }
@@ -297,24 +266,12 @@ class FastCertFamilyTest < Minitest::Test
                    "an initializer has no convention twin — the grep must NOT be reused as the fallback"
       assert_equal 0, decision[:fallback_considered]
 
-      # AND IT IS NOT TRUNCATION — named here, though it is not this line that catches
-      # it. The lazy shape of this fix, "take the first `cap` of whatever mapped", turns
-      # a 20-file grep explosion into 15 arbitrary grep matches: a SHORTER CLIFF, not a
-      # slope, since which 15 you get is alphabetical accident. Measured over the hub
-      # 2026-09-07, ALL 27 single-file cap-trippers were grep-driven with ZERO twins (9
-      # remain after the subject-reference fix, still with zero twins), so truncation is
-      # the failure mode that would actually bite.
-      #
-      # THE LINE BELOW CANNOT BE THE ASSERTION THAT FIRES, and the comment that stood
-      # here claimed the opposite — that truncation "would pass every other test in this
-      # file". MEASURED 2026-09-08, by making #cap_decision return
-      # `Array(mapped_only).first(cap)`: SIX tests in this file go red, and the
-      # `assert_empty decision[:fallback]` one line ABOVE reddens on ANY non-empty
-      # fallback, so it always beats this refute_equal to it. The property is well
-      # pinned — by that line and three other tests. This one is a NAMED restatement of
-      # the shape, kept because "never the mapped set truncated" is what a reader needs
-      # told; it is not load-bearing. Delete the redundancy if you like, never the
-      # property.
+      # AND IT IS NOT TRUNCATION. "Take the first `cap` of whatever mapped" turns a grep
+      # explosion into 15 arbitrary matches: a SHORTER CLIFF, not a slope. THE LINE BELOW CANNOT
+      # BE THE ASSERTION THAT FIRES: the `assert_empty decision[:fallback]` one line ABOVE
+      # reddens first. This is a NAMED restatement of the shape, not load-bearing. Delete the
+      # redundancy if you like, never the property.
+      # History: task fast-check-narration-misleads.
       refute_equal mapped.first(15), decision[:fallback],
                    "the fallback must be the convention twins, never the mapped set truncated"
     end
@@ -388,22 +345,11 @@ class FastCertFamilyTest < Minitest::Test
   end
 
   # --- the REAL repo, the shape that is live today ------------------------------
-  #
-  # THE GUARD THAT COULD NOT SEE THE FAILURE NEXT TO IT. The registry test above is
-  # cap-INDEPENDENT: it asserts the SELECTION, which is 15 either way, so it stayed
-  # green while the real lane ran nothing at all on any multi-file diff. This asserts
-  # the LANE — what would actually execute — against the exact live shape.
-  #
-  # Measured on this desk 2026-09-07:
-  #   bin/dor-check alone                    → 15 mapped, at the cap  → ran 15
-  #   bin/dor-check + bin/lib/ci_status.rb   → 16 mapped, over it     → ran 0 (PR #1236's shape)
-  # Re-measured 2026-09-24 (/tasks/dor-reads-settled-ci-verdict retired five of the
-  # family's tests and added one):
-  #   bin/dor-check alone                    → 14 mapped, inside the margin
-  #   + bin/lib/ci_status.rb                 → 15 mapped, AT the cap  → runs 15
-  #   + bin/lib/ci_status.rb + ci_gate.rb    → 24 mapped, over it     → runs its 2 twins
-  # The third file is that task's own diff — the gate, its verdict module and the
-  # status reader change together — so the live shape pinned here is a real one.
+  # The registry test above is cap-INDEPENDENT: it asserts the SELECTION, so it stays green
+  # while the lane runs nothing on a multi-file diff. This asserts the LANE, what would actually
+  # execute, on the live shape: bin/dor-check + bin/lib/ci_status.rb + ci_gate.rb, over the cap,
+  # runs its 2 twins.
+  # History: task dor-reads-settled-ci-verdict.
   def test_real_repo_a_capped_multi_file_diff_still_runs_the_dor_check_twin
     changed = ["bin/dor-check", "bin/lib/ci_status.rb", "bin/lib/ci_gate.rb"]
     mapped = FastCert.select_tests(REPO_ROOT, changed)
@@ -422,14 +368,11 @@ class FastCertFamilyTest < Minitest::Test
   end
 
   # --- WHICH EMPTY the twin fallback was ------------------------------------------
-  #
-  # `:fallback_considered` is counted AFTER the spine dedupe, so a diff whose only twin
-  # is a spine entry reaches the narration carrying 0 — the same number a diff with NO
-  # twin carries. bin/fast-check printed ONE sentence for both, and for the first
-  # population it was false: "no changed file has an existing test twin". A warning that
-  # fires on a false negative teaches builders to ignore warnings, which is the real
-  # cost; the OUTCOME was right either way. The question is asked ONCE, here, so the two
-  # sentences cannot drift apart again.
+  # `:fallback_considered` is counted AFTER the spine dedupe, so a diff whose only twin is a
+  # spine entry carries 0, the same as a diff with NO twin. One sentence for both is false for
+  # the first, and a warning on a false negative teaches builders to ignore warnings. The
+  # question is asked ONCE, here, so the two sentences cannot drift apart.
+  # History: task fast-check-narration-misleads.
 
   def test_a_spine_covered_twin_is_not_a_missing_twin
     cause = FastCert.empty_fallback_cause({ cap: 15, fallback_considered: 0 },
@@ -465,19 +408,13 @@ class FastCertFamilyTest < Minitest::Test
   end
 
   # --- the fallback is INSIDE the mapped set --------------------------------------
-  #
-  # WHAT MAKES THE REMOVED PREVIEW PASS SAFE TO REMOVE. bin/fast-check's --list carried a
-  # second walk over `(cap[:fallback] - mapped_only)` to catch "a twin the mapped set does
-  # not contain". No such twin can exist: #convention_twins is the union of exactly the
-  # `existing` sets #mapping unions into its own values, so every twin is already a mapped
-  # path — and bin/fast-check subtracts the identical spine set from both sides. The case
-  # the old comment cited cannot occur either: a changed TEST file's convention candidate
-  # IS itself (#convention_candidates), so its twin is never outside the mapped set.
-  #
-  # Dead code is only safely deleted when something notices it stopping being dead. This
-  # is that something, and the two floors below are what keep it from proving nothing: an
-  # empty-set subtraction is empty for the wrong reason, and a sweep whose cases vanish
-  # asserts over nothing at all.
+  # #convention_twins is the union of the `existing` sets #mapping unions into its values, so
+  # every twin is a mapped path, and bin/fast-check subtracts the identical spine set from both
+  # sides. A changed TEST file's convention candidate IS itself. This is what notices if the
+  # removed `(cap[:fallback] - mapped_only)` walk stops being dead. The two floors below keep it
+  # honest: an empty-set subtraction is empty for the wrong reason, and a vanished sweep asserts
+  # over nothing.
+  # History: task fast-check-narration-misleads.
   def test_the_convention_twins_are_always_a_subset_of_the_mapped_set
     cases = {
       "a harness family" => [

@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] WorkspaceIcon — the argv that draws a workspace's badge onto a piece of
-# software's logo, and the config both axes come from. Nothing here runs
-# ImageMagick; test/lib/workspace_icon_render_test.rb draws real PNGs.
-#
-# The assertions that matter most are the two measured traps the lib carries:
-# the tile canvas's `-size` leaking into the SVG read (a cropped quarter-G), and
-# a render that exits 0 while its background is flattened.
-#
-#   ruby -Itest test/lib/workspace_icon_test.rb
+# [unit] WorkspaceIcon: the argv that draws a workspace's badge onto a software logo, and the
+# config both axes come from. Nothing here runs ImageMagick;
+# test/lib/workspace_icon_render_test.rb draws real PNGs.
+# Two measured traps matter most: the tile canvas's `-size` leaking into the SVG read (a cropped
+# quarter-G), and a render that exits 0 while its background is flattened.
+# History: task onepass-vault-icons.
 
 require "minitest/autorun"
 require "tmpdir"

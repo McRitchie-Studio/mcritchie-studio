@@ -7,36 +7,13 @@ require "rake"
 require "open-uri"
 require "stringio"
 
-# [integration] `nfl:link_coach_headshots_from_team_sites` -- whether the lane can
-# report that it linked nothing.
-#
-# ── WHY THIS FILE EXISTS ──────────────────────────────────────────────────────
-#
-# It is the SECOND task db/seeds/32_headshot_links.rb invokes, one line below
-# `nfl:link_coach_headshots`, and it carried the same defect: `failed_team` was
-# counted, printed, and read by nothing, so the task ended by returning and the
-# process exited 0 however many teams it lost. This lane is the only source of a
-# coordinator's headshot URL at all -- ESPN's coach API has no `headshot.href` for
-# any of them -- so a silent total failure costs three of the four coaches on every
-# team their avatar.
-#
-# MEASURED IN A DESK BEFORE THE FIX, two fixture teams carrying a coaches_url and
-# every candidate URL answering 404:
-#
-#     failed (team page):   2
-#     EXIT CODE: 0
-#
-# ── AND WHY THE VERDICT READS WHAT LANDED, NOT WHAT FAILED ───────────────────
-#
-# `failed_team` counts teams whose PAGE could not be read. It cannot see the other
-# way to link nothing: 32 pages that load and yield no coach, which is what a
-# change to NFL.com's markup looks like from here. Both are the lane not happening,
-# so both are graded, and the grade is the number of Coach rows whose headshot URL
-# this lane put or confirmed on file.
-#
-# THE PARTIAL STAYS GREEN ON PURPOSE. Two teams' pages down is a normal NFL.com
-# afternoon, and a lane that reddens a rebuild over it is a lane an operator learns
-# to route around -- the same defect in another costume.
+# [integration] `nfl:link_coach_headshots_from_team_sites`: whether the lane can report it
+# linked nothing. It is the SECOND task db/seeds/32_headshot_links.rb invokes, the only source
+# of a coordinator's headshot URL (ESPN's coach API has none). Exit status must reflect a total
+# failure. THE VERDICT READS WHAT LANDED: `failed_team` cannot see 32 pages that load and yield
+# no coach. The grade is Coach rows whose headshot URL this lane put or confirmed on file. THE
+# PARTIAL STAYS GREEN ON PURPOSE: a lane reddening a rebuild over two pages gets routed around.
+# History: task coach-link-lane-false-green.
 class NflCoachTeamSitesTest < ActiveSupport::TestCase
   TASK = "nfl:link_coach_headshots_from_team_sites".freeze
 

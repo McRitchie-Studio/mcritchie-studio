@@ -1,16 +1,12 @@
 # frozen_string_literal: true
 
-# Tests for bin/session-insights — the SessionStart hook that feeds the curated
-# Insight Bank forward into a fresh agent session.
-#   ruby -Itest test/lib/session_insights_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# Two tiers (backend shape):
-#   [unit]        the pure formatter — insight_line + additional_context (the
-#                 SessionStart context block), loaded in process (the bin's main is
-#                 guarded so `load` is side-effect free).
-#   [integration] the real script, shelled out against a localhost stub that mints
-#                 a token then serves /api/v1/insights, prints the SessionStart JSON.
+# Tests for bin/session-insights, the SessionStart hook feeding the curated Insight Bank into a
+# fresh agent session. Two tiers (backend shape):
+#   [unit] the pure formatter: insight_line + additional_context, loaded in process (main is
+#     guarded).
+#   [integration] the real script vs a localhost stub minting a token and serving
+#     /api/v1/insights; prints the SessionStart JSON.
+# History: task feed-banked-insights-forward.
 
 require "minitest/autorun"
 require "json"

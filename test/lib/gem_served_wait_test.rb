@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# bin/lib/gem_served_wait.rb: the wait between `gem push` and the first consumer
-# lock push. Standalone:
-#   ruby -Itest test/lib/gem_served_wait_test.rb
-#
-# THE INCIDENT, rel-20261029-00560a. studio-engine 0.119.0 was published at
-# 19:15:48Z; the conductor's single fresh read passed, the lock bumps were pushed,
-# and alex-build's `static` job ran `bundle install` 62 seconds later against a
-# runner edge that still answered "can no longer be found in that source". These
-# cases drive the loop on a fake clock, so no case touches the network or sleeps.
+# bin/lib/gem_served_wait.rb: the wait between `gem push` and the first consumer lock push. A
+# conductor's single fresh read can pass while a runner edge still answers "can no longer be
+# found in that source". These drive the loop on a fake clock, so no case touches the network or
+# sleeps.
+# History: release rel-20261029-00560a.
 require "minitest/autorun"
 require_relative "../../bin/lib/gem_served_wait"
 

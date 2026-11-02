@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] Every hub launcher starts its children under ChildEnv's allow-list.
-#
-# WHY (secrets-scrub-follow-ups, 2026-10-24). secrets-never-on-argv-or-desk-env
-# scrubbed the desk servers bin/agent-worktree starts; review found the other
-# launchers still handed their children the agent shell's whole environment:
-# bin/dev (foreman, Puma), bin/ecosystem-build's Phase 8 (the primaries' Puma,
-# after the script has sourced ~/.zprofile), LaneRunner (fast-check's suites,
-# whose parallel workers rename their titles), and the three detached lease
-# renewers (bin/devops-shift, review_claim_cli, release_claim_cli), which live as
-# long as a lease. On macOS `ps` and `pgrep -fl` print a renamed process's
-# environment, and that is how HEROKU_API_KEY reached a transcript.
-#
-# HOW. Each launcher's REAL spawn site runs in a clean subprocess with fake
-# credentials planted, and starts a stub child that writes its environment to a
-# file and exits. The subprocess itself starts from a minimal environment
-# (unsetenv_others), so the operator's real credentials never enter this test.
-#
-# THE CONTROL. Each launcher is run again with its scrub replaced by the pre-fix
-# behaviour (the parent's whole environment), and the stub must then SEE the
-# planted credentials. Without it, "the child saw no secret" and "the fixture
-# never planted one" are the same observation.
-#
-# Run directly:  ruby -Itest test/lib/launcher_child_env_test.rb
+# [unit] Every hub launcher starts its children under ChildEnv's allow-list: bin/dev,
+# bin/ecosystem-build's Phase 8, LaneRunner and the detached lease renewers
+# (bin/devops-shift, review_claim_cli, release_claim_cli). On macOS `ps` and `pgrep -fl`
+# print a renamed process's environment. Each REAL spawn site runs in a clean subprocess
+# (unsetenv_others) with fake credentials and a stub child that writes its env. THE CONTROL:
+# rerun with the scrub replaced by the parent's whole environment; the stub must SEE the
+# credentials, or "no secret" and "never planted" are the same observation.
+# History: task secrets-scrub-follow-ups.
 require "minitest/autorun"
 require "open3"
 require "rbconfig"

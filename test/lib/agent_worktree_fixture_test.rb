@@ -1,28 +1,13 @@
 # frozen_string_literal: true
 
-# THE FIXTURE'S OWN PROOF — and the property the extraction exists to deliver.
-#
-# test/support/agent_worktree_fixture.rb was lifted out of
-# test/commands/agent_worktree_test.rb, which had twice raised its own append ceiling in
-# config/test_health.yml rather than split. The stated reason both times was not the
-# tests: it was the STAGING. A `cleanup` question is only worth asking against a desk
-# that is staged, aged, bound to a task and merged onto its base, and a new file could
-# reach that only by re-staging `setup_repo + mark_worktree_merged_to_origin_main +
-# abandon_desk! + bind_task_slug + removal_env + agent_worktree` from scratch — at which
-# point the duplicated fixture, not the one variable the new test flips, is what a reader
-# has to verify.
-#
-# So the claim this file exists to make is exactly one sentence: A SECOND FILE CAN STAGE
-# THE DESK AND DRIVE THE REAL BINARY AGAINST IT WHILE COPYING NOTHING. This file is that
-# second file. Its whole setup is the `include` below — delete that line and every test
-# here dies on a NoMethodError rather than going quietly green, which is what makes them
-# evidence for the claim and not merely compatible with it.
-#
-# WHAT THIS FILE IS NOT. It is not a second copy of the reclaim guard's coverage. The
-# checks below drive the real sweep because a fixture that stages a desk nothing will
-# accept has proven nothing — but they assert the FIXTURE's contribution (the desk
-# reached the sweep, the aging took, the floor rode along), never the guard's copy. The
-# guard's own cells live with the guard, in test/commands/agent_worktree_test.rb.
+# THE FIXTURE'S OWN PROOF for test/support/agent_worktree_fixture.rb, lifted out of
+# test/commands/agent_worktree_test.rb under its append ceiling in `config/test_health.yml`. The
+# claim: A SECOND FILE CAN STAGE THE DESK AND DRIVE THE REAL BINARY AGAINST IT WHILE COPYING
+# NOTHING. Its whole setup is the `include` below: delete it and every test dies on a
+# NoMethodError. NOT a second copy of the reclaim guard's coverage: checks drive the real
+# sweep but assert the FIXTURE's contribution (the desk reached the sweep, the aging took, the
+# floor rode along). The guard's cells live with the guard.
+# History: task extract-agent-worktree-test-fixture.
 require "test_helper"
 require_relative "../support/agent_worktree_fixture"
 
@@ -78,17 +63,12 @@ class AgentWorktreeFixtureTest < ActiveSupport::TestCase
     assert_match(/\A[0-9a-f]{40}\z/, rev(@hub_dir, "HEAD"))
   end
 
-  # [control] THE SAME DEFECT, FOUR LINES UP. `head_branch` dropped its status too,
-  # and its silent case is an UNBORN HEAD rather than a missing ref: in a repo with
-  # no commits `git rev-parse --abbrev-ref HEAD` prints the literal "HEAD" on stdout
-  # and exits 128 (measured 2026-09-22, and reproduced by this test's own premise
-  # below). So the dropping form answered "this repo is on branch HEAD" for a repo
-  # that is on no branch at all.
-  #
-  # IT WAS HARMLESS BY LUCK, WHICH IS NOT A MECHANISM. Every asserting call site is
-  # an `assert_equal` against a named branch, so "HEAD" fails loudly at each of them
-  # — a property of those assertions, not of the helper. Revert it to
-  # `out, = Open3.capture3(...)` and this test goes red while all six stay green.
+  # [control] THE SAME DEFECT, FOUR LINES UP. `head_branch` must not drop its status: in a repo
+  # with no commits `git rev-parse --abbrev-ref HEAD` prints "HEAD" and exits 128, answering "on
+  # branch HEAD" for no branch at all. Call sites `assert_equal` a named branch, so "HEAD" fails
+  # loudly there, a property of those assertions, not of the helper. Revert to `out, =
+  # Open3.capture3(...)` and this goes red while all six stay green.
+  # History: task sweep-remaining-status-drops.
   test "[control] head_branch RAISES on an unborn HEAD, rather than answering \"HEAD\"" do
     unborn = File.join(@projects_dir, "unborn-repo")
     FileUtils.mkdir_p(unborn)

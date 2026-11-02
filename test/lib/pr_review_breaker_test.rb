@@ -1,23 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] The two-bounce circuit breaker's wiring inside bin/pr-review — the
-# AUTOMATED review path's block seam.
-#
-# WHY A SOURCE-STRUCTURAL TEST HERE, when the breaker itself is behaviorally tested
-# next door (test/lib/bounce_ledger_test.rb, test/lib/bounce_check_cli_test.rb).
-# The behavior is already pinned where it lives: `bin/task block --kind rework`
-# REFUSES a tripped second bounce, so no unacknowledged repeat bounce can land
-# whatever this script does. What CANNOT be pinned by driving the script is its
-# ROUTING — block_for_rework's callers launch real reviewer subprocesses and talk
-# to GitHub, so the supervisor's decision table is only reachable from the source.
-# Same reasoning, and same house pattern, as pr_review_zap_safety_test.rb.
-#
-# What it asserts is a PROPERTY over every rework block in the file, not the
-# presence of a string: each one is either breaker-GUARDED or breaker-ACKNOWLEDGED.
-# Add a fifth rework block tomorrow and this goes red until you classify it — which
-# is the whole point, because an unclassified one silently re-arms the loop.
-#
-#   ruby -Itest test/lib/pr_review_breaker_test.rb
+# [unit] The two-bounce circuit breaker's wiring inside bin/pr-review, the AUTOMATED review
+# path's block seam. Source-structural because block_for_rework's callers launch real
+# reviewer subprocesses and talk to GitHub, so ROUTING is only reachable from the source;
+# behavior is pinned in test/lib/bounce_ledger_test.rb and
+# test/lib/bounce_check_cli_test.rb. House pattern: pr_review_zap_safety_test.rb. Asserts a
+# PROPERTY over every rework block: breaker-GUARDED or breaker-ACKNOWLEDGED. A new rework
+# block goes red until classified, because an unclassified one silently re-arms the loop.
+# History: task circuit-breaker-check-always-zero.
 
 require "minitest/autorun"
 
@@ -35,15 +25,12 @@ class PrReviewBreakerTest < Minitest::Test
                  "no rework block found — if the shape changed, this whole file needs re-reading, not deleting"
   end
 
-  # THE PROPERTY. A rework bounce from the supervisor is one of exactly two things,
-  # and it must SAY which:
-  #   MECHANICAL (red CI, merge conflict, stale base) — nothing for the operator to
-  #     arbitrate, so it carries --breaker-ack and proceeds.
-  #   A JUDGEMENT (request-changes) — a repeat one is a review DEADLOCK, so it is
-  #     routed through breaker_tripped? and escalates instead.
-  # A third, unclassified kind is the bug: it would either be refused (recorded as a
-  # tool failure, and the builder never told) or, if the gate were ever loosened,
-  # bounce forever.
+  # THE PROPERTY. A supervisor rework bounce must SAY which of two things it is. MECHANICAL
+  # (red CI, merge conflict, stale base): nothing to arbitrate, so it carries --breaker-ack
+  # and proceeds. A JUDGEMENT (request-changes): a repeat one is a review DEADLOCK, so it
+  # routes through breaker_tripped? and escalates. A third, unclassified kind is the bug:
+  # refused, or bouncing forever.
+  # History: task circuit-breaker-check-always-zero.
   def test_every_rework_block_is_either_acknowledged_or_breaker_guarded
     guarded_body = SRC[/def block_for_rework\b.*?\nend\n/m]
     refute_nil guarded_body, "block_for_rework not found — the judgement path must exist"

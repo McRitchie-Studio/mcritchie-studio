@@ -2,18 +2,12 @@
 
 # The production ship's post-ship refresh of the always-on local services
 # (bin/release.rb#refresh_local_services): for every entry in the hub primary's
-# config/local_services.yml that names a `refresh`, the primary's script with
-# that refresh's arguments (`install --if-changed` for the agent dispatcher and
-# the client build launcher), warn-only. Its own file because
-# release_cli_post_deploy_test.rb is a frozen append hotspot.
-#
-# Part of the bin/release CLI suite; the shared subprocess harness lives in
-# test/lib/release_cli_harness.rb. Run directly:
-#   ruby -Itest test/lib/release_cli_local_services_refresh_test.rb
-#
-# Every unit case stubs `sh`, so no service script runs. The two [integration]
-# cases run this tree's REAL scripts against a throwaway HOME with a recording
-# launchctl first on PATH; launchctl itself is never run.
+# config/local_services.yml naming a `refresh`, the primary's script with those arguments
+# (`install --if-changed` for the agent dispatcher and client build launcher), warn-only. Own
+# file: release_cli_post_deploy_test.rb is a frozen append hotspot.
+# Unit cases stub `sh`. The two [integration] cases run this tree's REAL scripts against a
+# throwaway HOME with a recording launchctl first on PATH; launchctl itself is never run.
+# History: task launcher-in-burn-down.
 
 require_relative "release_cli_harness"
 require_relative "../../bin/lib/local_services"

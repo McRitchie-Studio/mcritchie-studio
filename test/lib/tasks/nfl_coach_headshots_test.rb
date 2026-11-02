@@ -7,71 +7,14 @@ require "rake"
 require "open-uri"
 require "stringio"
 
-# [unit][integration] `nfl:link_coach_headshots` -- the host it dials, the name it
-# gives, and what it does when ESPN hands it nothing.
-#
-# ── WHY THIS FILE EXISTS ──────────────────────────────────────────────────────
-#
-# The lane read `site.api.espn.com`, which serves the identical document to curl
-# and 403s Ruby from behind an Akamai deny page. MEASURED 2026-09-27 THROUGH
-# `URI.open` ITSELF -- the call this task makes -- with the working host as a
-# control, so the failure is pinned on the host rather than on how Ruby asks:
-#
-#     URI.open("https://<host>/apis/site/v2/sports/football/nfl/teams")
-#
-#     HOST                   UA CONDITION           STATUS         BYTES
-#     site.api.espn.com      open-uri default       403 Forbidden     437
-#     site.api.espn.com      Espn::Api::USER_AGENT  403 Forbidden     437
-#     site.web.api.espn.com  open-uri default       200           148,848   <- control
-#     site.web.api.espn.com  Espn::Api::USER_AGENT  200           148,848   <- control
-#
-# THE CONTROL IS THE POINT. Two cells of the same call, in the same process,
-# differing only in the host: the dead one cannot be revived by dressing Ruby up,
-# and the live one needs no costume. A `curl` returning 200 proves nothing here,
-# which is exactly how this host survived in three places at once.
-#
-# ── AND WHY IT ASSERTS A LOUD FAILURE ────────────────────────────────────────
-#
-# The 403 was not the whole defect. `teams_resp.dig(...)` returning an empty
-# array walked the loop zero times, printed a tidy column of zeros, and exited 0
-# -- so the dead host could also present as a clean run that did nothing. A lane
-# that cannot fail cannot be trusted when it passes.
-#
-# ── AND WHY IT CAME BACK ONE LOOP LOWER (`coach-link-lane-false-green`) ───────
-#
-# The abort above guards the INDEX fetch. Past it, every per-team read sat under
-# a bare `rescue => e; failed += 1`, and the task then ended on `puts`: nothing
-# read `failed`, so a run where no team produced a coach exited 0. MEASURED in
-# this desk before the fix, with a two-team index and open-uri raising
-# `OpenURI::HTTPError 500` for every per-team read:
-#
-#     matched/updated:      0
-#     skipped (no team):    1
-#     failed:               1
-#     EXIT CODE: 0
-#
-# (One team matched a fixture abbrev and raised; the other had no fixture Team,
-# so the same no-op arrived through two different counters. That is why the rule
-# this file now asserts grades what ended up ON FILE and not the failure count:
-# "every team failed" is one way to link no coach, and it is not the only one.)
-#
-# THE REACHABILITY WAS FIRST JUDGED WRONG, and the correction is the point. This
-# lane was parked once as "a misleading report line, not a false green" because
-# `nfl:link_coach_headshots` does not appear in bin/ecosystem-build. It IS reached,
-# through three hops that never spell its name, re-verified in this desk:
-#
-#   1. bin/ecosystem-build's app phase runs `rails db:create db:migrate db:seed`
-#      with BOTH streams sent to /dev/null and only the exit status read, and it
-#      `exit 1`s the whole rebuild when that status is non-zero.
-#   2. db/seeds.rb loads every db/seeds/*.rb in sorted order -- MEASURED: 37 files,
-#      with 32_headshot_links.rb at sort index 23.
-#   3. db/seeds/32_headshot_links.rb invokes `nfl:link_coach_headshots` and
-#      `nfl:link_coach_headshots_from_team_sites` through `Rake::Task#invoke`.
-#
-# A GREP MISS PROVES THE STRING IS ABSENT, NOT THAT THE CODE IS UNREACHED. And
-# because that lane discards both streams, the exit status is the ONLY signal the
-# rebuild can read: every `puts` in this task is invisible there, which is why the
-# verdict had to become an exit code rather than a louder report line.
+# [unit][integration] `nfl:link_coach_headshots`. site.api.espn.com 403s `URI.open` whatever
+# the User-Agent; site.web.api.espn.com answers (a `curl` 200 proves nothing). A run that
+# links no coach must exit non-zero, graded on what is ON FILE, not `failed`
+# (`coach-link-lane-false-green`). A GREP MISS PROVES THE STRING IS ABSENT, NOT THAT THE
+# CODE IS UNREACHED: bin/ecosystem-build runs db:seed with both streams to /dev/null, and
+# db/seeds/32_headshot_links.rb invokes this task, so the exit status is the ONLY signal
+# there.
+# History: task revive-coaches-seed-host.
 class NflCoachHeadshotsTest < ActiveSupport::TestCase
   TASK = "nfl:link_coach_headshots".freeze
 
@@ -108,23 +51,14 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     refute_includes url, Espn::Api::FILTERED_HOST
   end
 
-  # THE ASSERTION ABOVE CHECKS A VALUE, WHICH IS NOT THE WHOLE ACCEPTANCE. A
-  # hardcoded "site.web.api.espn.com" would satisfy every case above while
-  # re-creating the exact condition that killed this lane: a host spelled in two
-  # files, one of which somebody later edits. MEASURED by mutation -- replacing
-  # `Espn::Api::CORE_HOST` with its literal left the whole file green -- so the
-  # rule "the host comes from Espn::Api" needs a case that can see a literal.
-  #
-  # Comment lines are exempt on purpose: the measurement table in nfl.rake has to
-  # be able to NAME the dead host, and a rule that forbade that would be a rule
-  # against writing down what was measured.
-  #
-  # IT READS EVERY RAKE FILE, NOT JUST THE ONE THAT ROTTED. Reading only nfl.rake
-  # made the guard a note about one file rather than a rule about the rake lane:
-  # lib/tasks/espn.rake grades the depth-chart scrape and any future lane may dial
-  # ESPN, and the defect this guard exists for was ONE HOST IN TWO PLACES. A guard
-  # that can only see the place it already knows about cannot catch the third copy,
-  # which is how this host survived in three at once.
+  # THE ASSERTION ABOVE CHECKS A VALUE, WHICH IS NOT THE WHOLE ACCEPTANCE. A hardcoded
+  # "site.web.api.espn.com" satisfies every case above while spelling the host in two files,
+  # so "the host comes from Espn::Api" needs a case that can see a literal (replacing
+  # `Espn::Api::CORE_HOST` with its literal left the file green). Comment lines are exempt on
+  # purpose: the measurement table in nfl.rake must be able to NAME the dead host. IT READS
+  # EVERY RAKE FILE, NOT JUST THE ONE THAT ROTTED: lib/tasks/espn.rake and any future lane may
+  # dial ESPN, and a guard that sees only the known place cannot catch a third copy.
+  # History: task revive-coaches-seed-host.
   test "no rake file in lib/tasks spells an ESPN host literally -- they come from Espn::Api" do
     files = rake_files
     refute_empty files, "the guard read no files at all, so it can refuse nothing"
@@ -142,18 +76,13 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     end
   end
 
-  # THE DETECTOR, ASKED OF ITS OWN MOTIVATING CASES. The loop above walks 30-odd
-  # files and cannot plant a literal in each, so what "bites on every member" means
-  # here is that the PREDICATE bites -- proved against synthetic source rather than
-  # inferred from a green sweep of a directory that is currently clean. A clean
-  # sweep is evidence about the directory, never about the detector.
-  #
-  # THE CONTINUATION CASE IS WHY THIS IS FLATTEN-THEN-SUBSTRING AND NOT A LINE
-  # MATCH. Ruby concatenates adjacent string literals, so a host split across a
-  # `" \` seam -- the idiom nfl.rake already uses on nearly every abort message --
-  # is one host at run time and two fragments to a line-by-line reader. MEASURED
-  # below: the naive `readlines.grep_v(/^\s*#/).join` this guard used to do is
-  # BLIND to that spelling, and it is the spelling a tidy-up would produce.
+  # THE DETECTOR, ASKED OF ITS OWN MOTIVATING CASES. A clean sweep is evidence about the
+  # directory, never the detector, so the PREDICATE is proved against synthetic source. THE
+  # CONTINUATION CASE IS WHY THIS IS FLATTEN-THEN-SUBSTRING AND NOT A LINE MATCH: Ruby
+  # concatenates adjacent literals, so a host split across a `" \` seam, the idiom nfl.rake
+  # uses on abort messages, is one host at run time. The naive
+  # `readlines.grep_v(/^\s*#/).join` is BLIND to that spelling.
+  # History: task coach-link-lane-false-green.
   test "the ESPN host detector catches a literal however it is spelled" do
     ESPN_API_HOSTS.each do |host|
       assert espn_host_literal?(%(HOST = "#{host}".freeze\n), host),
@@ -208,19 +137,13 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     end
   end
 
-  # HOW LONG THE REBUILD MAY WAIT ON ONE SOCKET, and the reason this is asserted
-  # rather than left to the library. Left unset, open-uri does not wait for ever:
-  # MEASURED in this desk on Ruby 3.3.11, `Net::HTTP.new(...)` reports
-  # `open_timeout=60 read_timeout=60`. That is the number this lane inherits, and
-  # it is the wrong one HERE -- the task makes 1 index read plus 2 reads per team,
-  # so 32 teams is 65 reads and a stalled ESPN could hold `db:seed` for 65 minutes
-  # on read alone before this task's own guards ever get to speak. The sibling
-  # scrape in the same file already chose 15s per read; this is the same budget
-  # for the same reason, and it caps the same 65 reads at about 16 minutes.
-  #
-  # ASSERTED ON EVERY CALL, NOT ON THE CONSTANT. The index read and the two
-  # per-team reads go through one lambda today, and a future second fetch site
-  # that forgot the budget is exactly what this case is for.
+  # HOW LONG THE REBUILD MAY WAIT ON ONE SOCKET, asserted rather than left to the library.
+  # Unset, this lane inherits `read_timeout=60`, and at 1 index read plus 2 per team a stalled
+  # ESPN could hold `db:seed` for 65 minutes before this task's guards speak. The sibling
+  # scrape in the same file chose 15s per read; same budget, same reason. ASSERTED ON EVERY
+  # CALL, NOT ON THE CONSTANT: this case exists for a future second fetch site that forgets
+  # the budget.
+  # History: task coach-link-lane-false-green.
   test "every ESPN read carries a read timeout" do
     calls = refute_aborts { run_task(index: index_doc, coaches: coaches_doc, coach: coach_doc) }
 
@@ -258,18 +181,12 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
                  "name the host that was asked, so the next operator can re-ask it by hand")
   end
 
-  # THE OTHER WAY TO RESOLVE NO TEAMS, and a case this file was missing until a
-  # mutation found the hole. MEASURED: with `Array()` removed from the dig, the
-  # whole file stayed green -- so the guard's nil arm was untested. Asked of the
-  # expression directly, the two inputs are not interchangeable:
-  #
-  #     dig -> nil   WITH Array() -> []      WITHOUT -> NoMethodError
-  #     dig -> []    WITH Array() -> []      WITHOUT -> []
-  #
-  # An empty list and a MOVED document are different facts about ESPN, and only
-  # the first one was covered. Both must reach the same legible abort, because a
-  # NoMethodError backtrace out of a rake task tells an operator nothing about
+  # THE OTHER WAY TO RESOLVE NO TEAMS. With `Array()` removed from the dig, dig -> nil raises
+  # NoMethodError while dig -> [] still gives [], so the guard's nil arm needs its own case.
+  # An empty list and a MOVED document are different facts about ESPN; both must reach the
+  # same legible abort, because a NoMethodError backtrace tells an operator nothing about
   # which host was asked or what it said.
+  # History: task revive-coaches-seed-host.
   test "a run whose index shape moved fails as loudly as an empty one" do
     out, err = capture_io do
       assert_raises(SystemExit) { run_task(index: moved_index_doc) }
@@ -311,22 +228,13 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
 
   # --- [integration] the per-team verdict ---------------------------------
 
-  # THE REGRESSION THIS TASK WAS FILED FOR, and the lowest tier that can see it:
-  # the index guard is satisfied -- ESPN answered, two teams resolved -- and then
-  # every per-team read raises into the loop's `rescue => e; failed += 1`. The task
-  # then ended on `puts`, inside a `db:seed` whose only signal to bin/ecosystem-build
-  # is its exit status.
-  #
-  # MEASURED ON THIS EXACT INPUT, with the new abort disarmed so the old behaviour is
-  # reproduced rather than remembered -- `rake nfl:link_coach_headshots` through the
-  # same `URI.open` seam, both fixture teams raising OpenURI::HTTPError 500:
-  #
-  #     ESPN teams: 2   matched/updated: 0   failed: 2   EXIT CODE: 0
-  #
-  # which is the figure the review that filed this card reported. The header's
-  # `failed: 1 / skipped (no team): 1` measurement is a DIFFERENT input -- an index
-  # naming one abbrev we hold no Team row for -- and it is the reason this lane is
-  # graded on what landed rather than on this counter.
+  # THE REGRESSION THIS TASK WAS FILED FOR, at the lowest tier that can see it: the index
+  # guard is satisfied, then every per-team read raises into `rescue => e; failed += 1`,
+  # inside a `db:seed` whose only signal to bin/ecosystem-build is its exit status. The
+  # pre-abort result on this input was `failed: 2`, EXIT CODE: 0. A different input (an index
+  # naming an abbrev with no Team row) is why this lane is graded on what landed, not on this
+  # counter.
+  # History: task coach-link-lane-false-green.
   test "a run whose every team failed exits non-zero" do
     out, err = capture_io do
       assert_raises(SystemExit) do
@@ -378,16 +286,11 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     assert_equal "1234", Coach.find_by(team_slug: "buffalo-bills", role: "head_coach").espn_id
   end
 
-  # THE INVARIANT THE SUBTRACTION GUARD POLICES, asserted here because the guard
-  # itself cannot fire today: every route out of the loop increments exactly one
-  # counter, so `unaccounted` is always 0 and no test can watch it warn. What CAN
-  # be watched is the property -- the counters partition the teams ESPN named --
-  # and a future `next` that forgot to report itself breaks this case even while
-  # the warning stays unreachable.
-  #
-  # ASKED OF THE PRINTED REPORT, not of locals, because the report is what an
-  # operator re-running the seed by hand reads, and a number that is right in a
-  # local and wrong on the page is still wrong.
+  # THE INVARIANT THE SUBTRACTION GUARD POLICES, asserted here because the guard cannot fire
+  # today (`unaccounted` is always 0): the counters partition the teams ESPN named, so a
+  # future `next` that forgot to report itself breaks this case. ASKED OF THE PRINTED REPORT,
+  # not of locals: the report is what an operator re-running the seed reads.
+  # History: task coach-link-lane-false-green.
   test "every ESPN team the run walked is reported by exactly one counter" do
     out, = capture_io do
       refute_aborts do
@@ -461,19 +364,14 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     OpenURI::HTTPError.new("#{status} #{reason}", io)
   end
 
-  # Invoke the task with ESPN replaced at the `URI.open` seam -- the same seam the
-  # task uses -- and hand back every call it made so its options can be read off it.
-  #
-  # `*rest, **kw` because `URI.open(url, read_timeout: 15, "User-Agent" => x)` is
-  # ONE mixed hash and lands positionally on open-uri's `def URI.open(name, *rest)`
-  # rather than as keywords -- headers and options travel together there, which is
-  # why the capture is a single `:options` hash and not a `:headers` one.
-  #
-  # `responses:` IS A SCRIPT. An entry that is an Exception is RAISED at that
-  # position, which is how a per-team failure is expressed, and the LAST entry
-  # repeats once the script runs out -- deliberately, so "every team fails" is one
-  # error rather than two per team. The narrower `index:`/`coaches:`/`coach:` form
-  # builds the same three-entry script.
+  # Invoke the task with ESPN replaced at the `URI.open` seam, and hand back every call so its
+  # options can be read off it. `*rest, **kw` because `URI.open(url, read_timeout: 15,
+  # "User-Agent" => x)` is ONE mixed hash and lands positionally on open-uri's `def
+  # URI.open(name, *rest)`, hence a single `:options` hash, not `:headers`.
+  # `responses:` IS A SCRIPT: an Exception entry is RAISED at that position (a per-team
+  # failure), and the LAST entry repeats once the script runs out, so "every team fails" is
+  # one error. The `index:`/`coaches:`/`coach:` form builds the same three-entry script.
+  # History: task revive-coaches-seed-host.
   def run_task(index: nil, coaches: nil, coach: nil, index_error: nil, responses: nil)
     # DISPATCH BY CALL ORDER, NOT BY URL SUBSTRING. The lane reads exactly three
     # documents per team in a fixed sequence, and the third one is a `$ref` ESPN
@@ -498,17 +396,12 @@ class NflCoachHeadshotsTest < ActiveSupport::TestCase
     Dir[Rails.root.join("lib/tasks/*.rake")].sort
   end
 
-  # FLATTEN, THEN SUBSTRING -- never a per-line regex. Three steps, each answering
-  # a way the same host can hide from a line reader:
-  #
-  #   1. drop full-line comments, so nfl.rake's measurement table may name the dead
-  #      host (the one exemption, and it has its own case above);
-  #   2. join `\`-newline continuations, so a statement that wraps is one string;
-  #   3. close `"a" "b"` seams, because Ruby concatenates adjacent literals and a
-  #      host split across one IS that host at run time.
-  #
-  # Step 3 also eats a bare `""`, which is harmless: the only thing asked of the
-  # result afterwards is whether it contains a host.
+  # FLATTEN, THEN SUBSTRING, never a per-line regex. Three steps: (1) drop full-line comments,
+  # so nfl.rake's measurement table may name the dead host (the one exemption, with its own
+  # case above); (2) join `\`-newline continuations; (3) close `"a" "b"` seams, because Ruby
+  # concatenates adjacent literals. Step 3 also eats a bare `""`, harmless, since the result
+  # is only asked whether it contains a host.
+  # History: task coach-link-lane-false-green.
   def espn_host_literal?(source, host)
     source.lines.grep_v(/^\s*#/).join
           .gsub(/\\\n\s*/, "")

@@ -1,44 +1,13 @@
 # frozen_string_literal: true
 
-# Regression for the bin/dor-check DIFF rooting — the FALSE PASS half of the
-# wrong-tree family.
-#   ruby -Itest test/lib/dor_check_review_diff_rooting_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# THE BUG (2026-08-08, task dor-check-review-rooting). `bin/dor-check <task>
-# --gate-role review`, run from the mcritchie-studio PRIMARY checkout — which is
-# EXACTLY what pr-review-primary.md instructs (its Entry says `cd
-# /Users/alex/projects/mcritchie-studio`, a later step says run the gate, and nothing
-# pins either to the task's tree) — inspected the PRIMARY's working tree instead of
-# the task's diff. Observed, verbatim, over a multi-file code PR:
-#
-#   ✓ DoR-to-Merge n/a … doc-only diff (kind: chore): 1 file(s), none behavioral —
-#     docs/agents/maintenance/delete-later.md [source: git working tree]
-#     → ready to advance submitted → reviewed
-#
-# That file was one unrelated dirty file on the primary's `main`. The PR was a
-# multi-file code change. Re-run rooted at the task's worktree, the same command
-# evaluated the real diff and passed honestly.
-#
-# WHY THIS IS THE DANGEROUS DIRECTION. The 2026-07-14 fix
-# (test/lib/dor_check_root_guard_test.rb) rooted the cert FINGERPRINT and stopped at
-# the builder lane, reasoning that review "already roots at the branch tree". True of
-# the fingerprint; false of the DIFF, which never re-rooted in either lane. And the
-# two fail OPPOSITELY: a foreign fingerprint can only ever produce a false STALE —
-# loud, self-correcting, nobody accepts an unexplained refusal. A foreign DIFF
-# produces a false PASS in the gate whose entire job is refusing under-tested work,
-# it is indistinguishable from a real verdict, and the dirtier the checkout the more
-# confidently it lies.
-#
-# THE INVARIANT THESE TESTS ASSERT, in both directions:
-#
-#     dor-check's diff is the TASK's diff. Never the diff of the tree you stand in —
-#     which can wave code through (a dirty .md here) just as easily as it can block
-#     prose (a dirty .rb here).
-#
-# A happy-path test would have passed BEFORE this fix and proves nothing, so every
-# integration case below stands in a checkout that is deliberately dirty with files
-# that would flip the verdict if they were read.
+# Regression for the bin/dor-check DIFF rooting, the FALSE PASS half of the wrong-tree family.
+# THE INVARIANT: dor-check's diff is the TASK's diff, never the diff of the tree you stand in,
+# which can wave code through (a dirty .md here) as easily as block prose (a dirty .rb here).
+# Why dangerous: a foreign fingerprint only gives a loud false STALE
+# (test/lib/dor_check_root_guard_test.rb); a foreign DIFF gives a false PASS indistinguishable
+# from a real verdict. A happy-path test proves nothing, so every integration case stands in a
+# checkout deliberately dirty with files that would flip the verdict if read.
+# History: task dor-check-review-rooting.
 
 require "minitest/autorun"
 require "json"
@@ -120,15 +89,11 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     tree
   end
 
-  # The world the bug lives in:
-  #
-  #   <projects>/myapp/                    ← the PRIMARY the reviewer stands in, on
-  #                                          `release`, DIRTY with `dirt` — files that
-  #                                          are not the task's and never were.
-  #   <projects>/myapp/.worktrees/task-x/  ← the task's tree, carrying `files` on
-  #                                          feat/task-x.
-  #
-  # `worktree: false` omits the task tree entirely. Yields [projects, primary, tree].
+  # The world: <projects>/myapp/ is the PRIMARY the reviewer stands in, on `release`, DIRTY with
+  # `dirt` (files that are not the task's). <projects>/myapp/.worktrees/task-x/ is the task's
+  # tree, carrying `files` on feat/task-x. `worktree: false` omits the task tree. Yields
+  # [projects, primary, tree].
+  # History: task dor-check-review-rooting.
   def with_world(files: PR_CODE, dirt: [PRIMARY_DIRT], worktree: true, base_rung: "accepted")
     Dir.mktmpdir do |raw|
       projects = File.realpath(raw)
@@ -166,15 +131,11 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
     }
   end
 
-  # Run bin/dor-check FROM `cwd` with an IMPLICIT root (no DOR_CHECK_DIFF_ROOT — an
-  # explicit one is the caller declaring a root, and bypasses the guard by design).
-  #
-  # DOR_CHECK_PR_FILES=unverified simulates the observed condition: `gh` could not
-  # read the PR's file list, so the resolver falls back to a local view. That
-  # fallback is the whole subject of this file — when it is allowed to be the
-  # PRIMARY's working tree, the gate lies.
-  #
+  # Run bin/dor-check FROM `cwd` with an IMPLICIT root (no DOR_CHECK_DIFF_ROOT; an explicit one
+  # bypasses the guard by design). DOR_CHECK_PR_FILES=unverified simulates `gh` unable to read
+  # the PR's file list, so the resolver falls back to a local view, the subject of this file.
   # Returns [verdict_hash, exit_code, stderr].
+  # History: task dor-check-review-rooting.
   def dor_check(task, cwd, projects, *args, pr_files: "unverified")
     Dir.mktmpdir do |d|
       path = File.join(d, "task.json")
@@ -566,28 +527,18 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   end
 
   # ── [integration] the DESTINATION is validated too, on BOTH axes ──────────
-  #
-  # Found in review of this very fix (2026-08-09). The first cut asked two questions
-  # of the checkout you were STANDING in (`TaskTree.assess`: is its branch the
-  # task's? is it the task's worktree dir?) and ZERO questions of the checkout it
-  # JUMPED TO — while announcing "Re-rooted at the task's worktree: <path>" as fact.
-  # A destination was trusted for having the right DIRECTORY NAME.
-  #
-  # That reopened the same false pass one hop downstream, twice and independently:
-  # B1 has the right branch in the wrong repo, B2 the right repo on the wrong branch.
-  # Either alone is enough, so validating "either axis" is not a fix — the
-  # destination must satisfy BOTH.
+  # `TaskTree.assess` must question the checkout it JUMPS TO, not only the one you stand in; a
+  # destination is never trusted for its DIRECTORY NAME. B1 has the right branch in the wrong
+  # repo, B2 the right repo on the wrong branch. Either alone reopens the false pass, so it must
+  # satisfy BOTH.
+  # History: task dor-check-review-rooting.
 
   def test_integration_refuses_a_lone_worktree_that_belongs_to_another_repo
-    # B1. The multi-repo repo check was gated behind `candidates.size > 1`, so a
-    # SINGLE candidate was trusted without ever being asked which repo it was in.
-    # The PR is in myapp; the only worktree on disk is otherapp's, on the right
-    # branch, carrying prose — so the gate re-rooted into a different product's
-    # checkout and handed the exemption out on ITS files.
-    #
-    # This one is doubly damning: the refusal was already PROMISED, by the
-    # AMBIGUOUS banner and by docs/agents/modules/gates/dor.md, for exactly this
-    # input. The documentation was more protective than the code.
+    # B1. A SINGLE candidate must still be asked which repo it is in; the check must not sit
+    # behind `candidates.size > 1`. The PR is in myapp; the only worktree is otherapp's, on the
+    # right branch, carrying prose. The refusal is promised by the AMBIGUOUS banner and
+    # docs/agents/modules/gates/dor.md.
+    # History: task dor-check-review-rooting.
     Dir.mktmpdir do |raw|
       projects = File.realpath(raw)
       primary = init_repo(File.join(projects, "myapp"))
@@ -654,15 +605,10 @@ class DorCheckReviewDiffRootingTest < Minitest::Test
   end
 
   # ── [integration] the tree you STAND in is validated too ──────────────────
-  #
-  # Round 4, and the mirror of the round-3 finding: having fixed the tree the gate
-  # JUMPS TO, it still trusted the tree it STANDS IN. `assess` short-circuited on a
-  # branch-only check (the repo axis was never asked of the standing root) backed by a
-  # pure STRING match on `.worktrees/<slug>` — so these three walked straight through
-  # with `exempt: true`, exit 0, and no stderr banner at all.
-  #
-  # No banner is the tell. Every other wrong-tree path at least announces itself; this
-  # one produced a verdict that looked completely ordinary.
+  # `assess` must not short-circuit on a branch-only check backed by a STRING match on
+  # `.worktrees/<slug>`: the repo axis is asked of the standing root as well. These three
+  # otherwise pass with `exempt: true`, exit 0 and no stderr banner. No banner is the tell.
+  # History: task dor-check-review-rooting.
 
   # Stand INSIDE `desk` (a checkout named like the task's worktree) and gate a chore
   # whose PR is a multi-file code change in `repo`.

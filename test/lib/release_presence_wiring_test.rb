@@ -1,40 +1,13 @@
 # frozen_string_literal: true
 
-# THE WIRING: what `bin/release` actually publishes about THIS MACHINE while it works.
-#
-# Slice 4 of docs/agents/system/agent-presence.md. Standalone:
-#   ruby -Itest test/lib/release_presence_wiring_test.rb
-#
-# A FILE OF ITS OWN, not an addition to another release CLI file: the same rule
-# test/lib/release_cli_accepted_gate_test.rb states. Where everyone appends at the
-# bottom, everyone conflicts at the bottom, and each release CLI file carries a hard
-# line ceiling.
-#
-# WHAT IS BEING PINNED, and why the module's own tests are not enough. The claim module
-# (test/lib/release_presence_test.rb) proves the record and its grading. It cannot prove
-# that `bin/release` ever calls it, or calls it around the right work — and the wiring is
-# what the task exists to do.
-#
-# ASSERTED AS HEADROOM, NOT AS A WEIGHT STRING. Every case here runs the REAL reader
-# (`AgentPresence.snapshot`) from INSIDE the wrapped work and reports the number a peer
-# standing at the next desk would read before deciding whether to launch a suite. That
-# choice is deliberate: a weight is a constant, and a test that asserts a constant passes
-# in BOTH directions the moment somebody changes the constant and the expectation
-# together. Headroom is an OBSERVATION — it can only be produced by a claim that is on
-# disk, live, correctly graded, and correctly weighted at the instant the work runs.
-#
-# The capacity is AgentPresence::DEFAULT_SUITE_CAPACITY = 3.00 suites, so the numbers
-# these cases pin are:
-#
-#   conductor working, no scope   light 0.25   headroom 2.75
-#   inside a LOCAL suite          suite 1.00   headroom 2.00
-#   inside a REMOTE smoke/hook    light 0.25   headroom 2.75   ← the fix
-#   inside the repo_script deploy suite 1.00   headroom 2.00   ← the fix
-#
-# OBSERVED FROM INSIDE THE WORK, never asserted about the source. Each case stubs `sh` to
-# take the reading at the moment the wrapped command runs, so a case can only pass if the
-# transition is actually in force while the work happens. A grep of bin/release.rb would
-# pass against a transition that never fires AND against one that never restores.
+# THE WIRING: what `bin/release` publishes about THIS MACHINE while it works (slice 4 of
+# docs/agents/system/agent-presence.md). ASSERTED AS HEADROOM, NOT A WEIGHT STRING: a test of a
+# constant passes when constant and expectation change together. A stubbed `sh` runs the REAL
+# reader (`AgentPresence.snapshot`) as the wrapped command runs: a grep of bin/release.rb would
+# pass a transition that never fires or never restores. AgentPresence::DEFAULT_SUITE_CAPACITY = 3.00.
+# Conductor, no scope: light 0.25, headroom 2.75. LOCAL suite: suite 1.00, headroom 2.00.
+# REMOTE smoke/hook: light 0.25, headroom 2.75. repo_script deploy: suite 1.00, headroom 2.00.
+# History: task sweeps-publish-local-claim.
 
 require "minitest/autorun"
 require "tmpdir"

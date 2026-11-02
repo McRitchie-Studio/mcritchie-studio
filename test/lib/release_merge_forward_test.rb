@@ -1,22 +1,12 @@
 require "test_helper"
 
-# The merge-forward guard's two STRUCTURAL invariants, asserted against
-# bin/release.rb's own source.
-#
-# Both are properties no behavioural test can hold onto, because the way they
-# break is by someone moving a line — and every functional test still passes when
-# they do. That is exactly how the rel-20260809-3b8f3d incident happened, so the
-# guard is pinned where it can actually be broken: in the source order and in the
-# choice of working tree.
-#
-# THE INCIDENT. The guard used to live inside the QA-deploy loop and merge in the
-# SHARED PRIMARY CHECKOUT. The hub primary had an uncommitted file, `git checkout
-# release` refused, its result was discarded, the following `git merge origin/main`
-# therefore ran against `main` and reported "Already up to date", and the push sent
-# a stale local branch that origin rejected. The step was non-fatal, so the sweep
-# assembled a candidate whose release branch was missing a hotfix already live in
-# production. Placement made it worse: sitting AFTER the pre-QA gate, a merge that
-# DID land moved origin/release past the SHA the gate had just certified.
+# The merge-forward guard's two STRUCTURAL invariants, asserted against bin/release.rb's own
+# source. They break by someone moving a line, with every functional test still passing, so they
+# are pinned in the source order and in the choice of working tree. Merging in the SHARED
+# PRIMARY CHECKOUT let a refused `git checkout release` go unseen and `git merge origin/main`
+# run against `main`. Placement AFTER the pre-QA gate moves origin/release past the SHA the gate
+# certified.
+# History: incident rel-20260809-3b8f3d.
 class ReleaseMergeForwardTest < ActiveSupport::TestCase
   SOURCE = Rails.root.join("bin/release.rb").read.freeze
 
@@ -102,15 +92,11 @@ class ReleaseMergeForwardTest < ActiveSupport::TestCase
                     "the merge runs in the same detached workspace mechanics the rest of the ship path uses"
   end
 
-  # INVARIANT 3 — every step is CHECKED. The original discarded the checkout's
-  # result and only tested the merge, which is how a no-op on the wrong branch read
-  # as success. Each fallible step must feed an abort.
-  #
-  # This asserts the CLAUSES BY NAME, not a count. It used to assert
-  # `scan(/abort!/).size >= 4` against 6 present clauses — two of slack, so the
-  # fetch and push aborts could BOTH be deleted with the suite still green. A
-  # count is a proxy; the clauses are the property. (Behavioural coverage for the
-  # fetch/push failures lives in the release CLI repin tests, test_merge_forward_*.)
+  # INVARIANT 3: every step is CHECKED. Each fallible step must feed an abort. This asserts the
+  # CLAUSES BY NAME, not a count: `scan(/abort!/).size >= 4` lets fetch and push aborts be deleted
+  # with the suite green. Behavioural coverage lives in the release CLI repin tests,
+  # test_merge_forward_*.
+  # History: task harden-release-merge-forward-guard.
   test "every fallible step in the merge-forward is captured and feeds an abort" do
     # A `sh` whose result is thrown away is the bug this PR exists to fix.
     {

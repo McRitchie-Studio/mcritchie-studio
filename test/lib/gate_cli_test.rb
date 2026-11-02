@@ -1,18 +1,10 @@
 # frozen_string_literal: true
 
-# Standalone integration test for bin/gate's IDENTITY stamp. Shells out to
-# bin/gate against a localhost stub HTTP server (no Rails, no real network) and
-# asserts what actually goes on the wire.
-#
-# Why this file exists. A gate run recorded that a cert ran; it did not record WHO
-# ran it. On 2026-08-13 a challenger's own local cert (since retired) opened a g1_cert
-# on a task held by someone else, and the build-claim gate quoted that cert back to
-# the challenger as evidence the HOLDER was alive — progress with no owner gets
-# credited to whoever holds the claim. Task#progress_actor reads the stamp this
-# file asserts, so without it the whole attribution chain is blind.
-#
-#   ruby -Itest test/lib/gate_cli_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# Standalone integration test for bin/gate's IDENTITY stamp: shells bin/gate against a localhost
+# stub HTTP server (no Rails, no real network) and asserts what goes on the wire. A gate run
+# must record WHO ran it: progress with no owner gets credited to whoever holds the claim, and
+# Task#progress_actor reads this stamp.
+# History: task lease-outlives-idle-session.
 
 require "minitest/autorun"
 require "json"
@@ -47,25 +39,13 @@ class GateCliTest < Minitest::Test
     requests = []
     thread = Thread.new { serve(server, requests) }
 
-    # SessionEnv.neutralized: bin/gate resolves SessionIdentity, so the child must
-    # name NO session unless a case opts one in — otherwise this file reads the
-    # LIVE agent session and goes red inside an agent run.
-    #
-    # TaskUsageSandboxEnv.child_env: PIN THE WRITE ROOT, and this file is why the
-    # pin is not optional. bin/gate mints an agent token and CACHES it under
-    # <CLAUDE_PROJECTS_DIR>/.agents; requiring session_env arms TASK_USAGE_SANDBOX
-    # for this process and every child, so an UNPINNED bin/gate hits
-    # TaskUsageSandbox.enforce! and — by design — `abort`s. That is a SystemExit,
-    # not a StandardError, so AgentApi#write_cached_token's rescue does not catch
-    # it and the CLI dies right after POSTing /api/v1/auth, before it ever reaches
-    # the gate endpoint this file asserts on.
-    #
-    # It passed on a desk anyway, which is the part worth remembering: the
-    # operator's real projects root already holds a WARM token.json, so
-    # read_cached_token short-circuited and the write seam was never reached. CI
-    # starts cold, mints, writes, and aborts. Pinning a FRESH tmpdir per test makes
-    # both worlds cold, so the desk now walks the same mint-then-write path CI does
-    # instead of a shorter one that hid the abort.
+    # SessionEnv.neutralized: bin/gate resolves SessionIdentity, so the child names NO session
+    # unless a case opts in. TaskUsageSandboxEnv.child_env: PIN THE WRITE ROOT. UNPINNED, bin/gate's
+    # token cache under <CLAUDE_PROJECTS_DIR>/.agents hits TaskUsageSandbox.enforce! and `abort`s, a
+    # SystemExit that AgentApi#write_cached_token's rescue does not catch, so the CLI dies after
+    # POSTing /api/v1/auth. A desk's WARM token.json hides this; CI starts cold. A FRESH tmpdir per
+    # test makes both worlds cold.
+    # History: task lease-outlives-idle-session.
     base = SessionEnv.neutralized({
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret"

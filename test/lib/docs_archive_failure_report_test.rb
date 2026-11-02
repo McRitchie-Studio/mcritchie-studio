@@ -1,16 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] DocsArchive.failure_report — does a failing doc sweep report what ACTUALLY failed?
-#
-# THE DEFECT THIS PINS. On 2026-09-01, mid production deploy, `bin/release archive`
-# announced a cause it had never checked when a `git mv` had crashed. The wrong diagnosis
-# cost a detour at the worst possible moment. The report names the command, the exit status
-# and the stderr, whatever the cause.
-#
-# The report is PURE: strings in, string out. The caller's half needs a real process
-# boundary and lives in test/lib/release_archive_docs_diagnosis_test.rb.
-#
-# Run directly:  ruby -Itest test/lib/docs_archive_failure_report_test.rb
+# [unit] DocsArchive.failure_report: does a failing doc sweep report what ACTUALLY failed? The
+# report must not announce a cause it never checked: it names the command, the exit status and
+# the stderr, whatever the cause. The report is PURE: strings in, string out.
+# The caller's half needs a real process boundary: test/lib/release_archive_docs_diagnosis_test.rb.
+# History: task archive-error-blames-ledger.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/docs_archive"

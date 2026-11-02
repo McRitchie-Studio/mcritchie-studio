@@ -1,27 +1,11 @@
 # frozen_string_literal: true
-# Guard test for the service containers in .github/workflows/reusable-ci.yml: the
-# image every database lane pulls, and where it pulls it from.
-#
-# Why this test exists: `image: postgres` resolves to Docker Hub, and Docker Hub
-# meters anonymous pulls per IP. GitHub's hosted runners share their IPs, so on a
-# busy afternoon every lane with a database dies at setup with `toomanyrequests`
-# before a single test runs (three consecutive runs on 2026-10-09). ECR Public, the
-# mirror that replaced it, then answered `toomanyrequests: Data limit exceeded` five
-# times on 2026-10-10 and blocked the release. So the lanes pull from GitHub's own
-# registry: .github/workflows/mirror-ci-images.yml copies the official image to
-# ghcr.io/mcritchie-studio, and each service block logs in with the run's token. A
-# bare name, a Docker Hub or ECR name, a missing login, a token without
-# `packages: read`, an image the mirror does not copy, or a drift between the three
-# service blocks puts an anonymous quota back on the critical path, so this asserts
-# each directly.
-#
-# The name reaches the service blocks through the `postgres-image` input, so the
-# guard reads the workflow as a bare call runs it (every input at its default) and
-# holds each `*-image` input default to the mirror as well.
-#
-# Run directly:
-#   ruby -Itest test/lib/ci_service_images_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# Guard test for the service containers in .github/workflows/reusable-ci.yml. Lanes pull
+# .github/workflows/mirror-ci-images.yml's copy at ghcr.io/mcritchie-studio, logging in with the
+# run's token. A bare, Docker Hub or ECR name, missing login, token without `packages: read`,
+# image the mirror does not copy, or drift between the three service blocks puts an anonymous
+# quota back; each is asserted. The guard reads the workflow as a bare call runs it and holds
+# each `*-image` input default (`postgres-image`) to the mirror.
+# History: task ci-pulls-postgres-from-mirror.
 require "minitest/autorun"
 require "yaml"
 require_relative "../../bin/lib/ci_suite_workflow"

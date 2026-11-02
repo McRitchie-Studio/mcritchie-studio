@@ -1,19 +1,11 @@
 # frozen_string_literal: true
 
-# Harness tests for bin/fast-check — the OPTIONAL local pre-flight (diff-mapped
-# tests + core spine + rubocop on changed files). Since DevOps v3 phase 2b
-# (/tasks/retire-local-cert-evidence) it records NOTHING on the task: no receipt,
-# no gate attempt, no checkpoint. The PR's settled green CI is the verdict; this
-# script buys earliness and says so.
-#
-# The script is shelled with its lanes stubbed via FAST_CHECK_* env vars against
-# throwaway git repos, so the ORCHESTRATION is exercised without a real Rails run;
-# the board CLI is stubbed via FAST_CHECK_TASK_BIN so the one read it still makes
-# (the tree check) can be driven and every write it must NOT make can be asserted
-# absent. Selection logic itself is unit-tested in test/lib/fast_cert_test.rb.
-# Run directly:
-#   ruby -Itest test/lib/fast_check_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# Harness tests for bin/fast-check, the OPTIONAL local pre-flight. It records NOTHING on the
+# task: no receipt, no gate attempt, no checkpoint. The PR's settled green CI is the verdict.
+# Lanes are stubbed via FAST_CHECK_* env vars against throwaway git repos; the board CLI via
+# FAST_CHECK_TASK_BIN, so the one read it makes can be driven and every forbidden write asserted
+# absent. Selection logic is in test/lib/fast_cert_test.rb.
+# History: task retire-local-cert-evidence.
 
 require "minitest/autorun"
 require "json"

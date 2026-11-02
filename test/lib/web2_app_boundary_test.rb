@@ -1,38 +1,13 @@
 # frozen_string_literal: true
 
-# Guard test for the web2/web3 app-template boundary (lib/web2_app_boundary.rb).
-#
-# THE CONTRACT: an app that does not declare Studio.features :web3 must not
-# declare a WEB3 ADD template gem. The rule was decided 2026-08-31
-# (docs/agents/system/app-templates.md) and until now existed only as prose.
-#
-# WHAT THIS FILE ADDS OVER THE DOC. The doc can be true and the tree still
-# drift; nothing re-reads a doc. Here the boundary is read from two signals that
-# cannot be talked out of: the app's own runtime Studio.features, and Bundler's
-# own parse of the Gemfile. Neither is a substring search, which matters in this
-# repo more than usual — "solana" appears in comments (app/views/layouts/
-# application.html.erb) and throughout the managed-app registry that names the
-# solana-studio REPO (app/models/release/repos.rb, ci/app_ladder.rb,
-# reviewer_selector.rb). Those are not Solana logic and a grep-based guard would
-# flag every one of them.
-#
-# THE HUB SATISFIES THIS STRUCTURALLY, as of 2026-09-04. It used to be the one
-# named exemption: the admin signing console was its last real use of
-# solana-studio. /tasks/retire-signing-console deleted the console, the gem and
-# the ALLOWLIST entry together — Mr. McRitchie's ruling that Turf Monster is the
-# hub for ALL Solana/web3 logic — so there is now no exemption to keep honest.
-# The allowlist MACHINERY stays fully tested over fixtures below, because the
-# next app to need an exemption inherits those three self-audits; and
-# test_integration_the_check_bites_this_app_if_a_web3_gem_returns proves the
-# rule still bites the REAL committed tree rather than only the fixtures.
-#
-# Run directly:
-#   bin/rails test test/lib/web2_app_boundary_test.rb
-#
-# Two tiers (backend shape):
-#   [unit]        the rule and the allowlist's three self-audits, over fixtures
-#                 on a real temp filesystem.
-#   [integration] the REAL committed Gemfile and the REAL booted Studio.features.
+# Guard test for the web2/web3 app-template boundary (lib/web2_app_boundary.rb). An app that
+# does not declare Studio.features :web3 must not declare a WEB3 ADD template gem
+# (docs/agents/system/app-templates.md).
+# Read from the runtime Studio.features and Bundler's parse of the Gemfile, never a substring
+# search: "solana" appears in comments and the managed-app registry.
+# The hub has no exemption; allowlist MACHINERY stays tested over fixtures.
+# test_integration_the_check_bites_this_app_if_a_web3_gem_returns bites the REAL tree.
+# History: task retire-signing-console.
 require "test_helper"
 require "tmpdir"
 
@@ -263,15 +238,11 @@ class Web2AppBoundaryTest < ActiveSupport::TestCase
                  "the hub declares a web3-template gem again; Turf Monster is the web3 hub"
   end
 
-  # The acceptance criterion, enforced: every exemption says what clears it and
-  # still stands up against the REAL tree.
-  #
-  # The list is EMPTY today — the hub cleared the only entry when the signing
-  # console went (/tasks/retire-signing-console) — so the emptiness is asserted
-  # FIRST and on purpose. A loop over nothing passes without running its body,
-  # which is not a guard; this way the vacuity is the claim rather than an
-  # accident, and the day an entry returns this test starts auditing it instead
-  # of going quietly green.
+  # The acceptance criterion: every exemption says what clears it and stands up against the REAL
+  # tree. The list is EMPTY today, so emptiness is asserted FIRST: a loop over nothing passes
+  # without running its body. The day an entry returns, this test audits it instead of going
+  # quietly green.
+  # History: task retire-signing-console.
   test "integration every allowlist entry is well formed against the real tree" do
     assert_equal [], Web2AppBoundary::ALLOWLIST.keys,
                  "an exemption must be argued in lib/web2_app_boundary.rb, never arrive " \

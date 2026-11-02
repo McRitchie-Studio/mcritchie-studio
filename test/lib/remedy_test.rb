@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
-# [unit][control] Remedy, the one helper every printed remedy hint goes through.
-#
-# A hint is a command the reader pastes. It drifted two ways before this helper:
-# it printed a BARE `bin/<script>` that runs only from a hub checkout (on a satellite
-# or gem desk it is `No such file or directory`), and it could name a script that no
-# longer exists. These tests pin both shut by construction:
-#
-#   * every hint renders from the real command name, as an absolute executable;
-#   * a hint for a script that is not on disk raises UnknownScript, and because the
-#     scripts build their hints as constants at load, that failure lands in every
-#     test that loads the script, not in a reader's paste.
-#
-# The assertions ask the DISK (File.executable?) rather than the wording: an
-# absolute path CONTAINS the bare form, so a substring match passes the very defect
-# it means to catch (measured on PR #1341).
-#
-#   ruby -Itest test/lib/remedy_test.rb
+# [unit][control] Remedy, the one helper every printed remedy hint goes through:
+#   * every hint renders from the real command name, as an absolute executable, never a BARE
+#     `bin/<script>`;
+#   * a hint for a script not on disk raises UnknownScript; hints are constants built at load,
+#     so it lands in every test that loads the script.
+# Assert on the DISK (File.executable?), not the wording: an absolute path CONTAINS the bare
+# form, so a substring match passes the defect.
+# History: task remedy-hints-through-one-helper.
 
 require "minitest/autorun"
 require "open3"

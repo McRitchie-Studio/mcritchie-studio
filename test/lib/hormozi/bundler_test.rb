@@ -5,19 +5,12 @@ require "json"
 require "tmpdir"
 require_relative "../../../lib/hormozi/bundler"
 
-# [unit] THE RANKING IS THE WHOLE POINT — and it counts SOURCES, not items.
-#
-# THE SHAPE OF THE DEFECT. Ranking by item count lets one talkative extraction
-# agent crown a framework: an hour-long video where he explains the same idea
-# six times yields six items and outranks an idea he returns to across forty
-# different videos. That inverts exactly the signal we are buying — what he
-# repeats ACROSS the corpus is his doctrine; what he repeats WITHIN one video is
-# just a long explanation.
-#
-# THE SECOND DEFECT. Dozens of agents name the same idea a dozen ways ("the
-# Value Equation", "Value Equation:", "value-equation"). Bundling on the raw
-# string scatters one framework across a dozen cards, and the ranking then sees
-# a dozen rare ideas instead of one common one.
+# [unit] THE RANKING IS THE WHOLE POINT, and it counts SOURCES, not items. What he repeats
+# ACROSS the corpus is doctrine; one long video yielding six items must not outrank an idea from
+# forty videos. Also normalize names ("the Value Equation", "Value Equation:",
+# "value-equation"): bundling on the raw string scatters one framework across cards and the
+# ranking sees many rare ideas.
+# History: task hormozi-corpus-pipeline.
 class BundlerTest < Minitest::Test
   def test_ranks_by_distinct_sources_not_by_item_count
     bundles = build(

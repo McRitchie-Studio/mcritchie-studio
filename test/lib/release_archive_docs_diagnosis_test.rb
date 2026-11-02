@@ -1,22 +1,12 @@
 # frozen_string_literal: true
 
 # [integration] When the doc sweep fails, does `bin/release archive` report what ACTUALLY
-# failed?
-#
-# THE DEFECT. `bin/release archive` caught EVERY non-zero exit of bin/archive-docs and
-# announced one cause it had never checked. On 2026-09-01, mid production deploy, it did so
-# while a `git mv` had crashed on an existing destination. It cost a real detour at the
-# worst possible moment.
-#
-# The report is pure and unit-tested in test/lib/docs_archive_failure_report_test.rb. The
-# question HERE is whether the caller hands it the child's real stderr, so this spawns the
+# failed? The report is pure and unit-tested in test/lib/docs_archive_failure_report_test.rb.
+# The question HERE is whether the caller hands it the child's real stderr, so this spawns the
 # REAL bin/release.rb and lets its REAL sweep_docs cross a REAL Open3 boundary.
-#
-# Run directly:  ruby -Itest test/lib/release_archive_docs_diagnosis_test.rb
-#
-# Sibling file: test/lib/release_archive_docs_refusal_test.rb pins that the refusal is
-# HONOURED (the beat halts before the artifact commit). This one pins that the halt is
-# EXPLAINED honestly.
+# test/lib/release_archive_docs_refusal_test.rb pins that the refusal is HONOURED (the beat
+# halts before the artifact commit); this one pins that the halt is EXPLAINED honestly.
+# History: task archive-error-blames-ledger.
 
 require "minitest/autorun"
 require "open3"

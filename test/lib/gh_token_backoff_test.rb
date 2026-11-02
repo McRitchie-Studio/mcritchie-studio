@@ -1,16 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] bin/gh-token serves the shared session and reads 1Password only on a miss
-# or expiry, and never while 1Password is known to be down (one-way-into-1password).
-#
-# WHY. On 2026-10-30 and 2026-10-31 the dispatcher's harness probe asked for a token
-# once a minute with an expired cache and a hung, then rate-limited, 1Password. Each
-# beat read `op` again: 1,075 metered failed attempts in two windows. Two seams close
-# it: `--cached-only` (a watcher's read that never reaches op) and the account-wide
-# backoff (a hang or the rate limit, recorded where every sibling sees it).
-#
-# Every case runs against stub `op` and mint scripts and a tmpdir cache.
-#   ruby -Itest test/lib/gh_token_backoff_test.rb
+# [unit] bin/gh-token serves the shared session and reads 1Password only on a miss or
+# expiry, and never while 1Password is known to be down (one-way-into-1password). Two seams:
+# `--cached-only` (a watcher's read that never reaches op) and the account-wide backoff (a
+# hang or the rate limit, recorded where every sibling sees it). Stub `op` and mint scripts,
+# tmpdir cache.
+# History: task one-way-into-1password.
 
 require "minitest/autorun"
 require "json"

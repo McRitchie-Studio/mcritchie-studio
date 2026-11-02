@@ -1,25 +1,13 @@
 # frozen_string_literal: true
 
-# bin/agent-worktree's PORT is a hint about which process is a desk's server, never its
-# name. Two defects followed from treating it as a name, and their symptoms showed up on
-# CI together (hub release-push run 35092204659, job `rails (2)`, 2026-09-16):
-#
-#   * stop_generic_rails sent SIGTERM to whatever pid `lsof` found LISTENING on the desk's
-#     APP_PORT. The command-test fixture desks use 39999, which sits inside Linux's default
-#     ephemeral range (32768-60999), and every AgentWorktreeCommandTest starts an in-process
-#     DeskLedgerSink on port 0. A test worker that holds 39999 is therefore signalled by any
-#     concurrent teardown test: Minitest passes SignalException through, the worker dies
-#     mid-test, and Rails records `RuntimeError: result not reported`. Reproduced locally,
-#     with the CI log's exact fingerprints; the CI log itself cannot name the pid.
-#   * the health probe read the same real port, so a concurrent test read `port-busy`
-#     where it asserted `down`.
-#
-# A PIDFILE is a record, not a name, for the same reason: the OS recycles the pid it holds,
-# so the pidfile branches take the port branch's ownership check (cwd_is_desk?).
-#
-# This file pins the decisions in-process. The end-to-end proof, a real signal to a real
-# process through `remove --yes`, lives in test/commands/agent_worktree_port_isolation_test.rb.
-#   ruby -Itest test/lib/agent_worktree_port_holder_test.rb
+# bin/agent-worktree's PORT is a hint about which process is a desk's server, never its name.
+# stop_generic_rails must not SIGTERM whatever pid `lsof` finds LISTENING on APP_PORT: fixture
+# desks use 39999, inside Linux's ephemeral range (32768-60999), so a worker holding it dies
+# with `RuntimeError: result not reported`. The health probe must not read that real port
+# either. A PIDFILE is a record, not a name: the OS recycles the pid, so pidfile branches take
+# the port branch's ownership check (cwd_is_desk?). The real signal through `remove --yes` is
+# in test/commands/agent_worktree_port_isolation_test.rb.
+# History: task ci-flakes-on-worker-death.
 require "minitest/autorun"
 require "fileutils"
 require "open3"

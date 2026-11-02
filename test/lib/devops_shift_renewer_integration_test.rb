@@ -1,23 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] the END-TO-END proof for the headless-lease regression: a REAL
-# detached `bin/devops-shift renew-loop` process, a REAL stub board, and NO status
-# line anywhere in the picture.
-#
-# The unit tests either side of this one mock the pieces — the loop is driven with
-# injected lambdas (test/lib/shift_renewer_test.rb) and the spawn is recorded rather
-# than performed (test/lib/devops_shift_cli_test.rb). Everything they mock is exactly
-# where this bug could hide again: the spawn, the detach, the env handed to the child,
-# and whether that child's renew POSTs actually carry the holder's identity. A
-# renewer that runs but renews the WRONG instance is indistinguishable, from inside
-# the mocks, from a renewer that works — and it would fail in the same silent way the
-# status-line renewer did.
-#
-# So this test asserts the two halves of the guarantee against a live process:
-#   1. a headless holder's renewals KEEP ARRIVING, unprompted, with no UI
-#   2. when the anchor process dies, they STOP — a crash frees the lane
-#
-#   ruby -Itest test/lib/devops_shift_renewer_integration_test.rb
+# [integration] the END-TO-END proof for the headless-lease regression: a REAL detached
+# `bin/devops-shift renew-loop`, a REAL stub board, NO status line.
+# test/lib/shift_renewer_test.rb and test/lib/devops_shift_cli_test.rb mock the spawn,
+# detach and child env, where a renewer renewing the WRONG instance looks fine. Two halves
+# against a live process: 1. a headless holder's renewals KEEP ARRIVING, unprompted, with no
+# UI; 2. when the anchor process dies they STOP, so a crash frees the lane.
+# History: task shift-lease-survives-headless.
 
 require "minitest/autorun"
 require "json"

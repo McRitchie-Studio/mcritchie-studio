@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] GhIdentity — which GitHub App speaks for this session.
-#
-# The privilege boundary between the two Apps is enforced by GitHub, but WHICH App
-# a process asks for is decided here. Before this module every caller decided
-# separately and two of the three hardcoded `agent`, so a ship session could hold
-# GH_APP_ITEM=github.mcritchie-admin (then under its old name) and still be handed the App with
-# `pull_requests: write`. These cases pin the resolution order that fixes that.
-#
-#   ruby -Itest test/lib/gh_identity_test.rb
+# [unit] GhIdentity: which GitHub App speaks for this session. GitHub enforces the privilege
+# boundary between the two Apps, but WHICH App a process asks for is decided here, so a ship
+# session holding GH_APP_ITEM=github.mcritchie-admin is not handed the App with `pull_requests:
+# write`. These cases pin the resolution order.
+# History: task fix-token-remedy-lane-crossing.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/gh_identity"
@@ -56,21 +52,14 @@ class GhIdentityTest < Minitest::Test
     assert_equal "agent", GhIdentity.resolve(nil, env: { "GH_APP_ITEM" => "   " })
   end
 
-  # AN OMISSION AND A CALLER ERROR ARE DIFFERENT INSTRUCTIONS, and this module is the
-  # only place that can tell them apart. `nil` means the caller said nothing about its
-  # lane, so the env and the default answer for it — that is the case above. An empty
-  # STRING means the caller reached for a lane and handed over nothing: `bin/gh-token
-  # --identity "$VAR"` with VAR unset, which is ordinary shell and requires no mistake
-  # beyond a typo'd variable name.
-  #
-  # This case used to be pinned the other way — `resolve("", env: {"GH_APP_ITEM" => ""})`
-  # asserted "agent" — and that pin is what let the CLIs regress: they turn a missing
-  # flag value into "" via `.to_s.strip`, the empty string read as "no explicit", and a
-  # command that used to abort with `unknown identity ""` began silently minting the App
-  # that holds `pull_requests: write`. An unreadable instruction resolving to the MOST
-  # privileged identity is the exact failure this module exists to end, and an empty
-  # explicit value is unreadable in precisely the way a typo'd GH_APP_ITEM is. So it
-  # takes the same contract: nil, and every caller aborts.
+  # AN OMISSION AND A CALLER ERROR ARE DIFFERENT INSTRUCTIONS, and only this module can tell them
+  # apart. `nil`: the caller said nothing, so the env and default answer. An empty STRING: the
+  # caller reached for a lane and handed nothing (`bin/gh-token --identity "$VAR"` with VAR
+  # unset).
+  # The CLIs turn a missing flag value into "" via `.to_s.strip`; if "" reads as no explicit, they
+  # silently mint the App holding `pull_requests: write`. An empty explicit value is unreadable
+  # like a typo'd GH_APP_ITEM: nil, and every caller aborts.
+  # History: task fix-token-remedy-lane-crossing.
   def test_an_explicit_but_empty_identity_refuses_rather_than_defaulting
     assert_nil GhIdentity.resolve("", env: {}),
                "an empty --identity is a caller error, not an omission"

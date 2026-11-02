@@ -1,59 +1,30 @@
 require "test_helper"
 
-# Contract for the studio-engine pin.
-#
-# The Gemfile pin is `~> 0.65` — that is `>= 0.65, < 1.0`, so it DOES floor this
-# app, and a plain `bundle update` cannot walk the resolved version backwards.
-# What a pin string cannot do is speak for what RESOLVED; reading one as the
-# other is how "turf is on 0.31" got believed while that app's lockfile said
-# 0.39. These assert what this app actually runs, so a loosened pin, a `path:`
-# override, or an unmigrated database fails HERE instead of as a NoMethodError
-# inside a sign-in email that nobody is watching.
-#
-# WHAT THIS FILE GOT WRONG, and why it now asserts properties instead of lists.
-#
-# On 2026-08-13 studio-engine 0.46.0 shipped the first engine migration ever to
-# touch the `users` table, and this app never installed it. Every test below was
-# green throughout: the version floor was satisfied, the mailer API answered,
-# the engine tables existed, and the hand-written column allowlist named only
-# `studio_email_settings` columns, so a `users` migration was invisible to it.
-# The drift was caught by mcritchie-industries, whose copy of this file asks the
-# GENERIC question instead — and failed. Same filename, same intent, opposite
-# outcome.
-#
-# So the allowlist is gone. A hand-maintained list of names only ever defends
-# against the drift somebody already thought of, which is the third incident of
-# that exact shape on this board. The two tests that replaced it ask what is
-# actually true: has every migration the RESOLVED gem ships been installed here,
-# and can the operator's Save actually land.
+# Contract for the studio-engine pin. `~> 0.65` floors this app, but a pin string cannot
+# speak for what RESOLVED, so these assert what this app runs: a loosened pin, a `path:`
+# override or an unmigrated database fails HERE, not as a NoMethodError in a sign-in email.
+# Properties, not lists: a hand-maintained column allowlist defends only against drift
+# somebody thought of, and stayed green when studio-engine 0.46.0 shipped a `users`
+# migration this app never installed. Two tests ask: has every migration the RESOLVED gem
+# ships been installed here, and can the operator's Save land.
+# History: task close-email-copy-coverage-gaps.
 class EnginePinContractTest < ActiveSupport::TestCase
-  # Each entry is a feature this app relies on, with the version that introduced
-  # it, so the floor is justified rather than aspirational.
-  #
-  #   0.42 — Studio::EmailSetting and Studio::EmailPreviewTarget back
-  #          /admin/emails, a page this app mounts from the engine
-  #          (config.draw_admin_emails_routes), and UserMailer calls
-  #          Studio::Banner.for(name:) plus EmailCatalog.subject_for.
-  #   0.43 — EmailCatalog grows the email BELOW the banner: .body, .cta_text,
-  #          .cta_color and .cta_enabled?, which app/mailers/user_mailer.rb#magic_link
-  #          calls on every magic-link send, and the studio_email_settings
-  #          columns behind them.
-  #
-  # The floor deliberately does NOT track the newest release. Migrations that
-  # arrive after it are covered by the migration test below, which reads the
-  # RESOLVED gem — a floor bump per release would be a list by another name.
+  # Each entry is a feature this app relies on, with its version. 0.42: Studio::EmailSetting
+  # and Studio::EmailPreviewTarget back /admin/emails (config.draw_admin_emails_routes);
+  # UserMailer calls Studio::Banner.for(name:) and EmailCatalog.subject_for. 0.43:
+  # EmailCatalog's .body, .cta_text, .cta_color, .cta_enabled?, called by
+  # app/mailers/user_mailer.rb#magic_link on every send, and the studio_email_settings columns
+  # behind them. The floor deliberately does NOT track the newest release: the migration test
+  # below reads the RESOLVED gem, and a bump per release is a list by another name.
+  # History: task close-email-copy-coverage-gaps.
   MINIMUM = Gem::Version.new("0.43.0")
 
-  # WHY FOUR TESTS, when the version assertion looks like it covers everything.
-  #
-  # They fail on different days, and none of the others can stand in for the
-  # version test. The mailer's methods live in the gem, but the columns behind
-  # them live in this app's own checked-in db/schema.rb — so resolving an OLDER
-  # gem does not drop them, and a downgrade leaves every schema-side test
-  # perfectly green while the mailer is already broken. The version test states
-  # the floor; the API test states what the floor is FOR, at the exact methods
-  # the mailer calls; the migration test catches a gem that moved FORWARD past
-  # this app's db/migrate; the save test catches a schema that never caught up.
+  # WHY FOUR TESTS: they fail on different days. The columns behind the mailer's methods live
+  # in this app's db/schema.rb, so a downgrade leaves every schema-side test green while the
+  # mailer is broken. The version test states the floor; the API test states what the floor is
+  # FOR; the migration test catches a gem that moved FORWARD past this app's db/migrate; the
+  # save test catches a schema that never caught up.
+  # History: task close-email-copy-coverage-gaps.
 
   # What app/mailers/user_mailer.rb reads off the catalog. Named as the methods
   # rather than as a version number, because this is the thing that actually
@@ -72,19 +43,13 @@ class EnginePinContractTest < ActiveSupport::TestCase
                     "(/admin/emails needs >= 0.42; the mailer's body and CTA copy needs >= 0.43)"
   end
 
-  # SELF-FIRING, and that is the whole design. The adoption shim (a local :root
-  # mirroring the engine's layer scale) was correct while the pin predated the
-  # gem that ships those tiers, and became a LIABILITY the moment it did not:
-  # application.css imports the engine build first and the shim's :root came
-  # after it, so equal specificity and later source order meant THE SHIM WON.
-  # This app would have kept a frozen private copy of the scale while believing
-  # it shared one, and nothing would have failed.
-  #
-  # A ledger entry or a code comment saying "delete at the bump" is a reminder,
-  # not a gate — the previous one was tracked in a task's agent_context, which
-  # archives away with the task. This asks the question the bump answers: once
-  # the RESOLVED engine defines the tiers, a local redefinition is drift. Silent
-  # while the pin is old; red the instant it is not.
+  # SELF-FIRING, and that is the whole design. application.css imports the engine build first
+  # and a local shim's :root comes after it, so equal specificity and later source order mean
+  # THE SHIM WINS: a frozen private copy of the scale, with nothing failing. A ledger entry or
+  # comment saying "delete at the bump" is a reminder, not a gate. Once the RESOLVED engine
+  # defines the tiers, a local redefinition is drift. Silent while the pin is old; red the
+  # instant it is not.
+  # History: task delete-layer-scale-shims.
   test "no local shim redefines a layer tier the resolved engine already ships" do
     engine_css = Pathname(Gem.loaded_specs.fetch("studio-engine").gem_dir)
                  .join("app/assets/tailwind/studio_engine/engine.css")
@@ -116,29 +81,14 @@ class EnginePinContractTest < ActiveSupport::TestCase
                  "This is what a resolved version below #{MINIMUM} looks like from inside the app."
   end
 
-  # THE TEST THAT WOULD HAVE CAUGHT THE 0.46 DRIFT.
-  #
-  # `studio_engine:install:migrations` COPIES the gem's migrations into this
-  # repo, renumbering each one to the install time — so the versions never match
-  # and only the name survives the copy. That copy is a MANUAL step: bumping the
-  # gem does not perform it, and an app that skips it boots perfectly, passes
-  # its suite, and is missing columns its gem's own code writes to.
-  #
-  # Comparing the gem's migration NAMES against this repo's is therefore the
-  # honest question. A pending-migration check cannot answer it: the test schema
-  # is loaded from schema.rb, which stamps every version as run, so a migration
-  # that was never copied is not "pending" — it is invisible.
-  #
-  # The failure this guards is silent by construction. Studio.record_ip_location!
-  # opens with `return false unless user.respond_to?(:ip_locations)`, so on a
-  # drifted app it returns false forever: no raise, no ErrorLog, no Sentry.
-  #
-  # THIS IS THE NAME HALF OF THE CONTRACT, AND ONLY THE NAME HALF. Reducing both
-  # sides to the bare name is what makes the comparison possible at all — the
-  # installer renumbers every copy — and it is also this test's ceiling: a
-  # migration whose BODY changed in the gem keeps its name, so this test stays
-  # green while the installed copy is a stale fork. That happened on 2026-08-13.
+  # `studio_engine:install:migrations` COPIES the gem's migrations, renumbering each, so only
+  # the name survives. It is a MANUAL step: a gem bump skips it and the app still boots and
+  # passes. A pending-migration check cannot see this, since schema.rb stamps every version as
+  # run. The failure is silent: Studio.record_ip_location! opens with `return false unless
+  # user.respond_to?(:ip_locations)`. THIS IS THE NAME HALF OF THE CONTRACT, AND ONLY THE NAME
+  # HALF: a migration whose BODY changed keeps its name.
   # `test/lib/engine_migration_content_test.rb` is the content half.
+  # History: task studio-adopts-profile-migration.
   test "every migration the resolved engine ships has been installed here" do
     assert_empty missing_engine_migrations,
                  "the resolved studio-engine (#{Studio::VERSION}) ships migrations this app never " \
@@ -159,21 +109,13 @@ class EnginePinContractTest < ActiveSupport::TestCase
     assert_nothing_raised { Studio::EmailSetting.limit(1).to_a }
   end
 
-  # ASSERTS THE EFFECT, NOT THE SPELLINGS.
-  #
-  # This replaces a COPY_COLUMNS allowlist that checked `column_names` against a
-  # hand-written list. Every column that list named is still covered — the eight
-  # of them are exactly what the two writes below set — but they are covered by
-  # USING them, so the test extends itself when the engine's copy fields do.
-  #
-  # Each call here is one /admin/emails makes when the operator presses Save,
-  # and each writes a column a follow-up engine migration adds. On a host whose
-  # schema trails its gem, `record.body = ...` is a NoMethodError, which is
-  # precisely the 500 that would be waiting in production. Reading proves
-  # nothing on its own: reads are nil-safe by design and stay quiet on a
-  # half-installed schema, and every writer short-circuits on `table_ready?` and
-  # returns nil. So round-trip the values — a write that silently no-opped reads
-  # back as nil and fails here.
+  # ASSERTS THE EFFECT, NOT THE SPELLINGS: columns are covered by USING them, so the test
+  # extends itself when the engine's copy fields do. Each call is one /admin/emails makes on
+  # Save, writing a column a follow-up engine migration adds; on a host whose schema trails
+  # its gem, `record.body = ...` is a NoMethodError. Reading proves nothing: reads are
+  # nil-safe and every writer short-circuits on `table_ready?` and returns nil. So round-trip
+  # the values: a write that silently no-opped reads back as nil and fails here.
+  # History: task studio-adopts-profile-migration.
   test "the operator can actually save on /admin/emails" do
     assert_nothing_raised do
       Studio::EmailSetting.set_copy("magic_link", header: "Header the operator typed",
@@ -198,20 +140,14 @@ class EnginePinContractTest < ActiveSupport::TestCase
 
   private
 
-    # Engine migration names that have no counterpart in this repo's db/migrate.
-    #
-    # Both sides are reduced to the bare name: the gem's
-    # `20260813220000_add_standard_user_profile_columns.rb` installs here as
-    # `20260813223520_add_standard_user_profile_columns.studio_engine.rb`, so the
-    # timestamp and the `.studio_engine` / `.studio` scope suffix are both noise.
-    # The suffix has been spelled BOTH ways across these apps' histories, which
-    # is why it is stripped rather than matched.
-    #
-    # Stripping to the bare name is also what lets this app pass at all: four of
-    # the engine's migrations were written HERE first and are still carried as
-    # native, un-suffixed files (create_studio_links and friends).
-    # `install:migrations` skips those by name, so the host's own copy must count
-    # as installed — which it does, because both sides reduce identically.
+    # Engine migration names with no counterpart in this repo's db/migrate. Both sides reduce to
+    # the bare name: `20260813220000_add_standard_user_profile_columns.rb` installs here as
+    # `20260813223520_add_standard_user_profile_columns.studio_engine.rb`, so timestamp and
+    # scope suffix are noise, and the suffix has been spelled both `.studio_engine` and
+    # `.studio`. This also lets the app pass at all: four engine migrations were written HERE
+    # first and remain native, un-suffixed files (create_studio_links and friends), which
+    # `install:migrations` skips by name, so the host's copy must count as installed.
+    # History: task studio-adopts-profile-migration.
     def missing_engine_migrations
       @missing_engine_migrations ||= engine_migration_names - installed_migration_names
     end

@@ -1,17 +1,11 @@
 # frozen_string_literal: true
 
-# bin/release.rb's `accepted` gate — the decision that refuses to promote a branch
-# GitHub has already called broken. Standalone:
-#   ruby -Itest test/lib/release_cli_accepted_gate_test.rb
-#
-# A FILE OF ITS OWN, not an addition to another release CLI file: where everyone
-# appends at the bottom, everyone conflicts at the bottom. Putting new work in a new
-# file is the same rule the dor-check plugin seam encodes, applied to tests.
-#
-# WHAT IS BEING PINNED: the asymmetry. `red_accepted_repos` must refuse on an ASSERTED
-# failure and on nothing else. If it ever grows to mean "not green", every sweep that
-# races a still-running CI aborts a release — which is a worse outage than the one this
-# gate prevents, and it arrives far more often.
+# bin/release.rb's `accepted` gate, which refuses to promote a branch GitHub has already called
+# broken. Its own file: new work in a new file, the rule the dor-check plugin seam encodes. WHAT
+# IS PINNED: the asymmetry. `red_accepted_repos` must refuse on an ASSERTED failure and on
+# nothing else. If it grows to mean "not green", every sweep racing a running CI aborts a
+# release.
+# History: task certify-accepted-on-push.
 require "minitest/autorun"
 require "tmpdir"
 require "open3"
@@ -70,17 +64,11 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
   end
 
   # ── the guard is on the FUNCTION, so every caller inherits it ───────────────
-  #
-  # THE DEFECT THIS REPLACES. The refusal was originally wired in front of ONE of
-  # promote_accepted_to_release!'s two call sites. bin/release prepare takes the
-  # OTHER one, so the first real sweep after it shipped promoted with the guard
-  # never running — its step line simply never appeared in the log.
-  #
-  # These tests therefore drive the FUNCTION, not a call site. That is the property
-  # worth pinning: a third caller added tomorrow is guarded by construction, and
-  # there is no call site left for anyone to forget. Asserting "the guard sits at
-  # line N" would pin today's structure and pass again the day someone re-introduces
-  # an unguarded path.
+  # These drive promote_accepted_to_release!, not a call site: a guard wired at one call site
+  # never runs on the other. A third caller is guarded by construction. Asserting "the guard
+  # sits at line N" would pin today's structure and pass the day someone re-introduces an
+  # unguarded path.
+  # History: task guard-every-promote-caller.
 
   def promote(probe_states)
     stub = <<~RUBY
@@ -119,15 +107,11 @@ class ReleaseCliAcceptedGateTest < Minitest::Test
   end
 
   # ── the BLIND guard: was that RED verdict even POSSIBLE? ────────────────────
-  #
-  # refuse_red_accepted! above reads a verdict and refuses on an asserted failure. It
-  # can only ever fire in a repo whose suite workflow BUILDS `accepted` — and on
-  # 2026-08-18 three of the four swept repos had no such trigger, so the guard passed
-  # over them without ever having been capable of failing, while its success line named
-  # them as checked. These pin the companion guard that asks the missing question.
-  #
-  # Same discipline as above: they drive the FUNCTION, so a third caller added tomorrow
-  # inherits both guards by construction.
+  # refuse_red_accepted! can only fire in a repo whose suite workflow BUILDS `accepted`;
+  # elsewhere it passes without being capable of failing, while its success line names the repo
+  # as checked. These pin the companion guard. They drive the FUNCTION, so a third caller
+  # inherits both guards.
+  # History: task certify-accepted-everywhere.
 
   CERTIFYING = "name: CI\non:\n  pull_request:\n  push:\n    branches: [main, release, accepted]\njobs: {}\n"
   BLIND_YAML = "name: CI\non:\n  pull_request:\n  push:\n    branches: [main, release]\njobs: {}\n"

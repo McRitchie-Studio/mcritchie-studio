@@ -1,15 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] The handoff's CI settle wait — bin/lib/ci_wait.rb.
-#
-# The decision logic is PURE and the loop takes injected collaborators, so every
-# case here runs with no clock, no sleeping, and no `gh`. Run directly:
-#   ruby -Itest test/lib/ci_wait_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# The integration half — that bin/submit actually CALLS this, and that a red CI
-# leaves the task in `building` — lives in test/lib/submit_test.rb. Both halves are
-# needed: this file proves the rule, that one proves the rule is on the path.
+# [unit] The handoff's CI settle wait, bin/lib/ci_wait.rb. The decision logic is PURE and
+# the loop takes injected collaborators, so nothing here uses a clock, sleep or `gh`. The
+# integration half, that bin/submit CALLS this and a red CI leaves the task in `building`,
+# lives in test/lib/submit_test.rb. This file proves the rule; that one proves the rule is
+# on the path.
+# History: task gate-submit-on-green-ci.
 require "minitest/autorun"
 require_relative "../../bin/lib/ci_wait"
 
@@ -20,20 +16,12 @@ class CiWaitTest < Minitest::Test
     -> { queue.size > 1 ? queue.shift : queue.first }
   end
 
-  # Drive the loop with a fake clock that stands still except in the SLEEPER, so
-  # elapsed time is deterministic, nothing sleeps, and the clock advances where
-  # time actually passes in a real wait. Reads therefore cost 0s here — the cases
-  # about a SLOW read script their own clock, below, rather than borrowing this one.
-  #
-  # (It used to advance on every clock READING, which silently coupled the fixture to
-  # how many times the loop happens to call the clock — and `settle` now calls it
-  # twice a poll to TIME the probe. A/B'd rather than assumed, every case below run
-  # under both fixtures: state, outcome and budget_s are identical in all eleven, and
-  # every case that asserts `waited_s`, `budget_s` or the overrun note — i.e. all four
-  # give-up paths — is identical to the second. The five `:settled` cases land one
-  # `step` lower, because the old fixture charged a step for the final clock read;
-  # none of them asserts elapsed. Poll counts on the timing-driven paths shift by one,
-  # which nothing asserts either.)
+  # Drive the loop with a fake clock that stands still except in the SLEEPER, so elapsed time
+  # is deterministic and advances where time passes in a real wait. Reads cost 0s here; cases
+  # about a SLOW read script their own clock, below. Advancing on every clock READING would
+  # couple the fixture to how often the loop calls the clock, and `settle` calls it twice a
+  # poll to TIME the probe.
+  # History: task ship-waiter-misreports-ci.
   def settle(probe, step: 10, **kwargs)
     now = 0.0
     CiWait.settle(probe: probe, sleeper: ->(_s) { now += step }, clock: -> { now }, **kwargs)
@@ -289,23 +277,13 @@ class CiWaitTest < Minitest::Test
   # ── the elapsed figure must reconcile with the budget ──────────────────────
 
   def test_an_elapsed_figure_that_overran_its_budget_names_the_budget
-    # THE SECOND DEFECT in that one line: "within 2277s" printed under a 900s
-    # timeout and a 120s appearance budget. 2277 cannot come from either, so the
-    # figure reads as an arithmetic error — and a reader who concludes the waiter
-    # cannot count stops believing the next thing it says, including a real red.
-    #
-    # The elapsed is in fact TRUE wall-clock. Budgets are only tested BETWEEN
-    # polls, so ONE read that blocks for 2277s overruns every budget. This is the
-    # exact reported line, reproduced from a single blocking probe.
-    #
-    # REBOUND at the review of this task (F1b). It used to assert /final read/i
-    # against a note that INFERRED the read from the nap cap — so the suite pinned a
-    # false claim, and the next author would have read a green test as a warrant for
-    # it. The scripted clock below now returns the same instant before the probe and
-    # 2277s after it, which is what makes "the final read" the truth HERE, and the
-    # assertion is on the MEASURED figure so it cannot pass on an inference again.
-    # The sibling case below supplies the other half: the same note, on an overrun
-    # that was 100% sleep, must not name the read at all.
+    # "within 2277s" under a 900s timeout and a 120s appearance budget reads as an arithmetic
+    # error, but it is TRUE wall-clock: budgets are only tested BETWEEN polls, so ONE blocking
+    # read overruns every budget. The scripted clock returns the same instant before the probe
+    # and 2277s after it, which is what makes "the final read" true HERE, and the assertion is
+    # on the MEASURED figure, so it cannot pass on an inference. The sibling case below is the
+    # other half: the same note on an overrun that was 100% sleep must not name the read.
+    # History: task ship-waiter-misreports-ci.
     readings = [0.0, 0.0, 2277.0]
     clock = -> { readings.shift || 2277.0 }
     result = CiWait.settle(probe: -> { :unverified }, timeout_s: 900, appearance_s: 120,
@@ -322,22 +300,13 @@ class CiWaitTest < Minitest::Test
   end
 
   def test_a_nap_that_oversleeps_is_never_attributed_to_the_final_read
-    # F1 — THE BLOCKING FINDING, and the eighth instance of this task's own family.
-    # The note used to escalate its attribution to a proof: "a nap never crosses a
-    # budget, so the final read alone ran ~Xs long ... a measurement, not an
-    # inference". The cap is on the nap the loop COMPUTES. `Kernel#sleep` is only
-    # LOWER-bounded, so wall-clock lost inside the sleeper lands in `waited` with no
-    # read time at all — and the module's default clock counts HOST SUSPEND on macOS
-    # (measured on the ship machine: CLOCK_MONOTONIC 2_375_243s vs CLOCK_UPTIME_RAW
-    # 1_682_913s, eight days of lid-closed time), which makes a mid-nap suspend the
-    # likeliest real cause of the 2277s incident this task was filed over. The old
-    # note would have explained it with a `gh` call that never ran slow.
-    #
-    # BOTH SEAMS ARE INJECTED ON PURPOSE. The sleeper advances the fake clock without
-    # sleeping and the probe returns instantly, so "100% of the elapsed was sleep and
-    # 0% was a read" is a fact this test ASSERTS. Written against the real clock and
-    # the real sleeper it would be a race that passes on a fast machine, proves
-    # nothing, and looks green forever — pin the timer, never the network.
+    # F1. The cap is on the nap the loop COMPUTES; `Kernel#sleep` is only LOWER-bounded, and the
+    # default clock counts HOST SUSPEND on macOS, so wall-clock lost in the sleeper lands in
+    # `waited` with no read time, and "the final read ran long" is no proof. BOTH SEAMS ARE
+    # INJECTED ON PURPOSE: the sleeper advances the fake clock and the probe returns instantly,
+    # so "100% sleep, 0% read" is ASSERTED. Against the real clock this is a race that passes on
+    # a fast machine. Pin the timer, never the network.
+    # History: task ship-waiter-misreports-ci.
     t = 0.0
     result = CiWait.settle(probe: -> { :none }, timeout_s: 900, appearance_s: 120,
                            interval_s: 20, sleeper: ->(_s) { t += 600.0 }, clock: -> { t })

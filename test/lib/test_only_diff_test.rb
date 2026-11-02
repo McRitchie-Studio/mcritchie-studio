@@ -1,27 +1,12 @@
 # frozen_string_literal: true
 
-# Unit tier for bin/lib/test_only_diff.rb — the allowlist that decides whether a
-# diff may claim the `test-only` shape.
-#
-# WHAT IS ACTUALLY AT STAKE HERE. `test-only` carries no `dor_tiers`, so this
-# module is the ONLY thing standing between that empty tier list and every
-# under-tested change in the ecosystem. Every other guard downstream (the control
-# line, the full-suite cert) assumes the claim was earned. If this classifier says
-# yes to a diff carrying one production file, the shape stops being "a change made
-# of test code" and becomes "the shape you pick when you did not write tests" —
-# the precise failure config/feature_shapes.yml's header was written to prevent.
-#
-# So the tests below are POSITIVE about the property, not a tour of spellings: the
-# central one (test_unit_a_diff_with_any_non_test_file_is_refused) mutates ONE
-# file at a time across a corpus of real production paths and asserts every single
-# one is refused, rather than listing the three escapes I happened to think of.
-# A new kind of production file is covered the day someone adds it to the corpus,
-# and — more to the point — a file type nobody has imagined yet is refused by
-# construction, because the allowlist has no `else` that guesses.
-#
-# Run directly:
-#   ruby -Itest test/lib/test_only_diff_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# Unit tier for bin/lib/test_only_diff.rb, the allowlist for claiming the `test-only` shape.
+# `test-only` carries no `dor_tiers`, so this module is the ONLY thing between that empty
+# list and every under-tested change (what config/feature_shapes.yml's header warns of).
+# test_unit_a_diff_with_any_non_test_file_is_refused mutates ONE file at a time across a
+# corpus of production paths. A file type nobody imagined is refused by construction: the
+# allowlist has no `else` that guesses.
+# History: task add-test-only-shape.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/test_only_diff"
@@ -86,14 +71,10 @@ class TestOnlyDiffTest < Minitest::Test
   end
 
   # ==== THE SAFETY GUARD, MUTATED ONE FILE AT A TIME ==============================
-  # Take a diff that legitimately claims the shape and inject exactly ONE
-  # production path. Every injection must flip the verdict to refused, and the
-  # refusal must NAME the injected file — a gate that refuses without saying which
-  # file disqualified the claim sends the builder hunting.
-  #
-  # This is the mutation proof for "a non-test-only diff cannot claim test-only".
-  # One assertion per adversary, so a regression names the file that got through
-  # instead of failing on an opaque aggregate.
+  # Inject exactly ONE production path into a legitimate diff: every injection must flip the
+  # verdict to refused, and the refusal must NAME the injected file. One assertion per
+  # adversary, so a regression names the file that got through.
+  # History: task add-test-only-shape.
   def test_unit_a_diff_with_any_non_test_file_is_refused
     NON_TEST_PATHS.each do |intruder, why|
       mutated = TEST_PATHS + [intruder]
@@ -190,15 +171,12 @@ class TestOnlyDiffTest < Minitest::Test
   SIBLING_ONLY_ROOTS = { "tests/" => "turf-vault" }.freeze
 
   def test_unit_every_declared_test_root_is_a_real_directory_someone_uses
-    # Surveyed 2026-08-11: test/ in the studio, turf-monster, rolio, studio-engine
-    # and solana-studio; e2e/ in the studio and turf-monster; tests/ in turf-vault
-    # (Anchor's convention). `spec/` is deliberately absent — no repo uses it.
-    #
-    # SCOPE, stated rather than implied (the house lesson from
-    # feature_shape_tiers_test.rb's `_in_this_repo` suffix): in CI only this repo
-    # is checked out, so a sibling-only root is verified by its DECLARATION there
-    # and by the DIRECTORY here on a developer machine. What always holds is that
-    # every root has a named owner; a root with no owner fails everywhere.
+    # test/ in the studio, turf-monster, rolio, studio-engine and solana-studio; e2e/ in the
+    # studio and turf-monster; tests/ in turf-vault (Anchor's convention). `spec/` is
+    # deliberately absent. SCOPE: in CI only this repo is checked out, so a sibling-only root is
+    # verified by its DECLARATION there and by the DIRECTORY on a developer machine. Every root
+    # has a named owner; a root with no owner fails everywhere.
+    # History: task add-test-only-shape.
     projects = ProjectsRoot.default_projects_dir(ROOT)
 
     TestOnlyDiff::TEST_ROOTS.each do |root|

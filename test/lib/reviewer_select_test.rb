@@ -1,14 +1,10 @@
 # frozen_string_literal: true
 
-# Boots bin/reviewer-select end-to-end — it loads the Rails app — against a
-# --file task payload, proving the CLI WIRING: it reads the task's devops shape +
-# risk tags, calls ReviewerSelector, and emits a machine-readable decision with a
-# primary+light pair that excludes the QA owner. The selection LOGIC itself (domain
-# fit, tiebreak, graceful degradation) is unit-tested in
-# test/services/reviewer_selector_test.rb; this is the script regression guard.
-#
-# Run directly:  ruby -Itest test/lib/reviewer_select_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# Boots bin/reviewer-select end to end (it loads the Rails app) against a --file task
+# payload, proving the CLI WIRING: it reads devops shape + risk tags, calls
+# ReviewerSelector, and emits a machine-readable primary+light pair that excludes the QA
+# owner. The selection LOGIC is unit-tested in test/services/reviewer_selector_test.rb.
+# History: task wire-2-senior-review.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -111,15 +107,10 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   # --- the `none` assertion is CROSS-EXAMINED, end to end (builder-none-fails-open) ---
-  #
-  # THE DEFECT, measured 2026-09-24 on data-flow-doc-contradicts-code (PR #1587, a
-  # docs PR Alex wrote while the task carried no stamp): `--builder none` seated RAY
-  # as the light on Alex's own diff and reported the no-self-review property upheld,
-  # while `--builder alex` correctly excluded him. It was the ONE input to this tool
-  # that lifted a safety check on the caller's word alone.
-  #
-  # These boot the real script, because the REFUSAL is the CLI's job — the selector
-  # still degrades (the reviewed-transition recorder must never break on it).
+  # `--builder none` must not lift the no-self-review check on the caller's word alone. These
+  # boot the real script, because the REFUSAL is the CLI's job; the selector still degrades
+  # (the reviewed-transition recorder must never break on it).
+  # History: task builder-none-fails-open.
 
   def test_a_none_assertion_the_record_contradicts_REFUSES
     out, code = select_verbose({ "shape" => "backend", "built_by" => "shannon" }, "--builder none")
@@ -352,33 +343,24 @@ class ReviewerSelectCliTest < Minitest::Test
   BOARD_SLUG = "cli-board-sample"
 
   # Runs bin/reviewer-select <slug> <args> against a one-shot stub board; returns
-  # [recorded_requests, stdout, status]. stderr is dropped (it carries bundler /
-  # rubygems warnings under the test sweep, never the asserted output).
-  # `busy_payload` overrides the body served for the --busy-auto board query
-  # (GET /api/v1/tasks?stage=building) with a raw string, so a test can serve
-  # what an unreadable answer actually looks like. Returns stderr as a FOURTH
-  # element — the busy-set degradation is announced there, and the callers above
-  # destructure three, which stays valid.
-  # Two agent sessions, so a test can drive the SAME task from DIFFERENT live
-  # instances — the whole point of the review claim (two-primaries-reviewed-one-pr).
+  # [recorded_requests, stdout, status], plus stderr as a FOURTH element (the busy-set
+  # degradation is announced there; callers destructuring three stay valid). `busy_payload`
+  # overrides the --busy-auto query (GET /api/v1/tasks?stage=building) with a raw string, to
+  # serve an unreadable answer.
+  # Two agent sessions, so a test can drive the SAME task from DIFFERENT live instances, the
+  # whole point of the review claim (two-primaries-reviewed-one-pr).
+  # History: task reviewer-select-record-by-default.
   SESSION_A = "aaaaaaaa-1111-4aaa-8aaa-aaaaaaaaaaaa"
   SESSION_B = "bbbbbbbb-2222-4bbb-8bbb-bbbbbbbbbbbb"
 
-  # Starts ONE stub board and yields a runner, so a test can drive SEVERAL
-  # bin/reviewer-select invocations against the SAME board state. That is what "two
-  # selects against one task" actually requires: the second run must meet the claim the
-  # first one took, which a fresh server per invocation could never show.
-  # `run.call(*args, session:)` returns [out, status, err]; `requests` accumulates
-  # across every run, so an assertion can count writes for the WHOLE episode.
-  # `review_payload` is the MID-REVIEW half of --busy-auto's board read
-  # (GET /api/v1/tasks?stage=submitted&full=1) — the half that did not exist until
-  # busy-auto-misses-mid-review. Like `busy_payload` it is a RAW string, so a test can
-  # serve what an unreadable answer actually looks like.
-  #
-  # `self_review: true` makes the stub board answer EVERY review-claim POST with the
-  # no-self-review refusal (TaskReviewClaim.acquire's first line — it fires before the
-  # row lock, so no holder is ever taken). It is the SECOND arm of exit 10, and the one
-  # bin/pr-review used to mis-name; see the coupling tests below.
+  # Starts ONE stub board and yields a runner, so a second select meets the claim the first
+  # took. `run.call(*args, session:)` returns [out, status, err]; `requests` accumulates
+  # across runs. `review_payload` is the MID-REVIEW half of --busy-auto's read (GET
+  # /api/v1/tasks?stage=submitted&full=1), a RAW string like `busy_payload`
+  # (busy-auto-misses-mid-review). `self_review: true` answers EVERY review-claim POST with
+  # the no-self-review refusal: the SECOND arm of exit 10, which bin/pr-review used to
+  # mis-name; see the coupling tests below.
+  # History: task two-primaries-reviewed-one-pr.
   def with_board(devops, busy_payload: nil, review_payload: nil, self_review: false)
     server = TCPServer.new("127.0.0.1", 0)
     port = server.addr[1]
@@ -386,26 +368,14 @@ class ReviewerSelectCliTest < Minitest::Test
     claim = self_review ? { self_review: true } : {}
     thread = Thread.new { serve(server, requests, devops, busy_payload, claim, review_payload) }
 
-    # THE BOARD PATH SEEDS A PER-SESSION USAGE BASELINE (bin/reviewer-select's
-    # seed_review_usage_baseline), and the operator's real store carries the proof of
-    # what that costs when it escapes: 58 baseline rows keyed by BOARD_SLUG
-    # ("cli-board-sample") sat in 58 of the operator's live session files, written by
-    # this very test before the neutralizer landed (`bin/task usage-audit` lists them).
-    #
-    # So the child gets a FAKE session, never the ambient one. SessionEnv.neutralized
-    # strips CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID and this merge puts a fixed,
-    # obviously-synthetic id back — the opt-in SessionEnv documents. What was dangerous
-    # was resolving the OPERATOR'S live session, not naming a session at all, and
-    # naming one is now load-bearing: bin/reviewer-select takes a review CLAIM, a claim
-    # is held by a LIVE INSTANCE, and a session-less child can name none — so without
-    # this the board path would go advisory and never be exercised.
-    #
-    # The seat belt is unchanged and still does the real work: the write root is PINNED
-    # (TaskUsageSandboxEnv.child_env) and TASK_USAGE_SANDBOX — armed process-wide by
-    # test/support/task_usage_sandbox.rb — makes an unpinned child ABORT rather than
-    # fall back to the real store. A guarantee that held only while nobody opted a
-    # session back in was a guarantee waiting to lapse; this is the lapse, and the pin
-    # is what makes it safe.
+    # THE BOARD PATH SEEDS A PER-SESSION USAGE BASELINE, so the child gets a FAKE session, never
+    # the ambient one: SessionEnv.neutralized strips CLAUDE_CODE_SESSION_ID / CODEX_THREAD_ID
+    # and this merge adds a synthetic id. Naming one is load-bearing: a review CLAIM is held by
+    # a LIVE INSTANCE, so a session-less child goes advisory. The seat belt does the real work:
+    # the write root is PINNED (TaskUsageSandboxEnv.child_env) and TASK_USAGE_SANDBOX
+    # (test/support/task_usage_sandbox.rb) makes an unpinned child ABORT rather than reach the
+    # real store.
+    # History: task sandbox-test-task-usage-writes.
     runner = lambda do |*args, session: SESSION_A|
       env = SessionEnv.neutralized(
         {
@@ -581,17 +551,11 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   # --- TWO SELECTS, ONE TASK (two-primaries-reviewed-one-pr) -------------------
-  #
-  # MEASURED 2026-09-21, PR #1516: two sessions selected the same task, both pairs were
-  # carl+steffon, and the pair that reached merge-ready was seconds from merging a tree
-  # the OTHER pair had already bounced for a blocker it had missed. Only a pre-merge
-  # board re-read stopped the bad merge.
-  #
-  # The defect was a SEAM, not a race in the claim: bin/reviewer-select recorded review
-  # INTENT and never touched the claim at all, while `Task.reviewable` keys only on a
-  # live claim row. So the board painted "under review" off a claim-less intent and every
-  # gate still read FREE. Selection now ACQUIRES or REFUSES; the tests below pin both
-  # halves, plus the one that would make the cure worse than the disease.
+  # The defect was a SEAM: bin/reviewer-select recorded review INTENT without the claim, while
+  # `Task.reviewable` keys only on a live claim row, so the board painted "under review" and
+  # every gate read FREE. Selection now ACQUIRES or REFUSES; the tests below pin both halves,
+  # plus the one that would make the cure worse than the disease.
+  # History: task two-primaries-reviewed-one-pr.
 
   def test_a_second_session_selecting_the_same_task_is_REFUSED
     devops = { "shape" => "backend", "built_by" => "shannon" }
@@ -780,18 +744,12 @@ class ReviewerSelectCliTest < Minitest::Test
   end
 
   # --- THE MID-REVIEW HALF (busy-auto-misses-mid-review) ------------------------
-  #
-  # --busy-auto read ONE half of "who is heads-down": the agents on stage=building
-  # tasks. A soul mid-REVIEW is not on a building task at all — they are on a
-  # SUBMITTED task holding a live TaskReviewClaim — so the flag could not have caught
-  # them however well it worked. Measured 2026-09-22: the conductor overrode the pick
-  # BY HAND four times in one night for exactly this, and one override spent Avi's
-  # QA-owner exclusion on PR #1521.
-  #
-  # ONE READ, and that is the load-bearing part. The holder was always reachable per
-  # task (GET /api/v1/tasks/<slug>/review_claim), so an N+1 against that endpoint
-  # would pass a "does it exclude them" test while leaving the cost the card is about.
-  # These assert the REQUESTS as well as the pick.
+  # --busy-auto must read both halves of "who is heads-down": a soul mid-REVIEW is on a
+  # SUBMITTED task holding a live TaskReviewClaim, not on a stage=building task. ONE READ is
+  # the load-bearing part: an N+1 against GET /api/v1/tasks/<slug>/review_claim would pass a
+  # "does it exclude them" test while leaving the cost. These assert the REQUESTS as well as
+  # the pick.
+  # History: task busy-auto-misses-mid-review.
 
   # A submitted-stage index page, as `full=1` renders it: `review_holder` names the
   # reviewing soul, `review_claim_live` says whether anyone holds it at all.

@@ -2,23 +2,14 @@ require "minitest/autorun"
 require "open3"
 require "tmpdir"
 
-# The PRODUCER lock bump and its drift post-condition, driven for real — the
-# SHELL half of the step the sweep takes right after it bumps its consumers.
-#
-# THE DEFECT THIS FILE EXISTS FOR. `bump_consumer_locks_for_qa` walks `app_groups`
-# — the release's APP members. studio-engine is registered as a `gem`, so it never
-# entered that loop, even though its own Gemfile declares `solana-studio`. Every
-# publish therefore left the engine's lock trailing, and the engine's own
-# consumer-ci lane (`bin/gem-drift-check`) reddened EVERY open engine PR over a
-# line no PR author owns. Measured 2026-09-09: engine lock on solana-studio 0.9.0
-# against a published 0.9.1, with PRs #313 and #245 both red on
-# `Check this engine does not trail turf_monster`.
-#
-# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
-# config/test_health.yml, precisely so new work lands somewhere else. This
-# follows test/lib/release_engine_migration_install_test.rb's pattern — the REAL
-# function runs, with `sh`/`git_capture` stubbed, so the decisions under test are
-# the ones the shell actually makes rather than a model's idea of them.
+# The PRODUCER lock bump and its drift post-condition, driven for real: the SHELL half of the
+# step after the consumer bump. `bump_consumer_locks_for_qa` walks `app_groups`, and
+# studio-engine is registered as a `gem`, so it never enters that loop though its Gemfile
+# declares `solana-studio`, and `bin/gem-drift-check` reddens open engine PRs. A FILE OF ITS
+# OWN: release CLI files are frozen at their size by `config/test_health.yml`. As in
+# test/lib/release_engine_migration_install_test.rb, the REAL function runs, with
+# `sh`/`git_capture` stubbed.
+# History: task prepare-skips-engine-own-lock.
 class ReleaseProducerLockBumpTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 
@@ -66,17 +57,12 @@ class ReleaseProducerLockBumpTest < Minitest::Test
   end
 
   # ── THE DECISIVE PROPERTY ────────────────────────────────────────────────────
-  #
-  # The bump lands on `accepted`, NOT `release`. This is the whole reason the step
-  # is separate rather than more entries in `app_groups`: a gem repo's PRs are
-  # based on `accepted` and that is the tree `bin/gem-drift-check` reads. Retarget
-  # this at `release` — the branch the consumer bump correctly uses — and every
-  # open engine PR stays exactly as red as before, while the sweep reports success.
-  # Nothing merges `release` back down, so there is no second path by which the fix
-  # could arrive. `bin/release`'s other `accepted` writers — the sweep's version
-  # commit in `commit_gem_version!`, and the post-ship rebaseline in
-  # `advance_accepted` — carry a version or a frozen SHA, never a consumer lock,
-  # so neither can deliver this bump either.
+  # The bump lands on `accepted`, NOT `release`: a gem repo's PRs are based on `accepted`, the
+  # tree `bin/gem-drift-check` reads. Retarget it at `release` and every open engine PR stays
+  # red while the sweep reports success. Nothing merges `release` back down, and `bin/release`'s
+  # other `accepted` writers (`commit_gem_version!`, `advance_accepted`) carry a version or a
+  # frozen SHA, never a consumer lock, so nothing else can deliver it.
+  # History: task prepare-skips-engine-own-lock.
   def test_it_commits_the_producer_bump_onto_accepted_not_release
     out = run_release(STUB, %(bump_producer_locks_for_accepted({ "solana-studio" => "0.9.1" })))
 

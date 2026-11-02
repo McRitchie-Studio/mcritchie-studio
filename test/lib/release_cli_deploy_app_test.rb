@@ -47,18 +47,14 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
     end
   end
 
-  # [integration] repo_script (turf-monster) is the one adapter that DOES need a
-  # working tree — its bin/deploy runs the repo's suite, hashes the IDL, and pushes
-  # from the checkout it runs in. It gets the SHIP WORKSPACE, detached at the frozen
-  # SHA. This test stands in for turf's bin/deploy and asserts the three things that
-  # script actually depends on, rather than assuming them:
-  #   * cwd is the ship workspace (NOT the primary, NOT the gate workspace),
-  #   * `git rev-parse HEAD` there is the FROZEN SHA,
-  #   * `git rev-parse --abbrev-ref HEAD` is the literal "HEAD" (detached) — which is
-  #     what makes turf's own `PUSH_SPEC="$BRANCH:main"` resolve to `HEAD:main` and
-  #     push exactly the frozen commit,
-  #   * the tree is CLEAN, so its `git diff-index --quiet HEAD` preflight passes even
-  #     while the primary is filthy.
+  # [integration] repo_script (turf-monster) is the one adapter needing a working tree: its
+  # bin/deploy runs the suite, hashes the IDL and pushes from its checkout. Standing in for
+  # that script, this asserts: cwd is the ship workspace (NOT the primary or the gate
+  # workspace); `git rev-parse HEAD` is the FROZEN SHA; `git rev-parse --abbrev-ref HEAD` is
+  # the literal "HEAD" (so `PUSH_SPEC="$BRANCH:main"` pushes `HEAD:main`, exactly the frozen
+  # commit); the tree is CLEAN, so `git diff-index --quiet HEAD` passes while the primary is
+  # filthy.
+  # History: task give-ship-a-dedicated-checkout.
   def test_deploy_app_repo_script_runs_in_the_ship_workspace_at_the_frozen_sha
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -97,15 +93,11 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
     end
   end
 
-  # [integration] NO prod_deploy — the 2026-08-22 wedge, from the other side.
-  # chain-ops declared `command: bin/deploy` for a script that did not exist, so
-  # ship ran it, it failed, and the WHOLE release aborted — after push_frozen_main
-  # had already advanced origin/main. With the adapter dropped, deploy_app must
-  # SKIP cleanly rather than crash on the nil: main still advances, members are
-  # still stamped merged:"main", ship returns and carries on to the next app.
-  #
-  # It must also NOT say "deployed to production" — that lie is exactly what a
-  # no-op bin/deploy would have bought, and it is the reason this path exists.
+  # [integration] NO prod_deploy. deploy_app must SKIP cleanly rather than crash on the nil:
+  # main still advances, members are still stamped merged:"main", and ship carries on to the
+  # next app. It must NOT say "deployed to production": that lie is what a no-op bin/deploy
+  # would have bought, and it is the reason this path exists.
+  # History: task drop-chain-ops-system-lane.
   def test_deploy_app_with_no_prod_deploy_advances_main_and_dispatches_nothing
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -263,17 +255,13 @@ class ReleaseCliDeployAppTest < ReleaseCliHarness
                      "a genuinely failed run (watch failed AND conclusion=failure) fails closed"
   end
 
-  # [integration] THE protection-pause regression (run 29450907913). A prod-deploy
-  # run can sit in GitHub's `waiting` status — a deployment-protection gate holding
-  # the deploy. (Historically this was the `production` Environment's required
-  # reviewer, held `waiting` for as long as the operator took to click — 3h34m live —
-  # before that approval was removed on 2026-07-20; a re-added protection rule would
-  # produce it again.) If a transient blip kills `gh run watch` DURING that pause,
-  # the fallback must HOLD on the still-live run — a `waiting`/`in_progress` read is
-  # not a failed deploy — and only conclude when the run actually finishes. The old
-  # fallback polled a 100s budget for `completed` and failed the ship CLOSED over a
-  # run that was simply still live; this proves it now waits through the pause and
-  # then succeeds. `sleep` is stubbed to a no-op so the "hold" costs no wall-clock.
+  # [integration] THE protection-pause regression. A prod-deploy run can sit in GitHub's
+  # `waiting` status behind a deployment-protection gate. If a transient blip kills `gh run
+  # watch` DURING that pause, the fallback must HOLD on the still-live run
+  # (`waiting`/`in_progress` is not a failed deploy) and conclude only when the run finishes,
+  # not fail CLOSED on a 100s budget. `sleep` is stubbed to a no-op so the hold costs no
+  # wall-clock.
+  # History: task remove-prod-deploy-approval.
   def test_dispatch_and_watch_holds_through_a_waiting_protection_pause_then_succeeds
     setup = <<~RUBY
       def sleep(*) = nil

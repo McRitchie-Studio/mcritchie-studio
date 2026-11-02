@@ -1,35 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] The review-hop floor is taught in five files. None of them may pair a
-# REPO NAME with a studio-engine VERSION as a statement of current fact.
-#
-# ---------------------------------------------------------------------------
-# THE DEFECT (measured 2026-09-07, and this is its third sitting).
-#
-# One sentence — "the hub is on 0.38.0 and turf-monster is on 0.31.0" — was
-# written once into docs/agents/modules/building-sop.md and copied, in spirit or
-# verbatim, into four more places. Both apps' Gemfile.locks resolved 0.70.0 when
-# this test was written: 39 minors past the version quoted, and 34 past the
-# 0.36.0 floor the sentence existed to help you apply. Every copy was false, and
-# each one recommended `--email` — the sub-floor deviation — for apps that have
-# not needed it in a long time.
-#
-# A previous task deleted the sentence from the doc alone. The reviewers of that
-# PR found it alive in three more files, and worse: the doc's replacement prose
-# pointed the reader AT one of them as the authority on the threshold. The defect
-# had been relocated behind a fresh pointer rather than removed.
-#
-# WHY A TEST AND NOT JUST THE EDIT. This family regenerates. The sentence is
-# helpful-looking — a reader mid-task genuinely wants to know which apps are
-# sub-floor — so the next person to touch these files has every reason to write
-# it again, and nothing would fail. Deleting the fifth copy by hand buys one
-# sitting; asserting the property is what ends it.
-#
-# THE RULE, stated at bin/lib/client_surface_diff.rb ("Name the condition, not
-# the repo"): the FLOOR is a live rule and must stay written down. WHICH apps
-# sit below it is a fact about two lockfiles on one day, and belongs nowhere but
-# a lockfile. `grep -m1 'studio-engine (' Gemfile.lock` is the authority.
-# ---------------------------------------------------------------------------
+# [unit] The review-hop floor is taught in five files. None may pair a REPO NAME with a
+# studio-engine VERSION as a statement of current fact. A test, not just an edit: the sentence
+# looks helpful, so the next editor would write it again and nothing else would fail. THE
+# RULE, stated at bin/lib/client_surface_diff.rb ("Name the condition, not the repo"): the
+# FLOOR is a live rule and stays written down. WHICH apps sit below it is a fact about two
+# lockfiles on one day and belongs nowhere but a lockfile. `grep -m1 'studio-engine ('
+# Gemfile.lock` is the authority.
+# History: task stale-engine-version-claims.
 
 require "bundler/setup"
 require "minitest/autorun"

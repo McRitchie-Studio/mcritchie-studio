@@ -1,32 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] Harness tests for bin/submit-wait — the REAL script, shelled via
-# Open3 against a throwaway state directory and a stub ship (house pattern:
-# test/lib/submit_test.rb, test/lib/fast_check_test.rb).
-#
-# THE POINT OF THIS FILE, stated so nobody weakens it later. A watcher test that
-# asserts "it waits" PASSES ON A WATCHER THAT WAITS FOREVER, and waiting forever
-# is the exact defect (task ship-wait-has-no-primitive: five builders reinvented
-# `while pgrep -f "bin/submit <slug>"`, whose condition can never go false once a
-# sibling shell carries the pattern). So every test here proves the watcher
-# **FIRES** — it returns, within a wall-clock bound, with the right code:
-#
-#   * against an ALREADY-FINISHED ship, it returns at once (the case the naive
-#     loop gets most wrong);
-#   * with a DECOY sibling process whose command line carries `bin/submit <slug>`,
-#     it STILL returns at once — a process-table pattern would match that decoy
-#     and hang;
-#   * against a ship that exited 0 having never reached the seam, it returns
-#     FAILED, because the LOG holds the verdict and the exit code does not.
-#
-# THE BOUNDS ARE THE ASSERTION. Each wait is given `--interval 20 --timeout 25`,
-# so a correct watcher returns in well under a second and a broken one cannot
-# return before 25. `assert_operator elapsed, :<, FAST_S` is therefore a real
-# discriminator, not decoration.
-#
-# Run directly:
-#   ruby -Itest test/lib/submit_wait_script_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# [integration] Harness tests for bin/submit-wait: the REAL script, a throwaway state directory,
+# a stub ship. A test asserting "it waits" passes on a watcher that waits forever, so every test
+# proves it **FIRES**, in a wall-clock bound, with the right code:
+#   * ALREADY-FINISHED ship: returns at once. DECOY carrying `bin/submit <slug>`: STILL at once.
+#   * ship exited 0 without reaching the seam: FAILED; the LOG holds the verdict.
+# THE BOUNDS ARE THE ASSERTION: `--interval 20 --timeout 25`, `assert_operator elapsed, :<,
+# FAST_S`.
+# History: task ship-wait-has-no-primitive.
 
 require "minitest/autorun"
 require "open3"
@@ -100,18 +81,12 @@ class SubmitWaitScriptTest < Minitest::Test
     path
   end
 
-  # A SIBLING process whose command line carries the very string a naive watcher
-  # greps for. It is not an ancestor of the wait, so macOS pgrep's default
-  # ancestor exclusion does not hide it — which is exactly how the reported
-  # deadlock happens: the orphans from earlier attempts keep every later watcher
-  # alive.
-  #
-  # THE BODY MUST BE COMPOUND. `sh -c 'sleep 30 # bin/submit <slug>'` is a SIMPLE
-  # command, so sh execs `sleep` and REPLACES ITSELF — the pattern vanishes from
-  # the process table and the decoy proves nothing. That is not a hypothetical:
-  # the first cut of this fixture did exactly that, and mutation A (pgrep put
-  # back) left this test GREEN. A loop keeps the shell, and therefore its argv,
-  # alive. `assert_decoy_carries_the_pattern` re-checks it every run.
+  # A SIBLING process whose command line carries the string a naive watcher greps for. It is not
+  # an ancestor of the wait, so macOS pgrep's default ancestor exclusion does not hide it.
+  # THE BODY MUST BE COMPOUND. `sh -c 'sleep 30 # bin/submit <slug>'` is a SIMPLE command: sh
+  # execs `sleep`, the pattern leaves the process table, and the decoy proves nothing. A loop
+  # keeps the shell's argv alive; `assert_decoy_carries_the_pattern` re-checks it every run.
+  # History: task ship-wait-has-no-primitive.
   def spawn_decoy(slug = SLUG)
     pid = Process.spawn("/bin/sh", "-c", "n=0; while [ $n -lt 300 ]; do n=$((n+1)); sleep 0.1; done # bin/submit #{slug}",
                         out: File::NULL, err: File::NULL)

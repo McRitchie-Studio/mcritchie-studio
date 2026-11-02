@@ -1,29 +1,13 @@
 # frozen_string_literal: true
 
-# Tests for bin/lib/session_markers.rb — the ONE owner of the per-session
-# narration-marker store: the READS bin/atomic-event and bin/atomic-capture-hook
-# share (formerly byte-identical private copies), and the WRITES/DELETES that now
-# go through its fail-closed choke point.
-#
-#   ruby -Itest test/lib/session_markers_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# Best-effort contract on the reads and on genuine IO failures: degrade to nil,
-# never raise — narration must never block an agent's real work.
-#
-# THE GUARD UNDER TEST. Six writers (four copies in bin/atomic-event, one in
-# bin/devops-shift, one in bin/statusline) each resolved the marker path by the
-# same fallback — CLAUDE_PROJECTS_DIR else the real projects root — and none
-# failed closed when a spawned test ran unpinned. Same family as the task-usage
-# cost store (PR #525), and it leaked here for real. So with TASK_USAGE_SANDBOX
-# armed, a MUTATION of this store must be (1) PINNED by CLAUDE_PROJECTS_DIR — the
-# fallback is forbidden, not merely discouraged — and (2) OUTSIDE the operator's
-# real <projects>/.agents, whatever pointed it there.
-#
-# NOTHING HERE TOUCHES THE REAL STORE. write_path is pure: it resolves and guards,
-# and aborts BEFORE any IO. So the violation cases can be asserted against the
-# real state dir without ever attempting the write they forbid. Allowed writes go
-# to a tmpdir.
+# Tests for bin/lib/session_markers.rb, the ONE owner of the per-session narration-marker store:
+# the READS bin/atomic-event and bin/atomic-capture-hook share, and the fail-closed
+# WRITES/DELETES. Reads and genuine IO failures degrade to nil, never raise: narration must not
+# block real work. THE GUARD UNDER TEST: with TASK_USAGE_SANDBOX armed, a MUTATION must be (1)
+# PINNED by CLAUDE_PROJECTS_DIR, the fallback forbidden, and (2) OUTSIDE the real
+# <projects>/.agents. NOTHING HERE TOUCHES THE REAL STORE: write_path is pure and aborts BEFORE
+# any IO, so violation cases assert against the real state dir. Allowed writes go to a tmpdir.
+# History: task dedup-bin-shared-library.
 
 require "minitest/autorun"
 require "json"
@@ -211,16 +195,11 @@ class SessionMarkersTest < Minitest::Test
 
   # ── [unit] the write is ATOMIC — a reader never sees a half ──────────────────
 
-  # WHY THIS TIER EXISTS. Every marker in this store is written by one process and
-  # read by ANOTHER (the statusline reads what bin/atomic-event wrote; a presence
-  # reader reads what bin/submit wrote), which is the only arrangement in which a
-  # torn read is reachable at all. A plain `File.write` is open(O_CREAT|O_TRUNC)
-  # and THEN write, so the marker is observable at ZERO BYTES for the width of
-  # that gap — measured on the cert runlock at 4.6% of reads taken the moment it
-  # appeared. Nothing in that measurement was specific to the runlock: it is a
-  # property of truncate-then-write, so it was true of every marker here.
-  #
-  # The first test below RE-RUNS THAT MEASUREMENT rather than arguing from it.
+  # WHY THIS TIER EXISTS. Every marker is written by one process and read by ANOTHER. A plain
+  # `File.write` is open(O_CREAT|O_TRUNC) and THEN write, so the marker is observable at ZERO
+  # BYTES in that gap; it is a property of truncate-then-write, so true of every marker here. The
+  # first test below RE-RUNS THAT MEASUREMENT rather than arguing from it.
+  # History: task certs-publish-no-phase.
 
   def test_unit_a_concurrent_reader_never_observes_a_truncated_marker
     Dir.mktmpdir do |dir|
@@ -290,27 +269,14 @@ class SessionMarkersTest < Minitest::Test
     end
   end
 
-  # A publish IN FLIGHT must be invisible to the store's readers too — not merely
-  # cleaned up afterwards (the test above). This is the half that was missing.
-  #
-  # THE DEFECT, and it was the atomic publish's own doing: the sibling was named
-  # `"#{path}.#{Process.pid}.tmp"` — the marker path PLUS A SUFFIX — and every reader
-  # of this namespace globs `*.presence-*`. A suffix cannot escape a trailing `*`, so
-  # the window this file closed on the marker path REOPENED on a name the readers still
-  # matched. Production graded the sibling `:malformed` for the width of each write;
-  # the integration tier parses claims bare and died on
-  # `JSON::ParserError: unexpected end of input at line 1 column 1`
-  # (ReleasePresenceIntegrationTest, CI on PR #1259, 2026-09-07).
-  #
-  # HOW THIS OBSERVES THE WINDOW WITHOUT RACING FOR IT. `File.write(tmp, content)` opens
-  # `O_CREAT|O_TRUNC` — the sibling is on disk at zero bytes — and only THEN converts
-  # `content` with `to_s`. So a probe object passed as the content runs at exactly the
-  # instant the flake fires, inside the shipped code path, with no sleep, no spawn and no
-  # second process. A test that waited for this window would be testing the scheduler.
-  #
-  # It asks the SHIPPED READER what it can see rather than restating its glob here: "the
-  # reader was one glob short" is this bug's whole family, and a restatement cannot
-  # express it.
+  # A publish IN FLIGHT must be invisible to the store's readers, not merely cleaned up
+  # afterwards. Trap: a sibling named `"#{path}.#{Process.pid}.tmp"` is the marker path PLUS A
+  # SUFFIX, and a suffix cannot escape the readers' trailing `*` in `*.presence-*`. HOW THIS
+  # OBSERVES THE WINDOW WITHOUT RACING: `File.write(tmp, content)` opens `O_CREAT|O_TRUNC`, then
+  # converts `content` with `to_s`, so a probe object as content runs at exactly that instant,
+  # with no sleep, spawn or second process. A test that waited for the window would test the
+  # scheduler. It asks the SHIPPED READER what it can see rather than restating its glob.
+  # History: task presence-glob-catches-temp-sibling.
   def test_unit_a_publish_in_flight_is_invisible_to_the_stores_readers
     Dir.mktmpdir do |dir|
       sessions = File.join(dir, ".agents", "sessions")
@@ -364,17 +330,13 @@ class SessionMarkersTest < Minitest::Test
 
   # ── [unit] the load-bearing property: the guard is RESCUE-PROOF ──────────────
 
-  # write and delete both `rescue StandardError => nil`, because narration is
-  # non-fatal by contract. A guard that RAISED would be swallowed right there —
-  # the write silently skipped, the guard reporting nothing, the leak carrying on
-  # GREEN. That is the whole reason TaskUsageSandbox exits via `abort`: SystemExit
-  # is not a StandardError, so it escapes those rescues by design.
-  #
-  # These two are the ONLY guard cases that reach real IO if the guard regresses,
-  # so they aim at an INJECTED stand-in state dir (the tmpdir is "the real store"
-  # as far as the guard is concerned). A broken fix then writes a tmpdir, not the
-  # operator's narration store — the same reason TaskUsageSandbox's own rule-2
-  # tests inject a root instead of firing at ~/projects.
+  # write and delete both `rescue StandardError => nil`: narration is non-fatal. A guard that
+  # RAISED would be swallowed there and the leak would carry on GREEN, which is why
+  # TaskUsageSandbox exits via `abort`: SystemExit is not a StandardError. These two are the ONLY
+  # guard cases reaching real IO if the guard regresses, so they aim at an INJECTED stand-in state
+  # dir, the same reason TaskUsageSandbox's own rule-2 tests inject a root instead of firing at
+  # ~/projects.
+  # History: task guard-narration-marker-writes.
   def test_unit_the_abort_is_not_swallowed_by_the_writers_own_rescue
     Dir.mktmpdir do |stand_in|
       env = ON.merge("CLAUDE_PROJECTS_DIR" => stand_in)

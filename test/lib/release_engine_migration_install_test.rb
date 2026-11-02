@@ -2,24 +2,13 @@ require "minitest/autorun"
 require "open3"
 require "tmpdir"
 
-# The engine-migration install, driven for real — the SHELL half of the step the
-# sweep takes right after it publishes a gem.
-#
-# THE DEFECT THIS FILE EXISTS FOR. The first cut probed the workspace with
-# `bin/rails -T <task>` and read ANY non-zero exit as "this gem is not an engine".
-# On a live sweep that is always non-zero: `bundle lock` resolves without
-# INSTALLING, and nothing else installs the version `gem push` sent seconds
-# earlier, so rails dies with Bundler::GemNotFound. The step therefore skipped on
-# every real run — printing nothing at all, while the SOP told the operator
-# migrations were handled and the pre-QA gate reddened after the irreversible
-# publish. Two reviewers reproduced it. Its unit tests were green throughout,
-# because the decisions lived in the shell where no test could reach them.
-#
-# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
-# config/test_health.yml, precisely so new work lands somewhere else. The release
-# CLI flow tests stub this function wholesale (it does real bundler and rails work,
-# and their "workspace" is a bare tmpdir); here `sh` is stubbed instead, so the
-# REAL function runs.
+# The engine-migration install, driven for real: the SHELL half of the step after a gem
+# publish. Never read ANY non-zero exit from `bin/rails -T <task>` as "not an engine": on a
+# live sweep `bundle lock` resolves without INSTALLING, rails dies with Bundler::GemNotFound,
+# and the step skips silently while the pre-QA gate reddens after the irreversible publish. A
+# FILE OF ITS OWN: release CLI files are frozen at their size by `config/test_health.yml`. Flow
+# tests stub this function wholesale; here `sh` is stubbed, so the REAL function runs.
+# History: task install-engine-migrations-in-sweep.
 class ReleaseEngineMigrationInstallTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 

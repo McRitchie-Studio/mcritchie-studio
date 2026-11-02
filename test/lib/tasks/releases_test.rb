@@ -3,17 +3,12 @@
 require "test_helper"
 require "rake"
 
-# Regression tier for `releases:refresh_duration_metrics` — the rake the release
-# pipeline runs as a post-deploy hook (see Release::PostDeploy), and the one
-# docs/agents/system/devops-cycle-design.md RECOMMENDS as the idempotent
-# post-deploy hook, so its exit status is the shape other authors copy.
-#
-# THE BUG THIS FILE EXISTS FOR: the rake printed the slugs it had managed to
-# refresh and exited 0 unconditionally. `bin/release` derives the hook's verdict
-# purely from the process exit status (`heroku run --exit-code`) and never parses
-# stdout — so a run that rewrote NOTHING printed the bare line
-# "release duration metrics refreshed: ", exited 0, and the release shipped past
-# it with /deployments still serving the stored numbers.
+# Regression tier for `releases:refresh_duration_metrics`, the rake run as a post-deploy hook
+# (see Release::PostDeploy), RECOMMENDED by docs/agents/system/devops-cycle-design.md, so its
+# exit status is the shape others copy. `bin/release` derives the verdict purely from exit
+# status (`heroku run --exit-code`) and never parses stdout, so a run rewriting NOTHING must not
+# exit 0.
+# History: task duration-metrics-ships-green.
 class ReleasesRefreshDurationMetricsRakeTest < ActiveSupport::TestCase
   setup do
     Rails.application.load_tasks unless Rake::Task.task_defined?("releases:refresh_duration_metrics")
@@ -37,18 +32,13 @@ class ReleasesRefreshDurationMetricsRakeTest < ActiveSupport::TestCase
     [out + err, status]
   end
 
-  # A shipped release is all #recent_releases selects on; ordering is shipped_at DESC.
-  #
-  # The cache columns are BLANKED on the way out, and that is what gives the
-  # "did this release actually get refreshed?" assertions something to bite on.
-  # Release has `after_commit :refresh_duration_metrics_safely, on: %i[create update]`,
-  # so a freshly created release ALREADY carries duration_metrics — asserting they are
-  # present after the run would then pass whether or not the run ever touched the row.
-  # update_columns skips callbacks, so the gap it opens stays open until the rake
-  # itself writes into it. The stamp is `duration_cache_version: 0` (the columns are
-  # NOT NULL, so "blank" has to be an out-of-band VALUE rather than nil): only a real
-  # DurationCache.refresh! moves it to VERSION, which makes the version the least
-  # ambiguous evidence that a given row was rewritten by THIS run.
+  # A shipped release is all #recent_releases selects on; ordering is shipped_at DESC. The cache
+  # columns are BLANKED so refresh assertions bite: Release's `after_commit
+  # :refresh_duration_metrics_safely` means a new release ALREADY carries duration_metrics.
+  # update_columns skips callbacks. The stamp is `duration_cache_version: 0` (columns are NOT
+  # NULL); only a real DurationCache.refresh! moves it to VERSION, the least ambiguous evidence of
+  # THIS run.
+  # History: task duration-metrics-ships-green.
   def make_releases(count, base: 3.days.ago)
     Array.new(count) do |i|
       release = Release.create!(slug: "duration-probe-#{i}", branch: "release", state: "shipped")

@@ -1,17 +1,10 @@
 # frozen_string_literal: true
 
-# The release gates' POLL BUDGET on a pending CI verdict, sized from the workflows that
-# produce it (bin/lib/ci_poll_budget.rb, bin/release.rb ci_poll_budget_for).
-#
-# THE DEFECT (task gem-gate-outwaits-consumer-ci). The gem publish gate polled a flat
-# 1200 s, but studio-engine's verdict carries Consumer CI (refs -> hub shards, turf,
-# industries -> aggregate) and the browser lane, which take longer on a fresh release
-# tip. Every release sweep on 2026-10-05/06 aborted with "GitHub CI is pending" and
-# needed a manual re-run once CI went green.
-#
-# A new file beside its subcommand, over the shared harness, rather than an append to a
-# frozen release CLI file. Run directly:
-#   ruby -Itest test/lib/release_cli_ci_poll_budget_test.rb
+# The release gates' POLL BUDGET on a pending CI verdict, sized from the workflows that produce
+# it (bin/lib/ci_poll_budget.rb, bin/release.rb ci_poll_budget_for). A flat 1200 s is too short:
+# studio-engine's verdict carries Consumer CI and the browser lane, which take longer on a fresh
+# release tip. A new file over the shared harness, not an append to a frozen release CLI file.
+# History: task gem-gate-outwaits-consumer-ci.
 
 require_relative "release_cli_harness"
 require_relative "../../bin/lib/ci_poll_budget"

@@ -1,23 +1,12 @@
 # frozen_string_literal: true
 
-# [unit] THE CLASSIFIER behind the stale-green refusal
-# (/tasks/gate-credits-a-stale-green).
-#   ruby -Itest test/lib/base_movement_audit_test.rb
-#
-# test/lib/dor_check_base_movement_test.rb proves bin/dor-check ASKS this and acts on the
-# answer. This file proves the answer is right — the same split as review_tree_guard_test
-# (classifier) vs dor_check_zap_seams_test (gate).
-#
-# THE SUBJECT IS A DISTINCTION, not a lookup. Two questions look alike and are not:
-#
-#   FILE DISJOINTNESS  base files ∩ PR files.        Somebody else's check. Cheap, and
-#                                                    usually right.
-#   SHARED GUARD       base files ∩ the tests that   This module. The one shape
-#                      GRADE the PR's files,         disjointness is TRUE and IRRELEVANT
-#                      minus the PR's own files.     in.
-#
-# Most of what follows exists to pin them apart, because a version of this module that
-# collapsed them would still pass a naive "does it find the guard?" test.
+# [unit] THE CLASSIFIER behind the stale-green refusal. test/lib/dor_check_base_movement_test.rb
+# proves bin/dor-check ASKS this and acts on the answer; this file proves the answer is right.
+# Two questions look alike and are not, and a module collapsing them still passes a naive test:
+#   FILE DISJOINTNESS  base files ∩ PR files. Somebody else's check.
+#   SHARED GUARD       base files ∩ the tests that GRADE the PR's files, minus the PR's own.
+#                      This module: the one shape where disjointness is TRUE and IRRELEVANT.
+# History: task gate-credits-a-stale-green.
 
 require "minitest/autorun"
 require "open3"
@@ -99,20 +88,13 @@ class BaseMovementAuditTest < Minitest::Test
                              changed_files: changed, ci_completed_at: clock, tested_base: tested_base)
   end
 
-  # RAISES on a ref that does not resolve — the fourth copy of the dropped-status
-  # helper repaired by /tasks/sweep-remaining-status-drops, and the one its card did
-  # not know about. The dropping form here was `IO.popen(...).to_s.strip`, which
-  # reads stdout and discards the status; `git rev-parse <missing-ref>` prints the
-  # REF NAME to stdout and exits 128 (measured 2026-09-22), so a fixture that had
-  # failed to build `accepted^` would hand the literal string "accepted^" on to
-  # `audit(tested_base:)`.
-  #
-  # THAT IS SELF-CERTIFYING RATHER THAN MERELY WRONG. BaseMovementAudit.assess
-  # ECHOES the value back (bin/lib/base_movement_audit.rb#assess returns
-  # `tested_base:` verbatim), so `assert_equal tested, a[:tested_base]` compares the
-  # bad string against itself and passes. The premise of every test below is WHICH
-  # COMMIT the merge ref was built on, so the helper that answers it may not be able
-  # to answer with a ref name.
+  # RAISES on a ref that does not resolve. `git rev-parse <missing-ref>` prints the REF NAME to
+  # stdout and exits 128, so `IO.popen(...).to_s.strip` would hand the literal string on to
+  # `audit(tested_base:)`. THAT IS SELF-CERTIFYING: BaseMovementAudit.assess ECHOES the value back
+  # (bin/lib/base_movement_audit.rb#assess), so `assert_equal tested, a[:tested_base]` compares
+  # the bad string against itself and passes. This helper may not be able to answer with a ref
+  # name.
+  # History: task sweep-remaining-status-drops.
   def rev(dir, ref)
     out, err, status = Open3.capture3("git", "-C", dir, "rev-parse", ref)
     raise "git rev-parse #{ref.inspect} failed in #{dir} (exit #{status.exitstatus}): #{err.strip}" unless status.success?
@@ -120,15 +102,12 @@ class BaseMovementAuditTest < Minitest::Test
     out.strip
   end
 
-  # [control] THE HELPER ABOVE, DRIVEN FROM THE OTHER SIDE — the only test in this
-  # file that can tell the repair from the defect. Every other `rev` call passes a
-  # ref that resolves, so reverting the helper to `IO.popen(...).to_s.strip` leaves
-  # them all green while handing a ref NAME to any caller whose ref does not.
-  #
-  # BOTH HALVES ARE MEASURED HERE, not assumed: that git prints the ref name on
-  # stdout with a failing status (the premise), and that the helper now refuses to
-  # pass it on (the repair). Without the premise this control could pass because the
-  # probe failed some other way.
+  # [control] THE HELPER ABOVE, DRIVEN FROM THE OTHER SIDE: the only test here that tells the
+  # repair from the defect, since every other `rev` call passes a ref that resolves. BOTH HALVES
+  # ARE MEASURED: that git prints the ref name on stdout with a failing status (the premise), and
+  # that the helper refuses to pass it on (the repair). Without the premise the probe could fail
+  # some other way.
+  # History: task sweep-remaining-status-drops.
   def test_rev_raises_on_a_ref_that_does_not_resolve_rather_than_echoing_its_name
     with_repo(base_change: "docs/unrelated.md", at: AFTER_RUN) do |dir|
       raw, _err, status = Open3.capture3("git", "-C", dir, "rev-parse", "refs/heads/no-such-ref")
@@ -336,20 +315,14 @@ class BaseMovementAuditTest < Minitest::Test
     end
   end
 
-  # THE NARROWING IS DELIBERATE AND IS PINNED. FastCert maps a source to tests three
-  # ways — convention twin, harness family, and a GREP over token identity. This module
-  # uses the first two and DROPS the grep rung, because a token search widens to whatever
-  # mentions the subject and that width is wrong for something allowed to REFUSE.
-  #
-  # REACHING THE GREP RUNG TAKES A SOURCE WITH NO TWIN. FastCert only falls back to grep
-  # when the convention candidates do not exist on disk, so a fixture whose twin exists
-  # exercises the identical code path in both versions and pins nothing. (That is exactly
-  # how the first version of this test passed while `guards_for` was widened to
-  # FastCert.mapping — an equivalent mutant, not a surviving one.) bin/lib/orphan_thing.rb
-  # has no test/lib/orphan_thing_test.rb, so the rung is genuinely reached.
-  #
-  # THE CONTROL IS THE POINT: FastCert MUST claim the mentioning file here, or this test
-  # is asserting the absence of something that was never on offer.
+  # THE NARROWING IS DELIBERATE AND IS PINNED. FastCert maps a source three ways: convention twin,
+  # harness family, and a GREP over token identity. This module DROPS the grep rung: a token
+  # search widens to whatever mentions the subject, wrong for something allowed to REFUSE.
+  # REACHING THE GREP RUNG TAKES A SOURCE WITH NO TWIN: a fixture whose twin exists pins nothing.
+  # bin/lib/orphan_thing.rb has no test/lib/orphan_thing_test.rb, so the rung is reached. THE
+  # CONTROL IS THE POINT: FastCert MUST claim the mentioning file here, or this asserts the
+  # absence of something never on offer.
+  # History: task gate-credits-a-stale-green.
   def test_the_grep_rung_is_not_used_so_a_mere_mention_is_not_a_guard
     orphan = "bin/lib/orphan_thing.rb"
     extra = { orphan => "module OrphanThing; end\n",
@@ -464,23 +437,13 @@ class BaseMovementAuditTest < Minitest::Test
 
   # ==== THE MERGE-COMMIT TRAP ====================================================
 
-  # THE REAL-WORLD SHAPE, and the row that caught a defect in this very module.
-  #
-  # `accepted` advances by MERGE COMMITS, and a merge's side-branch work is invariably
-  # OLDER than the merge that lands it. Here the guard change was WRITTEN at 07:30 and
-  # LANDED at 07:59:02, while CI finished 07:55:44 — the measured incident's clock, and
-  # PR #1258 was itself a merge commit, so this is the ordinary case.
-  #
-  # WHAT WENT WRONG BEFORE THE FIX: walking every commit in the range read the 07:30
-  # committer date, called that work "covered", made it the covered_tip, and computed
-  # late_files as diff(07:30-commit .. merge) — EMPTY, because the guard change came
-  # FROM that commit. No guards, no refusal: the gate missed the case it exists for.
-  #
-  # SO THE COMMITTER DATE IS NOT THE LANDING DATE, and only the FIRST-PARENT chain
-  # carries the order things joined the base. Revert commits_between to a whole-range
-  # walk and this goes red. The earlier version of this test used ONE timestamp for both
-  # the side commit and the merge, which made the two walks agree and let the defect
-  # through — the gap was in the fixture, not in the idea.
+  # THE REAL-WORLD SHAPE. `accepted` advances by MERGE COMMITS, and a merge's side-branch work is
+  # OLDER than the merge. Walking every commit reads the old committer date, calls that work
+  # "covered", and computes late_files as an EMPTY diff: no guards, no refusal. THE COMMITTER DATE
+  # IS NOT THE LANDING DATE; only the FIRST-PARENT chain carries the order things joined the base.
+  # Revert commits_between to a whole-range walk and this goes red. Side commit and merge need
+  # different timestamps, or the two walks agree and the fixture hides the defect.
+  # History: task gate-credits-a-stale-green.
   def test_a_merge_landing_late_is_late_even_when_its_work_is_old
     with_repo(base_change: "test/lib/widget_tool_exempt_test.rb",
               side_at: "2026-09-07T07:30:00Z", at: AFTER_RUN, merge: true) do |dir|
@@ -552,20 +515,13 @@ class BaseMovementAuditTest < Minitest::Test
     end
   end
 
-  # THE REASON IS PART OF THE ANSWER, not decoration (/tasks/audit-vanishes-when-git-fails).
-  #
-  # The row above pins the STATE. Nothing pinned the REASON — and bin/dor-check now renders
-  # a DIFFERENT REMEDY per reason (fetch the ref / unshallow the clone / git itself is
-  # unreadable), because those are the reader's three different next actions. Collapse the
-  # four reasons into one generic :unobservable and the gate still says "could not run"
-  # while handing the reviewer a remedy that does not apply — a report you cannot act on,
-  # which is the exact grade of report this whole seam was built to replace.
-  #
-  # TWO OF THE FOUR ARE FIXTURABLE and they are the two a live desk hits. :no_log needs a
-  # git log that fails over a range whose endpoints both resolved, and :git_unreadable needs
-  # git itself to be unrunnable; neither is reachable without stubbing the process table,
-  # and a stub shaped from this module's own code would certify that code rather than test
-  # it. They are left to the caller's default arm, which names the raw reason either way.
+  # THE REASON IS PART OF THE ANSWER. bin/dor-check renders a DIFFERENT REMEDY per reason (fetch
+  # the ref / unshallow the clone / git itself is unreadable). Collapse the four into one
+  # :unobservable and the gate says "could not run" with a remedy that does not apply. TWO OF THE
+  # FOUR ARE FIXTURABLE. :no_log and :git_unreadable would need stubbing the process table, and a
+  # stub shaped from this module's code would certify that code. They are left to the caller's
+  # default arm, which names the raw reason either way.
+  # History: task audit-vanishes-when-git-fails.
   def test_the_unobservable_reasons_are_distinguishable
     Dir.mktmpdir do |raw|
       dir = File.realpath(raw)

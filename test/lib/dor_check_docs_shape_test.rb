@@ -1,35 +1,13 @@
 # frozen_string_literal: true
 
 # [integration] The `docs` shape is EARNED FROM THE DIFF, not typed
-# (/tasks/docs-shape-admits-test-code). Standalone — no Rails; it shells bin/dor-check
-# with --file fixtures:
-#   ruby -Itest test/lib/dor_check_docs_shape_test.rb
-#
-# THE BUG. `shape: docs` carries zero tiers AND `full_suite_gate: false`, and until this
-# landed both were unlocked by TYPING `docs`. The diff was never consulted, so a
-# docs-claimed change carrying executable code shipped with no tier and no cert demanded.
-#
-# OBSERVED, not reasoned about. PR #1172 (shape docs) carried test/integration/
-# open_pr_receipt_visibility_test.rb and dor-check printed "✓ DoR-to-Merge met",
-# demanding nothing. That PR was well-certified ANYWAY, by a builder who supplied
-# evidence the gate never asked for — which is the failure mode rather than the
-# mitigation: a gate satisfied by volunteered evidence holds for careful builders and
-# fails silently for everyone else.
-#
-# WHAT MADE IT SURVIVE was a fall-through, and these tests pin the seam it fell through.
-# The exempt-KIND gate already asks this exact question on this exact diff and already
-# refuses — then hands control to the shape contract, which granted the same exemption
-# one step later. Two answers, one question. So the claim guard reuses CodeDiff, the
-# classifier the kind gate runs, rather than a second prose list that could drift apart.
-#
-# NOT fixed by `full_suite_gate: true` on docs, deliberately: that would make every prose
-# correction pay a full suite, and push people to mislabel shapes — strictly worse than
-# the hole. Gate the CLAIM, not the cost.
-#
-# ITS OWN FILE, on purpose. test/lib/dor_check_test.rb is a named APPEND HOTSPOT in
-# config/test_health.yml, and appending here first pushed it 201 lines past its ceiling
-# and turned CI red. The ratchet's advice is the house rule and it is right: a new
-# concern gets a new file named for it.
+# (/tasks/docs-shape-admits-test-code). `shape: docs` carries zero tiers AND `full_suite_gate:
+# false`, so a typed claim would ship executable code with nothing demanded. The claim guard
+# reuses CodeDiff, the classifier the kind gate runs, rather than a second list that could
+# drift. NOT fixed by `full_suite_gate: true`: that makes every prose correction pay a full
+# suite and pushes people to mislabel. Gate the CLAIM, not the cost. Its own file:
+# test/lib/dor_check_test.rb is a named APPEND HOTSPOT in `config/test_health.yml`.
+# History: task docs-shape-admits-test-code.
 require "minitest/autorun"
 require "json"
 require "tmpdir"

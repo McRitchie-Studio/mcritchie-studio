@@ -1,39 +1,24 @@
 # frozen_string_literal: true
 
-# [unit] tests for bin/lib/shift_renewer.rb — the loop that keeps a devops SHIFT
-# lease alive for as long as the holder is actually working.
-#
-# THE BUG THIS FILE EXISTS FOR (confirmed by experiment 2026-07-20): renewal used to
-# live ONLY in bin/statusline, so it was a property of the UI, not of the run. Any
-# session without a status line — a background agent run, and critically the
-# AUTONOMOUS HEARTBEAT — stopped renewing the moment it acquired, its lease lapsed
-# one TTL later, and `bin/devops-shift acquire` then reported the lane FREE to a
-# second session. Two Avi review supervisors duplicated four reviewer lanes on
-# PR #601 that way — the exact collision the lease exists to prevent.
-#
-# So the renewer is anchored to the ANCHOR PROCESS (the long-lived claude/codex
-# process the lease identity is already derived from), never to a rendered UI:
+# [unit] tests for bin/lib/shift_renewer.rb, the loop that keeps a devops SHIFT lease alive
+# while its holder works. Renewal must not be a property of the UI (bin/statusline): a headless
+# session or the AUTONOMOUS HEARTBEAT would stop renewing, and `bin/devops-shift acquire` would
+# report the lane FREE. So it is anchored to the ANCHOR PROCESS, never a rendered UI:
 #   anchor alive  ⇒ keep renewing, headless or not
 #   anchor gone   ⇒ STOP, so the lease lapses and a crash can never wedge the lane
-#
-#   ruby -Itest test/lib/shift_renewer_test.rb
+# History: task shift-lease-survives-headless.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/shift_renewer"
 require_relative "../../lib/claim_lease"
 
 class ShiftRenewerTest < Minitest::Test
-  # A scripted run BOUNDED BY A GUARD: `alive` answers from a queue and then defaults
-  # to true, every renew succeeds unless the renew queue says otherwise, and sleeping
-  # only advances a fake clock.
-  #
-  # THE GUARD IS NOT DECORATION. Several tests below deliberately script NO stop at
-  # all in `alive` or `renew`, because the condition under test is supposed to be the
-  # thing that ends the loop. Remove that condition and the loop runs forever — and a
-  # test that HANGS on a regression is a much worse signal than one that fails: it
-  # stalls CI for its whole timeout and names nothing. With the guard, a regression
-  # falls out as `:anchor_gone` after GUARD_CYCLES and every assertion below reports
-  # the defect by name.
+  # A scripted run BOUNDED BY A GUARD: `alive` answers from a queue then defaults to true, every
+  # renew succeeds unless the renew queue says otherwise, sleeping advances a fake clock. THE
+  # GUARD IS NOT DECORATION: several tests script NO stop, because the condition under test ends
+  # the loop. Without it a regression HANGS and names nothing; with it, the regression falls out
+  # as `:anchor_gone` after GUARD_CYCLES and assertions report the defect by name.
+  # History: task renew-loop-outlives-task.
   GUARD_CYCLES = 50
 
   def run_loop(alive:, renew: [], finished: [], interval: 30, max_lifetime: 3600)

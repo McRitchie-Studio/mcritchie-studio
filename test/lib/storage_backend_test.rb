@@ -1,16 +1,12 @@
 require "test_helper"
 
 # [unit] The hub's object storage is Cloudflare R2 and nothing else
-# (config/initializers/00_storage_backend.rb). AWS was retired on 2026-10-10, so
-# this file holds the BOOT MATRIX: what each value of ACTIVE_STORAGE_BACKEND and
-# STUDIO_S3_BACKEND resolves to, and what a missing R2_* variable does in a
-# strict environment (production, QA) against a lenient one (test, CI, a keyless
-# desk). A bad storage config once passed Heroku's release phase and then
-# crash-looped web and worker; test/integration/storage_boot_matrix_test.rb
-# boots real child processes for the same matrix.
-#
-# Asserted on the service objects Active Storage builds, as
-# storage_service_config_test.rb does. No network calls; credentials are sentinels.
+# (config/initializers/00_storage_backend.rb). This holds the BOOT MATRIX: what each
+# ACTIVE_STORAGE_BACKEND and STUDIO_S3_BACKEND value resolves to, and what a missing R2_*
+# variable does in strict (production, QA) vs lenient (test, CI, a keyless desk)
+# environments. test/integration/storage_boot_matrix_test.rb boots real children. Asserted
+# on the service objects, as storage_service_config_test.rb does.
+# History: task hub-storage-r2-switch.
 class StorageBackendTest < ActiveSupport::TestCase
   R2_ENDPOINT = "https://sentinel-account.r2.cloudflarestorage.com".freeze
   R2_PUBLIC_URL = "https://assets.example.com".freeze

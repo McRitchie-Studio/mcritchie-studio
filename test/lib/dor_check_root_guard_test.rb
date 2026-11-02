@@ -1,30 +1,11 @@
 # frozen_string_literal: true
 
-# Regression for the bin/dor-check TASK-ROOT GUARD.
-#   ruby -Itest test/lib/dor_check_root_guard_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# THE BUG (2026-07-14). `bin/dor-check <task>` run from the PRIMARY checkout, for a
-# task whose code lives in a worktree, graded the PRIMARY's tree. At the time the
-# symptom was a false STALE on the cert fingerprint (a git TREE hash is
-# content-addressed, so a foreign checkout can never match one) — 6 of 6 tasks in one
-# day, including ones certified green 90 seconds earlier — and an agent that hits an
-# unexplainable STALE stops, so it stranded finished tasks in `building`.
-#
-# The cert fingerprint retired with the receipts (/tasks/dor-reads-settled-ci-verdict:
-# the suite evidence is the PR's settled green CI, read for the PR head wherever the
-# gate stands). The guard did not retire with it, because the DIFF still roots here
-# and fails in the DANGEROUS direction (a false PASS — test/lib/
-# dor_check_review_diff_rooting_test.rb), and because ONE fingerprint-bound lane is
-# still graded: the `test-only` control stamp, which takes the same rooting.
-#
-# bin/lib/cert_root_guard.rb already existed to cure exactly this, and BOTH cert
-# runners require it. dor-check — the one command in the family that READS — never
-# consulted it until 2026-07-14.
-#
-# The invariant these tests assert (positively, not by blacklisting messages):
-#
+# Regression for the bin/dor-check TASK-ROOT GUARD (bin/lib/cert_root_guard.rb). The invariant:
 #     dor-check grades the TASK's tree. Never the tree you happen to stand in.
+# The guard outlived the cert fingerprint because the DIFF still roots here and fails in the
+# DANGEROUS direction (a false PASS: test/lib/dor_check_review_diff_rooting_test.rb), and the
+# `test-only` control stamp takes the same rooting.
+# History: task dor-reads-settled-ci-verdict.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/tree_fingerprint"
@@ -66,16 +47,11 @@ class DorCheckRootGuardTest < Minitest::Test
     real
   end
 
-  # The world the bug lives in:
-  #
-  #   <projects>/myapp/                     ← the PRIMARY checkout (on `release`).
-  #                                           NOT the task's tree. This is where the
-  #                                           agent is standing when it runs dor-check.
-  #   <projects>/myapp/.worktrees/task-x/   ← the task's tree (branch feat/task-x),
-  #                                           carrying the code under review.
-  #
-  # `worktree:` false omits the worktree entirely (the reclaimed-worktree case).
-  # Yields [projects, primary, worktree_or_nil].
+  # The world: <projects>/myapp/ is the PRIMARY checkout (on `release`), NOT the task's tree,
+  # where the agent stands. <projects>/myapp/.worktrees/task-x/ is the task's tree (branch
+  # feat/task-x). `worktree:` false omits the worktree (the reclaimed-worktree case). Yields
+  # [projects, primary, worktree_or_nil].
+  # History: task dor-check-misses-root-guard.
   def with_projects(worktree: true)
     Dir.mktmpdir do |raw|
       projects = File.realpath(raw)

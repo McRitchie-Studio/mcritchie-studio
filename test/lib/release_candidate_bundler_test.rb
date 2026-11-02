@@ -1,18 +1,12 @@
 # frozen_string_literal: true
 
-# How REAL Bundler treats a release candidate in a consumer's lock.
-#   bin/rails test test/lib/release_candidate_bundler_test.rb
-#
-# bin/release prepare locks consumers to a prerelease (x.y.z.rcN) for QA and
-# bin/release ship re-locks them to the final x.y.z. Both moves rest on two Bundler
-# rules: a prerelease is resolved only when a requirement names one
-# (Gem::Requirement#prerelease?, https://guides.rubygems.org/patterns/#prerelease-gems),
-# and a lock keeps whatever still satisfies the Gemfile. This file runs the real
-# `bundle lock` and a frozen `bundle install` against a gem source on disk, through
-# the same transforms bin/release uses, so the rules are measured, not quoted.
-#
-# No network: the source is a file:// index this test writes, and the probe gem has
-# no dependencies.
+# How REAL Bundler treats a release candidate in a consumer's lock. bin/release prepare locks
+# consumers to x.y.z.rcN for QA; ship re-locks to the final x.y.z. Both rest on two rules: a
+# prerelease resolves only when a requirement names one (Gem::Requirement#prerelease?), and a
+# lock keeps whatever still satisfies the Gemfile. Runs real `bundle lock` and a frozen
+# `bundle install` through bin/release's transforms. No network: a file:// index this test
+# writes; the probe gem has no dependencies.
+# History: task publish-gems-after-qa.
 require "test_helper"
 require "open3"
 require "zlib"

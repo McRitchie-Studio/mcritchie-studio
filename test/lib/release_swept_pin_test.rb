@@ -1,22 +1,11 @@
 # frozen_string_literal: true
 
-# THE SWEPT PIN (task release-pins-swept-sha), driven against REAL git.
-#
-# 2026-10-30: another session merged hub PR #2327 onto `accepted` a minute after
-# `bin/release cycle` started. prepare had already fast-forwarded `release`, and the
-# stale-tree gate ("`release` does not carry `accepted`") refused the release because
-# the live `accepted` head had moved. The cycle re-ran prepare: 10-20 minutes lost to
-# work this release never swept.
-#
-# prepare now pins each member repo's `accepted` head right after detection. The
-# promote lands that SHA, the record carries it, and the gate asserts `release`
-# contains it. These tests hold both halves: a post-sweep merge waits for the next
-# release, and swept work missing from `release` still refuses, as does any
-# `accepted` work in a repo with no pin (the 2026-08-11 orphan).
-#
-# Every git command runs for real against a bare origin; only `gh`, the board and the
-# CI guards are stubbed. Run directly:
-#   ruby -Itest test/lib/release_swept_pin_test.rb
+# THE SWEPT PIN, against REAL git. prepare pins each member repo's `accepted` head right after
+# detection; the promote lands that SHA, the record carries it, and the gate asserts `release`
+# contains it. A post-sweep merge waits for the next release; swept work missing from
+# `release` still refuses, as does any `accepted` work in a repo with no pin. Every git
+# command is real against a bare origin; only `gh`, the board and the CI guards are stubbed.
+# History: task release-pins-swept-sha.
 
 require_relative "release_cli_harness"
 require_relative "../../bin/lib/release_cycle"

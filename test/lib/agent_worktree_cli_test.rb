@@ -1,19 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] AgentWorktreeCli — the argument dictionary bin/agent-worktree's guard reads.
-#
-# Pure and script-free: nothing here runs bin/agent-worktree, which is the point.
-# The thing under test allocates a worktree, a port, a Redis DB and a Postgres
-# database when probed, so its dictionary has to be checkable without it.
-#
-# WHAT THESE ASSERT THAT A HAND-WRITTEN LIST CANNOT. The dictionary's danger is not
-# being wrong today — it is going stale. A dispatcher arm added later with no entry
-# would be UNGUARDED and nothing would say so; a flag an arm reads but the dictionary
-# omits would be REFUSED, wedging a real call on a lane like `bin/task begin`. So the
-# arms and their flags are both DERIVED FROM bin/agent-worktree'S OWN SOURCE and
-# reconciled against the dictionary, which makes both directions self-healing.
-#
-#   ruby -Itest test/lib/agent_worktree_cli_test.rb
+# [unit] AgentWorktreeCli, the argument dictionary bin/agent-worktree's guard reads. Nothing
+# here runs bin/agent-worktree: it allocates a worktree, port, Redis DB and Postgres database
+# when probed. The danger is going stale: an arm added with no entry is UNGUARDED, and a flag an
+# arm reads but the dictionary omits is REFUSED, wedging `bin/task begin`. So arms and flags are
+# DERIVED FROM bin/agent-worktree'S OWN SOURCE and reconciled against the dictionary.
+# History: task worktree-subcommand-drops-help.
 require "minitest/autorun"
 require_relative "../../bin/lib/agent_worktree_cli"
 

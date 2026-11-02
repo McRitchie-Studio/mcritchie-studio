@@ -1,19 +1,12 @@
 # frozen_string_literal: true
 
-# Unit tests for ActingIdentity — "who is `gh` about to act as?", asked before a merge.
-#
-# NO gh, NO network, NO credential of any kind: the classifier is pure, so every branch
-# is reachable from synthetic inputs. That matters more than usual here, because the
-# branch this guard exists for (a PERSON about to merge) cannot be produced on demand
-# without signing a human in, and the branch that admits a merge (an App installation's
-# 403) cannot be produced without a live App token. Both are strings here.
-#
-# THE FIXTURES ARE VERBATIM gh OUTPUT, captured 2026-08-30 from the real CLI against the
-# real API — the same discipline GhAuthRetry's regex test uses, and for the same reason:
-# a guard tuned to output someone REMEMBERED matches nothing when it meets the real
-# thing, and "no match" here means a silent fallback to UNKNOWN.
-#
-# Run directly:  ruby -Itest test/lib/acting_identity_test.rb
+# Unit tests for ActingIdentity: "who is `gh` about to act as?", asked before a merge. NO
+# gh, NO network, NO credential: the classifier is pure, so a PERSON about to merge and an
+# App installation's 403 are both strings here. THE FIXTURES ARE VERBATIM gh OUTPUT from the
+# real CLI against the real API, as with GhAuthRetry's regex test: a guard tuned to
+# REMEMBERED output matches nothing on the real thing, and "no match" means a silent
+# fallback to UNKNOWN.
+# History: task empty-token-falls-back-silently.
 
 require "minitest/autorun"
 require "json"

@@ -1,26 +1,12 @@
 # frozen_string_literal: true
 
-# bin/release.rb's PUBLISH → INSTALL window. Standalone:
-#   ruby -Itest test/lib/release_cli_gem_await_test.rb
-#
-# THE INCIDENT, 2026-08-15. `gem push` returns before RubyGems can SERVE the version.
-# prepare published studio-engine, immediately committed the consumer lock bump, and
-# that commit triggered CI — whose Ruby setup ran `bundle install` against a lock
-# pinning a version the index did not carry yet. Bundler exited 7, a lane went red,
-# and the pre-QA gate aborted the release. It happened twice in a row, reddening
-# scan_ruby on one attempt and lint on the next: the same bundler exit 7 both times,
-# never a code regression. Because the publish is irreversible by then, the abort
-# stranded a permanently published version (0.48.0).
-#
-# WHY THE COMPACT INDEX AND NOT THE VERSIONS API — the subtle half. They disagree
-# during exactly the window that matters: in the same minute, the JSON API still
-# listed 0.48.0 as newest while the .gem file for 0.49.0 already answered 200. The
-# compact index is the surface BUNDLER resolves from, so it is the only one whose
-# answer predicts whether CI can install. Waiting on the other would be a wait that
-# proves nothing — a gate that cannot observe the thing it gates on.
-#
-# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
-# config/test_health.yml, precisely so new work lands somewhere else.
+# bin/release.rb's PUBLISH → INSTALL window. `gem push` returns before RubyGems can SERVE the
+# version, so a lock bump committed at once triggers CI whose `bundle install` exits 7. WHY THE
+# COMPACT INDEX AND NOT THE VERSIONS API: they disagree during exactly this window, and the
+# compact index is the surface BUNDLER resolves from, so waiting on the other is a gate that
+# cannot observe what it gates. A FILE OF ITS OWN: the release CLI files are frozen at their
+# size by `config/test_health.yml`.
+# History: task await-gem-before-lock-bump.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

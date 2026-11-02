@@ -1,79 +1,13 @@
 # frozen_string_literal: true
 
-# THE DECLARED SET of the Playwright `e2e` lane — the STATIC half of a two-part guard.
-#
-#     specs committed  −  quarantined  ==  the lane should run
-#
-# Both counts are COMPUTED from e2e/ by bin/lib/e2e_spec_census.rb, the census the runtime
-# gate reads too. What this file proves is that the census is honest: every spec is a bare
-# declaration, so nothing but the quarantine tag removes one from the lane.
-#
-# READ THIS FIRST, BECAUSE THE FILE'S NAME OVERSELLS IT. This file reads the SOURCE. It can
-# tell you how many specs are DECLARED and not quarantined. It CANNOT tell you how many specs
-# RAN — those are different questions, and every escape hatch that has beaten this PR lived in
-# the gap between them. What closes that gap is the RECEIPT:
-#
-#     bin/e2e-executed-set-check  — reads Playwright's OWN JSON report after the lane runs and
-#                                   asserts the set it ACTUALLY EXECUTED == config/e2e_lane.yml
-#
-# Both halves read the same contract (config/e2e_lane.yml), so they can never certify two
-# different suites. This half is the FAST one: it fails in the unit lane in milliseconds,
-# before anyone burns six minutes of CI on a suite that is already provably wrong. The other
-# half is the DURABLE one: it is the only one that generalizes to the spellings nobody has
-# imagined yet. Keep both; do not mistake this one for sufficient.
-#
-# WHY THE SET AND NOT THE COMMAND. The first version of this guard (and of its sibling,
-# test/lib/ci_workflow_triggers_test.rb) bound the ci.yml COMMAND: it proved the `playwright`
-# job runs unconditionally, over the whole suite, with no positional path and no positive
-# `--grep`. All true, all still asserted over there — and all defeated in review of #543 by
-# ONE WORD. Committing `test.only` on a single healthy spec collapsed the lane from 51 specs
-# to 1, ENTIRELY GREEN: shard 1/3 ran that one test and passed, shards 2/3 and 3/3 selected
-# ZERO tests and **exited 0, silently** (sharding suppresses playwright's own "No tests
-# found" guard, which unsharded would have exited 1 and failed safe). The ci.yml command was
-# byte-identical the whole time. So was the ratchet's @quarantine count. Every guard in the
-# repo stayed green while the lane covered 1/51st of what its green check claimed.
-#
-# The lesson is the one this PR was written to teach, turned back on the PR itself: a guard
-# that enumerates the ways to cheat will always miss one. `@quarantine` was the spelling we
-# imagined. `.only` was not. `.skip` and `.fixme` were not. So this file stopped enumerating
-# spellings and started asserting the PROPERTY — the executed set is exactly the committed
-# set minus the quarantined set, and NOTHING ELSE removes a spec from the lane. Under that
-# invariant `.only`, `.skip`, `.fixme`, `.fail`, a `testDir`/`testIgnore` narrowing, a
-# deleted spec file, an empty shard, and the spellings nobody has thought of yet are all
-# red, because they all break the same arithmetic.
-#
-# The rule that makes it airtight is DEFAULT-DENY (see INERT_MODIFIERS): a spec declaration
-# must be a BARE `test(...)`. Every dotted form is refused BY NAME unless it is on a short
-# allowlist of modifiers that provably cannot change WHICH specs run (`describe`, the hooks,
-# `use`, `step`, `setTimeout`, `slow`). A modifier Playwright ships next year lands on the
-# deny side by default, which is the only side a guard may default to.
-#
-# THE @quarantine HOLE, which this file also bounds. CI runs the lane with
-# `--grep-invert @quarantine` (.github/workflows/ci.yml), excluding the 18 specs that were
-# already RED on an untouched `release` checkout the day the lane was switched on. That
-# exclusion buys the healthy 52 a real lane TODAY instead of holding them hostage to a
-# repair — but it is a hole, and until this file existed it was UNBOUNDED.
-#
-# The count may fall; it may never rise — and "may never rise" is ENFORCED, not asserted in a
-# comment: the ceiling is compared against its value on `origin/release` (see BASELINE_REF), a
-# number no edit in this working tree can reach. The first version of this guard compared the
-# ceiling to the contract file the author was editing, which is a PIN wearing a ratchet's
-# name; review proved it by tagging a 19th spec, bumping the contract, and watching every
-# guard in the repo — this one and the receipt both — go green over a suite that had just
-# shrunk. Read test_integration_the_quarantine_ceiling_never_rises before touching this.
-#
-# TO REPAIR A SPEC: drop its ` @quarantine` tag and lower `quarantined` in
-# config/e2e_lane.yml in the same commit. When it reaches 0, delete the
-# `--grep-invert @quarantine` flag from ci.yml — the suite is whole, and only the
-# executed-set half of this file is still load-bearing. Repair is ticketed at
-# /tasks/repair-rotted-e2e-specs.
-#
-# Run directly:
-#   ruby -Itest test/lib/e2e_quarantine_ratchet_test.rb
-#
-# Two tiers (backend shape):
-#   [unit]        the spec/quarantine/modifier scanners, over fixture spec text.
-#   [integration] the REAL committed e2e/ suite, ci.yml, and playwright.config.js.
+# THE DECLARED SET of the Playwright `e2e` lane, the STATIC half of a two-part guard: specs
+# committed - quarantined == the lane should run, COMPUTED by bin/lib/e2e_spec_census.rb. This
+# reads SOURCE and cannot say what RAN; bin/e2e-executed-set-check reads Playwright's report
+# against config/e2e_lane.yml. Keep both. DEFAULT-DENY (INERT_MODIFIERS): a spec must be a BARE
+# `test(...)`. The @quarantine ceiling may fall, never rise. TO REPAIR A SPEC: drop its `
+# @quarantine` tag and lower `quarantined` in the same commit; at 0, delete `--grep-invert
+# @quarantine` from ci.yml.
+# History: task repair-rotted-e2e-specs.
 
 require "minitest/autorun"
 require "yaml"
@@ -99,28 +33,13 @@ class E2eQuarantineRatchetTest < Minitest::Test
   QUARANTINE_TAG = CONTRACT.fetch("quarantine_tag")
   # ====================================================================================
 
-  # ==== THE BASELINE — the one number this author's diff CANNOT move ==================
-  # Round 4 of review killed the previous version of the ratchet with one measurement, and it
-  # is worth stating plainly because the bug is subtle and it is THE BUG THIS WHOLE PR IS ABOUT:
-  #
-  #   The old assertion was `count == CEILING`, and CEILING is read from config/e2e_lane.yml —
-  #   THE SAME FILE THE AUTHOR EDITS. So tagging a 19th spec and bumping the contract 18 -> 19
-  #   passed with ZERO failures, and the receipt (50 == 50) went green right behind it. THE
-  #   HOLE GREW WITH EVERY GUARD IN THE REPO GREEN. A "ratchet" whose reference value moves
-  #   with the thing it is supposed to be restraining is a PIN, not a ratchet.
-  #
-  # This is the same disease as the receipt, one level up: a guard that reads only what the
-  # author wrote can only ever confirm that the author wrote it. The cure is the same one —
-  # read something OUTSIDE the diff. For the executed set that is Playwright's own report. For
-  # the ceiling it is `origin/release`: the value as it stands on the branch this PR must merge
-  # into, which no edit in this working tree can touch.
-  #
-  # FAIL CLOSED. If the baseline cannot be resolved, this guard goes RED — it does not shrug and
-  # pass. A ratchet that cannot see its baseline cannot certify monotonicity, and a green light
-  # it has no basis for is precisely the lie being hunted. (CI must therefore fetch the ref:
-  # .github/workflows/ci.yml checks out the `test` job with `fetch-depth: 0`, pinned by
-  # test/lib/ci_workflow_triggers_test.rb, so dropping it turns the lane RED and loud rather
-  # than quietly demoting this back to a pin.)
+  # ==== THE BASELINE: the one number this author's diff CANNOT move ==================
+  # A ceiling read from config/e2e_lane.yml moves with the file the author edits: tag a spec,
+  # bump the contract, all green. That is a PIN, not a ratchet. A guard must read something
+  # OUTSIDE the diff, here `origin/release`. FAIL CLOSED: an unresolved baseline goes RED, never
+  # a pass. So .github/workflows/ci.yml checks out the `test` job with `fetch-depth: 0`, pinned
+  # by test/lib/ci_workflow_triggers_test.rb.
+  # History: task e2e-tiers-are-decorative.
   BASELINE_REF = "origin/release"
   # ====================================================================================
 
@@ -147,29 +66,14 @@ class E2eQuarantineRatchetTest < Minitest::Test
     use step setTimeout slow info
   ].freeze
 
-  # AXIS 2 — THE RECEIVER. Axis 1 anchors its receiver to `test|it|describe`, which made the
-  # RECEIVER an enumeration — the exact shape this file spent two rounds eliminating one axis
-  # over. Playwright's documented TestInfo API produces the IDENTICAL runtime skip from a
-  # different receiver, and it walked straight past the guard above:
-  #
-  #     test("landing page loads", async ({ page }, testInfo) => {
-  #       testInfo.skip();     // MEASURED on this repo: exit 0, "1 skipped", every guard GREEN
-  #
-  # So the verbs are refused on ANY receiver: `testInfo.skip()`, `test.info().skip()`, an
-  # aliased `const t = test; t.skip()`. The receiver is no longer a list to keep up to date.
-  #
-  # THIS AXIS CANNOT BE CLOSED AT THE SOURCE, AND THAT IS THE POINT. A destructured
-  # `const { skip } = testInfo; skip()`, or a helper in another file that calls `ti.skip()`
-  # for you, has no `.skip(` in the spec at all — no regex on this text can see it. That is
-  # not a hole to be plugged with a cleverer regex; it is PROOF that a source-level guard is
-  # the wrong instrument for this question. It is closed at RUNTIME, where a skipped spec is
-  # a skipped spec whatever the syntax: bin/e2e-executed-set-check reads Playwright's own
-  # report and refuses a lane with any skip in it. This axis is mutation-proved in BOTH
-  # directions — the destructured vector is GREEN here and RED there, deliberately.
-  # The receiver class must include `(` and `)`, or `test.info().skip()` matches with the
-  # receiver read as a bare `)` — it still FIRES (the verb is what is being denied), but it
-  # names the offender uselessly, and a guard whose failure message is gibberish is a guard
-  # somebody deletes. Caught by test_unit_refuses_a_runtime_skip_through_test_info.
+  # AXIS 2, THE RECEIVER. The verbs are refused on ANY receiver: `testInfo.skip()`,
+  # `test.info().skip()`, an aliased `const t = test; t.skip()`. THIS AXIS CANNOT BE CLOSED AT
+  # THE SOURCE: a destructured `const { skip } = testInfo; skip()` or a helper has no `.skip(`
+  # in the spec. It is closed at RUNTIME by bin/e2e-executed-set-check, which refuses any skip;
+  # that vector is GREEN here and RED there, deliberately. The receiver class must include `(`
+  # and `)`, or `test.info().skip()` fires naming a bare `)` as the offender. See
+  # test_unit_refuses_a_runtime_skip_through_test_info.
+  # History: task e2e-tiers-are-decorative.
   SELECTION_VERBS = %w[only skip fixme fail].freeze
   SELECTION_CALL = /(?<receiver>[\w$()\].]+)\s*\.\s*(?<verb>#{Regexp.union(SELECTION_VERBS)})\s*\(/
   # ====================================================================================
@@ -238,30 +142,14 @@ class E2eQuarantineRatchetTest < Minitest::Test
     status.success? ? out : nil
   end
 
-  # The ceiling as it stands OUTSIDE this working tree. Returns [ceiling, provenance], or
-  # [nil, why_not] — and [nil, …] is a RED, never a pass.
-  #
-  # TWO SOURCES, IN ORDER, AND THE SECOND ONE IS NOT A LOOPHOLE:
-  #
-  #   1. THE RELEASED CEILING — `origin/release:config/e2e_lane.yml`. Once the contract is on
-  #      release this is the only baseline, forever. Nothing in a feature branch can move it.
-  #
-  #   2. THE INTRODUCING COMMIT — for the ONE branch that ADDS the contract (this one: the file
-  #      does not exist on release yet). There is no released value to ratchet against, so the
-  #      baseline is the value at the commit that first added the file on this branch.
-  #
-  #      Without case 2 the bootstrap branch would have NO baseline, and "no baseline" would
-  #      have to mean either RED (this PR can never be green — absurd) or PASS (the ratchet is
-  #      decorative on the exact PR that introduces it — which is the bug, shipped one level up,
-  #      and is precisely how I would have re-committed the offense I am fixing). Case 2 is what
-  #      makes the mutation vector — tag a 19th spec, bump the contract — go RED **today**,
-  #      on this branch, rather than someday after merge.
-  #
-  #      What it does NOT do is let the ceiling drift up inside this branch: a later commit that
-  #      raises it is measured against the introducing commit and goes RED. The initial value is
-  #      the one thing case 2 cannot police, and it does not need to — a brand-new contract file
-  #      is a wholly-added diff, and its ceiling is a reviewed line on it. After merge, case 1
-  #      takes over and case 2 can never fire for this file again.
+  # The ceiling as it stands OUTSIDE this working tree. Returns [ceiling, provenance], or [nil,
+  # why_not], and [nil, …] is a RED, never a pass. TWO SOURCES, IN ORDER:
+  #   1. THE RELEASED CEILING, `origin/release:config/e2e_lane.yml`: once there, the only one.
+  #   2. THE INTRODUCING COMMIT, for the ONE branch that ADDS the contract: the value at the
+  #      commit that first added the file. A later commit raising it goes RED. The initial
+  #      value is a reviewed line on a wholly-added diff. Without case 2, "no baseline" means
+  #      never green or a decorative ratchet.
+  # History: task e2e-tiers-are-decorative.
   def baseline_ceiling
     return [nil, "git cannot read #{ROOT} (not a repository?)"] unless git("rev-parse", "--git-dir")
 
@@ -427,15 +315,11 @@ class E2eQuarantineRatchetTest < Minitest::Test
   end
 
   # ==== THE HONEST LIMIT OF EVERY SOURCE-LEVEL GUARD ==================================
-  # This test asserts that this file CANNOT catch something. That is not a defect to be
-  # patched with a cleverer regex — it is the whole reason the runtime gate exists, pinned
-  # here so nobody deletes bin/e2e-executed-set-check believing the static scan covers it.
-  #
-  # Destructure the method off TestInfo and there is no `.skip(` in the spec at all. Put it in
-  # a helper module and the spec file is clean as a whistle. No regex over this text can see
-  # either one. The lane still loses the spec, silently, exit 0.
-  #
-  # RED at runtime, GREEN here — and that asymmetry is mutation-proved in both directions.
+  # This test asserts that this file CANNOT catch something, pinned so nobody deletes
+  # bin/e2e-executed-set-check believing the static scan covers it. Destructure the method off
+  # TestInfo, or put it in a helper, and no `.skip(` is in the spec; the lane still loses the
+  # spec, silently, exit 0. RED at runtime, GREEN here.
+  # History: task e2e-tiers-are-decorative.
   def test_unit_a_destructured_skip_is_INVISIBLE_to_this_file_and_that_is_why_the_receipt_exists
     source = <<~JS
       test("landing page loads", async ({ page }, testInfo) => {
@@ -572,17 +456,12 @@ class E2eQuarantineRatchetTest < Minitest::Test
                  "(/tasks/repair-rotted-e2e-specs)"
   end
 
-  # ==== THE RATCHET — and this one actually ratchets ==================================
-  # The ceiling is measured against `origin/release` (see BASELINE_REF), NOT against the copy
-  # in this working tree. That is the whole difference between a ratchet and a pin, and it is
-  # the difference review MEASURED: with the old assertion, tagging a 19th spec and bumping
-  # the contract 18 -> 19 was GREEN — every guard in the repo, plus the receipt, all green,
-  # while the hole grew.
-  #
-  # The name promises exactly what is enforced and no more: the ceiling NEVER RISES. Nothing
-  # here forces it DOWN — a ratchet prevents backsliding, it does not do the work. Driving 18
-  # to 0 is /tasks/repair-rotted-e2e-specs, and this guard is what stops the number from
-  # quietly wandering back up while that ticket waits.
+  # ==== THE RATCHET: and this one actually ratchets ==================================
+  # The ceiling is measured against `origin/release` (see BASELINE_REF), NOT the working-tree
+  # copy. The name promises exactly what is enforced: the ceiling NEVER RISES. Nothing here
+  # forces it DOWN; that is /tasks/repair-rotted-e2e-specs, and this stops the number wandering
+  # back up.
+  # History: task repair-rotted-e2e-specs.
   def test_integration_the_quarantine_ceiling_never_rises
     baseline, provenance = baseline_ceiling
 

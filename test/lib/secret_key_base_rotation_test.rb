@@ -1,15 +1,12 @@
 require "test_helper"
 
 # Helpers shared by the rotation tests below.
-#
-# THE BOOT-ORDER TRAP (task rotation-derives-old-key-sha256). The initializer runs
-# during config/initializers, BEFORE Active Support's after_initialize sets
-# ActiveSupport::KeyGenerator.hash_digest_class to SHA256. A KeyGenerator built then
-# without an explicit digest bakes in the class default, SHA1, and keeps it. A test
-# that calls apply! after boot never sees that, which is how the first suite passed
-# while every pre-swap session in production signed out. `during_initializers`
-# puts the class default back to SHA1 for the length of a block, so apply! runs
-# under the same conditions it meets at boot.
+# THE BOOT-ORDER TRAP. The initializer runs during config/initializers, BEFORE Active Support's
+# after_initialize sets ActiveSupport::KeyGenerator.hash_digest_class to SHA256; a KeyGenerator
+# built then without an explicit digest keeps SHA1. A test calling apply! after boot never sees
+# that. `during_initializers` puts the class default back to SHA1 for a block, so apply! runs as
+# at boot.
+# History: task rotation-derives-old-key-sha256.
 module SecretKeyBaseRotationTestHelpers
   private
 

@@ -1,22 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] `bin/release ship --mode ask|timed|auto|cleared` at the ship-authority seam
-# (bin/lib/ship_authority.rb), driven through the REAL `ship` in a dry-run
-# subprocess: the config default is timed and previews the window, `--yes` alone
-# is auto, an explicit mode wins, an unknown mode aborts before the release is
-# resolved, and the two ship_authorized writes carry the keys the seam promises —
-# a timed REQUEST keyed by its window end, a GRANT/completion on the default key.
-# Standalone:
-#   ruby -Itest test/lib/release_ship_mode_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# A FILE OF ITS OWN ON PURPOSE: the release CLI files are frozen at their size by
-# the suite's test-health ratchet precisely so new work lands somewhere else
-# (and naming that ratchet's config file here would map this file onto it in
-# the fast cert, which pins how many tests that path reaches). The harness
-# below is the small one (a sealed subprocess loading the script with the ship
-# conductor stubbed) rather than the shared release CLI harness; the conductor
-# stub is the harness's SHIP_STUB, copied as the sibling files copy what they need.
+# [unit] `bin/release ship --mode ask|timed|auto|cleared` at the seam
+# (bin/lib/ship_authority.rb), through the REAL `ship` in a dry-run subprocess: default
+# timed previews the window, `--yes` alone is auto, an explicit mode wins, an unknown mode
+# aborts before the release resolves, ship_authorized carries a timed REQUEST keyed by
+# window end, a GRANT/completion on the default key. A FILE OF ITS OWN ON PURPOSE: release
+# CLI files are frozen by the test-health ratchet, and naming that ratchet's config file
+# here would map this file onto it in the fast cert.
+# History: task operator-windows-on-board.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

@@ -1,18 +1,11 @@
 # frozen_string_literal: true
 
-# Standalone test for bin/dor-check's BROWSER-EVIDENCE gate. Run directly:
-#   ruby -Itest test/lib/dor_check_browser_evidence_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# This is the GATE-level half of the proof. test/lib/client_surface_diff_test.rb
-# proves the classifier answers correctly; this proves bin/dor-check ASKS it, reads
-# the real git tree to do so, and ACTS on the answer. A green classifier wired to
-# nothing is the failure mode worth more than either — a mutation harness caught
-# exactly that on the test-only shape (a DEAD PATH: flipping the module's rule
-# changed nothing, because nothing called it).
-#
-# It lives in its own file rather than in dor_check_test.rb (110 KB, shared by
-# several concurrent agents) so a merge conflict cannot silently drop it.
+# Standalone test for bin/dor-check's BROWSER-EVIDENCE gate, the GATE-level half.
+# test/lib/client_surface_diff_test.rb proves the classifier answers correctly; this proves
+# bin/dor-check ASKS it, reads the real git tree, and ACTS on the answer. A green classifier
+# wired to nothing (a DEAD PATH) is the failure mode. Own file, not dor_check_test.rb, so a
+# merge conflict cannot silently drop it.
+# History: task gate-client-side-behavior.
 
 require "minitest/autorun"
 require "json"
@@ -107,26 +100,14 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
     end
   end
 
-  # WHERE THIS SUBPROCESS'S BOARD WRITES GO, AND WHY IT IS PINNED.
-  #
-  # bin/dor-check defaults BASE_URL to ENV.fetch("TASK_API_BASE",
-  # "https://mcritchie.studio") — PRODUCTION — and a real merge-gate verdict shells
-  # bin/gate to open+close a durable GateRun, which is a board write. This suite is
-  # safe from that today only because every invocation passes --file, and the emit
-  # is gated `options[:file].nil?`.
-  #
-  # THAT IS A GUARD INSIDE THE CODE UNDER TEST, which is the wrong place for this
-  # suite's containment to live: delete that one condition in bin/dor-check and this
-  # file starts writing GateRuns to the production board, silently, with every
-  # assertion still green. The retro leak we closed had exactly that shape — a test
-  # shelling a CLI whose write was invisible from the test's own assertions.
-  #
-  # So containment is pinned HERE, on the path, not inferred from the callee's
-  # behaviour: TASK_API_BASE points at a local sink this test owns. Proven to
-  # intercept rather than assumed — see
-  # test_integration_the_board_pin_actually_intercepts, which drives the DANGEROUS
-  # shape (no --file, so the emit DOES fire) and asserts the sink RECEIVED the
-  # request. A positive receipt, not the absence of one.
+  # WHERE THIS SUBPROCESS'S BOARD WRITES GO, AND WHY IT IS PINNED. bin/dor-check defaults
+  # BASE_URL to ENV.fetch("TASK_API_BASE", "https://mcritchie.studio"), PRODUCTION, and a
+  # merge-gate verdict shells bin/gate to write a GateRun. The `options[:file].nil?` gate is a
+  # guard inside the code under test, the wrong place for containment. So it is pinned HERE:
+  # TASK_API_BASE points at a local sink. Proven by
+  # test_integration_the_board_pin_actually_intercepts, which drives the DANGEROUS shape (no
+  # --file) and asserts the sink RECEIVED the request: a positive receipt.
+  # History: task gate-client-side-behavior.
   SINK_HOST = "127.0.0.1"
 
   def board_pinned_env(extra = {})
@@ -155,22 +136,12 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
 
   GATE_BIN = File.expand_path("../../bin/gate", __dir__)
 
-  # A fake secret so the child gets FAR ENOUGH to make a board call.
-  #
-  # The first version of this self-test passed locally and failed in CI, and the
-  # cause is worth recording because it is the same ambient-coupling family
-  # SessionEnv exists for, running the other way. bin/dor-check resolves
-  # AGENT_API_SECRET from ENV, then the repo's .env, then 1Password, and `die!`s if
-  # all three miss. A dev worktree HAS a .env, so the child reached the auth POST
-  # and the sink saw it. CI has none of the three — .env is gitignored,
-  # AGENT_API_SECRET appears nowhere in ci.yml, and TaskBoard::OP is the hardcoded
-  # macOS path /opt/homebrew/bin/op on an Ubuntu runner — so the child exited at
-  # agent_secret BEFORE opening a socket. The sink saw nothing, and the receipt
-  # correctly refused.
-  #
-  # So the fix is to stop depending on the machine having a real credential, NOT to
-  # weaken the receipt. The value is fake and can only ever be offered to a
-  # localhost sink, because TASK_API_BASE is pinned in the same env hash.
+  # A fake secret so the child gets FAR ENOUGH to make a board call. bin/dor-check resolves
+  # AGENT_API_SECRET from ENV, then the repo's .env, then 1Password, and `die!`s if all miss. CI
+  # has none, so the child exits before opening a socket and the sink sees nothing. Do not
+  # weaken the receipt. The value is fake and only reaches a localhost sink: TASK_API_BASE is
+  # pinned in the same env hash.
+  # History: task gate-client-side-behavior.
   PIN_PROOF_SECRET = "pin-proof-not-a-real-secret"
 
   # Run `cmd` with the board pinned at a sink this test owns; return the HTTP
@@ -204,21 +175,12 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
     server&.close
   end
 
-  # THE HARNESS SELF-TEST. A pin nobody proved is advice.
-  #
-  # Covers BOTH binaries that can write to the board, each driven directly, because
-  # they are separate processes with separate env reads:
-  #
-  #   bin/dor-check — in the shape that DOES emit (a real slug, no --file).
-  #   bin/gate      — the binary that actually writes the durable GateRun. Driving
-  #                   it directly is deliberate: reaching it THROUGH dor-check would
-  #                   need the sink to impersonate a whole board (auth token, task
-  #                   JSON, a complete verdict), and a fake that elaborate fails for
-  #                   its own reasons and stops testing the pin.
-  #
-  # If a future change routes either one's board calls somewhere this pin cannot
-  # reach, this fails and NAMES the portability break, instead of the suite quietly
-  # resuming writes to production.
+  # THE HARNESS SELF-TEST. A pin nobody proved is advice. It drives BOTH binaries that can write
+  # to the board, each directly, since they read env separately: bin/dor-check in the shape that
+  # DOES emit (a real slug, no --file), and bin/gate, which writes the GateRun; through
+  # dor-check the sink would have to impersonate a whole board. If either routes elsewhere, this
+  # NAMES the portability break.
+  # History: task gate-client-side-behavior.
   def test_integration_the_board_pin_actually_intercepts
     dor = sink_requests("#{BIN} some-slug-that-does-not-exist")
     refute_empty dor,
@@ -305,15 +267,11 @@ class DorCheckBrowserEvidenceTest < Minitest::Test
   end
 
   # ==== A COMMENT SAYING "NO SCRIPT" MUST NOT DEMAND A PLAYWRIGHT SPEC =============
-  #
-  # The defect that sent PR #801 back as rework, replayed END TO END at the gate
-  # rather than at the classifier — because the classifier being right is not the
-  # claim; the claim is that `bin/dor-check` exits 0. This exact text is live at
-  # turf-monster/app/views/contests/_goal_feed_item.html.erb:3, and turf HAS an e2e
-  # lane, so before the fix editing this comment demanded a browser spec.
-  #
-  # Note it is MULTI-LINE: the line carrying the word `<script>` has no `<%#` on it
-  # at all. Any per-line or per-hunk rule is blind here by construction.
+  # Replayed END TO END at the gate: the claim is that `bin/dor-check` exits 0, not that the
+  # classifier is right. Live at turf-monster/app/views/contests/_goal_feed_item.html.erb:3. It
+  # is MULTI-LINE: the line carrying `<script>` has no `<%#`, so any per-line or per-hunk rule
+  # is blind here.
+  # History: task gate-client-side-behavior.
   GOAL_FEED_COMMENT = <<~ERB
     <%# A data-only node appended to the hidden goal feed on the live page. The
         page's MutationObserver reads these data-* attrs, fires a toast, then removes

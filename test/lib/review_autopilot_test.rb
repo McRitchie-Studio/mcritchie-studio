@@ -1,37 +1,13 @@
 # frozen_string_literal: true
 
-# bin/review-autopilot — the two board READS under a tool that arms unattended
-# merges, and the one property both must hold: a read that FAILED never renders as
-# a read that found nothing.
-#
-# WHY THIS FILE EXISTS (the `list` half). "nothing armed" is the most reassuring
-# sentence this CLI can print: it is the operator's answer to "is anything queued
-# to merge itself on green CI?". It used to be produced by `body["data"] || []`, so
-# a body the CLI could not read — a proxy's HTML error page, a truncated response,
-# an expired-token error payload — scored an EMPTY registry and printed the
-# all-clear. An armed auto-merge could be sitting there unseen.
-#
-# WHY IT GREW (the `arm` half, 2026-09-20). Both CLIs defaulted TASK_BOARD_URL to
-# https://www.mcritchie.studio; CanonicalHost 301s that alias onto the apex and
-# TaskBoard.request follows no 3xx. GETs came back 301 while POSTs, which the
-# middleware does not redirect, landed normally — so writes worked and reads did
-# not. `arm` never checked its task GET at all: with `--head` supplied the 301 was
-# a WARNING, the arm POST went out, and the process EXITED 0. The operator who hit
-# it (me) read "-> HTTP 301" as an expired token and went to 1Password, because
-# once the code is the only thing on the line a 301 looks exactly like a 401.
-#
-# The host default is fixed elsewhere (1097fbfa, pinned by
-# test/lib/board_cli_canonical_host_test.rb). This file pins the STATUS posture,
-# which is what makes the next redirect, outage or auth failure survivable.
-#
-# The tests assert the EFFECT, not merely the exit code: a check that only asserted
-# "exits nonzero" would pass on an unrelated crash, and the things that must never
-# happen are the reassuring SENTENCE printing off an unreadable answer and the
-# ARM RECEIPT printing off a task record nobody read. `armed: t` on stdout is the
-# write's own proof — the script prints it only after the POST succeeds.
-#
-#   ruby -Itest test/lib/review_autopilot_test.rb
-# Also picked up by the normal `bin/rails test` sweep.
+# bin/review-autopilot: under a tool that arms unattended merges, a board read that FAILED never
+# renders as a read that found nothing. `list`: `body["data"] || []` turned an unreadable body
+# into the all-clear "nothing armed". `arm`: a failed task GET must not let the POST go out.
+# This pins the STATUS posture; the host default is pinned by
+# test/lib/board_cli_canonical_host_test.rb. Tests assert the EFFECT, not the exit code: the
+# reassuring SENTENCE and the ARM RECEIPT must not print. `armed: t` on stdout is the write's
+# own proof; it prints only after the POST succeeds.
+# History: task board-parse-silently-returns-empty.
 
 require "minitest/autorun"
 require "open3"
@@ -104,20 +80,13 @@ class ReviewAutopilotTest < Minitest::Test
     assert_includes err, "OPERATOR APPROVAL STILL WAITING"
   end
 
-  # THE REGRESSION. This case asserted the OPPOSITE until 2026-09-20 — "the arm
-  # itself still lands", plus an `approval state UNREAD` warning — and it passed,
-  # because that is exactly what the tool did: with --head supplied, a task GET it
-  # never checked let the POST go out and the process exit 0. An auto-merge queued
-  # server-side, to run with no reviewer present, against a task record nobody read.
-  #
-  # The zap that added the UNREAD warning (a053c142) wanted an unverifiable approval
-  # state never to pass silently. Refusing the arm is that same intent, enforced
-  # instead of announced — so the warning is gone because its branch is now
-  # unreachable, not because the concern was dropped.
-  #
-  # THE LOAD-BEARING ASSERTION IS THE MISSING RECEIPT. `armed: t` prints only after
-  # the POST succeeds, so its absence is the write's absence. A version that warned
-  # and armed anyway would exit non-zero on some other path and still merge.
+  # THE REGRESSION: with --head supplied, a task GET nobody checked must not let the POST go out
+  # and exit 0, queuing an auto-merge against a task record nobody read. The old UNREAD warning
+  # is gone because its branch is unreachable, not because the concern was dropped. THE
+  # LOAD-BEARING ASSERTION IS THE MISSING RECEIPT: `armed: t` prints only after the POST
+  # succeeds. A version that warned and armed anyway would exit non-zero on some other path and
+  # still merge.
+  # History: task fix-autopilot-base-url.
   def test_arm_refuses_when_the_task_read_fails_and_never_arms
     out, err, status = run_list(payload: JSON.generate("data" => ARMED), args: %w[arm t --head abc1234567],
                                 status: { "GET" => "503 Service Unavailable", "POST" => "200 OK" })

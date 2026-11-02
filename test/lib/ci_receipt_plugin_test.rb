@@ -1,25 +1,13 @@
 # frozen_string_literal: true
 
-# Unit + integration tests for test/minitest/ci_receipt_plugin.rb — THE RECEIPT ITSELF.
-#
-# The receipt is the evidence bin/rails-executed-set-check judges the sharded lane on.
-# If it can be lost, overwritten, or silently not produced, the gate's arithmetic is
-# arithmetic over the wrong numbers — so the mechanism gets the same scrutiny as the
-# gate that reads it.
-#
-# THE INTEGRATION TESTS BELOW SPAWN REAL `bin/rails test` CHILD PROCESSES, and that is
-# deliberate rather than lazy. The failure they pin — a subprocess inheriting
-# CI_RECEIPT_OUT and writing its own receipt over the parent's — cannot be reproduced by
-# calling methods, because it is entirely about process boundaries and environment
-# inheritance. It was found by RUNNING the suite (the receipt came out holding 11 results
-# instead of 6,828) and it can only be pinned the same way.
-#
-# Run directly:
-#   ruby -Itest test/lib/ci_receipt_plugin_test.rb
-#
-# Two tiers (backend shape):
-#   [unit] the plugin's enable/attribute/aggregate logic, in-process.
-#   [integration] a real spawned `bin/rails test` child against a live parent receipt.
+# Unit + integration tests for test/minitest/ci_receipt_plugin.rb, THE RECEIPT ITSELF: the
+# evidence bin/rails-executed-set-check judges the sharded lane on. THE INTEGRATION TESTS SPAWN
+# REAL `bin/rails test` CHILD PROCESSES deliberately: a subprocess inheriting CI_RECEIPT_OUT and
+# writing over the parent's receipt is about process boundaries, and calling methods cannot
+# reproduce it.
+# [unit] the plugin's enable/attribute/aggregate logic, in-process.
+# [integration] a real spawned `bin/rails test` child against a live parent receipt.
+# History: task shard-the-rails-suite.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -82,14 +70,11 @@ class CiReceiptPluginTest < Minitest::Test
   end
 
   # ---- [unit] attribution and aggregation ---------------------------------------
-  #
-  # EVERY CASE BELOW BUILDS ITS OWN Recorder. That is not style — it is the fix for the
-  # bug this file caused. These tests used to poke at module-level constants
-  # (CiReceipt::FILES.clear between cases), and when they ran INSIDE a real shard they
-  # wiped that shard's live receipt: shard 4 of the proof run executed 1,517 tests across
-  # 116 files and emitted a receipt claiming 1 file and 3 runs. The executed-set gate is
-  # what caught it. A process-wide mutable accumulator is reachable by anything in the
-  # process, and a test suite is the one program guaranteed to contain code that reaches.
+  # EVERY CASE BELOW BUILDS ITS OWN Recorder. Poking module-level constants
+  # (CiReceipt::FILES.clear) inside a real shard wipes that shard's live receipt. A process-wide
+  # mutable accumulator is reachable by anything in the process, and a test suite is guaranteed
+  # to contain code that reaches.
+  # History: task shard-the-rails-suite.
 
   Result = Struct.new(:klass, :name, :assertions, :time, :failures, :source_location)
 
@@ -183,15 +168,11 @@ class CiReceiptPluginTest < Minitest::Test
   end
 
   # ---- the commit the shard ran, and why the receipt has to carry it -------------
-  #
-  # The executed-set gate re-derives the expected file set from a tree it checks out
-  # ITSELF, which in the consumer lane is a BRANCH NAME resolved minutes after the
-  # shards resolved theirs. Engine run 32495361932 is the measured case: hub PR #979
-  # merged f9a440e5 in the four minutes between the two checkouts, and the gate reported
-  # the two files it added as committed files that "executed NOTHING". They had run green
-  # in the hub's own lane; they simply had not existed when the shards checked out. The
-  # receipt is the only place that fact can be recorded, because it is the only artifact
-  # that crosses from the shard to the gate.
+  # The executed-set gate re-derives the expected file set from a tree it checks out ITSELF, in
+  # the consumer lane a BRANCH NAME resolved minutes after the shards'. A merge in between
+  # reports added files as committed files that "executed NOTHING". The receipt is the only
+  # artifact that crosses from the shard to the gate, so only it can record the commit.
+  # History: task unblock-consumer-executed-set.
 
   def test_unit_the_payload_names_the_commit_the_shard_ran
     rec = recorder
@@ -226,17 +207,12 @@ class CiReceiptPluginTest < Minitest::Test
 
   # ---- [integration] the real process boundary ----------------------------------
 
-  # Spawn a real `bin/rails test` child against a throwaway fixture.
-  #
-  # `CI_RECEIPT_OWNER_PID => nil` IS LOAD-BEARING, and its absence is a bug this file
-  # already shipped once. Open3 MERGES the given hash into the parent's environment
-  # rather than replacing it — so when these tests run INSIDE a real shard (where the
-  # shard has stamped its own pid as the owner) the child inherited that stamp, stood
-  # down, and wrote nothing. The "the owner DOES write one" case then failed, but ONLY
-  # in place: standalone the variable is unset and everything passed. A nil value tells
-  # Process.spawn to UNSET the variable in the child, which makes the two contexts agree.
-  #
-  # Callers that want the child to see an owner pass one explicitly.
+  # Spawn a real `bin/rails test` child against a throwaway fixture. `CI_RECEIPT_OWNER_PID =>
+  # nil` IS LOAD-BEARING: Open3 MERGES the hash into the parent's environment, so inside a real
+  # shard the child inherits the owner stamp, stands down and writes nothing, while standalone
+  # everything passes. A nil value tells Process.spawn to UNSET the variable. Callers that want
+  # the child to see an owner pass one explicitly.
+  # History: task shard-the-rails-suite.
   def run_child(env)
     Dir.mktmpdir do |dir|
       fixture = File.join(dir, "spawned_child_fixture_test.rb")

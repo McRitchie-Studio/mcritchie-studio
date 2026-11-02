@@ -1,16 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] SOURCE PIN: every subprocess on the release path runs through
-# BoundedCommand (a deadline, then SIGKILL to the child's process group).
-#
-# On 2026-10-27 a `heroku run` client hung 26 minutes with no dyno, every `op`
-# read hung for two hours, and a perl `alarm` wrapper could not kill a hung `op`
-# because op ignores SIGALRM. Open3, system() and IO.popen wait as long as the
-# child does; Timeout.timeout raises into this thread and leaves the child
-# running. So none of them may spawn a child in these files. The one allowance is
-# curl, which carries its own --max-time on the same call.
-#
-#   ruby -Itest test/lib/release_subprocesses_are_bounded_test.rb
+# [unit] SOURCE PIN: every subprocess on the release path runs through BoundedCommand (a
+# deadline, then SIGKILL to the child's process group). Open3, system() and IO.popen wait as
+# long as the child does; Timeout.timeout leaves the child running; a perl `alarm` cannot kill
+# `op`, which ignores SIGALRM. So none of them may spawn a child in these files. The one
+# allowance is curl, which carries its own --max-time on the same call.
+# History: task release-tooling-bounds-every-call.
 
 require "minitest/autorun"
 

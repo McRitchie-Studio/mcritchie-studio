@@ -1,13 +1,9 @@
 # frozen_string_literal: true
 
-# [unit] tests for bin/lib/docs_archive.rb — the two qualification rules.
-#
-# The reference rule is exercised against a REAL git repo in a tmpdir rather than
-# a stubbed search, because `git grep` (tracked files only, exit 1 on no match)
-# is the behavior being relied on. Building one costs milliseconds; stubbing it
-# would test the stub.
-# Run directly:
-#   ruby -Itest test/lib/docs_archive_test.rb
+# [unit] tests for bin/lib/docs_archive.rb: the two qualification rules. The reference rule runs
+# against a REAL git repo in a tmpdir, because `git grep` (tracked files only, exit 1 on no
+# match) is the behavior relied on; stubbing it would test the stub.
+# History: task sweep-logs-on-archive.
 
 require "minitest/autorun"
 require "tmpdir"

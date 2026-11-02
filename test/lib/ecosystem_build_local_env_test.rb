@@ -1,19 +1,13 @@
 # frozen_string_literal: true
 
-# [unit] bin/ecosystem-build's Phase 4 env writer, EXECUTED against a synthetic
-# `op` and a synthetic `heroku`.
-#
-# WHAT IT REPLACED. Until 2026-10-10 Phase 4 piped the PRODUCTION app's
-# `heroku config` into each primary's .env through a deny list. A deny list
-# keeps whatever it has not been told about, so the test that matters is not
-# "is key X dropped" but "is a deployed app's config read at all". Here the
-# synthetic `heroku` answers every `config` call with a sentinel and logs the
-# call, and both the log and the files are checked.
-#
-# AND THE DEV PAIR ONLY. 1Password `r2.<app>` holds the production pair beside
-# the dev pair. The synthetic `op` answers every field with a value that names
-# the field, so a production field reaching a file is visible in the file, and
-# a production field merely being READ is visible in the call log.
+# [unit] bin/ecosystem-build's Phase 4 env writer, EXECUTED against a synthetic `op` and
+# `heroku`. A deny list keeps whatever it has not been told about, so what matters is whether
+# a deployed app's config is read at all: synthetic `heroku` answers every `config` with a
+# sentinel and logs the call, and log and files are both checked.
+# THE DEV PAIR ONLY: 1Password `r2.<app>` holds the production pair too. Synthetic `op`
+# answers each field with a value naming it, so a production field reaching a file shows in
+# the file, and merely READ shows in the call log.
+# History: task seeds-reference-production-assets.
 
 require "bundler/setup"
 require "minitest/autorun"

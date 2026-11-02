@@ -1,21 +1,12 @@
 # frozen_string_literal: true
 
-# The release gem gate holds a pending CI verdict PAST one App token's hour and still
-# passes on green (task ci-poll-refreshes-its-token).
-#
-# THE DEFECT. The gate may now hold a pending verdict for ~105 minutes
-# (bin/lib/ci_poll_budget.rb), but CiStatus minted its read token once per process and
-# an installation token lives 3600 s. Past the hour every read came back 401, the
-# verdict turned :unreadable, and the gate aborted with a credentials message.
-#
-# THE REAL bin/release gem gate runs in the harness subprocess. Only the edges are
-# stubbed: `gh` (CI_STATUS_GH_BIN), the token broker (GH_AUTH_TOKEN_BIN), and the clock
-# (CiStatus.clock, advanced 20 minutes per CI read). The stub gh enforces the expiry
-# itself: it refuses a token 3600 simulated seconds after the broker minted it, and
-# reports CI pending until 100 minutes in, then green.
-#
-# A new file beside its subcommand, over the shared harness:
-#   ruby -Itest test/lib/release_cli_ci_token_refresh_test.rb
+# The release gem gate holds a pending CI verdict PAST one App token's hour and still passes
+# on green. It may hold ~105 minutes (bin/lib/ci_poll_budget.rb) and a token lives 3600 s, so
+# CiStatus cannot mint once per process. The REAL bin/release gem gate runs in the harness
+# subprocess. Stubbed edges only: `gh` (CI_STATUS_GH_BIN), the broker (GH_AUTH_TOKEN_BIN), the
+# clock (CiStatus.clock, +20 minutes per CI read). The stub gh refuses a token 3600 simulated
+# seconds after minting and reports pending until 100 minutes in, then green.
+# History: task ci-poll-refreshes-its-token.
 
 require_relative "release_cli_harness"
 require_relative "../../bin/lib/ci_poll_budget"

@@ -1,35 +1,12 @@
 # frozen_string_literal: true
 
-# bin/dor-check's PR-READ ALERT, and the sentence it used to BORROW from the CI gate.
-# Standalone (no Rails — it drives the script with --file fixtures):
-#   ruby -Itest test/lib/dor_check_pr_read_closing_test.rb
-#
-# THE DEFECT (/tasks/pr-read-alert-overstates-green). When the PR FILE-LIST read is
-# :unreadable, `pr_read_alert` ends with CiStatus.unreadable_remedy's cert_route:false
-# closing. On the exempt path that closing was "Fixing the credential is the only route
-# — this gate advances on a GREEN CI and nothing else."
-#
-# It is falsest exactly where it printed. Driven through `--gate-role review` with
-# DOR_CHECK_CI_STATUS=green and the PR read REFUSED: ci.state="green", ready=false,
-# exit=1, ONE error — and that one error closed by telling the reader a green CI is all
-# this gate wants. The CI was green. The error printing the sentence WAS the refusal,
-# and the sentence sent the reader to look at the one thing that had nothing wrong with
-# it. Same species as /tasks/gate-sentence-outlived-truth, one printer over.
-#
-# EVERY TEST HERE DRIVES THE GATE. The unit that matters is not the string builder —
-# a formatter test passes happily while the caller never hands it the list, which is
-# mutation B of the predecessor's proof. So the alert is read out of a real
-# `bin/dor-check --json` run, and `ci.state` is read back from that same payload to
-# prove the CI seam LANDED (a green assertion against a run whose CI was never green
-# proves nothing about a sentence that talks about green).
-#
-# THE RETIREMENT PIN IS A PROPERTY, NOT A SPELLING, and that is deliberate. The
-# obvious `refute_includes message, "advances on a GREEN CI and nothing else"` is
-# satisfied by any reinstatement that picks different words — measured on this exact
-# family, where one such refutation admitted a reworded twin of the claim it retired.
-# So the pin is GREEN_NEEDS_A_LIMIT below: in a REFUSAL, green may only be spoken of
-# with a limit attached. Any wording that re-asserts green's sufficiency violates it,
-# whatever words it chooses.
+# bin/dor-check's PR-READ ALERT, driven with --file fixtures. Its closing must not say the gate
+# "advances on a GREEN CI and nothing else": it prints inside a refusal whose CI is green.
+# EVERY TEST HERE DRIVES THE GATE: the alert comes from a real `bin/dor-check --json` run, and
+# `ci.state` from that payload proves the CI seam LANDED.
+# THE RETIREMENT PIN IS A PROPERTY, NOT A SPELLING: GREEN_NEEDS_A_LIMIT below. In a REFUSAL,
+# green may only be spoken of with a limit attached.
+# History: task pr-read-alert-overstates-green.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
@@ -53,16 +30,14 @@ class DorCheckPrReadClosingTest < Minitest::Test
   UNREFUSING_CLOSING = "Fixing the credential is the only route — this gate advances on a GREEN CI and " \
                        "nothing else."
 
-  # THE CLAIM, PINNED AS A PROPERTY. Every sentence that mentions green must also carry
-  # a limit on what green buys. Three limits are legitimate today:
-  #   * "NOT SUFFICIENT"        — the derived closing's own qualifier
-  #   * "no CI result clears"   — its refutation clause
-  #   * "it can actually read"  — the FAST-cert sentence, which claims green is
-  #                               NECESSARY for a cert, never sufficient for the gate
-  # A sentence mentioning green with none of them is asserting sufficiency in SOME
-  # wording, which is the claim this task retired. If a future sentence legitimately
-  # needs to mention green, give it its limit or add the limit here on purpose — the
-  # point is that nobody reinstates the claim by accident or by paraphrase.
+  # THE CLAIM, PINNED AS A PROPERTY. Every sentence that mentions green must carry a limit on what
+  # green buys:
+  #   * "NOT SUFFICIENT": the derived closing's own qualifier
+  #   * "no CI result clears": its refutation clause
+  #   * "it can actually read": the FAST-cert sentence (green NECESSARY for a cert, never
+  #     sufficient for the gate)
+  # A future sentence mentioning green gets its limit, or adds the limit here on purpose.
+  # History: task pr-read-alert-overstates-green.
   GREEN_LIMITS = [/NOT SUFFICIENT/, /no CI result clears/, /it can actually read/].freeze
 
   def sentences(text)
@@ -203,20 +178,14 @@ class DorCheckPrReadClosingTest < Minitest::Test
                     "nothing is refusing this verdict, so the alert must not claim something is"
   end
 
-  # THE BUILD GATE MAKES NO REFUSAL EITHER, and this half of the predicate was INERT
-  # until it was mutated for. `pr_read_refuses_verdict?` is `@review_role && !@build_gate`;
-  # deleting the `@build_gate` assignment leaves the ivar nil, which reads as "not the
-  # build gate", and the DoR-to-Build run in the review role silently acquires a closing
-  # that names a refusal it never makes. The suite stayed green at 6 runs / 51 assertions
-  # through exactly that mutation, so the role half was pinned and the gate half was a
-  # constant nobody had noticed. It is a real run, and the reason nothing here can refuse
-  # is the BUILD GATE MAKING NO REFUSAL — `pr_read_refuses_verdict?` is false — not any
-  # claim that this path stays away from `gh`. It does not: driven 2026-09-07 with a
-  # recording `gh` on PATH and no DOR_CHECK_PR_FILES, `--gate build --gate-role review`
-  # shells `gh api …/pulls/<n>/files` exactly once. This sentence used to carry the
-  # "must not shell `gh`" claim that bin/dor-check's exempt caller corrects three lines
-  # above `pr_read_refusal = pr_read_alert(cert_route: false)`; correcting one copy and
-  # leaving the other is how the next reader re-derives the guard from the false half.
+  # THE BUILD GATE MAKES NO REFUSAL EITHER. `pr_read_refuses_verdict?` is `@review_role &&
+  # !@build_gate`; deleting the `@build_gate` assignment leaves the ivar nil, and the DoR-to-Build
+  # run in the review role silently acquires a closing naming a refusal it never makes.
+  # Nothing here can refuse because `pr_read_refuses_verdict?` is false, NOT because this path
+  # stays away from `gh`: `--gate build --gate-role review` with no DOR_CHECK_PR_FILES shells `gh
+  # api .../pulls/<n>/files` exactly once. bin/dor-check's exempt caller states the same
+  # correction above `pr_read_refusal = pr_read_alert(cert_route: false)`.
+  # History: task pr-read-alert-overstates-green.
   def test_the_build_gate_never_acquires_a_refusal_it_does_not_make
     verdict, = drive_build_gate
 

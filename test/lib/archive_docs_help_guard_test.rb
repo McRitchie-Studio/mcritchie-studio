@@ -1,35 +1,12 @@
 # frozen_string_literal: true
 
-# [integration] `bin/archive-docs --help` must MUTATE NOTHING.
-#
-# THE DEFECT, observed in production 2026-08-31. Steffon probed an unfamiliar
-# command for its usage. `bin/archive-docs --help` was not a help flag: the script
-# read four exact spellings out of ARGV and had no notion of an argument it did not recognize, so
-# `--help` matched nothing, was silently dropped, and the script ran a REAL archive
-# roll, rewriting the then-live ledger by -41 lines and staging a second file.
-#
-# WHY THIS FILE SPAWNS A REAL PROCESS AGAINST A REAL GIT REPO. The property under
-# test is "the working tree and the index are byte-identical afterwards". That is not
-# assertable in the unit tier — it is a statement about what a process did to a disk,
-# and the parser it depends on is the thing that was wrong.
-#
-# WHY THE FIXTURE CARRIES ITS OWN bin/. The operator typed a BARE `bin/archive-docs
-# --help`, with no `--repo`, and that is the invocation that has to be proven safe.
-# With no `--repo`, this script sweeps THE CHECKOUT IT SHIPS IN — so a bare run
-# driven from the real bin/ would sweep the developer's own worktree if the guard
-# ever regressed. Copying bin/ into the fixture makes the fixture that checkout, so
-# the dangerous invocation is exercised for real with the blast radius inside
-# mktmpdir. config/test_health.yml records what the alternative costs: two tests that
-# under-stubbed this beat once ran bin/archive-docs FOR REAL against a developer's
-# machine and left a `git mv` in the primary checkout that the next run died on.
-#
-# THE CONTROL IS THE POINT (test_control_*). A tree-identical assertion passes
-# trivially against a fixture the sweep would never have touched — it would pass on
-# the DEFECT too, and prove nothing. So the same fixture, byte for byte, is also run
-# WITHOUT the help flag and asserted to change. That is what establishes this fixture
-# can express the bug, and therefore that the help assertions bite.
-#
-#   ruby -Itest test/lib/archive_docs_help_guard_test.rb
+# [integration] `bin/archive-docs --help` must MUTATE NOTHING: the working tree and the index
+# are byte-identical afterwards, so this spawns a real process against a real git repo. THE
+# FIXTURE CARRIES ITS OWN bin/: a bare run with no `--repo` sweeps THE CHECKOUT IT SHIPS IN, so
+# copying bin/ keeps the dangerous invocation inside mktmpdir. config/test_health.yml records
+# what the alternative costs. THE CONTROL IS THE POINT (test_control_*): the same fixture
+# WITHOUT the flag must change, or a tree-identical assertion passes on the DEFECT too.
+# History: task archive-docs-help-mutates.
 
 require "minitest/autorun"
 require "tmpdir"
@@ -248,14 +225,12 @@ class ArchiveDocsHelpGuardTest < Minitest::Test
   end
 
   # --- the real callers ------------------------------------------------------
-  #
-  # A guard that refuses everything is indistinguishable from a guard that works, and
-  # the failure is silent and expensive: refuse bin/release's own line and the archive
-  # beat aborts every release. So every real invocation in the ecosystem is replayed
-  # here and asserted to DISPATCH, with its values intact.
-  #
-  # Sources: bin/release.rb sweep_docs (the only programmatic caller) and
-  # docs/agents/agents/steffon/sops/archive-shipped.md (what an operator is told to type).
+  # A guard that refuses everything is indistinguishable from one that works: refuse
+  # bin/release's own line and the archive beat aborts every release. So every real invocation
+  # is replayed here and asserted to DISPATCH, with its values intact. Sources: bin/release.rb
+  # sweep_docs (the only programmatic caller) and
+  # docs/agents/agents/steffon/sops/archive-shipped.md.
+  # History: task archive-docs-help-mutates.
   REAL_ARGV = [
     [],
     ["--dry-run"],

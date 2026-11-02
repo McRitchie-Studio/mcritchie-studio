@@ -1,41 +1,13 @@
 # frozen_string_literal: true
 
-# [integration] `bin/task move` must announce a discarded operator-approval request
-# EXACTLY when this move discarded one — and stay quiet otherwise.
-#
+# [integration] `bin/task move` must announce a discarded operator-approval request EXACTLY when
+# this move discarded one, and stay quiet otherwise.
 # A move out of the request stages SETTLES a pending request
-# (Task#settle_operator_approval_past_request_window). That is deliberate: past
-# `reviewed` the work has merged and the desk serving the local demo is reclaimable,
-# so the request points at a page nobody can open. But on 2026-09-07 it happened in
-# SILENCE — an agent set --approval waiting at `building`, read it back as "waiting",
-# ran bin/submit, and the handoff move discarded the request with nothing printed. The
-# board never pulsed and Mr. McRitchie was never asked. The move still succeeds; it
-# just has to SAY SO.
-#
-# THE SEAM THESE TESTS DRIVE MOVED ON 2026-09-09, from `submitted` to `reviewed`.
-# Making the drop loud made it countable, and it was counted: three ship handoffs in
-# one night discarded a request the documented flow told the builder to set. So
-# `submitted` joined APPROVAL_REQUEST_STAGES and the ship handoff drops nothing to
-# announce. Every "past the seam" case below therefore moves to `reviewed` — the
-# boundary that is still real. What is being tested is unchanged: the warning fires
-# exactly when THIS move discarded a request.
-#
-# THE DEFECT THIS FILE CLOSES. The first cut of that warning asked a CLOCK — is the
-# drop receipt younger than `since - 300s`? — which is not the question a warning
-# about THIS MOVE can answer. Measured against the real binary with a 60-second-old
-# stamp, `bin/task move <slug> building` announced a discarded request on a move INTO
-# a stage where a request is ACTIONABLE, and a re-run of the handoff move announced
-# one drop twice. The pinning test used a
-# 3600s stamp, so the boundary that decides every real case went unprobed and the
-# defect shipped green. Every case below that must stay QUIET seeds a stamp ~60
-# SECONDS old: each fires under the clock rule and must not fire under the effect rule.
-#
-# It lives in its own file rather than at the bottom of test/lib/task_cli_test.rb
-# because that file is a frozen APPEND hotspot (config/test_health.yml) — adding here
-# is what the ratchet asks for.
-#
-#   ruby -Itest test/lib/task_move_approval_drop_test.rb
-# It is also picked up by the normal `bin/rails test` sweep.
+# (Task#settle_operator_approval_past_request_window). `submitted` is in
+# APPROVAL_REQUEST_STAGES, so "past the seam" cases move to `reviewed`.
+# THIS move's effect decides, not a CLOCK: every QUIET case seeds a stamp ~60 SECONDS old.
+# Own file: test/lib/task_cli_test.rb is a frozen APPEND hotspot (config/test_health.yml).
+# History: task approval-drop-warning-overfires.
 
 require "minitest/autorun"
 require "json"
@@ -297,16 +269,12 @@ class TaskMoveApprovalDropTest < Minitest::Test
     assert_equal 1, err.scan(/DISCARDED a pending operator-approval request/).size
   end
 
-  # The message has to be actionable from where the reader STANDS: the governing
-  # condition first (a decision the operator already gave), then the moves that get
-  # his eyes back — not advice for last time.
-  #
-  # And every command it prints is RUN here, not merely matched. The first draft of
-  # this rewrite advertised `bin/task move <slug> building --approval waiting`; `move`
-  # has no `--approval` flag, so the one command a stuck reader would paste dies on
-  # unknown_flag!. `assert_match(/--approval/, err)` passes on that. Executing it does
-  # not. This is a warning whose whole job is to un-stick a reader, so advice that
-  # does not run is the same defect in a new place.
+  # The message must be actionable from where the reader STANDS: the governing condition first (a
+  # decision the operator already gave), then the moves that get his eyes back.
+  # Every command it prints is RUN here, not merely matched: `move` has no `--approval` flag, so a
+  # printed `bin/task move <slug> building --approval waiting` dies on unknown_flag! while
+  # `assert_match(/--approval/, err)` passes.
+  # History: task approval-drop-warning-overfires.
   def test_every_command_the_warning_prints_actually_runs
     _reqs, _out, err, _status = run_task(
       %W[move #{SLUG} reviewed],
@@ -440,21 +408,13 @@ class TaskMoveApprovalDropTest < Minitest::Test
   end
 
   # --- WHICH half catches the same-second collision: a controlled pair ---
-  #
-  # bin/task's verdict comment credits HALF 1 with the same-second collision, where
-  # the fresh stamp renders identically to the one already on the record. Until
-  # 2026-09-08 it credited HALF 2, which cannot: half 2 is
-  # `drop_receipt_of(task) != drop_receipt_of(before)`, so identical renderings make
-  # it FALSE. That sentence is the stated justification for OR-ing the halves, so a
-  # maintainer trusting it would delete the half that does the work.
-  #
-  # These two runs settle it by experiment. Both hold the receipt IDENTICAL across
-  # the PATCH — half 2 is provably false in both — and differ in exactly ONE
-  # variable: what the pre-read saw. So the warning in the first can only be half 1
-  # speaking, and its absence in the second is half 2 failing to cover the case.
-  #
-  # A FIXED stamp, never Time.now: "the same second" means the two strings render
-  # alike, and seeding off a real clock would make that a coin flip on the boundary.
+  # bin/task's verdict comment credits HALF 1. HALF 2, `drop_receipt_of(task) !=
+  # drop_receipt_of(before)`, is FALSE on identical renderings, and a maintainer trusting a wrong
+  # credit would delete the half doing the work. Both runs hold the receipt IDENTICAL across the
+  # PATCH and differ ONLY in what the pre-read saw.
+  # A FIXED stamp, never Time.now: "the same second" means the strings render alike, and a real
+  # clock is a coin flip on the boundary.
+  # History: task comments-outrun-their-code.
   SAME_SECOND_STAMP = "2026-09-08T12:00:00Z"
 
   def test_half_one_alone_catches_the_same_second_collision
@@ -486,15 +446,11 @@ class TaskMoveApprovalDropTest < Minitest::Test
   end
 
   # --- the receipt is COMPARED, never dated ---
-  #
-  # Task.settle_stale_operator_approvals! writes no receipt on purpose. Its note used
-  # to justify that partly by claiming today's timestamp "would date it wrong for the
-  # one reader that compares it". That reader is this verdict, and it is indifferent
-  # to age: it compares two renderings across ONE PATCH and consults no clock. Both
-  # stamps below are years old — no clock rule would call this move recent — and it
-  # still warns. The other direction (a RECENT stamp that must stay quiet) is already
-  # covered by every "must stay quiet" case above, each seeded ~60s old. The refuted
-  # clause came out on 2026-09-08; this pair is what makes its removal safe to trust.
+  # Task.settle_stale_operator_approvals! writes no receipt on purpose. The verdict compares two
+  # renderings across ONE PATCH and consults no clock: both stamps below are years old and it
+  # still warns. The other direction (a RECENT stamp stays quiet) is covered by every "must stay
+  # quiet" case above, each seeded ~60s old.
+  # History: task comments-outrun-their-code.
   ANCIENT_STAMP = "2019-03-04T09:15:00Z"
   ANCIENT_STAMP_LATER = "2019-03-04T09:16:00Z"
 
@@ -513,20 +469,13 @@ class TaskMoveApprovalDropTest < Minitest::Test
   end
 
   # --- the residual SET: what the comment enumerates vs. what the binary produces ---
-  #
-  # bin/task's verdict comment names THREE board states where a real drop goes
-  # unannounced. It named ONE until 2026-09-08, and the count was wrong for as long
-  # as the sentence stood — an enumeration in a comment rots the moment the code's
-  # set moves. So this measures the binary and asserts the two agree, rather than
-  # grepping the comment and calling that proof.
-  #
-  # Every cell MODELS a real drop, so a residual is simply a cell measured SILENT.
-  # In the racing-writer cells the drop is the PREMISE rather than something the stub
-  # performs — a writer set "waiting" inside this move's window and the PATCH settled
-  # it — and what the stub reproduces is exactly what the CLI can OBSERVE of that:
-  # the two reads it gets, before and after. The matrix holds EVERY drop cell the
-  # board can present, announced and silent alike, so a residual appearing in any of
-  # them turns this red; the cells with no drop are the quiet-move tests above.
+  # bin/task's verdict comment names THREE board states where a real drop goes unannounced. This
+  # measures the binary and asserts the two agree; it does not grep the comment.
+  # Every cell MODELS a real drop, so a residual is a cell measured SILENT. In racing-writer cells
+  # the drop is the PREMISE, and the stub reproduces what the CLI can OBSERVE: its two reads. The
+  # matrix holds EVERY drop cell the board can present; the no-drop cells are the quiet-move tests
+  # above.
+  # History: task comments-outrun-their-code.
   RESIDUAL_MATRIX = {
     # Announced: the pre-read saw "waiting", with and without a receipt.
     pre_read_waiting_and_receipt: {

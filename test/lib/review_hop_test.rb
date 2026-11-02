@@ -1,15 +1,10 @@
 # frozen_string_literal: true
 
-# Standalone coverage for bin/lib/review_hop.rb — the per-leg judgment behind
-# bin/verify-review-hop.
-#
-# Run directly: `ruby -Itest test/lib/review_hop_test.rb`.
-# Also picked up by the normal `bin/rails test` sweep.
-#
-# The point of every test below is the SAME point: each failure mode is
-# success-shaped. A dead-ended CTA is a 302. A mint with no reviewer is a 302.
-# A reviewer who is not an admin lands 200. So each case asserts that reading
-# the DESTINATION separates them, because reading the status cannot.
+# Standalone coverage for bin/lib/review_hop.rb, the per-leg judgment behind
+# bin/verify-review-hop. Each failure mode is success-shaped: a dead-ended CTA is a 302, a mint
+# with no reviewer is a 302, a reviewer who is not an admin lands 200. So each case asserts that
+# reading the DESTINATION separates them, because reading the status cannot.
+# History: task correct-verify-hop-recipe.
 
 require "minitest/autorun"
 require_relative "../../bin/lib/review_hop"
@@ -58,19 +53,13 @@ class ReviewHopTest < Minitest::Test
     assert_equal :mint_ok, v.code
   end
 
-  # [unit] MISSING_EMAIL: no reviewer resolves, engine redirects to the sign-in page.
-  # This is the case the old chained-curl recipe degraded into a `/signin 200` pass.
-  # [unit] the OTHER magic-link shape is consumable too.
-  #
-  # turf-monster overrides the engine's Studio::LinksController with its own
-  # (inheriting ::MagicLinksController) so account creation stays on its single
-  # audited, GATED path. Both /l/:token and /magic_link/:token route there, and
-  # its local-review mint answers the latter. Verified against a live stack
-  # 2026-08-26: both return 200 and render the same confirm interstitial.
-  #
-  # Before this, the checker reported that WORKING hop as BROKEN — a false
-  # negative on the very gate building-sop Step 4 requires green before a task
-  # may be marked waiting-for-approval.
+  # [unit] MISSING_EMAIL: no reviewer resolves, engine redirects to the sign-in page (never a
+  # `/signin 200` pass).
+  # [unit] the OTHER magic-link shape is consumable too. turf-monster overrides
+  # Studio::LinksController with its own (inheriting ::MagicLinksController); both /l/:token and
+  # /magic_link/:token route there and its local-review mint answers the latter. The checker
+  # must not report that WORKING hop as BROKEN on the gate building-sop Step 4 requires green.
+  # History: task correct-verify-hop-recipe.
   def test_mint_passes_on_the_app_local_magic_link_path
     v = ReviewHop.mint(status: 302, location: "http://localhost:3115/magic_link/abc123")
 
