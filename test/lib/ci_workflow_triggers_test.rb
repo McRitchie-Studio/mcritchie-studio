@@ -399,10 +399,10 @@ class CiWorkflowTriggersTest < Minitest::Test
   # THE SECOND VERDICT COMMAND: the `e2e` tier's lane (the sharded `playwright` job). TEST_COMMAND
   # matches `bin/rails … test` and `npx playwright test` does not, so unenrolled the lane never
   # enters `suite_command_lanes`: a job-level `if: vars.E2E_ENABLED == 'true'` runs zero specs
-  # with this file and feature_shape_tiers_test.rb green (the `e2e_onchain` lie, see
-  # config/feature_shapes.yml; deleted 2026-10-24). A lane that CONSTITUTES a verdict must be
-  # enrolled here on the day it is wired. Proving a command STRING exists in a `run:` step is not
-  # proving the JOB RUNS.
+  # with this file and feature_shape_tiers_test.rb green (the `e2e_onchain` lie of turf-monster's
+  # devnet workflow, deleted 2026-10-24; see config/feature_shapes.yml). A lane that CONSTITUTES
+  # a verdict must be enrolled here on the day it is wired. Proving a command STRING exists in a
+  # `run:` step is not proving the JOB RUNS.
   # History: task e2e-tiers-are-decorative.
   E2E_COMMAND = /\bplaywright\s+test\b/
 

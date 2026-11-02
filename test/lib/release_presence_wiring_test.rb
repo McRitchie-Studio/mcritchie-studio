@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
 # THE WIRING: what `bin/release` publishes about THIS MACHINE while it works (slice 4 of
-# docs/agents/system/agent-presence.md). ASSERTED AS HEADROOM, NOT AS A WEIGHT STRING, via the
-# REAL reader (`AgentPresence.snapshot`), read by a stubbed `sh` as the wrapped command runs:
-# a grep of bin/release.rb would pass a transition that never fires.
-# AgentPresence::DEFAULT_SUITE_CAPACITY = 3.00.
+# docs/agents/system/agent-presence.md). ASSERTED AS HEADROOM, NOT A WEIGHT STRING: a test of a
+# constant passes when constant and expectation change together. A stubbed `sh` runs the REAL
+# reader (`AgentPresence.snapshot`) as the wrapped command runs: a grep of bin/release.rb would
+# pass a transition that never fires or never restores. AgentPresence::DEFAULT_SUITE_CAPACITY = 3.00.
 # Conductor, no scope: light 0.25, headroom 2.75. LOCAL suite: suite 1.00, headroom 2.00.
 # REMOTE smoke/hook: light 0.25, headroom 2.75. repo_script deploy: suite 1.00, headroom 2.00.
 # History: task sweeps-publish-local-claim.
