@@ -88,7 +88,7 @@ class RemedyHintsReachTheReaderTest < Minitest::Test
   # bare form cannot resolve. Reachable without a board: a task bound to another session's dirty
   # desk. Not a substring match: it splits the printed command, takes the script, and asks the
   # DISK.
-  # History: task remedy-hints-through-one-helper.
+  # History: task remedy-hints-print-bare-paths.
   def test_submits_claim_refusal_prints_commands_that_resolve_on_disk
     Dir.mktmpdir do |root|
       work = File.join(root, "work")

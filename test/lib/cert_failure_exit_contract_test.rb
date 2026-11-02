@@ -259,7 +259,7 @@ class CertFailureExitContractTest < Minitest::Test
     # `DATABASE_URL` exported. The child would then resolve the DESK, not this throwaway repo:
     # green on the desk, red in the suite. So it starts from a SCRUBBED env: every
     # FAST_CHECK_*/SHIP_* and the database/Rails vars removed, receiving only what the case sets.
-    # History: task submit-checks-before-push.
+    # History: task ship-must-not-exit-zero.
     INHERITED_PREFIXES = %w[FAST_CHECK_ SHIP_].freeze
     # TEST_DATABASE_URL is the one that actually did it: an inherited value points the
     # child's desk guard at the DESK's test database, which this test's parent holds.
