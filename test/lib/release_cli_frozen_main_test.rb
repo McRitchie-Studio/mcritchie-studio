@@ -75,7 +75,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   # and is still fast-forward-checked by git. So ship must not flip or refuse a dirty SHARED
   # PRIMARY. These prove, on a REAL git fixture, that the deploy is indifferent to the
   # primary's state.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task give-ship-a-dedicated-checkout.
 
   # [integration] The core acceptance: origin/main reaches the frozen SHA while the
   # primary is DIRTY and sitting on a feature branch — and comes out of it dirty, on
@@ -188,7 +188,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   # After push_frozen_main advances `main`, it also fast-forwards this repo's `accepted` onto
   # the same frozen SHA. Guarded (only where accepted exists), fail-closed (no --force),
   # NON-FATAL (a failed advance never aborts a live ship). Proofs on a REAL git fixture.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task auto-advance-accepted-after-ship.
 
   # [integration] The core acceptance: with an origin/accepted present, it advances
   # to the shipped SHA alongside main. accepted starts BEHIND at the base commit, so
@@ -409,7 +409,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   # accepted` lands on the LOCAL branch the fetch never touches, so the merge lands on a stale
   # base and the push is refused non-fast-forward. It only works with NO local accepted, where
   # checkout DWIMs off the remote. Pins this by RUNNING the printed command end to end.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task ship-warning-distinguishes-ahead.
   def test_printed_reconcile_command_works_against_a_stale_local_accepted_branch
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
@@ -537,7 +537,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
   # merge` and leaves a DIRTY primary, which on a gem repo also aborts the NEXT ship. Asserts
   # the operator is TOLD WHAT TO DO and left RECOVERABLE. Both sides touch the same line of
   # Gemfile.lock.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task ship-warning-distinguishes-ahead.
   def test_printed_reconcile_fails_safe_and_instructs_when_the_merge_conflicts
     Dir.mktmpdir do |dir|
       clone  = build_sibling_fixture(dir)
