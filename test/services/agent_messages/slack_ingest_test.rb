@@ -687,6 +687,15 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] files: a twin with no files that wins the rows during the fetch still gets the file on every row" do
+    as_owner do
+      e, calls = event("Avi and Alex, look", files: [ png_file ]), []
+      row = with_files(calls) { |_u, io, _t| with_files.call(e.except("files"), team_id: TEAM) if calls.one?; io.write(PNG) }.call(e, team_id: TEAM)
+      assert_equal 1, calls.size, "the stored blob is reused, not fetched again"
+      assert(AgentMessage.where(channel: "slack", thread_key: row.thread_key).all? { |r| r.attachments.attached? })
+    end
+  end
+
   test "[unit] files: a missing scope reaches the error log, a wrong type does not" do
     as_owner do
       redirect = ->(*_args) { raise AgentMessages::SlackFiles::NoAccess, AgentMessages::SlackFiles::NO_ACCESS }

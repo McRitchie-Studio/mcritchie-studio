@@ -93,14 +93,19 @@ module AgentMessages
 
       store(event, external_id, { team_id: team_id.to_s, event_id: event_id })
     rescue ActiveRecord::RecordNotUnique
-      AgentMessage.find_by(channel: CHANNEL, external_id: external_id)
+      lost_race(event, external_id)
     rescue ActiveRecord::RecordInvalid => e
       raise unless e.record.is_a?(AgentMessage) && e.record.errors.of_kind?(:external_id, :taken)
 
-      AgentMessage.find_by(channel: CHANNEL, external_id: external_id)
+      lost_race(event, external_id)
     end
 
     private
+
+    # The winner's row. A twin with no files may have won while this event fetched its own.
+    def lost_race(event, external_id)
+      AgentMessage.find_by(channel: CHANNEL, external_id: external_id)&.tap { |row| attach_late_files(row, event, external_id) }
+    end
 
     # ChatIngest's hook: why the message is to the app itself, or nil.
     def mention_reason(event, text)
