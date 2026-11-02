@@ -687,7 +687,7 @@ class ReleaseCliHarness < Minitest::Test
   # none/pending/unverified/unreadable. A false green would deploy an untested SHA to QA.
   # RELEASE_CI_STATUS injects the verdict (a bare token or a raw check-runs payload), so no
   # network, and also skips the `git remote get-url` lookup.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task promote-ci-to-gate-verdict.
 
   # A gate whose CI verdict is injected. `rel-cli` is passed as the release slug so
   # record_qa_gate actually fires (it no-ops on a blank slug). No suite runs here —
@@ -763,7 +763,7 @@ class ReleaseCliHarness < Minitest::Test
   # accepted head's green vouches for it. These drive the REAL pre_qa_gate: GATE_SHA is
   # origin/release (the merge commit), ACC_SHA the accepted head. The poll window is a single
   # read, so a PASS on a pending release SHA can ONLY come from the tree credit.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task dedupe-hub-release-suite.
 
   ACC_SHA = "acce97ed22222222222222222222222222222222"
   SHARED_TREE = "5b1c78e033333333333333333333333333333333"
@@ -1007,7 +1007,7 @@ class ReleaseCliHarness < Minitest::Test
   # disarms a gate, and a config edit is no override (ship's preflight refuses a dirty
   # primary). The override DEMANDS a reason, ASKS before it skips, and records a RED gate SOP,
   # so a skipped gate stays visible in the release record.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task harden-release-gate-isolation.
 
   # The ship-gate stub for the escape-hatch cases: the suite and the whole workspace
   # dance are marked, so a test can prove the skip ran NOTHING.
@@ -1058,7 +1058,7 @@ class ReleaseCliHarness < Minitest::Test
   # INTERRUPTED SHIP over a repo it never opened. These drive the REAL `ladder_ahead_states`
   # (only git `sh` and the checkout path stubbed), covering the WIRING, not just the pure
   # rule.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task clean-check-sees-unread-repos.
   def uncloned_repo_stub(clone_rolio: false)
     <<~RUBY
       REAL_REPO = #{self.class.stub_repo.inspect}
@@ -1252,7 +1252,7 @@ class ReleaseCliHarness < Minitest::Test
   # delegates to the real `sh`. Returns [log_path, setup_ruby]. ANY test that reaches
   # `retro`'s filing block needs this, or it shells out to the REAL bin/triage and files into
   # the production inbox. run_ruby's TASK_API_BASE pin is only the backstop.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task retro-refiles-duplicate-findings.
   def retro_sh_stub(dir, inbox: [], list_ok: true)
     log = File.join(dir, "filed.jsonl")
     inbox_path = File.join(dir, "inbox.json")
@@ -1294,7 +1294,7 @@ class ReleaseCliHarness < Minitest::Test
   # "<code>"` breaks `heroku run`: remote re-quoting eats the \"-escaping, and parens trigger
   # a remote bash syntax error. So the payload travels as a url-safe Base64 blob (alphabet
   # [A-Za-z0-9_-]=, zero shell metacharacters).
-  # History: task release-cli-tests-by-subcommand.
+  # History: task fix-retro-heroku-run-escaping.
 
   # Pull the Base64 payload literal the CLI embedded and decode it the way the
   # remote runner does. Asserts the snippet does NOT raw-interpolate JSON.
@@ -1349,7 +1349,7 @@ class ReleaseCliHarness < Minitest::Test
   # has no sibling checkouts, so repo_path resolves to stub_repo (NOT Dir.pwd: the gate
   # mkdir_p's a .worktrees/ under whatever repo_path returns). RELEASE_CI_STATUS=green is the
   # gate precondition.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task ship-pipeline-robustness-fixes.
   PAREN_POST_DEPLOY_PREP_STUB = GATE_GIT_STUB + %(ENV["RELEASE_CI_STATUS"] = "green"\ndef repo_path(_repo) = #{stub_repo.inspect}\n) + <<~'RUBY'
     def conductor(ruby, read_only: false)
       payload = conductor_payload(ruby)               # the REAL shell-safe encoder
@@ -1504,7 +1504,7 @@ class ReleaseCliHarness < Minitest::Test
   # has NO --override"). If it reads the SINGULAR `repo` off each task and its resolve emits
   # no `repos`/`pr_urls`, SweepPlan's coverage rule sees a one-repo row for every task and
   # `plan["blocked"]` is always empty.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task merge-promotes-every-repo.
   def multi_repo_merge_stub(pr_urls:, repos: [ "mcritchie-studio", "turf-monster" ])
     PROMOTE_SH + <<~RUBY
       def conductor(ruby, read_only: false)

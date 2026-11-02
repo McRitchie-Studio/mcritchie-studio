@@ -93,7 +93,7 @@ class ReleaseCliCoreTest < ReleaseCliHarness
   # GUARD THE FLOOR ITSELF. run_ruby's env is all that stands between a case that forgets to stub
   # `sh` and the real `gh` / `heroku` / `op` / `ssh`. Read from the RECEIPT: an env that merely
   # NAMES the stub dir passes against a PATH resolving the real binary first.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task poison-release-suite-shell.
   def test_the_child_env_seals_outbound_binaries
     OutboundSeams.reset!
     out = run_ruby(%(system("gh", "--version"); puts "CHILD-DONE"))
@@ -264,7 +264,7 @@ class ReleaseCliCoreTest < ReleaseCliHarness
   # So the gate holds its OWN flock across pin -> prepare -> suite. It is deliberately NOT the
   # primary-checkout lock: the primary must stay FREE (feature sessions live there), and the two
   # are never nested, so they cannot deadlock.
-  # History: task release-cli-tests-by-subcommand.
+  # History: task harden-release-gate-isolation.
 
   # [unit] The gate lock is its OWN file, in the SAME shared lock dir (TMPDIR-
   # independent, so two conductors contend on one file) — never the primary's. If
