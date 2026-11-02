@@ -30,7 +30,7 @@ class AgentWorktreeTest < Minitest::Test
   # if all fail it FLUNKS with exit/signal + stderr, never a bare `Actual: ""`.
   # `env:` merges OVER the neutralized base: PROJECTS_DIR is read into a constant at load, so it
   # has to be in the child's env.
-  # History: task reserve-foreign-ports.
+  # History: task stabilize-worktree-port-test.
   def run_in_script(body, env: {})
     script = "load #{BIN.inspect}\n#{body}"
     last = nil

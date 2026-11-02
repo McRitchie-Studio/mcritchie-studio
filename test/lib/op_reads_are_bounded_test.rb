@@ -7,7 +7,7 @@
 # form (`op read …`, `"$OP" whoami`). A hit is allowed when the line goes through the
 # wrapper, or ALLOWED names it with a reason; an allowance matching nothing fails too.
 # "Metered" implies "bounded".
-# History: task release-tooling-survives-hangs.
+# History: task one-way-into-1password.
 
 require "minitest/autorun"
 require "tmpdir"
