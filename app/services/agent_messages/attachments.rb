@@ -127,9 +127,14 @@ module AgentMessages
     def store!(io:, filename:, key:, origin:)
       content_type = sniff(io)
       check!(content_type: content_type, byte_size: io.size, filename: filename)
-      ActiveStorage::Blob.create_and_upload!(io: io, filename: filename, content_type: content_type, identify: false,
-                                             service_name: SERVICE, key: key,
-                                             metadata: { "analyzed" => true, "identified" => true }.merge(origin))
+      # The bytes, then the row, so a row always has its object: a retry or a Slack
+      # twin may reuse any row it finds. Two writers of one key write the same bytes.
+      blob = ActiveStorage::Blob.build_after_unfurling(io: io, filename: filename, content_type: content_type, identify: false, service_name: SERVICE,
+                                                       key: key, metadata: { "analyzed" => true, "identified" => true }.merge(origin))
+      blob.upload_without_unfurling(io)
+      blob.tap(&:save!)
+    rescue ActiveRecord::RecordNotUnique
+      ActiveStorage::Blob.find_by!(key: key)
     end
 
     # HEIF's ISO-BMFF brands (an iPhone writes `heic`, an editor `heix` or

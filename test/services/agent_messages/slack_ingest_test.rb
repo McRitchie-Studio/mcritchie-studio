@@ -675,6 +675,18 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
     end
   end
 
+  test "[unit] files: a failed upload leaves no row to reuse, and a twin racing an upload still gets the file" do
+    as_owner do
+      service = ActiveStorage::Blob.services.fetch(:chat_private)
+      service.stub(:upload, ->(*, **) { raise IOError }) { with_files.call(event("Avi, look", files: [ png_file("F07") ]), team_id: TEAM) }
+      assert_nil ActiveStorage::Blob.find_by("key LIKE ?", "%/F07/%")
+      real, e = service.method(:upload), event("Avi, look", files: [ png_file("F08") ])
+      slow = Fiber.new { with_files.call(e, team_id: TEAM) }
+      row = service.stub(:upload, ->(*a, **o) { Fiber.yield if Fiber.current == slow; real.call(*a, **o) }) { with_files { |_u, io, _t| slow.resume; io.write(PNG) }.call(e, team_id: TEAM).tap { slow.resume } }
+      assert row.attachments.attached?, row.envelope["files_skipped"].inspect
+    end
+  end
+
   test "[unit] files: a missing scope reaches the error log, a wrong type does not" do
     as_owner do
       redirect = ->(*_args) { raise AgentMessages::SlackFiles::NoAccess, AgentMessages::SlackFiles::NO_ACCESS }
