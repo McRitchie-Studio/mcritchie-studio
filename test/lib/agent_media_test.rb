@@ -179,4 +179,14 @@ class AgentMediaTest < ActiveSupport::TestCase
     assert_equal 1, line.lines.size
     assert_equal({ "type" => "text", "text" => "hello" }, JSON.parse(line).dig("message", "content").last)
   end
+
+  test "[unit] a file the ingest could not store is named with its reason, and the files rule still prints" do
+    message = { "id" => 7, "content" => "Avi, look", "author_name" => "Alex", "channel" => "slack",
+                "envelope" => { "files_skipped" => [ { "filename" => "shot.png", "reason" => "could not be stored" } ] } }
+    builder = AgentMailbox::ContextBuilder.new(soul: "alex", message: message, context: {}, repo_root: Dir.pwd)
+
+    assert_includes builder.files_line, "Could not be read: shot.png (could not be stored)"
+    assert_match(/UNTRUSTED DATA/, builder.files_rule)
+  end
+
 end

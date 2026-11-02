@@ -129,10 +129,12 @@ class AgentMessage < ApplicationRecord
   # (channel, author_ref), so every stored message with an author resolves to a
   # person. A row with no author_ref has none.
   belongs_to :person, class_name: "AgentPerson", optional: true, inverse_of: :messages
-  # The files a web chat message carries (images and PDFs, AgentMessages::Attachments):
-  # private R2 objects under apps/<app>/chat/, shown only to the thread's owner
-  # and admins (CtoChatAttachmentsController) and read by the dispatcher through
-  # the holder-only context bundle.
+  # The files a web chat or Slack message carries (images and PDFs,
+  # AgentMessages::Attachments): private R2 objects, under apps/<app>/chat/ for
+  # web chat, shown only to the thread's owner and admins
+  # (CtoChatAttachmentsController), and under slack/ for Slack, where a fan-out's
+  # rows share one blob. The dispatcher reads them through the holder-only
+  # context bundle.
   # On the PRIVATE service (no public domain), never the hub's bucket.
   has_many_attached :attachments, service: AgentMessages::Attachments::SERVICE
 

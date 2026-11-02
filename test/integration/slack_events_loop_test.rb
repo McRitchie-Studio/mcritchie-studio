@@ -206,4 +206,56 @@ class SlackEventsLoopTest < ActionDispatch::IntegrationTest
                  posts.map { |p| p.values_at(:username, :text) }.sort
     assert_equal %w[posted posted], [ avi.reload.reply_status, mason.reload.reply_status ]
   end
+
+  # Slack's file host, stubbed at the socket seam: serves `bytes` and keeps what
+  # it was asked. Any other host (users.info) is unreachable, which is best effort.
+  def with_slack_files(bytes, asked)
+    response = Net::HTTPOK.new("1.1", "200", "OK")
+    response.define_singleton_method(:read_body) { |&chunk| chunk.call(bytes) }
+    start = lambda do |host, *_args, **_opts, &block|
+      raise SocketError, "no network in this test" unless host == AgentMessages::SlackFiles::HOST
+
+      http = Object.new
+      http.define_singleton_method(:request) do |request, &inner|
+        asked << [ request.uri.to_s, request["Authorization"] ]
+        inner.call(response)
+      end
+      block.call(http)
+    end
+    token_was = ENV["SLACK_BOT_TOKEN"]
+    ENV["SLACK_BOT_TOKEN"] = "xoxb-test"
+    Net::HTTP.stub(:start, start) { yield }
+  ensure
+    token_was ? ENV["SLACK_BOT_TOKEN"] = token_was : ENV.delete("SLACK_BOT_TOKEN")
+  end
+
+  test "[integration] a signed event with an image: the file is fetched with the bot token, attached to each soul's row, and in the holder's bundle" do
+    AgentPerson.seed_owner!
+    png = "\x89PNG\r\n\x1A\n#{'\0' * 32}".b
+    url = "https://files.slack.com/files-pri/T0CC9DQ9NAK-F01/shot.png"
+    file = { id: "F01", name: "shot.png", mimetype: "image/png", size: png.bytesize, url_private_download: url }
+    body = callback(message_event("Avi and Mason, can you see this?", subtype: "file_share", files: [ file ]))
+    asked = []
+
+    with_slack_files(png, asked) do
+      perform_enqueued_jobs(only: SlackIngestJob) do
+        post "/webhooks/slack/events", params: body, headers: headers(body)
+      end
+    end
+
+    assert_response :success
+    assert_equal [ [ url, "Bearer xoxb-test" ] ], asked
+    rows = AgentMessage.where(channel: "slack")
+    assert_equal %w[avi mason], rows.order(:id).pluck(:soul_slug)
+    rows.each { |row| assert_equal "image/png", row.attachments.sole.blob.content_type }
+
+    ActiveStorage::Current.url_options = { host: "www.example.com" }
+    primary = rows.order(:id).first
+    context = AgentMessages::MemoryBundle.new(primary).bundle.deep_stringify_keys
+    assert_equal "shot.png", context["attachments"].sole["filename"]
+    assert_equal "image", context["attachments"].sole["kind"]
+  ensure
+    ActiveStorage::Current.url_options = nil
+  end
+
 end

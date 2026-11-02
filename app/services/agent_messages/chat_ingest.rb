@@ -22,6 +22,7 @@ module AgentMessages
   #   display_name(event)          the author's name
   #   row_attributes(event, ctx)   the medium's own columns (guild_id,
   #                                channel_ref, mentions, sent_at, envelope)
+  # and may override files_for(event, results, name), the message's stored files.
   module ChatIngest
     # The routing decision alone (pure but for the thread lookup), for tests and
     # for the timeline's `routed` event.
@@ -81,6 +82,9 @@ module AgentMessages
       author_ref = event["user"].to_s
       name = display_name(event)
       fan = results.length > 1 ? external_id : nil
+      # Fetched before the rows exist, so a dispatcher can never claim a row
+      # whose files are still on their way.
+      ctx = ctx.merge(files: files_for(event, results, name))
       AgentMessage.transaction(requires_new: true) do
         person = AgentPerson.resolve!(platform: self.class::CHANNEL, external_id: author_ref, display_name: name)
         rows = results.each_with_index.map do |result, index|
@@ -138,6 +142,16 @@ module AgentMessages
       newest.updated_at > RECENT_RUN.ago ? newest : nil
     end
 
+    # The message's files, or nil. A medium with no files keeps this default.
+    def files_for(_event, _results, _name) = nil
+
+    # Whether this soul's row will be answered: the same three causes #store_one
+    # holds a row for.
+    def answered?(event, result, person)
+      result.routed? && @routes.answers?(result.soul) && @routes.cleared?(event["channel"], result.soul) &&
+        @answerers.allowed?(person)
+    end
+
     def store_one(event, external_id, result, person, name, fan, ctx)
       unserved = result.routed? && !@routes.answers?(result.soul)
       uncleared = result.routed? && !@routes.cleared?(event["channel"], result.soul)
@@ -150,6 +164,7 @@ module AgentMessages
           soul_slug: result.soul, routed_by: result.routed_by, status: status_for(result, held)
         }.merge(row_attributes(event, ctx.merge(fan: fan)))
       )
+      message.attachments.attach(ctx[:files].blobs) if ctx[:files]&.blobs.present?
       message.record!("received", actor: self.class::RECEIVED_ACTOR, detail: { "author" => message.author_name })
       message.record!(result.routed? ? "routed" : "unrouted", actor: "router",
                       detail: result.detail.merge("soul" => result.soul, "routed_by" => result.routed_by).compact)

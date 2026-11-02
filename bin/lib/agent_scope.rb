@@ -288,6 +288,7 @@ module AgentMailbox
       return deny("released_hold") unless message["hold_released_at"].to_s.empty?
       return deny("not_cleared") unless cleared?(routes, message["channel"], message["channel_ref"], soul)
       return deny("quoted") unless own_words?(message, context)
+      return deny("attached_file") if attached_file?(message, context)
 
       Decision.new(grant: Grant.new(scope: scope, message_id: Integer(message["id"]), worker: worker.to_s,
                                     repo_root: repo_root, max_turns: config.max_turns), reason: "granted")
@@ -332,6 +333,16 @@ module AgentMailbox
       return true unless override.key?("souls")
 
       (Array(block["core_souls"]) + Array(override["souls"])).map(&:to_s).include?(soul.to_s)
+    end
+
+    # A file the model will read is not the owner's own words, for the same
+    # reason quoted text is not: its text could steer the tools. The soul still
+    # reads the file; it answers without tools, and the next message has them. A
+    # file that could not be read counts: the prompt still carries its name.
+    def attached_file?(message, context)
+      list = context.is_a?(Hash) ? context["attachments"] : nil
+      skipped = message["envelope"].is_a?(Hash) ? message["envelope"]["files_skipped"] : nil
+      [ list, skipped ].any? { |files| files.is_a?(Array) && files.any? }
     end
 
     # The same own-words rule a warm turn uses (WarmSession.quotes?, `own`): a

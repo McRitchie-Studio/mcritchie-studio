@@ -530,4 +530,182 @@ class AgentMessages::SlackIngestTest < ActiveSupport::TestCase
   ensure
     AgentMessages::SlackRoutes.current = original
   end
+
+  PNG = "\x89PNG\r\n\x1A\n#{'\0' * 32}".b.freeze
+
+  def png_file(id = "F01", **attrs)
+    { "id" => id, "name" => "#{id}.png", "mimetype" => "image/png", "size" => PNG.bytesize,
+      "url_private_download" => "https://files.slack.com/files-pri/T/#{id}.png" }.merge(attrs.deep_stringify_keys)
+  end
+
+  def as_owner
+    AgentMessages::Answerers.reset!
+    with_routes(routes) do
+      AgentPerson.seed_owner!
+      yield
+    end
+  end
+
+  def with_files(calls = [], &fetch)
+    fetch ||= ->(_uri, io, _token) { io.write(PNG) }
+    files = AgentMessages::SlackFiles.new(token: "test-token", fetcher: lambda { |uri, io, token|
+      calls << uri.to_s
+      fetch.call(uri, io, token)
+    })
+    AgentMessages::SlackIngest.new(routes: routes, answerers: AgentMessages::Answerers.current, files: files)
+  end
+
+  test "[unit] files: an image on a named message is stored on the private service and attached before the row can be claimed" do
+    as_owner do
+      row = with_files.call(event("Avi, what is this?", subtype: "file_share", files: [ png_file ]), team_id: TEAM)
+
+      assert_equal [ "F01.png" ], row.attachments.map { |a| a.blob.filename.to_s }
+      assert_equal "image/png", row.attachments.first.blob.content_type
+      assert_equal "chat_private", row.attachments.first.blob.service_name
+      assert_equal "F01", row.attachments.first.blob.metadata.dig("slack", "file")
+      assert_nil row.envelope["files_skipped"]
+    end
+  end
+
+  test "[unit] files: every row of a fan-out shares the one fetched file" do
+    as_owner do
+      calls = []
+      primary = with_files(calls).call(event("Avi and Alex, look", files: [ png_file ]), team_id: TEAM)
+      rows = AgentMessage.where(channel: "slack", thread_key: primary.thread_key)
+
+      assert_equal 2, rows.count
+      assert_equal 1, calls.size
+      assert_equal 1, rows.map { |r| r.attachments.first.blob_id }.uniq.size
+    end
+  end
+
+  test "[unit] files: a retried event reuses the stored blob instead of fetching again" do
+    as_owner do
+      calls = []
+      e = event("Avi, look", files: [ png_file ])
+      first = with_files(calls).call(e, team_id: TEAM)
+      first.destroy!
+      second = with_files(calls).call(e, team_id: TEAM)
+
+      assert_equal 1, calls.size
+      assert_equal "F01.png", second.attachments.first.blob.filename.to_s
+    end
+  end
+
+  test "[unit] files: a held sender's file is never fetched" do
+    as_owner do
+      calls = []
+      row = with_files(calls).call(event("Avi, look", user: STRANGER, files: [ png_file ]), team_id: TEAM)
+
+      assert_equal "held", row.status
+      assert_empty calls
+      assert_not row.attachments.attached?
+    end
+  end
+
+  test "[unit] files: the token never leaves files.slack.com over https" do
+    as_owner do
+      [ "https://evil.example/x.png", "http://files.slack.com/x.png", "https://files.slack.com.evil.example/x.png", "not a url" ].each do |url|
+        calls = []
+        file = png_file(url_private_download: url)
+        row = with_files(calls).call(event("Avi, look", files: [ file ]), team_id: TEAM)
+
+        assert_empty calls, url
+        assert_not row.attachments.attached?, url
+        assert_match(/link the app will not follow/, row.envelope["files_skipped"].first["reason"], url)
+      end
+    end
+  end
+
+  test "[unit] files: a redirect is not followed and is reported, and the message is still stored" do
+    as_owner do
+      Net::HTTP.stub(:start, ->(*_args, **_opts, &block) {
+        http = Object.new
+        http.define_singleton_method(:request) { |_req, &inner| inner.call(Net::HTTPFound.new("1.1", "302", "Found")) }
+        block.call(http)
+      }) do
+        ingest = AgentMessages::SlackIngest.new(routes: routes, answerers: AgentMessages::Answerers.current,
+                                                files: AgentMessages::SlackFiles.new(token: "t"))
+        row = ingest.call(event("Avi, look", files: [ png_file ]), team_id: TEAM)
+
+        assert_equal "received", row.status
+        assert_equal [ { "filename" => "F01.png", "reason" => AgentMessages::SlackFiles::NO_ACCESS } ], row.envelope["files_skipped"]
+      end
+    end
+  end
+
+  test "[unit] files: bytes that are not what Slack said are refused by reading them, and a storage failure never loses the message" do
+    as_owner do
+      row = with_files { |_uri, io, _token| io.write("<html>sign in</html>") }.call(event("Avi, look", files: [ png_file ]), team_id: TEAM)
+      assert_not row.attachments.attached?
+      assert_match(/not an image or a PDF/, row.envelope["files_skipped"].first["reason"])
+
+      row = with_files { |*_args| raise "boom" }.call(event("Avi, look", files: [ png_file("F02") ]), team_id: TEAM)
+      assert_equal "received", row.status
+      assert_equal "could not be stored", row.envelope["files_skipped"].first["reason"]
+    end
+  end
+
+  test "[unit] files: a type outside the list, a deleted file and the eleventh file are skipped unfetched" do
+    as_owner do
+      calls = []
+      files = [ png_file("F03", mimetype: "application/zip"), png_file("F04", mode: "tombstone") ] +
+              (1..11).map { |n| png_file("G#{n}") }
+      row = with_files(calls).call(event("Avi, look", files: files), team_id: TEAM)
+
+      assert_equal 8, row.attachments.count
+      assert_equal 8, calls.size
+      assert_equal %w[F03.png F04.png G11.png G9.png G10.png].sort, row.envelope["files_skipped"].map { |f| f["filename"] }.sort
+    end
+  end
+
+
+  test "[unit] files: the twin that lands first with no files is filled in on every row by the one that carries them" do
+    as_owner do
+      e = event("<@#{BOT}> Avi and Alex, look")
+      primary = with_files.call(e.merge("type" => "app_mention"), team_id: TEAM)
+      assert_not primary.attachments.attached?
+
+      assert_no_difference -> { AgentMessage.count } do
+        with_files.call(e.merge("subtype" => "file_share", "files" => [ png_file ]), team_id: TEAM)
+      end
+      rows = AgentMessage.where(channel: "slack", thread_key: primary.thread_key)
+      assert_equal 2, rows.count
+      assert(rows.all? { |row| row.attachments.first&.blob&.filename.to_s == "F01.png" })
+    end
+  end
+
+  test "[unit] files: a failed upload leaves no row to reuse, and a twin racing an upload still gets the file" do
+    as_owner do
+      service = ActiveStorage::Blob.services.fetch(:chat_private)
+      service.stub(:upload, ->(*, **) { raise IOError }) { with_files.call(event("Avi, look", files: [ png_file("F07") ]), team_id: TEAM) }
+      assert_nil ActiveStorage::Blob.find_by("key LIKE ?", "%/F07/%")
+      real, e = service.method(:upload), event("Avi, look", files: [ png_file("F08") ])
+      slow = Fiber.new { with_files.call(e, team_id: TEAM) }
+      row = service.stub(:upload, ->(*a, **o) { Fiber.yield if Fiber.current == slow; real.call(*a, **o) }) { with_files { |_u, io, _t| slow.resume; io.write(PNG) }.call(e, team_id: TEAM).tap { slow.resume } }
+      assert row.attachments.attached?, row.envelope["files_skipped"].inspect
+    end
+  end
+
+  test "[unit] files: a twin with no files that wins the rows during the fetch still gets the file on every row" do
+    as_owner do
+      e, calls = event("Avi and Alex, look", files: [ png_file ]), []
+      row = with_files(calls) { |_u, io, _t| with_files.call(e.except("files"), team_id: TEAM) if calls.one?; io.write(PNG) }.call(e, team_id: TEAM)
+      assert_equal 1, calls.size, "the stored blob is reused, not fetched again"
+      assert(AgentMessage.where(channel: "slack", thread_key: row.thread_key).all? { |r| r.attachments.attached? })
+    end
+  end
+
+  test "[unit] files: a missing scope reaches the error log, a wrong type does not" do
+    as_owner do
+      redirect = ->(*_args) { raise AgentMessages::SlackFiles::NoAccess, AgentMessages::SlackFiles::NO_ACCESS }
+      assert_difference -> { ErrorLog.count }, 1 do
+        with_files(&redirect).call(event("Avi, look", files: [ png_file("F05") ]), team_id: TEAM)
+      end
+      assert_no_difference -> { ErrorLog.count } do
+        with_files.call(event("Avi, look", files: [ png_file("F06", mimetype: "application/zip") ]), team_id: TEAM)
+      end
+    end
+  end
+
 end

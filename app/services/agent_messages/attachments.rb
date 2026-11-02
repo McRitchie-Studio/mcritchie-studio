@@ -1,6 +1,7 @@
 module AgentMessages
   # The files a person attaches to a CTO web chat message (.agents/epics/chat-media-design.md,
-  # step 1: images and PDFs). One place holds the rules, so the upload endpoint
+  # step 1: images and PDFs), and the files a Slack message carries, which
+  # AgentMessages::SlackFiles fetches and stores here under its own key. One place holds the rules, so the upload endpoint
   # (CtoChatAttachmentsController#create) and the message store (WebIngest) can
   # never disagree about them:
   #
@@ -81,10 +82,14 @@ module AgentMessages
     def key_prefix(app_slug, user_id) = "apps/#{app_slug}/chat/u#{Integer(user_id)}-"
 
     def key_for(app_slug, user_id, filename)
+      "#{key_prefix(app_slug, user_id)}#{SecureRandom.base36(24)}/#{safe_name(filename)}"
+    end
+
+    # A filename as it may sit in a storage key.
+    def safe_name(filename)
       name = ActiveStorage::Filename.new(filename.to_s).sanitized.gsub(/[^A-Za-z0-9._-]/, "_").gsub(/\.{2,}/, ".")
       name = name[-100..] if name.length > 100
-      name = "file" if name.blank? || name.match?(/\A[._-]+\z/)
-      "#{key_prefix(app_slug, user_id)}#{SecureRandom.base36(24)}/#{name}"
+      name.blank? || name.match?(/\A[._-]+\z/) ? "file" : name
     end
 
     # The checks on one file's TYPE and SIZE; raises Refused naming the file.
@@ -112,13 +117,24 @@ module AgentMessages
       end
 
       filename = filename.to_s.presence || "file"
+      store!(io: io, filename: filename, key: key_for(app_slug, user.id, filename),
+             origin: { "cto_chat" => { "app" => app_slug, "user_id" => user.id } })
+    end
+
+    # Stores checked bytes on the private service under `key`, and returns the
+    # blob. Shared by the web composer (#upload!) and Slack (SlackFiles). Raises
+    # Refused when the bytes are not an allowed type or size.
+    def store!(io:, filename:, key:, origin:)
       content_type = sniff(io)
       check!(content_type: content_type, byte_size: io.size, filename: filename)
-      ActiveStorage::Blob.create_and_upload!(io: io, filename: filename, content_type: content_type, identify: false,
-                                             service_name: SERVICE,
-                                             key: key_for(app_slug, user.id, filename),
-                                             metadata: { "analyzed" => true, "identified" => true,
-                                                         "cto_chat" => { "app" => app_slug, "user_id" => user.id } })
+      # The bytes, then the row, so a row always has its object: a retry or a Slack
+      # twin may reuse any row it finds. Two writers of one key write the same bytes.
+      blob = ActiveStorage::Blob.build_after_unfurling(io: io, filename: filename, content_type: content_type, identify: false, service_name: SERVICE,
+                                                       key: key, metadata: { "analyzed" => true, "identified" => true }.merge(origin))
+      blob.upload_without_unfurling(io)
+      blob.tap(&:save!)
+    rescue ActiveRecord::RecordNotUnique
+      ActiveStorage::Blob.find_by!(key: key)
     end
 
     # HEIF's ISO-BMFF brands (an iPhone writes `heic`, an editor `heix` or
