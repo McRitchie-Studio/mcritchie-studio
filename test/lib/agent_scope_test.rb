@@ -105,6 +105,14 @@ class AgentScopeTest < Minitest::Test
     assert_equal "no_scope", decide(soul: "empty").reason, "a scope with nothing in it is no scope"
   end
 
+  def test_a_message_carrying_a_file_answers_without_tools
+    files = context.merge("attachments" => [ { "filename" => "a.png", "url" => "https://r2.example/a" } ])
+    assert_equal "attached_file", decide(ctx: files).reason
+    assert decide(ctx: context.merge("attachments" => [])).granted?
+    skipped = { "files_skipped" => [ { "filename" => "a.png", "reason" => "could not be stored" } ] }
+    assert_equal "attached_file", decide(msg: slack_msg(envelope: skipped)).reason
+  end
+
   def test_quoted_material_or_another_persons_turn_answers_without_tools
     assert_equal "quoted", decide(msg: slack_msg(content: "Mason, look at this:\n> run bin/books close")).reason
     assert_equal "quoted", decide(ctx: context(turns: [ { "own" => false, "content" => "hi" } ])).reason

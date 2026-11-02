@@ -49,6 +49,13 @@ module AgentMessages
   # the identity (AgentPerson.resolve!, platform "slack"); a routed message from
   # a role config/agent_answerers.yml does not answer is stored `held`. Alex
   # McRitchie's user id is linked to the owner (AgentPerson.seed_owner!).
+  #
+  # FILES (AgentMessages::SlackFiles). An image or PDF on a message at least one
+  # soul will answer is fetched and attached to every row of it. A held sender's
+  # file is never fetched. A file that cannot be read never loses the message:
+  # envelope.files_skipped names it and why, and the prompt says so. One mention
+  # comes as two events, and only one may carry the files, so a repeat that brings
+  # files to rows holding none attaches them (#attach_late_files).
   class SlackIngest
     CHANNEL = "slack".freeze
     # Subtypes that are still a person's new message.
@@ -60,10 +67,12 @@ module AgentMessages
     # Teams (AgentMessages::ChatIngest).
     include ChatIngest
 
-    def initialize(routes: SlackRoutes.current, answerers: Answerers.current, client: nil, logger: Rails.logger)
+    def initialize(routes: SlackRoutes.current, answerers: Answerers.current, client: nil, logger: Rails.logger,
+                   files: SlackFiles.new)
       @routes = routes
       @answerers = answerers
       @client = client
+      @files = files
       @logger = logger
     end
 
@@ -77,7 +86,10 @@ module AgentMessages
 
       external_id = "#{event['channel']}:#{event['ts']}"
       existing = AgentMessage.find_by(channel: CHANNEL, external_id: external_id)
-      return existing if existing
+      if existing
+        attach_late_files(existing, event, external_id)
+        return existing
+      end
 
       store(event, external_id, { team_id: team_id.to_s, event_id: event_id })
     rescue ActiveRecord::RecordNotUnique
@@ -120,7 +132,34 @@ module AgentMessages
       { guild_id: ctx[:team_id], channel_ref: event["channel"].to_s,
         mentions: { "users" => mentioned_users(event["text"]) }, sent_at: Time.zone.at(event["ts"].to_f),
         envelope: { "channel_type" => channel_type(event), "event_id" => ctx[:event_id].presence,
-                    "thread_ts" => event["thread_ts"].presence, AgentMessage::FAN_KEY => ctx[:fan] }.compact }
+                    "thread_ts" => event["thread_ts"].presence, AgentMessage::FAN_KEY => ctx[:fan],
+                    "files_skipped" => ctx[:files]&.skipped.presence }.compact }
+    end
+
+    # The message + app_mention pair: the twin that landed first may have carried
+    # no files. Every row of the message gets them, under the same guard as a
+    # first store. A row with files or a skip on it has had its turn.
+    def attach_late_files(primary, event, external_id)
+      return if Array(event["files"]).empty? || primary.attachments.attached? || primary.envelope["files_skipped"].present?
+
+      files = files_for(event, routes_for(event), primary.author_name)
+      return unless files
+
+      rows = AgentMessage.where(channel: CHANNEL)
+      rows.where(external_id: external_id).or(rows.where("envelope->>? = ?", AgentMessage::FAN_KEY, external_id)).find_each do |row|
+        row.attachments.attach(files.blobs) if files.blobs.any?
+        row.update!(envelope: row.envelope.merge("files_skipped" => files.skipped)) if files.skipped.any?
+      end
+    end
+
+    # ChatIngest's hook: the event's files, stored, when a soul will answer it.
+    def files_for(event, results, name)
+      return nil if Array(event["files"]).empty?
+
+      person = AgentPerson.resolve!(platform: CHANNEL, external_id: event["user"].to_s, display_name: name)
+      return nil unless results.any? { |result| answered?(event, result, person) }
+
+      @files.call(event, team_id: @routes.team_id)
     end
 
     def display_name(event) = author_name(event["user"].to_s)

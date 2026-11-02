@@ -424,7 +424,19 @@ seconds.
 | `guild_id` | the team id |
 | `channel_ref` | the channel id (`C…`, `G…`, `D…`) |
 | `thread_key` | `slack:<channel>:<thread_ts or ts>`: a Slack thread is one conversation |
-| `envelope` | `channel_type` (`im` for a DM: `MemoryBundle#private_channel?`), `event_id`, `thread_ts`, and on a fan-out's rows `fan` (the primary row's `external_id`) |
+| `envelope` | `channel_type` (`im` for a DM: `MemoryBundle#private_channel?`), `event_id`, `thread_ts`, on a fan-out's rows `fan` (the primary row's `external_id`), and `files_skipped` (each file that could not be stored, and why) |
+
+**Files** (`AgentMessages::SlackFiles`, bot scope `files:read`). An image or PDF on
+a message at least one soul will answer is fetched before the rows are written, and
+stored as a web chat's file is (`AgentMessages::Attachments`: the private bucket, the
+type read from the bytes). Every row of a fan-out shares it; the dispatcher reads it
+from the context bundle. The bot token goes only to `files.slack.com` over https, and
+a redirect is never followed. A held sender's file is never fetched. One mention
+comes as two events, so a repeat that brings files to rows holding none attaches
+them. A missing scope or a storage failure also lands on the error log. A file that
+cannot be stored never loses the message: the prompt names it under "Could not be
+read" with the reason, and the soul says so. Only the message that carries a file
+shows it to the model; a later turn in the thread sees its filename.
 
 Never stored: another workspace's events, anything a bot wrote (`bot_id`,
 `bot_profile`, subtype `bot_message`, or the app's own user: our own customized
@@ -632,6 +644,7 @@ first that fails is the run record's `run_meta.scope` (else `granted`):
 | it is not a released hold | `released_hold` |
 | the soul is cleared in the channel (the `SlackRoutes#cleared?` rule, re-read without Rails) | `not_cleared` |
 | the message and every earlier thread turn are the owner's own words, with no quoted or forwarded material (`WarmSession.quotes?`) | `quoted` |
+| the message carries no file, read or skipped (its text is not the owner's words either); the soul reads the file with no tools, and the next message has them | `attached_file` |
 
 A scoped run is never warm, and skips the soul's one read action. The Responder
 checks the audience again, so a grant handed in for anyone but the owner runs the
@@ -1846,7 +1859,8 @@ bin/dispatcher ─▶ context bundle `attachments` (URLs expiring in 15 min) ─
   message's files to the designed task (the same blobs, `dependent: false`), and
   the task's description names them as data from the requester. Writing them into
   a desk at `bin/task begin` is the design's later step.
-- **Not yet:** audio and video, Discord attachments, office files, a sweep of
+- **Slack's files** come in through the same store ("Slack", **Files**).
+- **Not yet:** audio and video, Discord and Teams attachments, office files, a sweep of
   and uploads never sent.
 
 ## Build intake: Alex answers the public on /build

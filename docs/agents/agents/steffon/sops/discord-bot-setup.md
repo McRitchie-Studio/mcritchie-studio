@@ -228,8 +228,8 @@ Run these **after** the hub deploy that carries `POST /webhooks/slack/events`
    Slack sends a signed `url_verification` to the URL when it is saved; the hub
    answers it only once step 1's secret is live, so step 1 comes first. The
    events need the `channels:history`, `groups:history` and `im:history` bot
-   scopes; if the update adds any scope, the app must be reinstalled (Alex
-   McRitchie's one Allow click).
+   scopes, and reading a message's files needs `files:read`; if the update adds
+   any scope, the app must be reinstalled (Alex McRitchie's one Allow click).
 3. **Invite the app** (`/invite @McRitchie Agents`) to `#agents`, `#ops` and
    `#releases`; it reads and posts only where it is a member.
 4. **Verify.** In `#agents`, Alex McRitchie writes `Avi, are you there?`; a row
