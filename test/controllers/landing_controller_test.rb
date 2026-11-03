@@ -13,8 +13,12 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     # Hero
     assert_select "h1.hero-title" do
-      assert_select "span.dropping-texts[data-spacer=Workflow] > span", count: 4
-      assert_equal %w[Workflow Idea Plan Agent], css_select("span.dropping-texts > span").map { |word| word.text.strip }
+      assert_select "span.dropping-texts[data-spacer=Workflow][data-interval='3000'] > span", count: 3
+      assert_equal %w[Idea Workflow Agent], css_select("span.dropping-texts > span").map { |word| word.text.strip }
+      # The first word renders active, so it starts in place; only it does.
+      assert_select "span.dropping-texts > span.drop-active", count: 1, text: "Idea"
+      # Your stands beside the word from 400px; Built Right keeps its own line.
+      assert_select "> span.min-\\[400px\\]\\:basis-auto", text: "Your"
       assert_select "span", text: "Built Right"
     end
     assert_includes response.body, "Your"
