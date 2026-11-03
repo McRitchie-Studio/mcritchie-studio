@@ -29,6 +29,14 @@ class MarketingKitPageTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "the light icon tile escapes the dark-page icon swap, so it keeps its tone" do
+    get marketing_kit_path
+
+    assert_select "[data-test='kit-logos'] img", 6
+    assert_select "[data-test='kit-logos'] img[src='/brand/icon-light.svg']", 0
+    assert_select "[data-test='kit-logos'] img[src=?]", "/brand/icon-light.svg?kit", 1
+  end
+
   test "the footer shows and links the page for a signed-in viewer too" do
     log_in_as users(:viewer)
     get marketing_kit_path
