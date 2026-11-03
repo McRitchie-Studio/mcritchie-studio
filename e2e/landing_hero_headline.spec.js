@@ -1,7 +1,7 @@
 // [e2e] The landing hero's headline (task hero-says-built-right).
 //
 // Alex McRitchie, 2026-10-30: "Your ___ Built Right with the options [Workflow, Idea,
-// Plan]". The middle word cycles; at a phone, the lg edge and a desktop each word
+// Plan]"; 2026-11-03: Agent joins as the last word. The middle word cycles; at a phone, the lg edge and a desktop each word
 // sits whole inside its box, centred, the headline never reaches the subtitle,
 // the headline holds one height through the cycle (a word that fits where another
 // wraps must not reflow the page), and the page never scrolls sideways. The word
@@ -50,8 +50,8 @@ async function checkHeadline(page, width) {
     }).observe(box, { subtree: true, attributes: true, attributeFilter: ["class"] });
   });
 
-  // Idea, Plan, then Workflow again: the short-to-long entry is the one that clipped.
-  for (const word of ["Idea", "Plan", "Workflow"]) {
+  // Idea, Plan, Agent, then Workflow again: the short-to-long entry is the one that clipped.
+  for (const word of ["Idea", "Plan", "Agent", "Workflow"]) {
     const active = page.locator(".dropping-texts > span.drop-active", { hasText: word });
     await expect(active).toHaveCount(1, { timeout: 8_000 });
     // The box eases to the word's width (0.4s) after it drops in.
