@@ -6,7 +6,8 @@
 
 - **Theme**: Dynamic — engine-generated CSS custom properties from 7 role colors
 - **Theme config**: Uses all Studio defaults (violet primary `#8E82FE`). No `theme_*` overrides in `studio.rb`.
-- **Admin theme page**: `/admin/theme` — color editor + styleguide (from engine)
+- **Theme editor**: `/admin/style#theme`, the Design System page's Theme section (engine). `/admin/theme` stays as an engine route with no sidebar link.
+- **Marketing Kit**: `/marketing-kit`, the public logos, colours and typefaces.
 - **Primary**: `#8E82FE` Violet — CTAs, buttons, links, hovers, form focus. Views use `text-primary`, `bg-primary`, `bg-primary-700` etc. (dynamic Tailwind palette from CSS vars, not hardcoded violet).
 - **Success accent**: `#4BAF50` Green (default) — flash notices, success toasts, active status dots
 - **Font**: Montserrat (weights 400-900)

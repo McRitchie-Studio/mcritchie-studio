@@ -229,7 +229,7 @@ Studio.configure do |config|
                          [ "Contact", view.contact_form_path ] ] ],
         [ "Solutions", [ [ "Packages", view.packages_path ], [ "Integrations", view.integrations_path ], [ "Build an app", view.build_path ] ] ],
         # Career has no page yet: a nil path renders the label disabled.
-        [ "Company",   [ [ "Home", view.root_path ], [ "About", view.about_path ], [ "Career", nil ] ] ],
+        [ "Company",   [ [ "Home", view.root_path ], [ "About", view.about_path ], [ "Marketing Kit", view.marketing_kit_path ], [ "Career", nil ] ] ],
         [ "Legal",     [ [ "Privacy Policy", view.privacy_path ], [ "Terms of Service", view.terms_path ] ] ]
       ],
       legal: [ [ "Privacy Policy", view.privacy_path ], [ "Terms of Service", view.terms_path ] ],
@@ -240,7 +240,7 @@ Studio.configure do |config|
   # A visitor gets the footer on every page. A signed-in viewer gets it only on
   # these controllers, the public site; every other signed-in page is a working
   # surface (boards, queues, editors) and stays full height.
-  config.site_footer_controllers = %w[landing packages integrations build contact_submissions schedule]
+  config.site_footer_controllers = %w[landing marketing_kit packages integrations build contact_submissions schedule]
 
   # The studio's Google Calendar appointment schedule. It checks every one of
   # the operator's calendars for conflicts, which is why bookings go through it.
