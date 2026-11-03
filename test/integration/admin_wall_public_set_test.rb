@@ -28,6 +28,7 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     hub_agent_chats#create hub_agent_chats#turns
     studio/agent_chats#create studio/agent_chats#turns
     magic_links#create
+    marketing_kit#index
     nfl#index nfl#rosters
     omniauth_callbacks#create omniauth_callbacks#failure
     packages#index packages#stack

@@ -47,6 +47,7 @@ pages:
   terms:          { page: "landing#terms",           audience: public, label: Terms of Service }
   privacy:        { page: "landing#privacy",         audience: public, label: Privacy Policy }
   about:          { page: "landing#about",           audience: public, label: About }
+  marketing_kit:  { page: "marketing_kit#index",     audience: public, label: Marketing Kit }
   packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Builder, Pro and Team tiers, and Enterprise" }
   packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
   integrations:   { page: "integrations#index",      audience: public, label: Integrations, emoji: "🔌", hover_emoji: "🧩", desc: "Connect your tools, add services we run" }
@@ -105,7 +106,6 @@ pages:
   # ── Site administration ──────────────────────────────────────────────────
   admin_dashboard:    { page: "admin/dashboard#show",         audience: admin, label: Admin dashboard, emoji: "📊", hover_emoji: "🔬", desc: Users + request logs }
   deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board }
-  admin_theme:        { page: "theme_settings#edit",          audience: admin, label: Theme, emoji: "🎨", hover_emoji: "🌓", desc: Palette + dark mode }
   admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks }
   admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser }
   logos:              { page: "logos#index",                  audience: admin, label: Logos, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built }
@@ -158,7 +158,7 @@ pages:
   mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
 
 sidebar:
-  - { title: Site,    group: admin, pages: [admin_dashboard, deployments, admin_theme, admin_style, admin_schema, logos, admin_emails, admin_link_preview, asset_browser] }
+  - { title: Site,    group: admin, pages: [admin_dashboard, deployments, admin_style, admin_schema, logos, admin_emails, admin_link_preview, asset_browser] }
   # The client side of the business: what the funnel brought in, what each client
   # runs on, and the credentials behind it.
   - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }

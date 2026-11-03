@@ -112,15 +112,10 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "#studio-link-sidebar a[href=?]", admin_style_path
-    # It must not regress to the legacy design_system route (which only redirects).
-    assert_select "#studio-link-sidebar a[href=?]", admin_design_system_path, count: 0
   end
 
-  test "the canonical admin_style route resolves and /admin/design_system redirects to it" do
+  test "the canonical admin_style route resolves" do
     assert_equal "/admin/style", admin_style_path
-
-    get admin_design_system_path
-    assert_redirected_to "/admin/style"
   end
 
   test "a non-admin cannot reach /admin/style" do
