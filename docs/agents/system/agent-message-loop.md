@@ -2094,7 +2094,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   secret alone to stdout. Capture it in a shell variable and hand it on over stdin only,
   as the `credential-rotation` SOP does (never `op item edit field=…` or
   `heroku config:set NAME=…`, which put it on argv). The 1Password item must already
-  exist (the agent makes it empty, per the `credential-filing` SOP):
+  exist (the agent makes it empty, per the `credential-filing` SOP). Run it on the admin lane, the `credential-rotation` SOP's precondition: the mint has already revoked the old token when `op item edit` runs, so a refused edit leaves the app answering 401:
 
   ```bash
   NEW=$(heroku run --no-tty -a mcritchie-studio -- \
@@ -2103,7 +2103,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   { printf '%s\n' "$NEW"; op item get "agent-chat.alex-build.applications" --vault studio-applications --format json; } |
     ruby -rjson -e 'value = STDIN.readline.chomp; item = JSON.parse(STDIN.read)
       field = item.fetch("fields").find { |f| f["label"] == ARGV[0] } or abort "refusing: no field #{ARGV[0]}"
-      field["value"] = value; print JSON.generate(item)' "<field>" |
+      field["value"] = value; print JSON.generate(item)' "credential" |
     op item edit "agent-chat.alex-build.applications" --vault studio-applications > /dev/null &&
   printf '%s' "$NEW" | bin/heroku-secret-set alex-build AGENT_CHAT_TOKEN
   unset NEW
