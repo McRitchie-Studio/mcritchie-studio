@@ -105,7 +105,10 @@ async function openChat(page) {
 
 async function holdToTalk(page, { holdMs = 700 } = {}) {
   const recorder = page.locator(RECORDER);
-  const box = await recorder.locator("[data-voice-recorder-button]").boundingBox();
+  // Each sent turn pushes the button down; past the fold a press at its box lands on nothing.
+  const button = recorder.locator("[data-voice-recorder-button]");
+  await button.scrollIntoViewIfNeeded();
+  const box = await button.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await expect(recorder).toHaveAttribute("data-voice-recorder-state", "recording");
