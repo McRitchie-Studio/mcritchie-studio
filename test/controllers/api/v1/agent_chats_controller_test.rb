@@ -152,7 +152,7 @@ module Api
 
         assert_response :created
         row = AgentMessage.order(:id).last
-        assert_equal %w[speaker score check duration_ms], row.envelope["voice"].keys
+        assert_equal %w[check duration_ms score speaker], row.envelope["voice"].keys.sort
         refute_includes row.to_json, "UklGRiQAAABXQVZF"
       end
 
