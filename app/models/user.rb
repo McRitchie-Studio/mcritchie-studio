@@ -111,11 +111,16 @@ class User < ApplicationRecord
   has_one_attached :avatar
 
   # email is nullable (a Google-only user may have none) and unique when present.
+  # One spelling per address: magic links are downcased, so a mixed-case row could
+  # never be found again and would lock its owner out.
+  normalizes :email, with: ->(address) { address.strip.downcase }
   validates :email, uniqueness: true, allow_nil: true
+  validate :parked_move_carries_proof, if: -> { persisted? && will_save_change_to_email? }
   validate :has_authentication_method
 
   before_create :ensure_session_token
   before_validation :assign_parked_identity
+  before_save :clear_stale_stamp
   before_save :set_name_parts, if: -> { name_changed? }
 
   # /cable checks admin and the session token only at connect, so every write
@@ -184,7 +189,7 @@ class User < ApplicationRecord
     end
 
     email = auth.info.email
-    if email.present? && (existing = find_by(email: email))
+    if email.present? && (existing = where("lower(email) = ?", email.downcase).first)
       return :email_not_verified unless email_verified
       existing.update!(provider: auth.provider, uid: auth.uid,
                        email_verified_at: existing.email_verified_at || Time.current)
@@ -250,6 +255,37 @@ class User < ApplicationRecord
 
   private
 
+  # A parked identity carries a role, so an address only earns it once its owner has
+  # PROVEN it: email_verified_at, stamped by a magic link click or Google's check.
+  # /profile saves whatever address is typed and clears that stamp, so without this a
+  # member could type a parked address, in any case, and become an admin.
+  # A stamp speaks for the address it was earned on. While the email is changing,
+  # the old stamp is still on the row, so only a stamp set in the same save counts.
+  def parked_address_proven?
+    return false if email_verified_at.blank?
+    return true unless persisted? && email_changed?
+
+    email_verified_at_changed?
+  end
+
+  # Nobody moves onto a parked address without proving it in the same save. Otherwise
+  # a member could sit on an unclaimed one, and the real owner's first sign-in would
+  # stamp that member's row and make it the admin. A new row is not a move: sign-up
+  # saves, then stamps, and the link that does so is the proof.
+  def parked_move_carries_proof
+    return unless self.class.parked_identity_for(email: email)
+    return if email_verified_at.present? && will_save_change_to_email_verified_at?
+
+    errors.add(:email, :taken) unless errors.of_kind?(:email, :taken)
+  end
+
+  # A stamp speaks for the address it was earned on.
+  def clear_stale_stamp
+    return unless persisted? && will_save_change_to_email? && !will_save_change_to_email_verified_at?
+
+    self.email_verified_at = nil
+  end
+
   def assign_parked_identity
     identity = self.class.parked_identity_for(email: email)
     return false unless identity
@@ -257,13 +293,14 @@ class User < ApplicationRecord
     changed_identity = false
 
     parked_role = identity[:role].presence
-    if parked_role.present? && role != parked_role
+    # A demotion needs no proof, so the roster still reaches an existing row.
+    if parked_role.present? && role != parked_role && (parked_role != "admin" || parked_address_proven?)
       self.role = parked_role
       changed_identity = true
     end
 
     parked_name = identity[:name].presence
-    if parked_name.present? && (name.blank? || name == "anon")
+    if parked_name.present? && (name.blank? || name == "anon") && parked_address_proven?
       self.name = parked_name
       changed_identity = true
     end
