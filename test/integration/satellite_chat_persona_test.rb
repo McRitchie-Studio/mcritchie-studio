@@ -33,7 +33,7 @@ class SatelliteChatPersonaTest < ActiveSupport::TestCase
   end
 
   test "a signed-in visitor's chat: thread carries the persona at the public audience" do
-    user = User.create!(email: "visitor@example.com", name: "Visitor", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "visitor@example.com", name: "Visitor", role: "viewer")
     bundle, text = prompt_for(user.email)
 
     assert_equal "public", bundle.dig("audience", "role")

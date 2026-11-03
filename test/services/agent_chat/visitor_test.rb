@@ -7,7 +7,7 @@ class AgentChatVisitorTest < ActiveSupport::TestCase
   ANON = "anon-cookie-token-0001".freeze
 
   test "a signed-in email that is a hub user chats on chat:<soul>:<user id>, as their web person" do
-    user = User.create!(email: "Builder@Example.com", name: "Builder", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "Builder@Example.com", name: "Builder", role: "viewer")
     visitor = AgentChat::Visitor.new("alex", email: " builder@example.COM ")
 
     assert visitor.signed_in?
@@ -18,14 +18,14 @@ class AgentChatVisitorTest < ActiveSupport::TestCase
   end
 
   test "the thread is one per (person, soul): another soul is another thread, an app is never in the key" do
-    user = User.create!(email: "two@example.com", name: "Two", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "two@example.com", name: "Two", role: "viewer")
 
     assert_equal "chat:alex:#{user.id}", AgentChat::Visitor.new("alex", email: user.email).thread_key
     assert_equal "chat:avi:#{user.id}", AgentChat::Visitor.new("avi", email: user.email).thread_key
   end
 
   test "speaker_name: a hub user's own name, a known person's, an email's local part, nobody for anon" do
-    User.create!(email: "named@example.com", name: "Named Person", role: "viewer")
+    User.create!(email_verified_at: Time.current, email: "named@example.com", name: "Named Person", role: "viewer")
     assert_equal "Named Person", AgentChat::Visitor.new("alex", email: "named@example.com").speaker_name
 
     known = AgentPerson.resolve!(platform: "email", external_id: "known@example.com", display_name: "Known\nPerson")
