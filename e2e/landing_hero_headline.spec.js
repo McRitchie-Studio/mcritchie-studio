@@ -118,6 +118,11 @@ async function checkHeadline(page, width) {
   expect([...widths], "the word's box holds one width through the cycle").toHaveLength(1);
   const heights = new Set(Object.values(seen).map((m) => m.h1Height));
   expect([...heights], "the headline holds one height through the cycle").toHaveLength(1);
+  // The call to action holds one line at every width: 24px text, 36px line, 1rem padding.
+  const cta = await page.locator("[data-test='hero-build-cta']").boundingBox();
+  expect(cta.height, "Build Your Website holds one line").toBeLessThanOrEqual(70);
+  expect(cta.x + cta.width, "Build Your Website stays on screen").toBeLessThanOrEqual(width);
+
   // The first transition any word runs is Idea leaving: it never dropped in.
   const runs = await page.evaluate(() => window.__heroRuns);
   expect(runs[0], "the first move is out of Idea").toEqual({ text: "Idea", exit: true });

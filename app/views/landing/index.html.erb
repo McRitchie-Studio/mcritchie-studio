@@ -17,6 +17,8 @@
   /* The hero's one call to action, a size above btn-lg (Alex McRitchie, 2026-11-03):
      the type scale's subhead, with padding to match. */
   .hero-cta { font-size: calc(var(--type-base, 16px) * 1.5); padding: 1rem 2.5rem; }
+  /* The narrowest phones trim the sides, so the label holds one line. */
+  @media (max-width: 359px) { .hero-cta { padding-inline: 1.5rem; } }
   /* The box clips only the drop: the sides stay open for a word that hangs past it,
      and the bottom gives the g in Agent its last pixel. */
   .hero-title .dropping-texts {
@@ -88,7 +90,7 @@
         Meet Alex link was dropped (Alex, 2026-10-20; /tasks/drop-hero-meet-alex). %>
     <div class="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
       <%= tag.span class: "cta-glow cta-glow-rainbow", data: { test: "hero-build-glow" } do %>
-        <%= link_to "Build Your App", build_path, class: "btn btn-primary btn-lg hero-cta", data: { test: "hero-build-cta" } %>
+        <%= link_to "Build Your Website", build_path, class: "btn btn-primary btn-lg hero-cta", data: { test: "hero-build-cta" } %>
       <% end %>
     </div>
   </div>
