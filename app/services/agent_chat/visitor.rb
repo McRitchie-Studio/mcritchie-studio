@@ -4,9 +4,9 @@ module AgentChat
   # signed cookie). A signed-in post may carry both: the anon thread then folds
   # into the person's (AgentChat::Ingest#fold!).
   #
-  #   email that is a hub User   the user's web person (WebIngest.person_for),
+  #   email a hub User proved    the user's web person (WebIngest.person_for),
   #                              thread chat:<soul>:<user id>
-  #   email with no hub User     the person its `email` identity names, else a
+  #   any other email            the person its `email` identity names, else a
   #                              new public one (AgentPerson.resolve!, as email
   #                              ingest), thread chat:<soul>:person:<id>
   #   anon_token                 a public "Visitor" person (web identity
