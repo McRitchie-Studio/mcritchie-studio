@@ -257,12 +257,15 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute public_link_sections.any? { |section| section.fetch(:title) == "Directory" }
   end
 
-  # The navbar carries no sign-in link, so a visitor finds Log in at the top of
+  # The navbar carries no sign-in link, so a visitor finds Sign In at the top of
   # the sidebar (/tasks/drop-hero-meet-alex); a signed-in user does not.
-  test "a visitor's sidebar leads with Log in; a signed-in user's has none" do
+  test "a visitor's sidebar leads with Sign In and Chat; a signed-in user's has neither" do
     first = sidebar_link_sections.first
     assert_equal "Account", first.fetch(:title)
-    assert_equal [ [ "Log in", "/login" ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
+    assert_equal [ [ "Sign In", "/login" ], [ "Chat", visitor_chat_path ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
+    assert_includes first.fetch(:links).last.fetch(:emoji), "/agents/alex.webp"
+    assert_equal "💬", first.fetch(:links).last.fetch(:hover_emoji)
+    assert sidebar_link_sections.flat_map { |section| section.fetch(:links) }.none? { |link| link.key?(:desc) }, "a visitor's link is one line"
 
     self.logged_in_enabled = true
     self.current_user = nil
@@ -330,6 +333,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
   def admin_style_path = "/admin/style"
+  def websites_path = "/websites"
+  def chat_index_path = "/chat"
+  def safe_image_tag(url, **) = %(<img src="#{url}">).html_safe
   def admin_schema_path = "/admin/schema"
   def admin_emails_path = "/admin/emails"
   def admin_link_preview_path = "/admin/link_preview"

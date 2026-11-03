@@ -10,6 +10,7 @@ Rails.application.routes.draw do
   get "privacy", to: "landing#privacy", as: :privacy
   get "about",   to: "landing#about",   as: :about
   get "marketing-kit", to: "marketing_kit#index", as: :marketing_kit
+  get "websites", to: "websites#index", as: :websites
   get "packages", to: "packages#index", as: :packages
   # The full stack behind every tier: the software-by-tier matrix /packages links to.
   get "packages/stack", to: "packages#stack", as: :packages_stack
