@@ -65,3 +65,7 @@ The McRitchie Studio sign-in page does NOT show "Continue as" because the hub is
 sender, not a receiver.
 
 **Updating:** After changes to the studio repo, run `bundle update studio-engine` here.
+
+## Parked identities need proof
+
+A parked address in `User::PARKED_IDENTITIES` grants its role only when its owner has proven it: `email_verified_at`, stamped by a magic link or Google's check. A member cannot move onto a parked address unless the same save stamps it, an email is stored in one lowercase spelling, and a moved email drops its stamp.
