@@ -11,11 +11,11 @@ require "ipaddr"
 #
 # The page is /chat (ChatController#index), the hub's own chat with Alex on the
 # engine primitive: thread chat:<soul>:<user id> (AgentChat), the same thread a
-# satellite's chat with Alex reaches for this person. Behind the ADMIN WALL
-# Open to everyone (AdminWall::PUBLIC_ACTIONS). The session names a signed-in user;
-# a visitor is a random token in a signed, http-only cookie, as on a satellite's
+# satellite's chat with Alex reaches for this person.
+# Open to everyone (AdminWall::PUBLIC_ACTIONS). The session names a user with a proven
+# email; anyone else is a random token in a signed, http-only cookie, as on a satellite's
 # proxy (Studio::AgentChatsController), so no email or token is read from the
-# browser. Sign-in folds a visitor's thread into the person's on their next post.
+# browser. Sign-in folds a visitor's thread into the person's on the first poll.
 # The caps are AgentChat::Caps, the same public budget as /build.
 # The app on the row is "mcritchie-studio" (config/agent_routes.yml `web: apps:`).
 #
