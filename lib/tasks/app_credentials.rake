@@ -5,8 +5,8 @@
 #   bin/rails app_credentials:list
 #   bin/rails app_credentials:revoke APP=alex-build
 #
-# mint prints the secret ONCE: file it in 1Password as `apps.<slug>.agent-chat`
-# (the credential-filing SOP) and set it as the app's AGENT_CHAT_TOKEN. The hub
+# mint prints the secret ONCE: file it in 1Password as `<purpose>.<slug>.applications`
+# (`agent-chat.alex-build.applications`, vault studio-applications; the credential-filing SOP) and set it as the app's AGENT_CHAT_TOKEN. The hub
 # keeps only its digest, so a lost secret is re-minted, never recovered; minting
 # again revokes the old one. Never paste the printed secret into a chat, a card
 # or a commit. SECRET_ONLY=1 writes the secret alone to stdout (everything else
@@ -28,7 +28,7 @@ namespace :app_credentials do
                                        issued_by: ENV["BY"].presence || ENV["USER"].presence || "rake")
     note = ENV["SECRET_ONLY"] == "1" ? $stderr : $stdout
     note.puts "Minted #{purpose} credential ##{row.id} for #{app} (older live ones revoked)."
-    note.puts "File it in 1Password as apps.#{app}.#{purpose} and set the app's AGENT_CHAT_TOKEN. It is not shown again:"
+    note.puts "File it in 1Password as #{purpose}.#{app}.applications and set the app's AGENT_CHAT_TOKEN. It is not shown again:"
     puts secret
   end
 

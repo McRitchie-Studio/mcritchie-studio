@@ -24,6 +24,31 @@ class AgentChatVisitorTest < ActiveSupport::TestCase
     assert_equal "chat:avi:#{user.id}", AgentChat::Visitor.new("avi", email: user.email).thread_key
   end
 
+  test "speaker_name: a hub user's own name, a known person's, an email's local part, nobody for anon" do
+    User.create!(email: "named@example.com", name: "Named Person", role: "viewer")
+    assert_equal "Named Person", AgentChat::Visitor.new("alex", email: "named@example.com").speaker_name
+
+    known = AgentPerson.resolve!(platform: "email", external_id: "known@example.com", display_name: "Known\nPerson")
+    assert_equal "Known\nPerson", known.display_name, "the control: the stored name does carry the line break"
+    assert_equal "Known Person", AgentChat::Visitor.new("alex", email: "known@example.com").speaker_name, "one line, as a name"
+
+    assert_no_difference -> { AgentPerson.count } do
+      assert_equal "fresh", AgentChat::Visitor.new("alex", email: "fresh@example.com").speaker_name
+    end
+    assert_nil AgentChat::Visitor.new("alex", anon_token: ANON).speaker_name
+  end
+
+  test "the live allow-list: Turf on Turf Monster, Alex on alex.build and McRitchie Industries, nothing else for them" do
+    routes = AgentMessages::Routes.load
+    { "alex-build" => %w[alex], "turf-monster" => %w[turf_monster], "mcritchie-industries" => %w[alex] }.each do |app, souls|
+      assert_equal souls, routes.web_apps[app], app
+      souls.each { |soul| assert AgentChat.available?(app, soul, routes: routes), "#{app} -> #{soul}" }
+    end
+    refute AgentChat.available?("turf-monster", "alex", routes: routes), "Turf Monster's credential does not buy Alex"
+    refute AgentChat.available?("mcritchie-industries", "turf_monster", routes: routes)
+    refute AgentChat.available?("cyvasse", "alex", routes: routes), "an app the list does not name"
+  end
+
   test "an email with no hub user gets its own public person and a person-keyed thread" do
     visitor = AgentChat::Visitor.new("alex", email: "stranger@example.com")
     assert_nil visitor.thread_key, "no thread before the first message"
