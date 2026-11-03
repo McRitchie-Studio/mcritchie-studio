@@ -92,7 +92,7 @@ class AdminWallTest < ActionDispatch::IntegrationTest
     walled = %w[dashboard#index tasks#index tasks#show tasks#deployments releases#index epics#index
                 triage#index agents#index heartbeat#show heartbeat#insights intelligence#index
                 pokemon#index builders#index usages#index docs#index docs#show launcher#index
-                chat#index model_pipeline#index people#index appearances#show photo_scouting#show
+                model_pipeline#index people#index appearances#show photo_scouting#show
                 news#index contents#index teams#index sizings#show]
     walled.each do |pair|
       controller, action = pair.split("#")

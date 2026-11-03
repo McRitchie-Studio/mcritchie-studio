@@ -2063,9 +2063,10 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   and `person.anon_token` are filtered (`config/initializers/filter_parameter_logging.rb`).
 - **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked
   posted with no broadcast and the typing phase is kept on the row for the poll.
-- **The hub's own page: `/chat`** (task `talk-to-alex-by-voice`; admin wall). The engine
+- **The hub's own page: `/chat`** (task `chat-knows-who-is-asking`; open to everyone). The engine
   chat (`studio/agent_chat/chat`, soul `alex`; `Studio.agent_chat_souls = %w[alex]`) on the
-  admin's own `chat:alex:<user id>` thread. Its browser calls, `POST /agent_chat/messages`
+  person's `chat:alex:<user id>` thread, or a visitor's `chat:alex:anon:<digest>`. The row's
+  `envelope.viewer` (`AgentChat::Viewer`: visitor, member, admin) sets the prompt's tone and grants nothing. Its browser calls, `POST /agent_chat/messages`
   and `GET /agent_chat/turns`, are answered IN-PROCESS by `HubAgentChatsController` (drawn
   before `Studio.routes`, which draws the same paths to the satellite proxy), through the
   same `AgentChat::Ingest` and `Turns`, app `mcritchie-studio` (`web: apps:`). No

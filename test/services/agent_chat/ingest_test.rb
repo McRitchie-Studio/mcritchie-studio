@@ -32,6 +32,7 @@ class AgentChatIngestTest < ActiveSupport::TestCase
     assert_equal "chat:alex:anon:#{AgentChat.anon_digest(ANON)}", message.thread_key
     assert_equal "alex-build", message.envelope["app"], "the app is recorded, never part of the key"
     assert_equal false, message.envelope["signed_in"]
+    assert_equal "visitor", message.envelope["viewer"], "with no tier sent, a signed-out visitor reads visitor"
     refute_includes message.envelope.to_json, "203.0.113.4", "the raw IP is never stored"
     refute_includes message.attributes.to_json, ANON, "the anon token is never stored"
     assert_equal message, AgentMessage.claimable(soul: "alex").first, "the claim's SQL guard admits it"

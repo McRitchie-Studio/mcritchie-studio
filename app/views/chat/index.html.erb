@@ -1,7 +1,7 @@
 <% content_for(:title, "Chat with Alex — McRitchie Studio") %>
 <% content_for(:full_width, true) %>
 
-<%# The hub's chat with Alex (admin wall: Alex McRitchie's page): the engine's
+<%# The hub's chat with Alex (public; the viewer's tier is AgentChat::Viewer): the engine's
     agent chat (studio-engine docs/AGENT_CHAT.md) on the person's own thread with
     Alex, chat:alex:<user id> (the same thread a satellite's chat with Alex
     reaches), answered in-process by HubAgentChatsController and the dispatcher.
@@ -12,8 +12,9 @@
   <%= render "studio/agent_chat/chat", soul: "alex", name: "Alex",
              portrait: safe_image_tag("/agents/alex.webp", alt: "", class: "w-24 h-24 rounded-full object-cover"),
              role: "Sales and Marketing · McRitchie Studio",
-             empty: "Say hello to Alex, or hold to talk." %>
-  <% if Studio.voice_transcription %>
+             empty: admin? ? "Say hello to Alex, or hold to talk." : "Say hello to Alex." %>
+  <%# Hold to talk stays with admins: POST /voice/takes is behind the admin wall. %>
+  <% if Studio.voice_transcription && admin? %>
     <%= render "chat/voice", soul: "alex", name: "Alex" %>
   <% end %>
 </div>

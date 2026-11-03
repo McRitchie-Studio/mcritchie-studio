@@ -52,7 +52,7 @@ module AgentChat
     # The stored message. Raises Refused (422), NotAvailable (404) or Capped (429).
     # `voice`: a spoken message's AgentChat::Voice hash (envelope["voice"]),
     # or nil when it was typed.
-    def call(text, voice: nil)
+    def call(text, voice: nil, viewer: nil)
       text = text.to_s.gsub(/\r\n?/, "\n").strip
       raise Refused.new("Write a message first.", code: "EMPTY") if text.empty?
       max = AgentMessages::WebIngest::MAX_LENGTH
@@ -64,7 +64,7 @@ module AgentChat
       cap = Caps.new(policy: @policy, now: @now).check(thread_key: thread_key, signed_in: @visitor.signed_in?, ip_hash: @ip_hash)
       raise Capped, cap if cap
 
-      store(text, thread_key, @visitor.person!, voice)
+      store(text, thread_key, @visitor.person!, voice, viewer)
     end
 
     # THE FOLD. A visitor who chatted signed out and then signs in carries their
@@ -95,12 +95,13 @@ module AgentChat
 
     private
 
-    def store(text, thread_key, person, voice = nil)
+    def store(text, thread_key, person, voice = nil, viewer = nil)
       attrs = { channel: "web", external_id: "chat:#{SecureRandom.uuid}", guild_id: nil, channel_ref: AgentChat::CHANNEL_REF,
                 thread_key: thread_key, author_ref: @visitor.author_ref, author_name: @visitor.author_name,
                 person: person, content: text, mentions: {}, sent_at: @now, soul_slug: soul, routed_by: "chat",
                 envelope: { "via" => "agent_chat", "app" => @app, "user_id" => @visitor.user&.id,
-                            "signed_in" => @visitor.signed_in?, "ip_hash" => @ip_hash, "voice" => voice }.compact }
+                            "signed_in" => @visitor.signed_in?, "ip_hash" => @ip_hash, "voice" => voice,
+                            "viewer" => Viewer.normalize(viewer, signed_in: @visitor.signed_in?) }.compact }
       AgentMessage.transaction(requires_new: true) do
         # The probe carries no person: built with one, it would join the
         # person's unsaved `messages` and fail their next save.

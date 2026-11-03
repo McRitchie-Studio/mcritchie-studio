@@ -55,6 +55,7 @@ pages:
   build_request:  { page: "build#show",              audience: public, label: Your app request }
   contact_form:   { page: "contact_submissions#new", audience: public, label: Contact }
   links:          { page: "links#index",             audience: public, label: Links }
+  chat_index:     { page: "chat#index",              audience: public, label: Chat }
   schedule_index: { page: "schedule#index",          audience: public, label: Schedule a call }
 
   # ── NFL ──────────────────────────────────────────────────────────────────

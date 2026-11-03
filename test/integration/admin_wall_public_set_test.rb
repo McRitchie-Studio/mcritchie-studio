@@ -24,6 +24,9 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     landing#about landing#index landing#privacy landing#terms
     lineup_graphics#show
     links#index
+    chat#index
+    hub_agent_chats#create hub_agent_chats#turns
+    studio/agent_chats#create studio/agent_chats#turns
     magic_links#create
     nfl#index nfl#rosters
     omniauth_callbacks#create omniauth_callbacks#failure

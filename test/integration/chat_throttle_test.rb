@@ -44,7 +44,7 @@ class ChatThrottleTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] one signed-in user is cut off across addresses after CHAT_USER_LIMIT posts" do
-    log_in_as(users(:alex)) # /chat sits behind the admin wall
+    log_in_as(users(:alex)) # POST /chat, the old widget, stays behind the admin wall
 
     Rack::Attack::CHAT_USER_LIMIT.times do |i|
       chat(ip: "198.51.100.#{i + 1}")

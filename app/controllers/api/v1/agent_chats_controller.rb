@@ -25,7 +25,7 @@ module Api
 
       def create
         visitor = AgentChat::Visitor.from_param(params[:soul], params[:person])
-        message = AgentChat::Ingest.new(app: @credential.app_slug, visitor: visitor, ip: client_ip).call(params[:text])
+        message = AgentChat::Ingest.new(app: @credential.app_slug, visitor: visitor, ip: client_ip).call(params[:text], viewer: params[:viewer])
         render json: { turn: AgentChat::Turns.for_row(message).first }, status: :created
       rescue AgentChat::Ingest::Capped => e
         render_error(e.message, status: :too_many_requests, error_code: "CAPPED")

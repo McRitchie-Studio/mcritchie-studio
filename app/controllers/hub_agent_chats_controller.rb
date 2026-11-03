@@ -12,9 +12,11 @@ require "ipaddr"
 # The page is /chat (ChatController#index), the hub's own chat with Alex on the
 # engine primitive: thread chat:<soul>:<user id> (AgentChat), the same thread a
 # satellite's chat with Alex reaches for this person. Behind the ADMIN WALL
-# (AdminWall: neither action is listed), as /chat and the engine's POST
-# /voice/takes are: the pilot is Alex McRitchie's. The session names the user,
-# so no email or anon token is read from the browser.
+# Open to everyone (AdminWall::PUBLIC_ACTIONS). The session names a signed-in user;
+# a visitor is a random token in a signed, http-only cookie, as on a satellite's
+# proxy (Studio::AgentChatsController), so no email or token is read from the
+# browser. Sign-in folds a visitor's thread into the person's on their next post.
+# The caps are AgentChat::Caps, the same public budget as /build.
 # The app on the row is "mcritchie-studio" (config/agent_routes.yml `web: apps:`).
 #
 # `voice` is what POST /voice/takes answered for a held take (epic
@@ -23,14 +25,19 @@ require "ipaddr"
 # says who spoke (AgentContextBuilder#voice_line). No audio comes here.
 class HubAgentChatsController < ApplicationController
   APP = "mcritchie-studio".freeze
+  ANON_COOKIE = :studio_agent_chat_anon
+  ANON_TTL = 1.year
 
   protect_from_forgery with: :exception
   before_action :no_store
   before_action :require_soul!
 
   def create
-    voice = AgentChat::Voice.from_param(params[:voice], user: current_user)
-    message = AgentChat::Ingest.new(app: APP, visitor: visitor, ip: client_ip).call(params[:text], voice: voice)
+    # Voice stays with admins, as POST /voice/takes does; anyone else's `voice` is dropped.
+    voice = admin? ? AgentChat::Voice.from_param(params[:voice], user: current_user) : nil
+    message = AgentChat::Ingest.new(app: APP, visitor: visitor(mint: true), ip: client_ip)
+                               .call(params[:text], voice: voice, viewer: AgentChat::Viewer.for_user(current_user))
+    cookies.delete(ANON_COOKIE) if current_user && anon_token
     # `voice` is what the row keeps (and the dispatcher's prompt reads), so the
     # page says who Alex was told spoke, not what the browser sent.
     render json: { turn: AgentChat::Turns.for_row(message).first, voice: message.envelope["voice"] }.compact, status: :created
@@ -43,6 +50,8 @@ class HubAgentChatsController < ApplicationController
   end
 
   def turns
+    return render(json: { turns: [], pending: false }) unless current_user || anon_token
+
     thread_key = visitor.thread_key
     rows = thread_key ? AgentChat.rows(thread_key, after: after_param, limit: limit_param) : []
     render json: { turns: AgentChat::Turns.for(rows), pending: AgentChat::Turns.pending?(thread_key) }
@@ -54,8 +63,22 @@ class HubAgentChatsController < ApplicationController
 
   def soul = params[:soul].to_s.presence || Studio.agent_chat_soul_list.first.to_s
 
-  def visitor
-    @visitor ||= AgentChat::Visitor.new(soul, email: current_user.email)
+  def visitor(mint: false)
+    return @visitor if @visitor
+
+    @visitor = if current_user
+      AgentChat::Visitor.new(soul, email: current_user.email, anon_token: (anon_token if request.post?))
+    else
+      AgentChat::Visitor.new(soul, anon_token: anon_token || (mint_anon_token if mint))
+    end
+  end
+
+  def anon_token = cookies.signed[ANON_COOKIE].presence
+
+  def mint_anon_token
+    SecureRandom.urlsafe_base64(32).tap do |token|
+      cookies.signed[ANON_COOKIE] = { value: token, expires: ANON_TTL.from_now, httponly: true, same_site: :lax, secure: request.ssl? }
+    end
   end
 
   # Only a soul this app names (Studio.agent_chat_souls) AND config/agent_routes.yml
