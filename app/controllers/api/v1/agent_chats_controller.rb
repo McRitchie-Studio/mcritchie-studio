@@ -6,18 +6,26 @@ module Api
     # "Contract"; docs/agents/system/agent-message-loop.md, "Satellite chat"). A
     # satellite's SERVER calls these; the browser only ever talks to its own app.
     #
-    #   POST /api/v1/agent_chat/messages  soul, text, person, ip
-    #        201 {turn} · 422 {error} · 429 {error} capped · 404 soul has no web chat
+    #   POST /api/v1/agent_chat/messages  soul, text, person, ip, voice (optional)
+    #        201 {turn, voice} · 422 {error} · 429 {error} capped · 404 soul has no web chat
     #   GET  /api/v1/agent_chat/turns     soul, person, after, limit (≤ 50)
     #        200 {turns: [...], pending: bool}
     #
     # AUTH is the calling APP's own bearer credential (AppCredential, purpose
-    # agent-chat; 1Password `apps.<slug>.agent-chat`, the app's AGENT_CHAT_TOKEN),
+    # agent-chat; 1Password `agent-chat.<slug>.applications`, the app's AGENT_CHAT_TOKEN),
     # never an agent session or a user token: 401 without a live one. The app
     # may address only the souls config/agent_routes.yml `web: apps:` lists for
     # it (else 404, the same answer as a soul with no web chat). `person` is
     # `{email}` when the app's visitor is signed in, else `{anon_token}`; the hub
     # decides the person and the thread (AgentChat::Visitor).
+    #
+    # `voice` is what the app's own POST /voice/takes answered for a spoken
+    # message ({score, check, duration_ms}; the words are `text`, and no audio
+    # ever comes here). AgentChat::Voice keeps the check, score and length and
+    # names the speaker from `person` alone: a name in the payload is ignored,
+    # so the dispatcher's prompt can only say what the hub decided
+    # (AgentContextBuilder#voice_line). 201 repeats the voice the row kept, so
+    # the page shows who the agent was told spoke.
     class AgentChatsController < BaseController
       skip_before_action :authenticate_api!
       before_action :authenticate_app!
@@ -25,8 +33,9 @@ module Api
 
       def create
         visitor = AgentChat::Visitor.from_param(params[:soul], params[:person])
-        message = AgentChat::Ingest.new(app: @credential.app_slug, visitor: visitor, ip: client_ip).call(params[:text], viewer: params[:viewer])
-        render json: { turn: AgentChat::Turns.for_row(message).first }, status: :created
+        voice = AgentChat::Voice.from_visitor(params[:voice], visitor)
+        message = AgentChat::Ingest.new(app: @credential.app_slug, visitor: visitor, ip: client_ip).call(params[:text], voice: voice, viewer: params[:viewer])
+        render json: { turn: AgentChat::Turns.for_row(message).first, voice: message.envelope["voice"] }.compact, status: :created
       rescue AgentChat::Ingest::Capped => e
         render_error(e.message, status: :too_many_requests, error_code: "CAPPED")
       end
@@ -40,6 +49,9 @@ module Api
 
       rescue_from AgentChat::Visitor::Invalid do |e|
         render_error(e.message, status: :unprocessable_entity, error_code: "INVALID")
+      end
+      rescue_from AgentChat::Voice::Invalid do |e|
+        render_error(e.message, status: :unprocessable_entity, error_code: "INVALID_VOICE")
       end
       rescue_from AgentChat::Ingest::Refused do |e|
         render_error(e.message, status: :unprocessable_entity, error_code: e.code)

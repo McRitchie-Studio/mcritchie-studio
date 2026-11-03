@@ -184,8 +184,8 @@ module AgentMailbox
     end
 
     # A spoken message's voice (envelope["voice"], AgentChat::Voice; epic
-    # .agents/epics/studio-voice.md): the sender held the microphone on the hub's
-    # /chat and talked; POST /voice/takes wrote it down and named the voice. The
+    # .agents/epics/studio-voice.md): the sender held the microphone on /chat (the
+    # hub's or a satellite's) and talked; POST /voice/takes wrote it down. The
     # line sits INSIDE the fence (the name is a person's chosen name); the rule
     # that explains it (#voice_rule) is code-written from the check alone.
     def voice
@@ -198,7 +198,10 @@ module AgentMailbox
 
       speaker = voice["speaker"].to_s.strip[0, 100]
       speaker = "Someone new" if speaker.empty?
-      "\nSpoken by: #{speaker}#{voice['check'] == 'matched' ? ' (voice recognised)' : ' (voice not recognised)'}"
+      # Recognised needs a name as well as the check: an anonymous satellite
+      # visitor can send check "matched", and there is nobody it could match.
+      recognised = voice["check"] == "matched" && speaker != "Someone new"
+      "\nSpoken by: #{speaker}#{recognised ? ' (voice recognised)' : ' (voice not recognised)'}"
     end
 
     # Who is reading a web chat, written by the server (AgentChat::Viewer). It sets

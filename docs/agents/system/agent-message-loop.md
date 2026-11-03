@@ -2019,9 +2019,9 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
 
 | Piece | Where |
 |-------|-------|
-| The two endpoints | `Api::V1::AgentChatsController`: `POST /api/v1/agent_chat/messages` (`soul`, `text`, `person`, `ip`; `201 {turn}`, `422`, `429` capped, `404` no web chat) and `GET /api/v1/agent_chat/turns` (`soul`, `person`, `after`, `limit` ≤ 50; `200 {turns, pending}`) |
-| The app's credential | `AppCredential` (purpose `agent-chat`): the hub keeps the SHA-256 digest only, one live row per app and purpose (a partial unique index). `bin/rails app_credentials:mint APP=<slug>` prints the secret once, for 1Password `apps.<slug>.agent-chat` and the app's `AGENT_CHAT_TOKEN`; minting again revokes the old one. No credential, a wrong one or a revoked one: 401 |
-| Which app reaches which soul | `config/agent_routes.yml` `web: apps: <slug>: [souls]` (`alex-build: [alex]`), and the soul must be in `web: souls:`; else 404 |
+| The two endpoints | `Api::V1::AgentChatsController`: `POST /api/v1/agent_chat/messages` (`soul`, `text`, `person`, `ip`, optional `voice`; `201 {turn, voice}`, `422`, `429` capped, `404` no web chat) and `GET /api/v1/agent_chat/turns` (`soul`, `person`, `after`, `limit` ≤ 50; `200 {turns, pending}`) |
+| The app's credential | `AppCredential` (purpose `agent-chat`): the hub keeps the SHA-256 digest only, one live row per app and purpose (a partial unique index). `bin/rails app_credentials:mint APP=<slug>` prints the secret once, for 1Password `agent-chat.<slug>.applications` (vault `studio-applications`) and the app's `AGENT_CHAT_TOKEN`; minting again revokes the old one. No credential, a wrong one or a revoked one: 401, so an app on the allow-list with nothing minted yet simply refuses |
+| Which app reaches which soul | `config/agent_routes.yml` `web: apps: <slug>: [souls]` (`alex-build: [alex]`, `turf-monster: [turf_monster]`, `mcritchie-industries: [alex]`), and the soul must be in `web: souls:`; else 404 |
 | The person and the thread | `AgentChat::Visitor`: `person.email` that is a hub User is their web person, thread `chat:<soul>:<user id>`; an email with no User is the person its `email` identity names, else a new public one (`AgentPerson.resolve!`), thread `chat:<soul>:person:<id>`; `person.anon_token` is a public Visitor (web identity `chat-anon:<HMAC digest>`), thread `chat:<soul>:anon:<digest>` (the token itself is never stored) |
 | Inbound | `AgentChat::Ingest`: a `web` row, `channel_ref` `chat`, the app in `envelope.app` (never in the key), the visitor's IP hashed as /build's |
 | Turns | `AgentChat::Turns`: a row is a user turn and, once answered, an agent turn, both carrying the row's id (`after` is a message id; key a turn by id and role). Status `pending` (received), `typing` (claimed), `answered`, `failed` (held, dead, or no words) |
@@ -2040,7 +2040,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   the public audience. The session-only `Chat::AlexResponder` (`POST /chat`) prints the same block.
 - **Who answers.** The person's role, as everywhere, and the public on the public-intake
   soul's chat threads: `Answerers#intake?` and its SQL guard answer `chat:alex:` as they
-  answer `web:build:`, a prefix built in code. Another soul's public row is `held`.
+  answer `web:build:`, a prefix built in code. Another soul's public row is `held`, so Turf on a satellite answers only an answered role (today the owner's email) until an operator releases a row or Alex McRitchie opens it to the public.
 - **Answered as the public, always.** The app's ONE credential names the person by email,
   so the hub cannot know who reads the answer: every `chat:` row is answered at the public
   audience whoever sent it, the owner's email included (`MemoryBundle#audience_person`,
@@ -2071,8 +2071,8 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   before `Studio.routes`, which draws the same paths to the satellite proxy), through the
   same `AgentChat::Ingest` and `Turns`, app `mcritchie-studio` (`web: apps:`). No
   credential exists for that slug. The audience rule above holds here too.
-- **Spoken messages** (epic `.agents/epics/studio-voice.md`, card 4). Under the chat on
-  `/chat`, the engine's hold-to-talk recorder and microphone chip
+- **Spoken messages** (epic `.agents/epics/studio-voice.md`, card 4). Under the chat on the
+  hub's `/chat`, the engine's hold-to-talk recorder and microphone chip
   (`chat/_voice`, `app/javascript/voice_chat.js`). A take is embedded on the device when
   the user has a saved voice of the app's embedder, posted to the engine's
   `POST /voice/takes` (OpenAI under `STUDIO_VOICE_OPENAI_API_KEY`; the mock on QA, in tests
@@ -2080,7 +2080,13 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   `{speaker, score, check, duration_ms}`. `AgentChat::Voice` keeps that as
   `envelope.voice`, accepting only the engine's checks and naming the speaker ITSELF (the
   user's own name when `matched`, else "Someone new"), so a browser can never put a name
-  in the prompt. `ContextBuilder` adds `Spoken by: <name> (voice recognised|not
+  in the prompt. **From a satellite** (`POST /api/v1/agent_chat/messages`, optional `voice`
+  `{score, check, duration_ms}`, sent by the engine proxy) the same `AgentChat::Voice`
+  names the speaker from `person` alone (`Visitor#speaker_name`): the vouched-for email's
+  hub user or person when `matched`, else "Someone new"; an anonymous visitor is always
+  "Someone new", and a name in the payload is ignored. A bad `voice` answers 422
+  `INVALID_VOICE` and stores nothing. The take and its audio stay on the app: only
+  the words and these three fields come to the hub. `ContextBuilder` adds `Spoken by: <name> (voice recognised|not
   recognised)` inside the fence and one code-written rule outside it. Rack::Attack bounds
   `POST /voice/takes` per address and per user (`VOICE_*` in `config/initializers/rack_attack.rb`).
   With no voice key in production the hub names no transcriber (`HubVoiceConfig::NO_KEY`),
@@ -2089,17 +2095,17 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   secret alone to stdout. Capture it in a shell variable and hand it on over stdin only,
   as the `credential-rotation` SOP does (never `op item edit field=…` or
   `heroku config:set NAME=…`, which put it on argv). The 1Password item must already
-  exist (the agent makes it empty, per the `credential-filing` SOP):
+  exist (the agent makes it empty, per the `credential-filing` SOP). Run it on the admin lane, the `credential-rotation` SOP's precondition: the mint has already revoked the old token when `op item edit` runs, so a refused edit leaves the app answering 401:
 
   ```bash
   NEW=$(heroku run --no-tty -a mcritchie-studio -- \
           bin/rails app_credentials:mint APP=alex-build SECRET_ONLY=1 2>/dev/null | tail -n 1 | tr -d '\r') &&
   : "${NEW:?refusing: the mint printed nothing}" &&
-  { printf '%s\n' "$NEW"; op item get "apps.alex-build.agent-chat" --vault <vault> --format json; } |
+  { printf '%s\n' "$NEW"; op item get "agent-chat.alex-build.applications" --vault studio-applications --format json; } |
     ruby -rjson -e 'value = STDIN.readline.chomp; item = JSON.parse(STDIN.read)
       field = item.fetch("fields").find { |f| f["label"] == ARGV[0] } or abort "refusing: no field #{ARGV[0]}"
-      field["value"] = value; print JSON.generate(item)' "<field>" |
-    op item edit "apps.alex-build.agent-chat" --vault <vault> > /dev/null &&
+      field["value"] = value; print JSON.generate(item)' "credential" |
+    op item edit "agent-chat.alex-build.applications" --vault studio-applications > /dev/null &&
   printf '%s' "$NEW" | bin/heroku-secret-set alex-build AGENT_CHAT_TOKEN
   unset NEW
   ```
