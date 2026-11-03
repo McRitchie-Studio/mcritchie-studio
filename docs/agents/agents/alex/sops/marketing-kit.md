@@ -147,7 +147,7 @@ bin/marketing-kit publish <working folder>/kit.yml --out <working folder>/out --
 bin/marketing-kit publish <working folder>/kit.yml --out <working folder>/out
 ```
 
-The credential holds only `drive.file`, so the publisher sees only files this app created. Folders or files someone made by hand in Drive are invisible to it, and it would create its own beside them; adopt a hand-made kit by moving its files into the folders the publisher made. The first publish creates the root folder `Brand Kit: <name>` (or uses
+The credential holds `drive.readonly` and `drive.file`, so the publisher can read what its subject can see and write only to files this app created. A hand-made folder the subject can see is found by name and then refuses every write; one it cannot see is invisible, and the publisher creates its own beside it. Adopt a hand-made kit by moving its files into the folders the publisher made. The first publish creates the root folder `Brand Kit: <name>` (or uses
 `drive.root_id`), the whole layout and every file, and shares the root with the
 people in `drive.share_with` and, as writers who can find it in their Drive,
 everyone in each Workspace domain in `drive.share_domains`. List the owner's own
@@ -219,16 +219,20 @@ may.
 4. Share by name. Do not share the folder with a whole domain. Do not move a
    doc master into a kit.
 
-The Drive credential holds only `drive.file`, so it cannot see a folder a person
-made by hand. The Google Picker is not a way round this: picking a folder grants
-nothing inside it. The credential must create the folder itself. A person can
-then move that folder wherever it belongs; the credential keeps its access.
+The Drive credential holds `drive.readonly` and `drive.file`. It can read what
+its subject can see, and it can write only to what it created. So a folder a person
+made by hand either is invisible to it or refuses every write. The Google Picker
+is not a way round this: the credential acts by domain-wide delegation and has no
+Picker step. The credential must create the folder itself. A person can then move
+that folder wherever it belongs; the credential keeps its access.
 
 No command does this yet. Use `Workspace::DriveClient` with the kit's
 `drive.subject`, from a checkout with a development database, as the publish does:
 
-1. Search for the exact folder name with `files_list`. If it exists, use it. Do
-   not create a second one beside it.
+1. Search with `files_list` for the exact name, the folder mime type and
+   `trashed = false`. If one folder matches, use it. Do not create a second one
+   beside it. If several match, or Drive refuses a write into the match, stop and
+   tell Alex McRitchie.
 2. If it does not exist, create it with `files_create`.
 3. Share it with `permissions_create`, by name. Ask Alex McRitchie first.
 4. Create the Doc with `files_create`, sending HTML built from the template's
