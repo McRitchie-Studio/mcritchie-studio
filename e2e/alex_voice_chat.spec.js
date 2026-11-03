@@ -92,8 +92,14 @@ async function deleteVoice(page) {
 
 async function openChat(page) {
   await page.setViewportSize({ width: 390, height: 844 });
+  // The chat marks itself ready before its first poll answers. A spec that counts
+  // the thread has to wait for that poll, or an earlier spec's turn lands after the
+  // count and reads as a second send.
+  const firstPoll = page.waitForResponse((response) => response.url().includes("/agent_chat/turns"));
   await page.goto("/chat");
+  await firstPoll;
   await expect(page.locator(CHAT)).toHaveAttribute("data-agent-chat-ready", "true");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await expect(page.locator(RECORDER)).toHaveAttribute("data-voice-recorder-ready", "true");
 }
 
