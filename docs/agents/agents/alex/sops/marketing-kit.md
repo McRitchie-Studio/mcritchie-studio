@@ -147,7 +147,7 @@ bin/marketing-kit publish <working folder>/kit.yml --out <working folder>/out --
 bin/marketing-kit publish <working folder>/kit.yml --out <working folder>/out
 ```
 
-The credential holds only `drive.file`, so the publisher sees only files this app created. Folders or files someone made by hand in Drive are invisible to it, and it would create its own beside them; adopt a hand-made kit by moving its files into the folders the publisher made. The first publish creates the root folder `Brand Kit: <name>` (or uses
+The credential holds `drive.readonly` and `drive.file`, so the publisher can read what its subject can see and write only to files this app created. A hand-made folder the subject can see is found by name and then refuses every write; one it cannot see is invisible, and the publisher creates its own beside it. Adopt a hand-made kit by moving its files into the folders the publisher made. The first publish creates the root folder `Brand Kit: <name>` (or uses
 `drive.root_id`), the whole layout and every file, and shares the root with the
 people in `drive.share_with` and, as writers who can find it in their Drive,
 everyone in each Workspace domain in `drive.share_domains`. List the owner's own
@@ -203,6 +203,40 @@ What a publish does to what is already there:
   edited it since. Drive's version history can restore it.
 - Two files with the same name in one folder are reported and skipped; merge
   them in Drive first.
+
+## Doc masters
+
+A **doc master** is the editable Google Doc of one document Alex McRitchie asked
+for: an agreement, a letter, a policy. Its home is the brand's `<Brand> Doc Masters`
+folder, outside the kit, because a kit holds nothing confidential and a doc master
+may.
+
+1. Work out which brand the document serves.
+2. Start from the kit's `<SHORT> Template — General` in `05 Templates`. Find it
+   in Drive; a local search does not prove it is missing. Drop the template's
+   parts that do not fit, such as a photo on a contract.
+3. Put the Google Doc in the Doc Masters folder, and hand back its Drive link.
+4. Share by name. Do not share the folder with a whole domain. Do not move a
+   doc master into a kit.
+
+The Drive credential holds `drive.readonly` and `drive.file`. It can read what
+its subject can see, and it can write only to what it created. So a folder a person
+made by hand either is invisible to it or refuses every write. The Google Picker
+is not a way round this: the credential acts by domain-wide delegation and has no
+Picker step. The credential must create the folder itself. A person can then move
+that folder wherever it belongs; the credential keeps its access.
+
+No command does this yet. Use `Workspace::DriveClient` with the kit's
+`drive.subject`, from a checkout with a development database, as the publish does:
+
+1. Search with `files_list` for the exact name, the folder mime type and
+   `trashed = false`. If one folder matches, use it. Do not create a second one
+   beside it. If several match, or Drive refuses a write into the match, stop and
+   tell Alex McRitchie.
+2. If it does not exist, create it with `files_create`.
+3. Share it with `permissions_create`, by name. Ask Alex McRitchie first.
+4. Create the Doc with `files_create`, sending HTML built from the template's
+   export, so the Doc is a native Google Doc.
 
 ## Done when
 

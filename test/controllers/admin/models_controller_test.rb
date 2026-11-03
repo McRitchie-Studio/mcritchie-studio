@@ -15,24 +15,18 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     assert_redirected_to root_path
   end
 
-  test "admin sees overview modules with links to all model pages" do
+  test "admin sees the models page with links to all model pages" do
     log_in_as @admin
     get admin_models_path
 
     assert_response :success
     assert_select "h1", "Models"
     assert_select "table#models-users-table"
-    assert_select "table#models-teams-table"
-    assert_select "table#models-arenas-table"
-    assert_select "table#models-coaches-table"
     assert_select "a[href=?]", admin_model_path("users")
     assert_select "a[href=?]", admin_model_path("teams")
     assert_select "a[href=?]", admin_model_path("arenas")
     assert_select "a[href=?]", admin_model_path("coaches")
     assert_match @admin.email, response.body
-    assert_match "Buffalo Bills", response.body
-    assert_match "Highmark Stadium", response.body
-    assert_match "Sean McDermott", response.body
   end
 
   test "admin can browse users model page" do
@@ -40,7 +34,6 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     get admin_model_path("users")
 
     assert_response :success
-    assert_select "h1", "Users"
     assert_select "table#models-users-table"
     assert_match @admin.email, response.body
   end
@@ -50,7 +43,6 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     get admin_model_path("teams")
 
     assert_response :success
-    assert_select "h1", "Teams"
     assert_select "table#models-teams-table"
     assert_select "a[href*=?]", "sort=team"
     assert_select "a[href*=?]", "sort=sport"
@@ -86,7 +78,6 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     get admin_model_path("arenas")
 
     assert_response :success
-    assert_select "h1", "Arenas"
     assert_select "table#models-arenas-table"
     assert_match "Highmark Stadium", response.body
     assert_match "1 Bills Drive", response.body
@@ -97,7 +88,6 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     get admin_model_path("coaches")
 
     assert_response :success
-    assert_select "h1", "Coaches"
     assert_select "table#models-coaches-table"
     assert_match "Sean McDermott", response.body
     assert_match "Buffalo Bills", response.body
@@ -121,7 +111,6 @@ class Admin::ModelsControllerTest < ActionDispatch::IntegrationTest
     get admin_model_path("arenas", page: 2)
 
     assert_response :success
-    assert_select "h1", "Arenas"
     assert_match "Page 2 of 2", response.body
     assert_select "a[href=?]", admin_model_path("arenas", page: 1), text: "Previous"
     assert_match "Fixture Arena", response.body

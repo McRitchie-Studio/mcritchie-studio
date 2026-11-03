@@ -1,7 +1,6 @@
-// [e2e] The landing hero's Build Your App (task landing-build-ctas).
+// [e2e] The landing hero's Build Your Website (task landing-build-ctas).
 //
-// Alex McRitchie, 2026-10-19: "Build Your App with a rainbow glow to draw the eyes." The
-// hero CTA wears the cta-glow primitive's rainbow preset. On a 375px phone the
+// The hero CTA wears the cta-glow primitive's rainbow preset. On a 375px phone the
 // glow never scrolls the page sideways at any point of its motion; under reduced
 // motion the glow holds still; in light mode it takes deeper stops than in dark
 // (task preview-domain-mcritchie-app); and the CTA goes to /build.
@@ -13,7 +12,7 @@ test.use({ storageState: VISITOR });
 
 const glowSelector = "[data-test='hero-build-glow']";
 
-test("on a phone the rainbow Build Your App never scrolls the page sideways, in either theme", async ({ page }) => {
+test("on a phone the rainbow Build Your Website never scrolls the page sideways, in either theme", async ({ page }) => {
   test.setTimeout(45_000);
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
@@ -30,7 +29,7 @@ test("on a phone the rainbow Build Your App never scrolls the page sideways, in 
     expect(await page.evaluate(() => document.documentElement.classList.contains("dark")), `${scheme} theme`).toBe(scheme === "dark");
     const glow = page.locator(glowSelector);
     await expect(glow).toBeVisible();
-    const cta = glow.getByRole("link", { name: "Build Your App" });
+    const cta = glow.getByRole("link", { name: "Build Your Website" });
     await expect(cta).toHaveAttribute("href", "/build");
     const layer = await glow.evaluate((el) => {
       const after = getComputedStyle(el, "::after");
