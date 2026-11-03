@@ -257,7 +257,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute public_link_sections.any? { |section| section.fetch(:title) == "Directory" }
   end
 
-  # The navbar carries no sign-in link, so a visitor finds Log in at the top of
+  # The navbar carries no sign-in link, so a visitor finds Sign In at the top of
   # the sidebar (/tasks/drop-hero-meet-alex); a signed-in user does not.
   test "a visitor's sidebar leads with Sign In and Chat; a signed-in user's has neither" do
     first = sidebar_link_sections.first
