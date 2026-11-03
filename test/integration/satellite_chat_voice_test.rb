@@ -41,7 +41,7 @@ class SatelliteChatVoiceTest < ActionDispatch::IntegrationTest
   def outside_fences(text) = text.gsub(%r{<#{FENCE}>.*?</#{FENCE}>}m, "")
 
   test "Alex on a satellite: a recognised voice is named inside the fence, at the public audience" do
-    user = User.create!(email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
     text = prompt_for(say("alex-build", "alex", { email: user.email }, { speaker: "Alex McRitchie", check: "matched", score: 0.9, duration_ms: 1200 }))
 
     assert_includes fenced_message(text), "<#{FENCE}>\nFrom: Pat Speaker\nSpoken by: Pat Speaker (voice recognised)\nwhat is on this week?"
