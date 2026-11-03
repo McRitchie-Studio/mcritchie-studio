@@ -30,7 +30,7 @@ class AppCredentialsRakeTest < ActiveSupport::TestCase
     out = run_task("app_credentials:mint", { "APP" => "alex-build", "BY" => "test" })
     secret = out.lines.last.strip
 
-    assert_includes out, "apps.alex-build.agent-chat"
+    assert_includes out, "agent-chat.alex-build.applications"
     row = AppCredential.authenticate(secret, purpose: "agent-chat")
     assert_equal "alex-build", row.app_slug
     refute_includes run_task("app_credentials:list", {}), secret, "list never shows a secret"

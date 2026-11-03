@@ -45,6 +45,13 @@ class AgentContextBuilderVoiceTest < ActiveSupport::TestCase
     assert_includes outside_fences(text), "do not assume the account holder is the one talking"
   end
 
+  test "Someone new is never recognised, even when a satellite's anonymous visitor sent check matched" do
+    text = prompt("speaker" => "Someone new", "score" => 0.99, "check" => "matched")
+
+    assert_includes fenced_message(text), "Spoken by: Someone new (voice not recognised)"
+    refute_includes text, "Someone new (voice recognised)"
+  end
+
   test "a blank or over-long speaker is cut, and a typed message has no voice lines" do
     assert_includes prompt("speaker" => "  ", "check" => "no_profile"), "Spoken by: Someone new (voice not recognised)"
     long = prompt("speaker" => "x" * 300, "check" => "matched")

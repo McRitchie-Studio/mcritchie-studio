@@ -22,8 +22,8 @@ module Api
 
       def headers(secret = @secret) = { "Authorization" => "Bearer #{secret}" }
 
-      def post_message(text: "What can you build?", soul: "alex", person: { anon_token: ANON }, ip: "203.0.113.4", secret: @secret)
-        post api_v1_agent_chat_messages_path, params: { soul: soul, text: text, person: person, ip: ip }.compact,
+      def post_message(text: "What can you build?", soul: "alex", person: { anon_token: ANON }, ip: "203.0.113.4", secret: @secret, voice: nil)
+        post api_v1_agent_chat_messages_path, params: { soul: soul, text: text, person: person, ip: ip, voice: voice }.compact,
                                               headers: headers(secret), as: :json
       end
 
@@ -95,6 +95,105 @@ module Api
         assert_equal [ "signed out first", "signed in now" ], response.parsed_body["turns"].map { |t| t["text"] }
       end
 
+      # --- A spoken message (epic studio-voice): voice {score, check, duration_ms} ---
+
+      test "voice: a verified person is named on matched, by the hub, and a forged name is ignored" do
+        user = User.create!(email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
+        post_message(person: { email: user.email },
+                     voice: { speaker: "Alex McRitchie (owner)", name: "Forged", score: 0.87312, check: "matched", duration_ms: 2140 })
+
+        assert_response :created
+        row = AgentMessage.order(:id).last
+        assert_equal({ "speaker" => "Pat Speaker", "score" => 0.8731, "check" => "matched", "duration_ms" => 2140 }, row.envelope["voice"])
+        assert_equal row.envelope["voice"], response.parsed_body["voice"], "the page shows the name the row kept"
+        assert_equal "What can you build?", response.parsed_body.dig("turn", "text")
+        refute_includes row.envelope.to_json, "Forged"
+        refute_includes row.envelope.to_json, "owner"
+      end
+
+      test "voice: the same person on any check but matched is Someone new" do
+        user = User.create!(email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
+        post_message(person: { email: user.email }, voice: { speaker: "Pat Speaker", score: 0.2, check: "below_threshold", duration_ms: 900 })
+
+        assert_response :created
+        assert_equal "Someone new", AgentMessage.order(:id).last.envelope.dig("voice", "speaker")
+      end
+
+      test "voice: an anonymous visitor is Someone new, even claiming matched and a name" do
+        post_message(voice: { speaker: "Alex McRitchie", score: 0.99, check: "matched", duration_ms: 1000 })
+
+        assert_response :created
+        row = AgentMessage.order(:id).last
+        assert_equal "Someone new", row.envelope.dig("voice", "speaker")
+        assert_equal "Someone new", response.parsed_body.dig("voice", "speaker")
+      end
+
+      test "voice: a vouched-for email with no hub user is named as their person" do
+        post_message(person: { email: "stranger@example.com" }, voice: { check: "matched", score: 0.9 })
+
+        assert_response :created
+        row = AgentMessage.order(:id).last
+        assert_equal "stranger", row.envelope.dig("voice", "speaker")
+        assert_equal row.person.display_name, row.envelope.dig("voice", "speaker"), "the name the row's person carries"
+      end
+
+      test "voice: a bad payload answers 422 and leaves no row and no person" do
+        [ { check: "trust_me" }, { speaker: "Alex McRitchie" }, "matched", [ "matched" ], { check: [ "matched" ] } ].each do |bad|
+          assert_no_difference [ -> { AgentMessage.count }, -> { AgentPerson.count } ], bad.inspect do
+            post_message(person: { email: "newcomer@example.com" }, voice: bad)
+          end
+          assert_response :unprocessable_entity, bad.inspect
+          assert_equal "INVALID_VOICE", response.parsed_body["error_code"]
+        end
+      end
+
+      test "voice: only the four fields are kept: an audio field never reaches the row" do
+        post_message(voice: { check: "no_profile", audio: "UklGRiQAAABXQVZF", duration_ms: 1000 })
+
+        assert_response :created
+        row = AgentMessage.order(:id).last
+        assert_equal %w[check duration_ms score speaker], row.envelope["voice"].keys.sort
+        refute_includes row.to_json, "UklGRiQAAABXQVZF"
+      end
+
+      test "voice: a typed message carries none, and the answer has no voice key" do
+        post_message
+
+        assert_response :created
+        refute response.parsed_body.key?("voice")
+        refute AgentMessage.order(:id).last.envelope.key?("voice")
+      end
+
+      test "an app on the allow-list refuses with 401 until it holds a live credential" do
+        %w[turf-monster mcritchie-industries].each do |app|
+          assert_empty AppCredential.live.where(app_slug: app)
+        end
+        assert_no_difference -> { AgentMessage.count } do
+          post_message(soul: "turf_monster", secret: "no-such-credential")
+          assert_response :unauthorized
+          post_message(soul: "alex", secret: nil)
+          assert_response :unauthorized
+          assert_equal "UNAUTHORIZED", response.parsed_body["error_code"]
+        end
+      end
+
+      test "each newly listed app reaches its own soul with its own credential, the app kept on the row" do
+        _row, turf = AppCredential.issue!(app_slug: "turf-monster", purpose: "agent-chat")
+        _row, industries = AppCredential.issue!(app_slug: "mcritchie-industries", purpose: "agent-chat")
+
+        post_message(soul: "turf_monster", secret: turf, voice: { check: "no_profile" })
+        assert_response :created
+        turf_row = AgentMessage.order(:id).last
+        assert_equal %w[turf_monster turf-monster], [ turf_row.soul_slug, turf_row.envelope["app"] ]
+        assert_equal "held", turf_row.status, "only Alex answers the public; Turf's public row waits for an operator"
+
+        post_message(secret: industries, voice: { check: "no_profile" })
+        assert_response :created
+        industries_row = AgentMessage.order(:id).last
+        assert_equal %w[alex mcritchie-industries], [ industries_row.soul_slug, industries_row.envelope["app"] ]
+        assert_equal "received", industries_row.status
+      end
+
       test "401 without a credential, with a wrong one, a revoked one, or an agent session's" do
         post api_v1_agent_chat_messages_path, params: { soul: "alex", text: "hi", person: { anon_token: ANON } }, as: :json
         assert_response :unauthorized
@@ -121,9 +220,13 @@ module Api
         post_message(soul: "avi")
         assert_response :not_found, "avi has a web chat, but alex-build does not list him"
 
+        _row, unlisted_secret = AppCredential.issue!(app_slug: "cyvasse", purpose: "agent-chat")
+        post_message(secret: unlisted_secret)
+        assert_response :not_found, "an app the allow-list does not name"
+
         _row, turf_secret = AppCredential.issue!(app_slug: "turf-monster", purpose: "agent-chat")
         post_message(secret: turf_secret)
-        assert_response :not_found, "an app the allow-list does not name"
+        assert_response :not_found, "Turf Monster may address Turf, not Alex"
 
         get_turns(soul: "avi")
         assert_response :not_found
