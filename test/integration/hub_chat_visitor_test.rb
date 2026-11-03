@@ -65,4 +65,63 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
       assert_equal before, AgentMessage.count
     end
   end
+
+  test "after sign-in the first poll shows the visitor's thread, in order, before any new post" do
+    post "/agent_chat/messages", params: { soul: "alex", text: "before" }
+    log_in_as users(:viewer)
+
+    get "/agent_chat/turns", params: { soul: "alex" }
+    assert_equal [ "before" ], response.parsed_body["turns"].map { |turn| turn["text"] || turn["content"] }
+
+    post "/agent_chat/messages", params: { soul: "alex", text: "after" }
+    get "/agent_chat/turns", params: { soul: "alex" }
+    assert_equal %w[before after], response.parsed_body["turns"].map { |turn| turn["text"] || turn["content"] }
+  end
+
+  test "a claimed email cannot read its owner's thread" do
+    victim = users(:viewer)
+    victim_thread = AgentChat.user_thread_key("alex", victim.id)
+    log_in_as victim
+    post "/agent_chat/messages", params: { soul: "alex", text: "my secret" }
+    assert_equal victim_thread, AgentMessage.order(:id).last.thread_key
+    reset!
+
+    claimer = User.create!(email: "claimer@example.com", name: "Claimer", role: "viewer", email_verified_at: Time.current)
+    log_in_as claimer
+    claimer.update_columns(email: victim.email.upcase, email_verified_at: nil)
+
+    get "/agent_chat/turns", params: { soul: "alex" }
+    assert_equal [], response.parsed_body["turns"]
+
+    post "/agent_chat/messages", params: { soul: "alex", text: "from the claimer" }
+    assert_response :created
+    assert_match %r{\Achat:alex:anon:}, AgentMessage.order(:id).last.thread_key
+  end
+
+  test "a claimed address on a satellite does not reach an unverified member's page" do
+    claimer = User.create!(email: "first@example.com", name: "Claimer", role: "viewer", email_verified_at: Time.current)
+    log_in_as claimer
+    claimer.update_columns(email: "victim@example.com", email_verified_at: nil)
+    person = AgentChat::Visitor.new("alex", email: "victim@example.com")
+    AgentChat::Ingest.new(app: "alex-build", visitor: person, ip: "203.0.113.9").call("theirs")
+
+    get "/agent_chat/turns", params: { soul: "alex" }
+    assert_equal [], response.parsed_body["turns"]
+  end
+
+  test "with forgery protection on, a first-visit token posts and no token is refused" do
+    previous = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+    get chat_index_path
+    token = css_select("[data-agent-chat-form] input[name='authenticity_token'], meta[name='csrf-token']").first
+    value = token["value"] || token["content"]
+
+    post "/agent_chat/messages", params: { soul: "alex", text: "no token" }
+    assert_response :unprocessable_entity
+
+    post "/agent_chat/messages", params: { soul: "alex", text: "with token" }, headers: { "X-CSRF-Token" => value }
+    assert_response :created
+  ensure
+    ActionController::Base.allow_forgery_protection = previous
+  end
 end

@@ -49,6 +49,11 @@ module AgentChat
 
     def soul = @visitor.soul
 
+    # Takes a signed-in visitor's anon thread into the person's, with no message.
+    def fold_visitor!
+      fold!(@visitor.thread_key!)
+    end
+
     # The stored message. Raises Refused (422), NotAvailable (404) or Capped (429).
     # `voice`: a spoken message's AgentChat::Voice hash (envelope["voice"]),
     # or nil when it was typed.

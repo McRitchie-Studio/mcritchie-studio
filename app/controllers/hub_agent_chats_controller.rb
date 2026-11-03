@@ -37,7 +37,7 @@ class HubAgentChatsController < ApplicationController
     voice = admin? ? AgentChat::Voice.from_param(params[:voice], user: current_user) : nil
     message = AgentChat::Ingest.new(app: APP, visitor: visitor(mint: true), ip: client_ip)
                                .call(params[:text], voice: voice, viewer: AgentChat::Viewer.for_user(current_user))
-    cookies.delete(ANON_COOKIE) if current_user && anon_token
+    cookies.delete(ANON_COOKIE) if verified_email && anon_token
     # `voice` is what the row keeps (and the dispatcher's prompt reads), so the
     # page says who Alex was told spoke, not what the browser sent.
     render json: { turn: AgentChat::Turns.for_row(message).first, voice: message.envelope["voice"] }.compact, status: :created
@@ -50,8 +50,9 @@ class HubAgentChatsController < ApplicationController
   end
 
   def turns
-    return render(json: { turns: [], pending: false }) unless current_user || anon_token
+    return render(json: { turns: [], pending: false }) unless verified_email || anon_token
 
+    fold_on_sign_in
     thread_key = visitor.thread_key
     rows = thread_key ? AgentChat.rows(thread_key, after: after_param, limit: limit_param) : []
     render json: { turns: AgentChat::Turns.for(rows), pending: AgentChat::Turns.pending?(thread_key) }
@@ -66,14 +67,32 @@ class HubAgentChatsController < ApplicationController
   def visitor(mint: false)
     return @visitor if @visitor
 
-    @visitor = if current_user
-      AgentChat::Visitor.new(soul, email: current_user.email, anon_token: (anon_token if request.post?))
+    @visitor = if (email = verified_email)
+      AgentChat::Visitor.new(soul, email: email, anon_token: anon_token)
     else
       AgentChat::Visitor.new(soul, anon_token: anon_token || (mint_anon_token if mint))
     end
   end
 
-  def anon_token = cookies.signed[ANON_COOKIE].presence
+  # The address a person's thread may be keyed on: only one they proved, as the
+  # engine's proxy requires. /profile saves any address typed, so a claimed one
+  # would open its owner's thread. Everyone else chats on the anon cookie.
+  def verified_email
+    current_user.email if current_user&.email.present? && current_user.email_verified_at.present?
+  end
+
+  # The first poll after sign-in brings the visitor's thread along, so it shows at
+  # once and in order, not after the next message. The token is the signed cookie's.
+  def fold_on_sign_in
+    return unless verified_email && anon_token
+
+    AgentChat::Ingest.new(app: APP, visitor: visitor).fold_visitor!
+    cookies.delete(ANON_COOKIE)
+    @visitor = nil
+    @anon_cleared = true
+  end
+
+  def anon_token = @anon_cleared ? nil : cookies.signed[ANON_COOKIE].presence
 
   def mint_anon_token
     SecureRandom.urlsafe_base64(32).tap do |token|
