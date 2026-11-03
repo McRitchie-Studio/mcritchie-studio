@@ -9,6 +9,7 @@ Rails.application.routes.draw do
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
   get "about",   to: "landing#about",   as: :about
+  get "websites", to: "websites#index", as: :websites
   get "packages", to: "packages#index", as: :packages
   # The full stack behind every tier: the software-by-tier matrix /packages links to.
   get "packages/stack", to: "packages#stack", as: :packages_stack

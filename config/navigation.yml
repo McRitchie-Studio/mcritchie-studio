@@ -17,7 +17,8 @@
 #             args      positional arguments for the route helper.
 #             label, emoji, hover_emoji, desc   how a nav shows the page.
 #
-# sidebar   The link sidebar's sections, in order. group: admin sections lead for
+# sidebar   The link sidebar's sections, in order. A signed-out visitor's sidebar is
+#           the general sections, one line each (LinkTreeHelper#visitor_sidebar_sections). group: admin sections lead for
 #           an admin and fill /admin/links; group: general sections fill /links.
 #           An entry shows when its page is public or the viewer is an admin, and
 #           a section with no visible entry is dropped.
@@ -55,6 +56,7 @@ pages:
   build_request:  { page: "build#show",              audience: public, label: Your app request }
   contact_form:   { page: "contact_submissions#new", audience: public, label: Contact }
   links:          { page: "links#index",             audience: public, label: Links }
+  websites:       { page: "websites#index",          audience: public, label: Websites Built on Studio, emoji: "🌐", hover_emoji: "🚀" }
   schedule_index: { page: "schedule#index",          audience: public, label: Schedule a call }
 
   # ── NFL ──────────────────────────────────────────────────────────────────

@@ -39,6 +39,7 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     studio/local_reviews#show
     tasks#local_review
     team_grades#show
+    websites#index
     unsubscribes#create unsubscribes#resubscribe unsubscribes#show
   ].freeze
 
