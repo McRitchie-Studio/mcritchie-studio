@@ -204,6 +204,36 @@ What a publish does to what is already there:
 - Two files with the same name in one folder are reported and skipped; merge
   them in Drive first.
 
+## Doc masters
+
+A **doc master** is the editable Google Doc of one document Alex McRitchie asked
+for: an agreement, a letter, a policy. Its home is the brand's `<Brand> Doc Masters`
+folder, outside the kit, because a kit holds nothing confidential and a doc master
+may.
+
+1. Work out which brand the document serves.
+2. Start from the kit's `<SHORT> Template — General` in `05 Templates`. Find it
+   in Drive; a local search does not prove it is missing. Drop the template's
+   parts that do not fit, such as a photo on a contract.
+3. Put the Google Doc in the Doc Masters folder, and hand back its Drive link.
+4. Share by name. Do not share the folder with a whole domain. Do not move a
+   doc master into a kit.
+
+The Drive credential holds only `drive.file`, so it cannot see a folder a person
+made by hand. The Google Picker is not a way round this: picking a folder grants
+nothing inside it. The credential must create the folder itself. A person can
+then move that folder wherever it belongs; the credential keeps its access.
+
+No command does this yet. Use `Workspace::DriveClient` with the kit's
+`drive.subject`, from a checkout with a development database, as the publish does:
+
+1. Search for the exact folder name with `files_list`. If it exists, use it. Do
+   not create a second one beside it.
+2. If it does not exist, create it with `files_create`.
+3. Share it with `permissions_create`, by name. Ask Alex McRitchie first.
+4. Create the Doc with `files_create`, sending HTML built from the template's
+   export, so the Doc is a native Google Doc.
+
 ## Done when
 
 - The dry run after the last publish reports nothing to create or update.
