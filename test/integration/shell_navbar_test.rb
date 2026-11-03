@@ -65,8 +65,8 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
     end
     assert_select "header[x-data='navCollapse()']", count: 0
     assert_select "#studio-link-sidebar", 1
-    # A visitor's Log in lives in the link sidebar (/tasks/drop-hero-meet-alex).
-    assert_select "#studio-link-sidebar a[href=?]", login_path, text: /#{Studio.sign_in_label}/, minimum: 1
+    # A visitor's Sign In lives in the link sidebar (/tasks/drop-hero-meet-alex).
+    assert_select "#studio-link-sidebar a[href=?]", login_path, text: /Sign In/, minimum: 1
   end
 
   # config/initializers/studio.rb sets Studio.navbar_signed_out_cta to Build App

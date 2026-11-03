@@ -1,0 +1,14 @@
+<% content_for(:title, "Websites Built on Studio · McRitchie Studio") %>
+<% content_for(:full_width, true) %>
+
+<section class="max-w-3xl mx-auto px-4 text-center section-padding">
+  <h1 class="text-4xl font-extrabold text-heading tracking-tight">Websites Built on Studio</h1>
+  <p class="text-secondary text-lg mt-4 leading-relaxed">Real apps, live today. Open one and look around.</p>
+  <%= link_to "Build yours", build_path, class: "btn btn-primary mt-6" %>
+</section>
+
+<ul class="max-w-5xl mx-auto px-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3" style="padding-bottom: 4rem;" data-test="websites-grid">
+  <% @examples.each do |example| %>
+    <li class="min-w-0"><%= render "build/gallery_card", example: example %></li>
+  <% end %>
+</ul>

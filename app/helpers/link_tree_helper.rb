@@ -29,18 +29,31 @@ module LinkTreeHelper
   end
 
   def sidebar_link_sections
+    return visitor_sidebar_sections unless logged_in?
+
     sections = public_link_sections
     sections = admin_link_sections.map { |section| section.merge(admin: true) } + sections if admin?
     visitor_link_sections + owner_link_sections + sections
   end
 
   # A signed-out visitor's way in, first in the sidebar. The navbar keeps only
-  # the Build App button, so Log in lives here (Alex McRitchie, 2026-10-20;
+  # the Build App button, so Sign In lives here (Alex McRitchie, 2026-10-20;
   # /tasks/drop-hero-meet-alex). Nothing once signed in.
   def visitor_link_sections
     return [] if logged_in?
 
-    [ { title: "Account", links: [ { label: Studio.sign_in_label, href: login_path, emoji: "🔑", hover_emoji: "👋", desc: "Pick up where you left off" } ] } ]
+    [ { title: "Account", links: [
+      { label: "Sign In", href: login_path, emoji: "🔑", hover_emoji: "👋" },
+      { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
+        emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") }
+    ] } ]
+  end
+
+  # /chat while it is open to visitors; until then /build, where a visitor can
+  # already chat with Alex. /chat sits behind the admin wall, so linking it
+  # outright would send a visitor to "Not authorized".
+  def visitor_chat_path
+    AdminWall::PUBLIC.fetch("chat", []).include?("index") ? chat_index_path : build_path
   end
 
   # An app owner's links, first in the sidebar: their app (or "Applications")
@@ -57,6 +70,15 @@ module LinkTreeHelper
   end
 
   private
+
+  # A signed-out visitor's sidebar: one line per link (Alex McRitchie, 2026-11-03),
+  # and one link to the apps built on Studio in place of a row per app.
+  def visitor_sidebar_sections
+    page = Navigation.page(:websites)
+    websites = { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji }
+    sections = visitor_link_sections + registry_link_sections(:general) + [ { title: "Apps", links: [ websites ] } ]
+    sections.map { |section| section.merge(links: section[:links].map { |link| link.except(:desc) }) }
+  end
 
   def registry_link_sections(group)
     Navigation.sidebar(group).filter_map do |section|

@@ -92,14 +92,23 @@ async function deleteVoice(page) {
 
 async function openChat(page) {
   await page.setViewportSize({ width: 390, height: 844 });
+  // The chat marks itself ready before its first poll answers. A spec that counts
+  // the thread has to wait for that poll, or an earlier spec's turn lands after the
+  // count and reads as a second send.
+  const firstPoll = page.waitForResponse((response) => response.url().includes("/agent_chat/turns"));
   await page.goto("/chat");
+  await firstPoll;
   await expect(page.locator(CHAT)).toHaveAttribute("data-agent-chat-ready", "true");
+  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await expect(page.locator(RECORDER)).toHaveAttribute("data-voice-recorder-ready", "true");
 }
 
 async function holdToTalk(page, { holdMs = 700 } = {}) {
   const recorder = page.locator(RECORDER);
-  const box = await recorder.locator("[data-voice-recorder-button]").boundingBox();
+  // Each sent turn pushes the button down; past the fold a press at its box lands on nothing.
+  const button = recorder.locator("[data-voice-recorder-button]");
+  await button.scrollIntoViewIfNeeded();
+  const box = await button.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await expect(recorder).toHaveAttribute("data-voice-recorder-state", "recording");
