@@ -59,7 +59,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "span.cta-glow.cta-glow-rainbow[data-test='hero-build-glow']", 1 do
-      assert_select "> a.btn.btn-primary[href='#{build_path}']", text: "Build Your App"
+      assert_select "> a.btn.btn-primary.hero-cta[href='#{build_path}']", text: "Build Your App"
     end
     assert_select "[data-test='hero-meet-alex']", 0, "the hero has no Meet Alex link"
     assert_select "a", text: "Meet Alex", count: 0

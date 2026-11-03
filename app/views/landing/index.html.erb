@@ -14,6 +14,9 @@
      takes the darker body ink at semibold. Dark mode keeps its secondary ink. */
   .hero-subtitle-ink { color: var(--color-text-body); font-weight: 600; }
   .dark .hero-subtitle-ink { color: var(--color-text-secondary); font-weight: 400; }
+  /* The hero's one call to action, a size above btn-lg (Alex McRitchie, 2026-11-03):
+     the type scale's subhead, with padding to match. */
+  .hero-cta { font-size: calc(var(--type-base, 16px) * 1.5); padding: 1rem 2.5rem; }
   /* The box clips only the drop: the sides stay open for a word that hangs past it,
      and the bottom gives the g in Agent its last pixel. */
   .hero-title .dropping-texts {
@@ -85,7 +88,7 @@
         Meet Alex link was dropped (Alex, 2026-10-20; /tasks/drop-hero-meet-alex). %>
     <div class="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
       <%= tag.span class: "cta-glow cta-glow-rainbow", data: { test: "hero-build-glow" } do %>
-        <%= link_to "Build Your App", build_path, class: "btn btn-primary btn-lg", data: { test: "hero-build-cta" } %>
+        <%= link_to "Build Your App", build_path, class: "btn btn-primary btn-lg hero-cta", data: { test: "hero-build-cta" } %>
       <% end %>
     </div>
   </div>
