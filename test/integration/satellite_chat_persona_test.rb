@@ -28,7 +28,7 @@ class SatelliteChatPersonaTest < ActiveSupport::TestCase
                                .call("Who is Alex McRitchie, and what does he think about Rails?", viewer: viewer)
     assert message.thread_key.start_with?("chat:alex:"), message.thread_key
     bundle = JSON.parse(AgentMessages::MemoryBundle.new(message).bundle.to_json)
-    [ bundle, AgentMailbox::ContextBuilder.new(soul: "alex", message: JSON.parse(message.slice("channel", "content", "author_name").to_json),
+    [ bundle, AgentMailbox::ContextBuilder.new(soul: "alex", message: JSON.parse(message.slice("channel", "content", "envelope", "author_name").to_json),
                                                context: bundle, repo_root: Rails.root.to_s, fence: "untrusted-test").prompt ]
   end
 
