@@ -11,14 +11,14 @@
   <% agents = @stats.agents %>
   <% applications = @stats.applications %>
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" data-test="stat-cards">
-    <%= render "stat_card", test: "users", url: admin_model_path("users"), label: "Users", value: number_with_delimiter(users.total),
+    <%= render "stat_card", test: "users", path: admin_model_path("users"), label: "Users", value: number_with_delimiter(users.total),
           detail: "+#{users.new_this_week} in 7 days · last new #{users.last_new_at ? l(users.last_new_at.to_date, format: :short) : 'never'}" %>
-    <%= render "stat_card", test: "sessions", url: (defined?(Studio::UserSession) && Studio::UserSession.available? ? admin_model_path("sessions") : admin_models_path),
+    <%= render "stat_card", test: "sessions", path: (defined?(Studio::UserSession) && Studio::UserSession.available? ? admin_model_path("sessions") : admin_models_path),
           label: "Sessions", value: number_with_delimiter(sessions.this_week),
           detail: sessions.last_user ? "in 7 days · last #{sessions.last_user.display_name}, #{time_ago_in_words(sessions.last_seen_at)} ago" : "in 7 days · none yet" %>
-    <%= render "stat_card", test: "agents", url: agents_path, label: "Agents", value: number_with_delimiter(agents.total),
+    <%= render "stat_card", test: "agents", path: agents_path, label: "Agents", value: number_with_delimiter(agents.total),
           detail: "#{agents.pending} pending setup" %>
-    <%= render "stat_card", test: "applications", url: applications_path, label: "Applications", value: number_with_delimiter(applications.live),
+    <%= render "stat_card", test: "applications", path: applications_path, label: "Applications", value: number_with_delimiter(applications.live),
           detail: "live · #{applications.pending} pending launch" %>
   </div>
 
