@@ -41,7 +41,9 @@ module AgentChat
       @anon_digest = token.present? ? AgentChat.anon_digest(token) : nil
       raise Invalid, "person must carry an email or an anon_token" unless @email || @anon_digest
 
-      @user = @email ? User.where("lower(email) = ?", @email).first : nil
+      # Only a proven address names a hub user. /profile saves any address typed, and a
+      # claimed one would take the owner's thread: its messages, and the answers to them.
+      @user = @email ? User.where("lower(email) = ?", @email).where.not(email_verified_at: nil).first : nil
     end
 
     def signed_in? = @email.present?

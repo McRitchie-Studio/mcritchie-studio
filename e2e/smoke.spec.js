@@ -131,7 +131,7 @@ test("nav links work without errors @quarantine", async ({ page }) => {
 
   // Signed out, the navbar's primary button is "Build App" once the bundled
   // studio-engine has Studio.navbar_signed_out_cta (config/initializers/studio.rb),
-  // and the navbar carries no sign-in link: Log in sits first in the link
+  // and the navbar carries no sign-in link: Sign In sits first in the link
   // sidebar (/tasks/drop-hero-meet-alex). Before the relock the button itself
   // is "Log in".
   await page.goto("/");

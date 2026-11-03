@@ -124,4 +124,33 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
   ensure
     ActionController::Base.allow_forgery_protection = previous
   end
+
+  test "a satellite's message for an address someone only claimed never reaches the claimer" do
+    claimer = users(:viewer)
+    log_in_as claimer
+    patch "/profile", params: { profile: { email: "someone@example.com" } }
+    person = AgentChat::Visitor.new("alex", email: "someone@example.com")
+    assert_nil person.user, "an unproven address names no hub user"
+    message = AgentChat::Ingest.new(app: "alex-build", visitor: person, ip: "203.0.113.9").call("my private business")
+
+    refute_equal AgentChat.user_thread_key("alex", claimer.id), message.thread_key
+    reset!
+    claimer.update_columns(email: "claimer.again@example.com", email_verified_at: Time.current)
+    log_in_as claimer.reload
+    get "/agent_chat/turns", params: { soul: "alex" }
+    assert_empty response.parsed_body["turns"]
+  end
+
+  test "an older account claiming a member's address in another case does not capture their post" do
+    victim = User.create!(email: "victim@example.com", name: "Victim", role: "viewer", email_verified_at: Time.current)
+    claimer = users(:viewer)
+    claimer.update_columns(email: "VICTIM@example.com", email_verified_at: nil)
+
+    log_in_as victim
+    post "/agent_chat/messages", params: { soul: "alex", text: "mine" }
+    assert_response :created
+    row = AgentMessage.order(:id).last
+    assert_equal AgentChat.user_thread_key("alex", victim.id), row.thread_key
+    assert_equal victim.id, row.envelope["user_id"]
+  end
 end
