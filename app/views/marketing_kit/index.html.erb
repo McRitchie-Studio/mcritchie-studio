@@ -1,0 +1,64 @@
+<% content_for(:title, "Marketing Kit · McRitchie Studio") %>
+<% content_for(:full_width, true) %>
+
+<section class="max-w-3xl mx-auto px-4 text-center section-padding">
+  <p class="text-primary font-semibold uppercase tracking-wider"><%= @tagline %></p>
+  <h1 class="text-4xl font-extrabold text-heading tracking-tight mt-2">Marketing Kit</h1>
+  <p class="text-secondary text-lg mt-4 leading-relaxed">
+    The McRitchie Studio logos, colours and typefaces. Use them when you write about us.
+  </p>
+</section>
+
+<div class="max-w-5xl mx-auto px-4 space-y-12" style="padding-bottom: 4rem;">
+  <section aria-labelledby="kit-logos" data-test="kit-logos">
+    <h2 id="kit-logos" class="text-xl font-bold text-heading mb-4">Logos</h2>
+    <div class="grid gap-4 md:grid-cols-3">
+      <% @logos.each do |logo| %>
+        <div class="card overflow-hidden">
+          <div class="grid grid-cols-2">
+            <% [["light", "#FFFFFF"], ["dark", @kit.palette.first.hex]].each do |tone, background| %>
+              <div class="flex items-center justify-center h-32 p-4" style="background-color: <%= background %>">
+                <img src="/brand/<%= logo[:file] %>-<%= tone %>.svg" alt="<%= logo[:title] %>, for a <%= tone %> background" class="max-h-full max-w-full">
+              </div>
+            <% end %>
+          </div>
+          <div class="p-4 space-y-2">
+            <p class="text-heading font-semibold"><%= logo[:title] %></p>
+            <div class="flex gap-3 text-sm">
+              <% %w[light dark].each do |tone| %>
+                <a href="/brand/<%= logo[:file] %>-<%= tone %>.svg" download class="text-primary hover:underline">Download <%= tone %> SVG</a>
+              <% end %>
+            </div>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </section>
+
+  <section aria-labelledby="kit-colours" data-test="kit-colours">
+    <h2 id="kit-colours" class="text-xl font-bold text-heading mb-4">Colours</h2>
+    <div class="grid gap-4 grid-cols-2 md:grid-cols-5">
+      <% @kit.palette.each do |swatch| %>
+        <div class="card overflow-hidden">
+          <div class="h-20 border-b border-subtle" style="background-color: <%= swatch.hex %>"></div>
+          <div class="p-3">
+            <p class="text-heading font-semibold"><%= swatch.name %></p>
+            <code class="font-mono text-sm text-secondary"><%= swatch.hex %></code>
+          </div>
+        </div>
+      <% end %>
+    </div>
+  </section>
+
+  <section aria-labelledby="kit-type" data-test="kit-type">
+    <h2 id="kit-type" class="text-xl font-bold text-heading mb-4">Typefaces</h2>
+    <div class="card divide-y divide-subtle">
+      <% @kit.typefaces.each do |face| %>
+        <div class="p-4 flex flex-wrap items-baseline justify-between gap-3">
+          <p class="text-heading text-xl" style="font-family: <%= face.family %>, sans-serif; font-weight: <%= face.weight %>">Build smarter</p>
+          <p class="text-secondary text-sm"><%= face.role %> · <%= face.name %></p>
+        </div>
+      <% end %>
+    </div>
+  </section>
+</div>

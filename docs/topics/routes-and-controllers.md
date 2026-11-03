@@ -38,7 +38,7 @@ current: :epics`, where `current` is the registry key of the page being shown; t
 link to that page carries `aria-current="page"`. `components/_page_header` draws the
 sub-nav above the page's one `h1`. An entry shows when its page is public or the
 viewer is an admin.
-Public today: the landing, legal, about, packages, `/build` funnel, `/contact`,
+Public today: the landing, legal, about, Marketing Kit, packages, `/build` funnel, `/contact`,
 `/schedule`, `/links`, unsubscribe and email-tracking pages, sign-in, the NFL pages,
 and `/tasks/:slug/local_review`.
 
@@ -118,7 +118,7 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/admin/dashboard` — Admin dashboard with four quick links, a users table, and a request-log table backed by `error_logs`.
 - `/admin/ai_builder_multiple` — Admin dashboard for latest AI Builder Multiple index weeks, cohort coverage, the latest 9 Saturday-Friday UTC weekly commit cache ranges by tracked builder, builder weekly commit pace metrics, and CSV export paths. `/admin/ai_builder_multiple.json` returns the same latest index data and commit log ranges as JSON. Includes a caveat that this is public GitHub builder activity, not a true productivity measure.
 - `/admin/ai_builder_multiple/commit_history` — Full five-year AI Builder Multiple commit cache table using the same builder/range table format as the dashboard commit log.
-- `/admin/theme` — Theme editor + styleguide (engine-provided: color editor, logos, tokens, typography, buttons, components)
+- `/admin/theme` — Redirects to the Theme section of `/admin/style` (engine).
 - `/error_logs` — Error log index (search with ILIKE, Esc to clear, 500ms loading animation)
 - `/error_logs/:slug` — Error log detail (backtrace, target/parent with copy-to-clipboard console commands, JSON)
 - `/signin` — canonical create-or-login auth page

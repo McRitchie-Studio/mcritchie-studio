@@ -162,13 +162,14 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     assert_select "footer[data-site-footer] nav[aria-label='Help']", 0
   end
 
-  test "the Company column links Home and About, and shows Career disabled" do
+  test "the Company column links Home, About and Marketing Kit, and shows Career disabled" do
     get root_path
 
     assert_select "footer[data-site-footer] nav[aria-label='Company']" do
-      assert_select "a", 2
+      assert_select "a", 3
       assert_select "a[href='#{root_path}']", text: "Home"
       assert_select "a[href='#{about_path}']", text: "About"
+      assert_select "a[href='#{marketing_kit_path}']", text: "Marketing Kit"
       assert_select "span[aria-disabled='true']", text: "Career", count: 1
     end
   end
@@ -227,6 +228,6 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
   end
 
   test "the configured list is exactly the public-site controllers" do
-    assert_equal %w[landing packages integrations build contact_submissions schedule], Studio.site_footer_controllers
+    assert_equal %w[landing marketing_kit packages integrations build contact_submissions schedule], Studio.site_footer_controllers
   end
 end

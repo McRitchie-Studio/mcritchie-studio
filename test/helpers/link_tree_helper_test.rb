@@ -20,7 +20,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal "Site", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal ["Admin dashboard", "Deployments", "Theme", "Design System", "Schema", "Logos", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    assert_equal ["Admin dashboard", "Deployments", "Design System", "Schema", "Logos", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
     refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
   end
 
@@ -140,7 +140,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert design_system.fetch(:hover_emoji).present?, "expected a hover_emoji on the Design System link"
 
     # The canonical /admin/style route is bundled by studio-engine (0.18+) — confirm
-    # it resolves here. The legacy /admin/design_system route still 301-redirects.
+    # it resolves here.
     assert_equal "/admin/style", Rails.application.routes.url_helpers.admin_style_path
   end
 
@@ -329,9 +329,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def books_path = "/books"
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
-  def admin_theme_path = "/admin/theme"
   def admin_style_path = "/admin/style"
-  def admin_design_system_path = "/admin/design_system"
   def admin_schema_path = "/admin/schema"
   def admin_emails_path = "/admin/emails"
   def admin_link_preview_path = "/admin/link_preview"
