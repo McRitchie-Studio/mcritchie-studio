@@ -83,7 +83,7 @@ module Api
       end
 
       test "a signed-in person posting from two apps reads one thread, and their anon thread folds in" do
-        user = User.create!(email: "builder@example.com", name: "Builder", role: "viewer")
+        user = User.create!(email_verified_at: Time.current, email: "builder@example.com", name: "Builder", role: "viewer")
         post_message(text: "signed out first")
         anon_row = AgentMessage.last
 
@@ -98,7 +98,7 @@ module Api
       # --- A spoken message (epic studio-voice): voice {score, check, duration_ms} ---
 
       test "voice: a verified person is named on matched, by the hub, and a forged name is ignored" do
-        user = User.create!(email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
+        user = User.create!(email_verified_at: Time.current, email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
         post_message(person: { email: user.email },
                      voice: { speaker: "Alex McRitchie (owner)", name: "Forged", score: 0.87312, check: "matched", duration_ms: 2140 })
 
@@ -112,7 +112,7 @@ module Api
       end
 
       test "voice: the same person on any check but matched is Someone new" do
-        user = User.create!(email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
+        user = User.create!(email_verified_at: Time.current, email: "speaker@example.com", name: "Pat Speaker", role: "viewer")
         post_message(person: { email: user.email }, voice: { speaker: "Pat Speaker", score: 0.2, check: "below_threshold", duration_ms: 900 })
 
         assert_response :created

@@ -6,7 +6,7 @@ require "test_helper"
 class AgentChatVoiceTest < ActiveSupport::TestCase
   ANON = "anon-cookie-token-0001".freeze
 
-  setup { @user = User.create!(email: "speaker@example.com", name: "Pat Speaker", role: "viewer") }
+  setup { @user = User.create!(email_verified_at: Time.current, email: "speaker@example.com", name: "Pat Speaker", role: "viewer") }
 
   test "a matched take keeps four fields and names the signed-in user" do
     voice = AgentChat::Voice.from_param({ "speaker" => "Pat Speaker", "score" => 0.87312, "check" => "matched", "duration_ms" => "2140" }, user: @user)

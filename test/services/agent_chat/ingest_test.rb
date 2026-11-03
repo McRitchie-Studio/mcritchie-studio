@@ -32,13 +32,14 @@ class AgentChatIngestTest < ActiveSupport::TestCase
     assert_equal "chat:alex:anon:#{AgentChat.anon_digest(ANON)}", message.thread_key
     assert_equal "alex-build", message.envelope["app"], "the app is recorded, never part of the key"
     assert_equal false, message.envelope["signed_in"]
+    assert_equal "visitor", message.envelope["viewer"], "with no tier sent, a signed-out visitor reads visitor"
     refute_includes message.envelope.to_json, "203.0.113.4", "the raw IP is never stored"
     refute_includes message.attributes.to_json, ANON, "the anon token is never stored"
     assert_equal message, AgentMessage.claimable(soul: "alex").first, "the claim's SQL guard admits it"
   end
 
   test "the same signed-in person posting from two apps lands in one thread" do
-    user = User.create!(email: "builder@example.com", name: "Builder", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "builder@example.com", name: "Builder", role: "viewer")
     @routes = AgentMessages::Routes.new("web" => { "souls" => %w[alex], "apps" => { "alex-build" => %w[alex], "turf-monster" => %w[alex] } })
 
     one = ingest("from alex.build", email: user.email)
@@ -72,7 +73,7 @@ class AgentChatIngestTest < ActiveSupport::TestCase
   end
 
   test "the anon thread folds into the person's on their first signed-in post, once" do
-    user = User.create!(email: "fold@example.com", name: "Fold", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "fold@example.com", name: "Fold", role: "viewer")
     first = ingest("before sign-in", anon_token: ANON)
     second = ingest("still signed out", anon_token: ANON)
 
@@ -90,7 +91,7 @@ class AgentChatIngestTest < ActiveSupport::TestCase
   end
 
   test "the fold moves the anon visitor's identity, rows and notes to the person, orphaning nothing" do
-    user = User.create!(email: "notes@example.com", name: "Notes", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "notes@example.com", name: "Notes", role: "viewer")
     anon_row = ingest("I run a bakery", anon_token: ANON)
     anon_person = anon_row.person
     AgentPersonNote.record_from!(anon_row, [ "Runs a bakery." ])
@@ -155,7 +156,7 @@ class AgentChatIngestTest < ActiveSupport::TestCase
   end
 
   test "caps: a hub user's chat spends the per-IP budget too (every chat answer is public)" do
-    user = User.create!(email: "real@example.com", name: "Real", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "real@example.com", name: "Real", role: "viewer")
     policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 1 }
     ingest("anon first", anon_token: ANON, ip: "203.0.113.9", policy: policy)
 
@@ -163,7 +164,7 @@ class AgentChatIngestTest < ActiveSupport::TestCase
   end
 
   test "caps: a signed-in thread takes WebIngest's rolling rate, not a lifetime count" do
-    user = User.create!(email: "rate@example.com", name: "Rate", role: "viewer")
+    user = User.create!(email_verified_at: Time.current, email: "rate@example.com", name: "Rate", role: "viewer")
     stub_const(AgentMessages::WebIngest, :RATE_LIMIT, 2) do
       2.times { |i| ingest("m#{i}", email: user.email) }
       assert_equal :rate, assert_raises(AgentChat::Ingest::Capped) { ingest("m3", email: user.email) }.code

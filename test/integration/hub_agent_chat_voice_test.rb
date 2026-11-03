@@ -72,17 +72,18 @@ class HubAgentChatVoiceTest < ActionDispatch::IntegrationTest
     assert_equal [], response.parsed_body["turns"]
   end
 
-  test "[integration] behind the admin wall: a visitor gets 401, a signed-in viewer 403, and nothing is stored" do
-    assert_no_difference -> { AgentMessage.count } do
-      say("hi")
-      assert_response :unauthorized
-      post "/voice/takes", headers: { "Accept" => "application/json" }
-      assert_response :unauthorized
+  test "[integration] voice stays with admins: anyone else's take is refused and their voice param is dropped" do
+    post "/voice/takes", headers: { "Accept" => "application/json" }
+    assert_response :unauthorized
 
-      log_in_as(users(:viewer))
-      say("hi")
-      assert_response :forbidden
-    end
+    say("hi")
+    assert_response :created
+    assert_nil AgentMessage.order(:id).last.envelope["voice"]
+
+    log_in_as(users(:viewer))
+    say("hi")
+    assert_response :created
+    assert_nil AgentMessage.order(:id).last.envelope["voice"]
   end
 
   test "[component] /chat renders the engine chat with hold to talk, the chip and the approved privacy line" do

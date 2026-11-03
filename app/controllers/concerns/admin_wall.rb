@@ -42,6 +42,11 @@ module AdminWall
     # opens the sign-in modal; the launch itself needs an account.
     "build" => %w[create check message turns choose update cto_animals],
     "contact_submissions" => %w[create],
+    # The chat with Alex: a message and the answer poll, under AgentChat::Caps.
+    "hub_agent_chats" => %w[create turns],
+    # The engine's same two paths. HubAgentChatsController's routes answer first,
+    # so these never run on the hub; the wall reads the whole route table.
+    "studio/agent_chats" => %w[create turns],
     # Email: the unsubscribe page and the open/click/goal tracking pixels.
     "unsubscribes" => %w[show create resubscribe],
     "email_tracking" => %w[open click goal],
