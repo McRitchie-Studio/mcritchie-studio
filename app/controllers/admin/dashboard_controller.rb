@@ -6,6 +6,7 @@ module Admin
     before_action :require_admin
 
     def show
+      @stats = AdminDashboardStats.new(viewer: current_user)
       @users = User.with_attached_avatar.order(created_at: :desc).limit(USER_LIMIT)
       @user_count = User.count
       @admin_count = User.where(role: "admin").count

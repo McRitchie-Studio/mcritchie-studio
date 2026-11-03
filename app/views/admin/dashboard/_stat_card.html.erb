@@ -1,0 +1,6 @@
+<%# locals: (path:, label:, value:, detail:, test:) %>
+<%= link_to path, class: "card hover:bg-surface-alt transition p-4 flex flex-col gap-1", data: { test: "stat-card-#{test}" } do %>
+  <span class="text-sm font-semibold text-secondary"><%= label %></span>
+  <span class="text-3xl font-bold text-heading tabular-nums"><%= value %></span>
+  <span class="text-xs text-muted"><%= detail %></span>
+<% end %>

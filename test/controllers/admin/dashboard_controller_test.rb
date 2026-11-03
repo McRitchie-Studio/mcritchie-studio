@@ -27,7 +27,7 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", "#admin-users"
     assert_select "a[href=?]", "#request-logs"
     assert_select "a[href=?]", admin_models_path
-    assert_select "a[href=?]", deployments_path, text: /Tasks/
+    assert_select "a[href=?]", tasks_path, text: /Tasks/
     assert_select "a[href=?]", deployments_path, text: /Deployments/
     assert_select "a[href=?]", stages_path
     assert_select "a[href=?]", history_builders_path, text: /Builder History/
@@ -43,5 +43,17 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_match @admin.email, response.body
     assert_match "Synthetic request failure", response.body
     assert_select "a[href=?]", error_log_path(log)
+  end
+
+  test "the dashboard opens with four cards that lead to their pages" do
+    log_in_as @admin
+    get admin_dashboard_path
+
+    assert_select "[data-test='stat-cards'] a", 4
+    assert_select "a[data-test='stat-card-users'][href=?]", admin_model_path("users")
+    assert_select "a[data-test='stat-card-agents'][href=?]", agents_path
+    assert_select "a[data-test='stat-card-applications'][href=?]", applications_path
+    assert_select "a[data-test='stat-card-users']", text: /#{User.count}/
+    assert_select "a[data-test='stat-card-sessions']"
   end
 end
