@@ -25,8 +25,12 @@ function initDroppingTexts() {
     const interval = parseInt(container.dataset.interval) || 2500;
     let current = 0;
 
-    // Show first word immediately
+    // The first word starts in place: no drop-in, whether the markup rendered it
+    // active or not. The first move is from it to the next word.
+    spans[current].style.transition = 'none';
     spans[current].classList.add('drop-active');
+    void spans[current].offsetHeight;
+    spans[current].style.transition = '';
 
     const timer = setInterval(() => {
       // Reset previously exited spans
@@ -64,6 +68,8 @@ function cleanupDroppingTexts() {
     container.querySelectorAll(':scope > span').forEach(s => {
       s.classList.remove('drop-active', 'drop-exit');
     });
+    // Cache the first word showing, as the server rendered it.
+    container.querySelector(':scope > span')?.classList.add('drop-active');
   });
 }
 
