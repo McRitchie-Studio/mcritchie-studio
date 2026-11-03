@@ -7,6 +7,12 @@ require "test_helper"
 class HubChatVisitorTest < ActionDispatch::IntegrationTest
   def last_viewer = AgentMessage.order(:id).last.envelope["viewer"]
 
+  # A row saved before emails had one spelling: User.normalizes rewrites any write
+  # through the model, so only raw SQL can still make one.
+  def legacy_unproven_email!(user, email)
+    User.connection.execute("UPDATE users SET email = #{User.connection.quote(email)}, email_verified_at = NULL WHERE id = #{user.id}")
+  end
+
   test "[component] a visitor opens /chat with no voice recorder" do
     get chat_index_path
     assert_response :success
@@ -88,7 +94,7 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
 
     claimer = User.create!(email: "claimer@example.com", name: "Claimer", role: "viewer", email_verified_at: Time.current)
     log_in_as claimer
-    claimer.update_columns(email: victim.email.upcase, email_verified_at: nil)
+    legacy_unproven_email!(claimer, victim.email.upcase)
 
     get "/agent_chat/turns", params: { soul: "alex" }
     assert_equal [], response.parsed_body["turns"]
@@ -142,9 +148,9 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
   end
 
   test "an older account claiming a member's address in another case does not capture their post" do
+    claimer = User.create!(email: "older@example.com", name: "Older", role: "viewer")
     victim = User.create!(email: "victim@example.com", name: "Victim", role: "viewer", email_verified_at: Time.current)
-    claimer = users(:viewer)
-    claimer.update_columns(email: "VICTIM@example.com", email_verified_at: nil)
+    legacy_unproven_email!(claimer, "VICTIM@example.com")
 
     log_in_as victim
     post "/agent_chat/messages", params: { soul: "alex", text: "mine" }
