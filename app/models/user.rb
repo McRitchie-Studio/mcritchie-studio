@@ -111,7 +111,7 @@ class User < ApplicationRecord
   has_one_attached :avatar
 
   # email is nullable (a Google-only user may have none) and unique when present.
-  validates :email, uniqueness: true, allow_nil: true
+  validates :email, uniqueness: { case_sensitive: false }, allow_nil: true
   validate :has_authentication_method
 
   before_create :ensure_session_token
@@ -184,7 +184,7 @@ class User < ApplicationRecord
     end
 
     email = auth.info.email
-    if email.present? && (existing = find_by(email: email))
+    if email.present? && (existing = where("lower(email) = ?", email.downcase).first)
       return :email_not_verified unless email_verified
       existing.update!(provider: auth.provider, uid: auth.uid,
                        email_verified_at: existing.email_verified_at || Time.current)
@@ -250,6 +250,19 @@ class User < ApplicationRecord
 
   private
 
+  # A parked identity carries a role, so an address only earns it once its owner has
+  # PROVEN it: email_verified_at, stamped by a magic link click or Google's check.
+  # /profile saves whatever address is typed and clears that stamp, so without this a
+  # member could type a parked address, in any case, and become an admin.
+  # A stamp speaks for the address it was earned on. While the email is changing,
+  # the old stamp is still on the row, so only a stamp set in the same save counts.
+  def parked_address_proven?
+    return false if email_verified_at.blank?
+    return true unless persisted? && email_changed?
+
+    email_verified_at_changed?
+  end
+
   def assign_parked_identity
     identity = self.class.parked_identity_for(email: email)
     return false unless identity
@@ -257,13 +270,14 @@ class User < ApplicationRecord
     changed_identity = false
 
     parked_role = identity[:role].presence
-    if parked_role.present? && role != parked_role
+    # A demotion needs no proof, so the roster still reaches an existing row.
+    if parked_role.present? && role != parked_role && (parked_role != "admin" || parked_address_proven?)
       self.role = parked_role
       changed_identity = true
     end
 
     parked_name = identity[:name].presence
-    if parked_name.present? && (name.blank? || name == "anon")
+    if parked_name.present? && (name.blank? || name == "anon") && parked_address_proven?
       self.name = parked_name
       changed_identity = true
     end

@@ -137,7 +137,7 @@ class UserTest < ActiveSupport::TestCase
   end
 
   test "parked email signup gets canonical admin identity" do
-    user = User.create!(email: "team@mcritchie.studio")
+    user = User.create!(email: "team@mcritchie.studio", email_verified_at: Time.current)
 
     assert user.admin?
     # DERIVED, not spelled out. This test is about the callback ADOPTING the
@@ -145,6 +145,37 @@ class UserTest < ActiveSupport::TestCase
     # ("McRitchie Studio Team" -> "Team McRitchie") fail here as though adoption
     # had broken. The name itself is pinned once, in ParkedIdentitiesTest.
     assert_equal User.parked_identity_for(email: "team@mcritchie.studio").fetch(:name), user.name
+  end
+
+  test "an unproven address earns nothing from a parked identity" do
+    user = User.create!(email: "team@mcritchie.studio")
+
+    refute user.admin?, "typing a parked address must not grant its role"
+    refute_equal User.parked_identity_for(email: "team@mcritchie.studio").fetch(:name), user.name
+  end
+
+  test "proving the address grants the identity, as the magic link's stamp does" do
+    user = User.create!(email: "team@mcritchie.studio")
+    user.update!(email_verified_at: Time.current)
+
+    assert user.reload.admin?
+  end
+
+  test "a member changing their email to a parked address gains nothing" do
+    user = users(:viewer)
+    [ "team@mcritchie.studio", "Team@McRitchie.Studio", " TEAM@mcritchie.studio" ].each do |address|
+      user.update(email: address, email_verified_at: nil)
+      refute user.reload.admin?, "#{address.inspect} granted admin"
+    end
+  end
+
+  test "a case variant of a taken email is refused" do
+    taken = users(:alex).email
+    user = users(:viewer)
+    user.email = taken.upcase
+
+    refute user.valid?
+    assert user.errors[:email].any?
   end
 
   test "user with no auth method is invalid" do
