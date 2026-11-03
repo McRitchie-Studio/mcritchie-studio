@@ -209,7 +209,7 @@ module AgentMailbox
     VIEWER_RULES = {
       "visitor" => "The reader is NOT signed in: someone deciding whether this is for them. Answer what " \
                    "they asked first, then show what an agent like you could do for them, and invite them " \
-                   "to try it (start an app at /build, or sign in). Stay honest: promise only what the " \
+                   "to try it (start an app at https://mcritchie.studio/build, or sign in). Stay honest: promise only what the " \
                    "site offers, and do not pressure them.",
       "member" => "The reader is SIGNED IN and already uses this product. Answer what they asked first, " \
                   "then point out one way to get more from the product that fits what they are doing.",

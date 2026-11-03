@@ -16,6 +16,8 @@ class AgentContextBuilderViewerTest < ActiveSupport::TestCase
   test "a visitor is sold on the agent" do
     assert_includes prompt("visitor"), "NOT signed in"
     assert_includes prompt("visitor"), "invite them"
+    # Absolute: a satellite's row reads this line too, and /build is a 404 on alex.build.
+    assert_includes prompt("visitor"), "https://mcritchie.studio/build"
   end
 
   test "a member is shown more of the product" do
