@@ -1,8 +1,6 @@
-// [e2e] The landing hero's Build Your Website (task landing-build-ctas; the label read
-// Build Your App until Alex McRitchie's change of 2026-11-03).
+// [e2e] The landing hero's Build Your Website (task landing-build-ctas).
 //
-// Alex McRitchie, 2026-10-19: "Build Your App with a rainbow glow to draw the eyes." The
-// hero CTA wears the cta-glow primitive's rainbow preset. On a 375px phone the
+// The hero CTA wears the cta-glow primitive's rainbow preset. On a 375px phone the
 // glow never scrolls the page sideways at any point of its motion; under reduced
 // motion the glow holds still; in light mode it takes deeper stops than in dark
 // (task preview-domain-mcritchie-app); and the CTA goes to /build.

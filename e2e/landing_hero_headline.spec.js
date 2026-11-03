@@ -1,17 +1,9 @@
-// [e2e] The landing hero's headline (task hero-says-built-right).
-//
-// Alex McRitchie, 2026-10-30: "Your ___ Built Right with the options [Workflow, Idea,
-// Plan]"; 2026-11-03: the words are Idea, Workflow, Agent, at 3s each. The middle word cycles; at a phone, the lg edge and a desktop each word
-// sits whole inside its box, centred, the headline never reaches the subtitle,
-// the headline holds one height through the cycle (a word that fits where another
-// wraps must not reflow the page), and the page never scrolls sideways. The word
-// stays whole WHILE it drops in too: an earlier cut whose box fitted each word
-// clipped "Workflow" to "Workflov" for its first 0.4s (Carl's review of PR #2352).
-// The box is static now (Alex McRitchie: no expanding title), so it holds one
-// width through the cycle as well.
-// The first word starts in place, with no drop-in, and Your stands beside
-// the word from 400px up (below it, Your stacks above a centred word). Side by side,
-// the row centres on the median word, so Workflow hangs past the box but stays on screen.
+// [e2e] The landing hero's headline: Your [Idea, Workflow, Agent] Built Right, 3s a word.
+// The first word starts in place, with no drop-in. From 400px, Your stands beside the
+// word and the row centres on the median word, so Workflow hangs past the box but stays
+// on screen; below 400px, Your stacks above a centred word. At each width every word
+// stays whole on every frame of its entry (Workflow once clipped to "Workflov"), clears
+// the subtitle, holds one height, and the page never scrolls sideways.
 // @qa-readonly: it only reads the signed-out landing page.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, watchPageErrors, VISITOR } = require("./helpers");
