@@ -161,12 +161,40 @@ class UserTest < ActiveSupport::TestCase
     assert user.reload.admin?
   end
 
-  test "a member changing their email to a parked address gains nothing" do
+  test "a member cannot move onto a parked address, in any spelling, without proof" do
     user = users(:viewer)
+    before = user.email
     [ "team@mcritchie.studio", "Team@McRitchie.Studio", " TEAM@mcritchie.studio" ].each do |address|
-      user.update(email: address, email_verified_at: nil)
-      refute user.reload.admin?, "#{address.inspect} granted admin"
+      refute user.update(email: address), "#{address.inspect} was accepted"
+      user.reload
+      assert_equal before, user.email
+      refute user.admin?
     end
+  end
+
+  test "a stamp set in the same save carries the move" do
+    user = users(:viewer)
+
+    assert user.update(email: "team@mcritchie.studio", email_verified_at: Time.current)
+    assert user.reload.admin?
+  end
+
+  test "an email is stored in one spelling" do
+    user = users(:viewer)
+    user.update!(email: " Bob.Smith@Example.COM ")
+
+    assert_equal "bob.smith@example.com", user.reload.email
+  end
+
+  test "a moved email drops the stamp, so a later save cannot grant from it" do
+    user = users(:viewer)
+    user.update_columns(email_verified_at: Time.current)
+    user.update!(email: "someone.new@example.com")
+    assert_nil user.reload.email_verified_at
+
+    user.update_columns(email: "team@mcritchie.studio")
+    user.reload.update!(name: "Still a viewer")
+    refute user.reload.admin?
   end
 
   test "a case variant of a taken email is refused" do

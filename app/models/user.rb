@@ -111,11 +111,16 @@ class User < ApplicationRecord
   has_one_attached :avatar
 
   # email is nullable (a Google-only user may have none) and unique when present.
-  validates :email, uniqueness: { case_sensitive: false }, allow_nil: true
+  # One spelling per address: magic links are downcased, so a mixed-case row could
+  # never be found again and would lock its owner out.
+  normalizes :email, with: ->(address) { address.strip.downcase }
+  validates :email, uniqueness: true, allow_nil: true
+  validate :parked_move_carries_proof, if: -> { persisted? && will_save_change_to_email? }
   validate :has_authentication_method
 
   before_create :ensure_session_token
   before_validation :assign_parked_identity
+  before_save :clear_stale_stamp
   before_save :set_name_parts, if: -> { name_changed? }
 
   # /cable checks admin and the session token only at connect, so every write
@@ -261,6 +266,24 @@ class User < ApplicationRecord
     return true unless persisted? && email_changed?
 
     email_verified_at_changed?
+  end
+
+  # Nobody moves onto a parked address without proving it in the same save. Otherwise
+  # a member could sit on an unclaimed one, and the real owner's first sign-in would
+  # stamp that member's row and make it the admin. A new row is not a move: sign-up
+  # saves, then stamps, and the link that does so is the proof.
+  def parked_move_carries_proof
+    return unless self.class.parked_identity_for(email: email)
+    return if email_verified_at.present? && will_save_change_to_email_verified_at?
+
+    errors.add(:email, :taken) unless errors.of_kind?(:email, :taken)
+  end
+
+  # A stamp speaks for the address it was earned on.
+  def clear_stale_stamp
+    return unless persisted? && will_save_change_to_email? && !will_save_change_to_email_verified_at?
+
+    self.email_verified_at = nil
   end
 
   def assign_parked_identity
