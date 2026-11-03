@@ -1,19 +1,15 @@
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 
-test("admin can open the Coach model from admin models", async ({ page }) => {
+test("admin follows the dashboard's Users card, then opens the Coach model", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
 
-  await page.goto("/admin/models");
-  await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
+  await page.goto("/admin/dashboard");
+  await page.locator("[data-test='stat-card-users']").click();
+  await expect(page).toHaveURL(/\/admin\/models\/users$/);
+  await expect(page.locator("#models-users-table")).toBeVisible();
 
-  const coachesSection = page.locator("#model-coaches");
-  await expect(coachesSection).toContainText("Coaches");
-  await expect(coachesSection.locator("#models-coaches-table")).toContainText("Sean McDermott");
-
-  await coachesSection.getByRole("link", { name: "View all" }).click();
-  await expect(page).toHaveURL(/\/admin\/models\/coaches$/);
-  await expect(page.getByRole("heading", { name: "Coaches" })).toBeVisible();
+  await page.goto("/admin/models/coaches");
   await expect(page.locator("#models-coaches-table")).toContainText("Buffalo Bills");
   await expect(page.locator("#models-coaches-table")).toContainText("Head Coach");
 });

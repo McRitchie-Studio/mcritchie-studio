@@ -6,6 +6,22 @@
     <p class="text-muted text-sm">Users, request logs, and operator shortcuts.</p>
   </header>
 
+  <% users = @stats.users %>
+  <% sessions = @stats.sessions %>
+  <% agents = @stats.agents %>
+  <% applications = @stats.applications %>
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-3" data-test="stat-cards">
+    <%= render "stat_card", test: "users", url: admin_model_path("users"), label: "Users", value: number_with_delimiter(users.total),
+          detail: "+#{users.new_this_week} in 7 days · last new #{users.last_new_at ? l(users.last_new_at.to_date, format: :short) : 'never'}" %>
+    <%= render "stat_card", test: "sessions", url: (defined?(Studio::UserSession) && Studio::UserSession.available? ? admin_model_path("sessions") : admin_models_path),
+          label: "Sessions", value: number_with_delimiter(sessions.this_week),
+          detail: sessions.last_user ? "in 7 days · last #{sessions.last_user.display_name}, #{time_ago_in_words(sessions.last_seen_at)} ago" : "in 7 days · none yet" %>
+    <%= render "stat_card", test: "agents", url: agents_path, label: "Agents", value: number_with_delimiter(agents.total),
+          detail: "#{agents.pending} pending setup" %>
+    <%= render "stat_card", test: "applications", url: applications_path, label: "Applications", value: number_with_delimiter(applications.live),
+          detail: "live · #{applications.pending} pending launch" %>
+  </div>
+
   <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
     <%= render "quick_link", url: "#admin-users", label: "Users",
           subtitle: "#{@user_count} total / #{@admin_count} admin", icon: "👥" %>
@@ -13,7 +29,7 @@
           subtitle: "#{@request_log_count} captured", icon: "🚨" %>
     <%= render "quick_link", url: admin_models_path, label: "Models",
           subtitle: "users, teams, arenas", icon: "🗂️" %>
-    <%= render "quick_link", url: deployments_path, label: "Tasks",
+    <%= render "quick_link", url: tasks_path, label: "Tasks",
           subtitle: "build board", icon: "✅" %>
     <%= render "quick_link", url: deployments_path, label: "Deployments",
           subtitle: "deploy board + release", icon: "🚀" %>
