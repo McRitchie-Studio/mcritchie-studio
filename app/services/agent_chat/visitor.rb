@@ -89,6 +89,18 @@ module AgentChat
       thread_key!.delete_prefix(AgentChat.soul_prefix(soul))
     end
 
+    # Who a recognised voice is called in the prompt (AgentChat::Voice), or nil
+    # for an anonymous visitor. A hub user by the engine's own naming, so the
+    # chat and POST /voice/takes agree; any other vouched-for email by the
+    # person it names, else what #person! will call them. Read only: it makes no
+    # person, because the post may yet be refused. One line, as a name.
+    def speaker_name
+      return nil unless signed_in?
+      return Studio::VoiceTranscription.speaker_name(user) if user
+
+      (existing_email_person&.display_name.to_s.squish.presence || email.split("@").first.to_s)[0, 100]
+    end
+
     def author_name = (user&.display_name.presence || (signed_in? ? email.split("@").first : "Visitor")).to_s[0, 200]
 
     private

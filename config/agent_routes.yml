@@ -358,11 +358,17 @@ email:
 # (Api::V1::AgentChatsController, POST /api/v1/agent_chat/messages; epic
 # .agents/epics/agent-chat-primitive.md): `<app slug>: [souls]`, the souls that
 # app's own bearer credential (AppCredential, purpose agent-chat) may address. A
-# soul listed here must also be in `souls:`, or the app gets a 404.
+# soul listed here must also be in `souls:`, or the app gets a 404. Listing an
+# app mints nothing: until `bin/rails app_credentials:mint APP=<slug>` is run its
+# calls answer 401. Listing a soul does not open it to the public either: only
+# the public-intake soul (config/agent_answerers.yml, Alex) answers the public on
+# a chat thread; another soul's public row is `held`.
 web:
   souls: [avi, turf_monster, tyrion, alex, client_cto]
   apps:
     alex-build: [alex]
+    turf-monster: [turf_monster]
+    mcritchie-industries: [alex]
     # The hub's own /chat (HubAgentChatsController), in-process: no credential
     # is minted for it, so no satellite can speak as the hub.
     mcritchie-studio: [alex]
