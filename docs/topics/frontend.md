@@ -25,6 +25,15 @@ since studio-engine 0.24 (the former app-local copy is deleted):
   element floats still over the moving page. Two pages that share a marked name play
   the engine's fade and the morph, as /build, /build/:token and the app chat do.
   `test/views/page_transition_adoption_test.rb` scans every view for it.
+- **The launch panel morphs at its own address.** `build/_launch` stands at the chat's path
+  and `build_launch.js` visits that path. It has to stay an advance visit: an advance to the
+  same path keeps a shared marked name (engine 0.125.0), and a refresh stays silent.
+- **A GET that redirects moves once**: `/login`, `/signup`, `/logout` (engine 0.125.0).
+  Turbo renders the response, then visits the final address with that response. The second
+  visit draws nothing, and it adds about 300ms before `turbo:load`.
+- **A full load moves too** (engine 0.125.0): a `data-turbo="false"` link or form to another
+  path plays the same pair, with the chrome held. A reload, a same-path form (the logo kit's
+  PATCH forms) and the magic link's consume page load plainly.
 - **`turbo:load` comes when the move ends**, about 700ms after the swap, and clicks do
   nothing until then. `turbo:render` and Stimulus `connect` come at the swap. What
   shapes the arriving page has to run at the swap: `agent_shell.js` sizes the shell on
@@ -41,7 +50,8 @@ Slow-load feedback is Turbo's built-in progress bar (default 500ms delay). Brows
 without view-transition support get an instant swap, and under `prefers-reduced-motion`
 Turbo skips the transition. So the e2e lane sets `contextOptions: { reducedMotion:
 "reduce" }` in `playwright.config.js`. A bare `use.reducedMotion` does nothing. A spec
-about motion opts out with `page.emulateMedia({ reducedMotion: "no-preference" })`.
+about motion opts out with `page.emulateMedia({ reducedMotion: "no-preference" })`, or
+for a whole file with `test.use({ contextOptions: { reducedMotion: "no-preference" } })`.
 
 ## Modal host — this app renders the ENGINE's
 
