@@ -625,6 +625,9 @@
   @media (max-width: 767px) {
     .nav-shell [data-nav-account] [data-nav-name-phone] { width: 2.75rem; max-width: 2.75rem; }
     .nav-shell [data-nav-tools][data-nav-rows="1"] > div:first-child { padding-inline: 0 !important; }
+    /* The engine's phone row draws the gear first through 0.123.0. Delete this
+       rule when the hub locks the engine with PR 514, which reorders the row. */
+    .nav-shell > .nav-row ~ div [data-link-sidebar-trigger] { order: 1; }
   }
   .nav-phone-tools {
     max-width: calc(4rem * var(--nav-p, 0));

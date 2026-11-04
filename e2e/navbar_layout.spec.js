@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, VISITOR } = require("./helpers");
 
 const VIEWPORTS = [
   { width: 1366, height: 800 },
@@ -222,6 +222,26 @@ test("below 768px scrolled, the theme toggle draws left of the gear, and both le
     expect(toggle, message).toBeLessThan(gear);
     expect(gear, message).toBeLessThan(nameLeft);
   }
+});
+
+// At rest the engine's phone row carries the pair, in the same order as the bar.
+const expectPhoneRowOrder = async (page) => {
+  const left = async (selector) => (await page.locator(`${PHONE_ROW} ${selector}`).boundingBox()).x;
+  expect(await left("button[title='Toggle theme']")).toBeLessThan(await left("[data-link-sidebar-trigger]"));
+};
+
+test("below 768px at rest, the phone row draws the theme toggle left of the gear", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await page.goto("/tasks");
+  await expectPhoneRowOrder(page);
+});
+
+test("a visitor's phone row draws the theme toggle left of the gear", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE, reducedMotion: "reduce" });
+  const page = await context.newPage();
+  await page.goto("/about");
+  await expectPhoneRowOrder(page);
+  await context.close();
 });
 
 // Each band, at rest and scrolled: nothing wraps or leaves the screen, and the bar
