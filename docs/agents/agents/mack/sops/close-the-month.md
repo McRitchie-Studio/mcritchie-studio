@@ -228,6 +228,14 @@ not run through this.
 - **Inbox files stay in the Inbox.** The hub cannot move a file it did not
   create. Intake records each file's id and skips it next time. Alex may delete
   them once they are filed.
+- **A Service Charge Detail row with one amount is a charge or a waiver by its
+  column.** The parser reads the column from the "Waives and" header. A waiver
+  is money back: it files as a positive line in bank fees and nets the charge.
+- **A transfer to an own account with no books stays in transit.** Classify it
+  `internal_transfer`. The Balance Sheet carries it as an asset under "Transfers
+  in transit between own accounts" until the account joins `config/books.yml`
+  or the money comes back. Name the paying account from the statement, not from
+  memory: MI's $5,500 to PNC left MI checking, though it was recalled as Studio's.
 - **A Huntington "Transfer Credit" names no sender.** Industries' rules hold every
   one for an answer. Its first two (2026-09-02: $400,000 to the money market and
   $30,000 to checking, both from Studio) are member contributions, per Alex

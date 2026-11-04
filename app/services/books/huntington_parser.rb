@@ -20,9 +20,16 @@ module Books
   #   Service Charge Detail                              Account:-------0881
   #   Date  Service Charge (-)  Waives and  Discounts (+)  Description
   #   08/17     50.00           WIRE TRANSFER FEES(OUTGOING)
+  #   10/16                       20.00         PROMOTIONAL WAIVE - MONTHLY SERVICE FEE
   #
   # A section header with (+) holds credits and one with (-) holds debits;
-  # Service Charge Detail holds charges. Lines carry MM/DD only: the year comes
+  # Service Charge Detail holds charges. A row there can carry a charge, a
+  # waiver, or both. A row with one amount says which by the column it sits in,
+  # so the parser reads the column from the "Waives and" header above the row,
+  # and a waiver-only row is money back. With no header, the row reads as a
+  # charge and Parsed#problems refuses the statement.
+  #
+  # Lines carry MM/DD only: the year comes
   # from the statement period (a December line on a January statement is the
   # year before).
   module HuntingtonParser
@@ -55,6 +62,7 @@ module Books
     ACCOUNT = /Account: ?-+(\d{4})/
     SECTION = /\A\s*(?<name>[A-Z][A-Za-z ]*?)\s*(?:\((?<sign>[+-])\))?\s*(?:\(Continued\))?\s+Account: ?-+\d{4}\s*\z/
     LINE = %r{\A\s*(\d{2})/(\d{2})\s+(\d{1,3}(?:,\d{3})*\.\d{2})(?:\s+(\d{1,3}(?:,\d{3})*\.\d{2}))?\s+(\S.*?)\s*\z}
+    WAIVER_HEADER = "Waives and"
     # Where a section's lines end even without a new header: page furniture.
     NOISE = /\A\s*(Statement Period from|Investments are offered|The Huntington National|Page \d+ of|Date\s)/
 
@@ -83,6 +91,7 @@ module Books
     def lines(text, period_end)
       out = []
       section = nil
+      waiver_column = nil
       text.each_line do |raw|
         raw = raw.chomp
         if raw.include?("\f")
@@ -95,9 +104,12 @@ module Books
         end
         next if section.nil? || raw.strip.empty?
 
+        waiver_column = raw.index(WAIVER_HEADER) || waiver_column if section == "service_charge"
+
         if (m = raw.match(LINE))
           gross = cents(m[3])
           waived = m[4] ? cents(m[4]) : 0
+          gross, waived = 0, gross if section == "service_charge" && m[4].nil? && waiver_column && m.begin(3) >= waiver_column
           amount = section == "credit" ? gross : -(gross - waived)
           out << Line.new(posted_on: line_date(m[1], m[2], period_end), amount_cents: amount,
                           section: section, description: m[5].squeeze(" "))

@@ -27,6 +27,54 @@ class BooksHuntingtonParserTest < ActiveSupport::TestCase
     assert_equal "US BANK NA PAYMENT 261203 BILL PAYACCT XXXXXXX2383 PAYEE000001 CONTINUED TEXT", lines[3].description
   end
 
+  # The row shape is the one a real October 2026 statement printed: the same
+  # columns, a charge of 100, a charge of 20, and a row with only the waiver.
+  WAIVER_ONLY = <<~TXT
+    THE HUNTINGTON NATIONAL BANK
+    Huntington Business Checking 100                                       Account: -------5678
+    Statement Activity From:                   Beginning Balance                       $1,000.00
+    10/01/26 to 10/31/26                       Total Service Charges (-)                  100.00
+                                               Ending Balance                            $900.00
+    Service Charge Detail                                                                 Account:-------5678
+    Date      Service Charge (-)     Waives and    Discounts (+)      Description
+    10/16               100.00                                        OTHER SERVICE FEES
+    10/16                20.00                                        MONTHLY SERVICE FEE
+    10/16                                              20.00          PROMOTIONAL WAIVE - MONTHLY SERVICE FEE
+  TXT
+
+  test "a row with only a waiver nets against the charges, so the statement reconciles" do
+    parsed = Books::HuntingtonParser.parse(WAIVER_ONLY)
+
+    assert_equal [ -10_000, -2_000, 2_000 ], parsed.lines.map(&:amount_cents)
+    assert_equal %w[service_charge service_charge service_charge], parsed.lines.map(&:section)
+    assert_empty parsed.problems
+  end
+
+  test "a waiver-only row on a Continued page with no column header uses the column from the page before" do
+    text = WAIVER_ONLY.sub(/^10\/16 +20\.00 +PROMOTIONAL/) do |row|
+      "\f\nService Charge Detail (Continued)                                                     Account:-------5678\n#{row}"
+    end
+    parsed = Books::HuntingtonParser.parse(text)
+
+    assert_equal [ -10_000, -2_000, 2_000 ], parsed.lines.map(&:amount_cents)
+    assert_empty parsed.problems
+  end
+
+  test "a row with a charge and a waiver on one line still nets as before" do
+    text = WAIVER_ONLY.sub(/^10\/16 +20\.00 +MONTHLY.*\n^10\/16 +20\.00.*\n/,
+                           "10/16                20.00             20.00                      MONTHLY SERVICE FEE\n")
+    parsed = Books::HuntingtonParser.parse(text)
+
+    assert_equal [ -10_000, 0 ], parsed.lines.map(&:amount_cents)
+    assert_empty parsed.problems
+  end
+
+  test "a one-amount row with no column header reads as a charge, and the statement is refused" do
+    problems = Books::HuntingtonParser.parse(WAIVER_ONLY.sub(/^Date .*Waives and.*\n/, "")).problems
+
+    assert_includes problems, "charge lines total $140.00, the summary says $100.00"
+  end
+
   test "a line dated after the period's month belongs to the year before" do
     lines = Books::HuntingtonParser.parse(STATEMENT.sub("12/01/26 to 12/31/26", "01/01/27 to 01/31/27")).lines
 
