@@ -1,6 +1,6 @@
 // [e2e] An app owner sets their CTO's daily report channel (docs/agents/system/app-owners.md).
 // owner@turf.test is a plain viewer who owns Turf Monster: signed in, the sidebar
-// names the app and its CTO ("Turf"); the CTO's settings page offers the shared
+// names the app, whose page links its CTO ("Turf"); the settings page offers the shared
 // bot's postable channels; they pick #cto-reports, save, and the choice persists.
 // Another app's page is a 404. At phone width nothing runs off the side.
 //
@@ -20,7 +20,7 @@ test("an owner picks the daily report channel for Turf and the choice persists",
   await expect(page.getByRole("heading", { name: "Turf Monster", level: 1 })).toBeVisible();
   const sidebar = page.locator("#studio-link-sidebar");
   await expect(sidebar.locator("a[href='/applications/turf-monster']")).toHaveCount(1);
-  await expect(sidebar.locator("a[href='/agents/turf-monster/settings']")).toContainText("Turf");
+  await expect(sidebar.locator("a[href='/agents/turf-monster/settings']")).toHaveCount(0);
 
   await page.locator("[data-test='application-cto-settings']").click();
   await expect(page.getByRole("heading", { name: "Turf", level: 1 })).toBeVisible();

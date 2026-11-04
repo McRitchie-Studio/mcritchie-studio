@@ -22,7 +22,8 @@ test.describe("as the owner", () => {
     await page.locator("[data-test='application-pipeline-link']").click();
     await expect(page).toHaveURL(/\/applications\/turf-monster\/pipeline$/);
     await expect(page.getByRole("heading", { name: "Turf Monster pipeline", level: 1 })).toBeVisible();
-    await expect(page.locator("#studio-link-sidebar a[href='/applications/turf-monster/pipeline']")).toHaveCount(1);
+    await expect(page.locator("#studio-link-sidebar a[href='/applications/turf-monster']")).toHaveCount(1);
+    await expect(page.locator("#studio-link-sidebar a[href='/applications/turf-monster/pipeline']")).toHaveCount(0);
 
     const pipeline = page.locator("[data-test='pipeline-page']");
     await expect(pipeline.locator("[data-test='pipeline-lane']")).toHaveCount(6);
