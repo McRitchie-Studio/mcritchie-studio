@@ -14,7 +14,9 @@ const IMESSAGE_UA =
 test("admin edits the default link preview and a preview fetcher reads it", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
 
-  await expect(page.locator('a[href="/admin/link_preview"]').first()).toBeAttached();
+  // The page is reached from the Basement.
+  await page.goto("/admin/basement");
+  await expect(page.locator('[data-link-hub] a[href="/admin/link_preview"]').first()).toBeVisible();
   await page.goto("/admin/link_preview");
   // The card's controller is lazy: typing before it connects repaints nothing.
   await studioControllerConnected(page, "[data-link-preview-page]", "link-preview-card");
