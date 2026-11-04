@@ -222,11 +222,11 @@ Studio.configure do |config|
         # No phone number, on purpose: the operator removed it.
         # `booking: true` makes the link open the booking popup; /schedule is
         # this app's own page (ScheduleController), so the engine cannot tell
-        # from the path alone. Contact is the SMS opt-in form: its helper is
-        # `contact_form_path`; `contact_path` belongs to /contacts/:id.
+        # from the path alone. Contact opens the chat with Alex, the way to reach
+        # us; the SMS opt-in form stays at /contact, linked from that page.
         [ "Contact",   [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
                          [ "Schedule a call", view.schedule_index_path, { booking: true } ],
-                         [ "Contact", view.contact_form_path ] ] ],
+                         [ "Contact", view.chat_index_path ] ] ],
         [ "Solutions", [ [ "Packages", view.packages_path ], [ "Integrations", view.integrations_path ], [ "Build an app", view.build_path ] ] ],
         # Career has no page yet: a nil path renders the label disabled.
         [ "Company",   [ [ "Home", view.root_path ], [ "About", view.about_path ], [ "Marketing Kit", view.marketing_kit_path ], [ "Career", nil ] ] ],

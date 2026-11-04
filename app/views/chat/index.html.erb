@@ -6,15 +6,18 @@
     Alex, chat:alex:<user id> (the same thread a satellite's chat with Alex
     reaches), answered in-process by HubAgentChatsController and the dispatcher.
     Under it, hold to talk (chat/_voice; epic .agents/epics/studio-voice.md,
-    card 4). The session-only widget this page used to render (chat/_chat_widget,
-    POST /chat) is no longer drawn here. %>
+    card 4), and one quiet link to the SMS opt-in form. Consent comes only from
+    that form, at the URL the SMS registration names (/contact). %>
 <div class="pb-8" data-voice-chat-page data-test="alex-chat-page">
   <%= render "studio/agent_chat/chat", soul: "alex", name: "Alex",
              portrait: safe_image_tag("/agents/alex.webp", alt: "", class: "w-24 h-24 rounded-full object-cover"),
              role: "Sales and Marketing · McRitchie Studio",
-             empty: admin? ? "Say hello to Alex, or hold to talk." : "Say hello to Alex." %>
+             empty: admin? ? "What brought you here today? Type it, or hold to talk." : "What brought you here today?" %>
   <%# Hold to talk stays with admins: POST /voice/takes is behind the admin wall. %>
   <% if Studio.voice_transcription && admin? %>
     <%= render "chat/voice", soul: "alex", name: "Alex" %>
   <% end %>
+  <p class="px-4 pt-4 text-center text-xs">
+    <%= link_to "Text message sign-up", contact_form_path, class: "inline-block py-2 text-secondary hover:underline", data: { test: "chat-sms-signup" } %>
+  </p>
 </div>

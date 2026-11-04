@@ -52,6 +52,7 @@ Rails.application.routes.draw do
   # The CTO card's "New set": another set of animal avatars in the request's colours.
   get   "build/:token/cto_animals", to: "build#cto_animals", as: :build_request_cto_animals
   # The public contact form, which is also the SMS opt-in page carriers review.
+  # Its URL is the opt-in evidence on the SMS registration; do not move it.
   get  "contact", to: "contact_submissions#new", as: :contact_form
   # Both routes are named. An unnamed `post "contact"` is auto-named `contact`
   # and takes `contact_path` away from the mailing list's /contacts/:id.

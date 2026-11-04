@@ -2066,7 +2066,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
 - **The hub's own page: `/chat`** (task `chat-knows-who-is-asking`; open to everyone). The engine
   chat (`studio/agent_chat/chat`, soul `alex`; `Studio.agent_chat_souls = %w[alex]`) on the
   person's `chat:alex:<user id>` thread, or a visitor's `chat:alex:anon:<digest>`. The row's
-  `envelope.viewer` (`AgentChat::Viewer`: visitor, member, admin) sets the prompt's tone and grants nothing. Its browser calls, `POST /agent_chat/messages`
+  `envelope.viewer` (`AgentChat::Viewer`: visitor, member, admin) sets the prompt's tone and grants nothing. A row from this page (`via: agent_chat`, app `mcritchie-studio`, soul `alex`) also carries `ContextBuilder::HUB_CHAT_RULE` at every tier: ask what brought the person here, keep sales and builds in the chat, gather a support problem and hand it to team@mcritchie.studio or the form, point text messages at the sign-up form at `/contact`, and never collect SMS consent, which only that form's boxes record. It grants nothing. Its browser calls, `POST /agent_chat/messages`
   and `GET /agent_chat/turns`, are answered IN-PROCESS by `HubAgentChatsController` (drawn
   before `Studio.routes`, which draws the same paths to the satellite proxy), through the
   same `AgentChat::Ingest` and `Turns`, app `mcritchie-studio` (`web: apps:`). No

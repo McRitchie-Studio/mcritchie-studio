@@ -64,9 +64,6 @@ app/views/builders/history.html.erb:
 app/views/builders/index.html.erb:
   x_data: 1
   script: 0
-app/views/chat/_chat_widget.html.erb:
-  x_data: 1
-  script: 0
 app/views/components/_copy_text_script.html.erb:
   x_data: 0
   script: 1

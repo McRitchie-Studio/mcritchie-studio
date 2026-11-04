@@ -16,8 +16,47 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
   test "[component] a visitor opens /chat with no voice recorder" do
     get chat_index_path
     assert_response :success
-    assert_select "[data-test='alex-chat-page']"
+    assert_select "[data-test='alex-chat-page'] [data-test='agent-chat']"
+    assert_select "[data-test='agent-chat-empty']", text: "What brought you here today?"
     assert_select "[data-test='voice-chat']", count: 0
+  end
+
+  test "[component] /chat is only the chat: no form, no support rows, and one link to the sign-up" do
+    get chat_index_path
+    main = css_select("[data-test='alex-chat-page']").first
+
+    assert_select "form[data-test='contact-form']", count: 0
+    assert_select "[data-test='sms-disclosure']", count: 0
+    assert_select "[data-test='contact-consent']", count: 0
+    assert_equal 0, main.css("a[href^='mailto:'], a[href='/schedule']").size
+    assert_select "[data-test='alex-chat-page'] a[href='/contact'][data-test='chat-sms-signup']", text: "Text message sign-up", count: 1
+  end
+
+  test "[component] a member and an admin get the same page; only an admin has the recorder" do
+    Studio.stub(:voice_transcription, true) do
+      log_in_as users(:viewer)
+      get chat_index_path
+      assert_response :success
+      assert_select "[data-test='chat-sms-signup']", count: 1
+      assert_select "[data-test='voice-chat']", count: 0
+
+      reset!
+      log_in_as users(:alex)
+      get chat_index_path
+      assert_response :success
+      assert_select "[data-test='chat-sms-signup']", count: 1
+      assert_select "[data-test='voice-chat']"
+    end
+  end
+
+  test "a row from the hub's chat reaches the prompt with its directions" do
+    require Rails.root.join("bin/lib/agent_mailbox").to_s
+    post "/agent_chat/messages", params: { soul: "alex", text: "I need help" }
+    row = AgentMessage.order(:id).last
+    message = { "id" => row.id, "channel" => row.channel, "author_name" => "A visitor", "content" => row.content,
+                "envelope" => row.envelope }
+    prompt = AgentMailbox::ContextBuilder.new(soul: "alex", message: message, context: nil).prompt
+    assert_includes prompt, "You NEVER collect text message consent"
   end
 
   test "a visitor who has not written polls an empty thread and gets no cookie" do

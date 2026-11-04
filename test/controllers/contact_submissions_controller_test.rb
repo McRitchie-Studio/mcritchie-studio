@@ -45,6 +45,18 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  test "[component] the form page holds no chat, on arrival or on a refusal" do
+    get contact_form_path
+    assert_select "[data-test='agent-chat']", count: 0
+    assert_select "[data-test='alex-chat-page']", count: 0
+    assert_select "form[data-test='contact-form'] + [data-test='sms-disclosure']", count: 1
+
+    submit(email: "not-an-email")
+    assert_response :unprocessable_entity
+    assert_select "[data-test='contact-errors']"
+    assert_select "[data-test='agent-chat']", count: 0
+  end
+
   test "[component] the three consent boxes carry the exact wording and none is ticked" do
     get contact_form_path
 

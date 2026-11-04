@@ -3,7 +3,6 @@
 pin "application"
 pin "@hotwired/turbo-rails", to: "turbo.min.js"
 pin "dropping_text"
-pin "alex_chat"
 pin "agent_chat"
 pin "build_chat"
 pin "build_domain"

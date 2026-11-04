@@ -1,7 +1,6 @@
 // Configure your import map in config/importmap.rb. Read more: https://github.com/rails/importmap-rails
 import "@hotwired/turbo-rails"
 import "dropping_text"
-import "alex_chat"
 // The shared agent web chat (first page: /applications/:slug/chat): delegated listeners, inert on every other page.
 import "agent_chat"
 // The /build chat with Alex: polls for answers while one is pending, inert on every other page.
