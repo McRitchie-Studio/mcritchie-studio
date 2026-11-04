@@ -267,6 +267,9 @@ client.service.create_file(file, fields: "id", supports_all_drives: true)
   made, this credential added a shortcut. Ordinary files in such a folder are not
   tested; the [rule above](#doc-masters) to let the credential create the folder
   still stands for them.
+- **Removing one from a hand-made folder:** on 2026-11-04, Drive refused this
+  credential's trash call on shortcuts it had added to such a folder. The folder's
+  owner removes them by hand.
 - **View-only destination:** a person with edit access adds the shortcut by hand:
   right-click the master, then **Organize > Add shortcut**.
 

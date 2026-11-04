@@ -2,7 +2,7 @@
 question: "A document is needed in more than one Drive folder. Where does it live, and how does it reach the others?"
 answer: "Put one master in the Workspace of the entity that signs or owns it. Grant access by name on its folder, and add a shortcut in each other folder. Do not copy it."
 why: "One agreement set once existed as three copies in three places. A shortcut opens the master, but it grants no access."
-status: proposed
+status: approved
 source: "2026-11-04 · task documents-live-with-signing-entity"
 topic: [document, drive, folder, sharing, shortcut, agreement]
 ---
