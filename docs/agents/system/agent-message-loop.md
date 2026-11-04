@@ -1956,7 +1956,8 @@ Turbo hover prefetch gets a 204 and spends nothing.
   owner to the chat.
 - **Page moves** between /build, /build/:token and the app chat are Turbo visits with a
   view transition (`<meta name="view-transition">`): the shell names its portrait,
-  caption, status card and chat box, so Alex's portrait becomes the CTO's. Turbo skips
+  caption, status card and chat box, each marked with `data-vt-morph`, so Alex's portrait
+  becomes the CTO's and no page style plays. Turbo skips
   the transition under `prefers-reduced-motion`.
 
 - **The thread** is `web:build:<request token>` on the `web` channel, `channel_ref`

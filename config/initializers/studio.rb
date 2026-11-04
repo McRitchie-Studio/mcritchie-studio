@@ -40,16 +40,15 @@ Studio.configure do |config|
   # guard upstreamed from this app's former local copy).
   config.sticky_table_headers = true
 
-  # Engine-owned smooth-load convention (0.24): layouts/studio/_smooth_load
-  # renders the view-transition + no-preview metas, engine.css ships the
-  # transition styling and the vt-pinned-header @utility. This replaced the
-  # app-local partial/CSS copy. Under no-preview the old page holds until the
-  # fresh response, so drop the nav spinner floor from the engine's 2500ms
-  # default to a fast-load 300ms.
-  config.smooth_load = true
-  # The hub's pages leave to the left (studio-engine docs/PAGE_TRANSITIONS.md). A view
+  # The hub's pages leave to the left (studio-engine docs/PAGE_TRANSITIONS.md). The
+  # direction is the one switch: it turns on the engine's smooth-load convention
+  # (layouts/studio/_smooth_load renders the view-transition + no-preview metas) by
+  # itself. smooth_load stays set, so a removed direction falls back to the fade. A view
   # with an inline view-transition-name marks it with data-vt-morph, or it floats still
-  # over the moving page: test/views/page_transition_adoption_test.rb.
+  # over the moving page: test/views/page_transition_adoption_test.rb. Under no-preview
+  # the old page holds until the fresh response, so nav_spinner_min_ms below drops the
+  # nav spinner floor from the engine's 2500ms default to a fast-load 300ms.
+  config.smooth_load = true
   config.page_transition_direction = :left
   # Out-of-the-box navigation (engine 0.30): the sidebar data stays in the
   # hub's LinkTreeHelper; the engine renders it. The lambda hands the view

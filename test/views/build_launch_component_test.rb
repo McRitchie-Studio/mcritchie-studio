@@ -22,8 +22,8 @@ class BuildLaunchComponentTest < ActionView::TestCase
 
     panel = css_select("build-launch#build-launch[data-test='build-launch']").sole
     assert_equal "/applications/pawsome/chat", panel["data-href"], "where the panel hands over"
-    assert_select "[data-test='build-launch-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
-    assert_select "[data-test='build-launch-caption'][style*='view-transition-name: agent-caption']", text: /Nova\s+· CTO of Pawsome/
+    assert_select "[data-test='build-launch-portrait'][data-vt-morph='agent-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
+    assert_select "[data-test='build-launch-caption'][data-vt-morph='agent-caption'][style*='view-transition-name: agent-caption']", text: /Nova\s+· CTO of Pawsome/
     assert_select "[data-test='build-launch-app']", text: "Pawsome"
     assert_equal [ "Building Brand Sheet", "Hatching CTO", "Setting Up Domain" ],
                  css_select("[data-test='build-launch-step']").map { |li| li.text.squish }

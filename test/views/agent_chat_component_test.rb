@@ -69,7 +69,7 @@ class AgentChatComponentTest < ActionView::TestCase
     render("agent_chats/header", name: "Alex", agent: alex, role: "AI Builder")
 
     assert_select "[data-test='agent-chat-header'][data-agent-name='Alex']" do
-      assert_select "[data-test='agent-portrait'][style='view-transition-name: agent-portrait;'] span.w-24 img[src='https://img.test/alex.png']"
+      assert_select "[data-test='agent-portrait'][data-vt-morph='agent-portrait'][style='view-transition-name: agent-portrait;'] span.w-24 img[src='https://img.test/alex.png']"
       assert_select "[data-test='agent-caption']", text: /Alex\s+· AI Builder/
     end
     assert_select "h1", 0, "the page's heading is its status slot's"
@@ -126,7 +126,7 @@ class AgentChatComponentTest < ActionView::TestCase
 
   test "[component] the composer is the big chat box with a round send button" do
     render_chat
-    assert_select "form#build-chat-form.rounded-3xl[style*='view-transition-name: agent-composer']" do
+    assert_select "form#build-chat-form.rounded-3xl[data-vt-morph='agent-composer'][style*='view-transition-name: agent-composer']" do
       assert_select "button[type='submit'][data-test='cto-chat-send'][aria-label='Send to Alex'].rounded-full svg"
     end
   end

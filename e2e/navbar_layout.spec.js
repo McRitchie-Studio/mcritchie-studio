@@ -361,6 +361,7 @@ test("hovering the account lights the phone row's gear with it", async ({ page }
 test("a visitor's phone row gear lights on hover too", async ({ browser }) => {
   const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE });
   const page = await context.newPage();
+  await page.emulateMedia({ reducedMotion: "no-preference" });
   await page.goto("/about");
   await page.locator(ROW_GEAR).hover();
   await expectGearLit(page, { group: false });
