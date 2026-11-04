@@ -13,8 +13,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   end
 
   # Alex McRitchie, 2026-11-04: "this admin section reads Dashboard, DevOps, Design,
-  # Basement", then "Don't move logos to the Basement, but call it Branding Kits." The
-  # short words are the section's own; those pages keep their labels for the sub-navs
+  # Basement", then "Don't move logos to the Basement, but call it Branding Kits", then
+  # "Move 'App Requests' to the 'Admin' section with 'Books'. Move the rest to the
+  # basement". The short words are the section's own; those pages keep their labels for the sub-navs
   # (see navigation_test.rb).
   test "admin sidebar starts with the main admin areas and omits the removed devops page" do
     self.admin_enabled = true
@@ -25,7 +26,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "Admin", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
     assert_equal [ [ "Dashboard", "/admin" ], [ "DevOps", "/deployments" ], [ "Design", "/admin/style" ], [ "Branding Kits", "/logos" ],
-                   [ "Basement", "/admin/basement" ] ],
+                   [ "App Requests", "/build/requests" ], [ "Books", "/books" ], [ "Basement", "/admin/basement" ] ],
                  sections.first.fetch(:links).map { |link| link.values_at(:label, :href) }
     # DevOps is now a word this section shows, so the removed page is held by its address alone.
     refute links.any? { |link| link[:href] == "/devops" }
@@ -36,7 +37,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.admin_enabled = true
 
     moved = [ [ "Schema", "/admin/schema" ], [ "Emails", "/admin/emails" ],
-              [ "Link preview", "/admin/link_preview" ], [ "Assets", "/assets" ] ]
+              [ "Link preview", "/admin/link_preview" ], [ "Assets", "/assets" ],
+              [ "Stack", "/stack" ], [ "Credentials", "/credentials" ],
+              [ "Broadcasts", "/broadcasts" ], [ "Contacts", "/contacts" ], [ "Email analytics", "/broadcasts/analytics" ] ]
     assert_equal moved, basement_links.map { |link| link.values_at(:label, :href) }
 
     sidebar_hrefs = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
@@ -86,24 +89,22 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "/assets", Rails.application.routes.url_helpers.asset_browser_path
   end
 
-  # task contacts-admin-page: the mailing list sits beside the broadcasts sent to it.
-  test "admin sidebar has a Finance section that links the books review page" do
+  test "the Clients, Email and Finance sections leave the sidebar" do
     self.admin_enabled = true
 
-    finance = sidebar_link_sections.find { |section| section[:title] == "Finance" }
+    titles = sidebar_link_sections.map { |section| section.fetch(:title) }
 
-    assert finance&.fetch(:admin), "expected an admin Finance section"
-    assert_equal [ [ "Books", "/books" ] ], finance.fetch(:links).map { |link| link.values_at(:label, :href) }
-    assert_equal "/books", Rails.application.routes.url_helpers.books_path
+    assert_includes titles, "Admin", "control: the sidebar this reads is an admin's"
+    assert_empty titles & %w[Clients Email Finance Site]
   end
 
-  test "admin sidebar has an Email section with Broadcasts then Contacts" do
+  # task contacts-admin-page: the mailing list sits beside the broadcasts sent to it.
+  test "the Basement has an Email section with Broadcasts then Contacts" do
     self.admin_enabled = true
 
-    email = sidebar_link_sections.find { |section| section[:title] == "Email" }
+    email = basement_link_sections.find { |section| section[:title] == "Email" }
 
-    assert email&.fetch(:admin), "expected an admin Email section"
-    assert_equal [ "/broadcasts", "/contacts", "/broadcasts/analytics" ], email.fetch(:links).map { |link| link.fetch(:href) }
+    assert_equal [ "/broadcasts", "/contacts", "/broadcasts/analytics" ], email&.fetch(:links)&.map { |link| link.fetch(:href) }
   end
 
   test "admin sidebar includes the Activities feed link" do
@@ -216,22 +217,23 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "App Builder", services.fetch(:links).first.fetch(:label)
   end
 
-  test "admins get a Clients section: app requests, stack and credentials" do
+  test "the Basement has a Clients section with Stack and Credentials; App Requests leads to Admin instead" do
     self.admin_enabled = true
     self.logged_in_enabled = true
 
-    clients = sidebar_link_sections.find { |section| section.fetch(:title) == "Clients" }
+    clients = basement_link_sections.find { |section| section.fetch(:title) == "Clients" }
 
-    assert clients, "admins should see a Clients section"
-    assert clients[:admin], "Clients is an admin section"
-    assert_equal [ "/build/requests", "/stack", "/credentials" ], clients.fetch(:links).map { |link| link.fetch(:href) }
+    assert_equal [ "/stack", "/credentials" ], clients&.fetch(:links)&.map { |link| link.fetch(:href) }
+    refute_includes basement_links.map { |link| link[:href] }, "/build/requests"
   end
 
-  test "non-admins never see the Clients section" do
+  test "non-admins never see the admin pages that moved" do
     self.admin_enabled = false
     self.logged_in_enabled = true
 
-    refute sidebar_link_sections.any? { |section| section.fetch(:title) == "Clients" }
+    hrefs = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:href] }
+    assert_empty hrefs & [ "/build/requests", "/books", "/stack", "/credentials", "/broadcasts", "/contacts" ]
+    assert_empty basement_link_sections
   end
 
   test "a signed-in non-admin sees only the public sections" do

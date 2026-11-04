@@ -170,15 +170,9 @@ pages:
 sidebar:
   # The main areas (Alex McRitchie, 2026-11-04). The short words are this section's
   # own: the sub-navs still say Admin dashboard and Deployments. Branding Kits is the
-  # /logos page's own label, since no sub-nav reads it.
-  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, admin_basement] }
-  # The client side of the business: what the funnel brought in, what each client
-  # runs on, and the credentials behind it.
-  - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }
-  # The mailing list and what is sent to it.
-  - { title: Email,   group: admin, pages: [broadcasts, contacts, broadcast_analytics] }
-  # Mack's seat (CFO): the books and what they report.
-  - { title: Finance, group: admin, pages: [books] }
+  # /logos page's own label, since no sub-nav reads it. App Requests is what the funnel
+  # brought in. Books is Mack's seat (CFO): the books and what they report.
+  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, { page: build_requests, label: App Requests }, books, admin_basement] }
   - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, activities_agents, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
   - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
   # The recast pipeline: every generated version of every source video.
@@ -192,6 +186,10 @@ sidebar:
   - { title: Services,  group: general, pages: [build, packages, integrations] }
   # The Basement: links worth keeping that the sidebar does not need to carry.
   - { title: Site,      group: basement, pages: [admin_schema, admin_emails, admin_link_preview, asset_browser] }
+  # What each client runs on, and the credentials behind it.
+  - { title: Clients,   group: basement, pages: [stack, credentials] }
+  # The mailing list and what is sent to it.
+  - { title: Email,     group: basement, pages: [broadcasts, contacts, broadcast_analytics] }
 
 sub_navs:
   # The small link row above a board page's title.

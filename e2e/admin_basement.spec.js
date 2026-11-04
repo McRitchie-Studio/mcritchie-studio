@@ -9,6 +9,11 @@ const MOVED = [
   { href: "/admin/emails", label: "Emails", desc: "Transactional emails" },
   { href: "/admin/link_preview", label: "Link preview", desc: "Default title" },
   { href: "/assets", label: "Assets", desc: "Object store" },
+  { href: "/stack", label: "Stack", desc: "tier and software" },
+  { href: "/credentials", label: "Credentials", desc: "vault icons" },
+  { href: "/broadcasts", label: "Broadcasts", desc: "Compose, send" },
+  { href: "/contacts", label: "Contacts", desc: "mailing list" },
+  { href: "/broadcasts/analytics", label: "Email analytics", desc: "Delivery, opens" },
 ];
 const PHONE = { name: "phone", width: 390, height: 844 };
 const DESKTOP = { name: "desktop", width: 1440, height: 900 };
@@ -57,7 +62,7 @@ test("the Basement lists the moved pages at desktop width, in both themes", asyn
   await listsTheMovedPages(page, DESKTOP);
 });
 
-test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, Basement and takes you to the Basement", async ({ page }) => {
+test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, Books, Basement and takes you to the Basement", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/dashboard");
   await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
@@ -70,6 +75,8 @@ test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, Basement and t
     ["/deployments", "DevOps"],
     ["/admin/style", "Design"],
     ["/logos", "Branding Kits"],
+    ["/build/requests", "App Requests"],
+    ["/books", "Books"],
     ["/admin/basement", "Basement"],
   ]) {
     await expect(sidebar.locator(`a[href='${href}']`)).toContainText(word);
