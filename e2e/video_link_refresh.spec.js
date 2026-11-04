@@ -293,11 +293,11 @@ test("after a Turbo visit away, the page's timer makes no request", async ({ pag
   // signed links before it fires. Turbo swaps the body and keeps the window.
   await page.evaluate(() => {
     window.__sameWindow = true;
-    document.body.insertAdjacentHTML("beforeend", "<a id='away' href='/admin/links' style='position:fixed;top:0;left:0;z-index:99999'>away</a>");
+    document.body.insertAdjacentHTML("beforeend", "<a id='away' href='/admin/basement' style='position:fixed;top:0;left:0;z-index:99999'>away</a>");
   });
   await bucket.arm();
   await page.locator("#away").click();
-  await expect(page).toHaveURL(/\/admin\/links$/);
+  await expect(page).toHaveURL(/\/admin\/basement$/);
   await expect(page.locator("[data-links-url]")).toHaveCount(0);
   expect(await page.evaluate(() => window.__sameWindow)).toBe(true);
 

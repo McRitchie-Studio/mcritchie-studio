@@ -136,13 +136,30 @@ test("an admin gets each sub-nav, marked, legible and inside the viewport in bot
   }
 });
 
-test("the admin hubs link the admin dashboard, and neither lists /dashboard", async ({ page }) => {
+test("/admin/links lands on the Basement, and neither hub lists /dashboard", async ({ page }) => {
   await page.goto("/admin/links");
+  await expect(page).toHaveURL("/admin/basement");
+  await expect(page.getByRole("heading", { level: 1, name: "Basement" })).toBeVisible();
   const main = page.locator("div.max-w-5xl");
-  await expect(main.locator("a[href='/admin/dashboard']")).toContainText("Dashboard");
+  await expect(main.locator("a[href='/assets']")).toHaveCount(1);
   await expect(main.locator("a[href='/dashboard']")).toHaveCount(0);
 
   await page.goto("/links");
   await expect(page.locator("div.max-w-5xl a[href='/nfl']")).toHaveCount(1);
   await expect(page.locator("div.max-w-5xl a[href='/dashboard']")).toHaveCount(0);
+});
+
+// The Chat row's icon is a portrait, the others a glyph: all take the same width, so the labels line up.
+test("on /links the Chat label lines up with the labels beside it", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/links");
+  const offset = (href) =>
+    page.locator(`[data-link-hub] a[href='${href}']`).evaluate((row) => {
+      const label = row.querySelector(".font-semibold");
+      return label.getBoundingClientRect().left - row.getBoundingClientRect().left;
+    });
+  const build = await offset("/build");
+  expect(build).toBeGreaterThan(0);
+  expect(await offset("/chat")).toBeCloseTo(build, 0);
+  expect(await offset("/websites")).toBeCloseTo(build, 0);
 });

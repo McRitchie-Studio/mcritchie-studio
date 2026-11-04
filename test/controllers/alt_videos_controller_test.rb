@@ -522,9 +522,9 @@ class AltVideosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the admin links reach the index" do
+  test "the Basement reaches the index" do
     log_in_as users(:alex)
-    get admin_links_path
+    get admin_basement_path
     assert_select "a[href='#{alt_videos_path}']", /Alt videos/
   end
 

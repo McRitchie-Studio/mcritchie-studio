@@ -33,7 +33,9 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", history_builders_path, text: /Builder History/
     assert_select "a[href=?]", nfl_hub_path
     assert_match "NFL Hub", response.body
-    assert_select "a[href=?]", admin_links_path
+    assert_select "a[href=?]", admin_basement_path, text: /Basement/
+    assert_select "a[href=?]", admin_links_path, count: 0
+    assert_no_match "Admin Links", response.body
     assert_select "table#admin-users-table"
     assert_select "table#admin-users-table.sticky-data-table"
     assert_select "table#admin-users-table[data-sticky-table-header]"

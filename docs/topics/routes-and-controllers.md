@@ -24,7 +24,7 @@ fails until the three agree.
 
 ### Adding a page to a nav
 
-The link sidebar, `/links`, `/admin/links`, `/admin/basement` and the section sub-navs all read
+The link sidebar, `/links`, `/admin/basement` and the section sub-navs all read
 `config/navigation.yml` (`app/models/navigation.rb`):
 
 1. Add the page under `pages`, keyed by its route name, with `page`, `audience`,
@@ -32,7 +32,7 @@ The link sidebar, `/links`, `/admin/links`, `/admin/basement` and the section su
 2. Place it: add the key to a `sidebar` section, or add an item to a `sub_navs` entry
    (`only`, `except` and `hide_when_current` decide where it shows). A link that the
    sidebar need not carry goes in a `group: basement` section: it shows on
-   `/admin/basement` and `/admin/links`, and never in the sidebar.
+   `/admin/basement`, and never in the sidebar.
 3. A sidebar page also needs a path stub in `test/helpers/link_tree_helper_test.rb`.
 
 A section entry is a page key, or `{ page:, label: }` to show a shorter word in that
@@ -122,7 +122,7 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/people/merge` — GET render the person-merge form (pick keep/merge slugs). `POST /people/merge` → `PeopleController#merge_execute` consolidates contracts, roster spots, coaches, and athlete grades from source → keep person, then deletes source.
 - `/usages` — Usage table
 - `/admin/basement` — Admin-only page of links kept off the sidebar: the Site, Clients, Email, Ops, Directory, Data and Pipelines pages today (`group: basement` in `config/navigation.yml`).
-- `/admin/links` — The sidebar's admin sections, then the Basement's. Pages in no section (`/dashboard`, `/applications`, `/agents`, `/tasks`) are not on it; the admin dashboard links the last three.
+- `/admin/links` — Redirects an admin to `/admin/basement`, so a bookmark still works. A non-admin is refused as on any admin page. Pages in no section (`/dashboard`, `/applications`, `/agents`, `/tasks`) are not in the Basement; the admin dashboard links the last three.
 - `/admin/dashboard` — Admin dashboard with quick links, a users table, and a request-log table backed by `error_logs`.
 - `/admin/ai_builder_multiple` — Admin dashboard for latest AI Builder Multiple index weeks, cohort coverage, the latest 9 Saturday-Friday UTC weekly commit cache ranges by tracked builder, builder weekly commit pace metrics, and CSV export paths. `/admin/ai_builder_multiple.json` returns the same latest index data and commit log ranges as JSON. Includes a caveat that this is public GitHub builder activity, not a true productivity measure.
 - `/admin/ai_builder_multiple/commit_history` — Full five-year AI Builder Multiple commit cache table using the same builder/range table format as the dashboard commit log.

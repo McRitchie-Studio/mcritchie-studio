@@ -1,7 +1,7 @@
 # THE NAVIGATION REGISTRY — every page the hub links from a nav, and every page a
 # visitor may open. Loaded by app/models/navigation.rb. Three readers:
 #
-#   · the link sidebar, /links, /admin/links and /admin/basement   LinkTreeHelper
+#   · the link sidebar, /links and /admin/basement   LinkTreeHelper
 #   · the section sub-navs                        components/_sub_nav
 #   · the admin wall's public PAGE list           AdminWall::PUBLIC_PAGES
 #
@@ -20,7 +20,7 @@
 # sidebar   The link sections, in order. group: admin sections lead the sidebar for
 #           an admin; group: general sections follow and fill /links; group: basement
 #           sections never reach the sidebar and fill /admin/basement. /admin/links
-#           lists the admin and basement groups.
+#           redirects there.
 #           Every sidebar and /links also have Studio: Build, Chat, Portfolio, Packages
 #           and Integrations (LinkTreeHelper#studio_link_section), which is not a
 #           section here. A signed-out visitor's sidebar is only Sign In and Studio, one
