@@ -149,17 +149,18 @@ test("/admin/links lands on the Basement, and neither hub lists /dashboard", asy
   await expect(page.locator("div.max-w-5xl a[href='/dashboard']")).toHaveCount(0);
 });
 
-// The Chat row's icon is a portrait, the others a glyph: all take the same width, so the labels line up.
-test("on /links the Chat label lines up with the labels beside it", async ({ page }) => {
+// The Chat row's icon is a portrait, the others emoji glyphs. The portrait takes the icon's
+// 24px, which lines the labels up where a glyph is 24px wide, as on a Mac. A glyph's width
+// follows the platform's emoji font (30px on the CI runner), so the labels are not compared.
+test("on /links the Chat portrait takes the size of the other row icons", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/links");
-  const offset = (href) =>
-    page.locator(`[data-link-hub] a[href='${href}']`).evaluate((row) => {
-      const label = row.querySelector(".font-semibold");
-      return label.getBoundingClientRect().left - row.getBoundingClientRect().left;
-    });
-  const build = await offset("/build");
-  expect(build).toBeGreaterThan(0);
-  expect(await offset("/chat")).toBeCloseTo(build, 0);
-  expect(await offset("/websites")).toBeCloseTo(build, 0);
+  const icon = await page.locator("[data-link-hub] a[href='/chat'] img").evaluate((img) => ({
+    width: img.getBoundingClientRect().width,
+    height: img.getBoundingClientRect().height,
+    font: parseFloat(getComputedStyle(img.parentElement).fontSize),
+  }));
+  expect(icon.font).toBe(24);
+  expect(icon.width).toBe(icon.font);
+  expect(icon.height).toBe(icon.font);
 });
