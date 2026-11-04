@@ -44,7 +44,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
               [ "Broadcasts", "/broadcasts" ], [ "Contacts", "/contacts" ], [ "Email analytics", "/broadcasts/analytics" ],
               [ "Error logs", "/error_logs" ], [ "TikTok connection", "/admin/tiktok" ], [ "Google connection", "/admin/google" ],
               [ "Fathom connection", "/admin/fathom" ], [ "Agent inbox", "/admin/agent_messages" ],
-              [ "Report destinations", "/admin/report_destinations" ], [ "CSP reports", "/admin/csp_reports" ] ]
+              [ "Report destinations", "/admin/report_destinations" ], [ "CSP reports", "/admin/csp_reports" ],
+              [ "Builders", "/builders" ], [ "News", "/news" ], [ "Content", "/contents" ], [ "Models", "/model_pipeline" ],
+              [ "Body archetypes", "/body-archetypes" ], [ "Videos", "/videos" ] ]
     assert_equal moved, basement_links.map { |link| link.values_at(:label, :href) }
 
     sidebar_hrefs = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
@@ -127,29 +129,27 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # THE MODEL PIPELINE BOARD IS REACHABLE BY CLICKING. The same argument the person page
   # makes for the model page it links to: a surface only reachable by knowing a URL is a
   # surface the operator does not have.
-  test "the Studio section links the model pipeline board" do
+  test "the Basement links the model pipeline board" do
     self.admin_enabled = true
     self.logged_in_enabled = true
 
-    models = public_link_sections.flat_map { |section| section.fetch(:links) }
-                                 .find { |link| link[:label] == "Models" }
+    models = basement_links.find { |link| link[:label] == "Models" }
 
-    assert models, "expected a Models link in the Studio section"
+    assert models, "expected a Models link in the Basement"
     assert_equal "/model_pipeline", models.fetch(:href)
     assert models[:hover_emoji].present?
   end
 
-  test "the Studio section links the body archetypes beside the model pipeline" do
+  # Alex McRitchie, 2026-11-04, on the Studio section: /builders "should go to the
+  # basement", and News, Content, Models, Body archetypes, Videos "can all go to the basement".
+  test "the Basement has a Studio section: Builders, News, Content, Models, Body archetypes, Videos" do
     self.admin_enabled = true
     self.logged_in_enabled = true
 
-    labels = public_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
-    archetypes = public_link_sections.flat_map { |section| section.fetch(:links) }
-                                     .find { |link| link[:label] == "Body archetypes" }
+    studio = basement_link_sections.find { |section| section.fetch(:title) == "Studio" }
 
-    assert archetypes, "expected a Body archetypes link"
-    assert_equal "/body-archetypes", archetypes.fetch(:href)
-    assert_equal labels.index("Models") + 1, labels.index("Body archetypes")
+    assert_equal [ "/builders", "/news", "/contents", "/model_pipeline", "/body-archetypes", "/videos" ],
+                 studio&.fetch(:links)&.map { |link| link.fetch(:href) }
   end
 
   test "public (non-admin) sidebar omits the Activities admin link" do
@@ -249,33 +249,22 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal ["Build", "NFL", "Services", "Apps"], sidebar_link_sections.map { |section| section.fetch(:title) }
   end
 
-  test "the admin's link hub reveals Studio with Agents and Builders together" do
+  # Alex McRitchie, 2026-11-04: "I don't see a purpose for /dashboard"; Applications and
+  # Agents "are viewable from the admin dashboard"; Tasks "we can drop as Devops is a
+  # better version". They leave every list; their routes stay.
+  test "the Studio section leaves the sidebar and /links, and the four dropped pages are in no list" do
     self.admin_enabled = true
     self.logged_in_enabled = true
 
-    sections = public_link_sections
-    studio = sections.find { |section| section.fetch(:title) == "Studio" }
+    assert_equal [ "NFL", "Directory", "Services", "Apps" ], public_link_sections.map { |section| section.fetch(:title) }
+    refute_includes sidebar_link_sections.map { |section| section.fetch(:title) }, "Studio"
 
-    assert studio, "expected a Studio section for admins"
-    labels = studio.fetch(:links).map { |link| link.fetch(:label) }
-    assert_includes labels, "Agents"
-    assert_includes labels, "Builders"
-    assert_equal labels.index("Agents") + 1, labels.index("Builders"),
-      "Builders should sit right after Agents"
-    other_titles = sections.reject { |section| section.fetch(:title) == "Studio" }.map { |section| section.fetch(:title) }
-    assert_equal ["NFL", "Directory", "Services", "Apps"], other_titles
-  end
-
-  test "[unit] an admin's Studio section links Applications right after the dashboard; a signed-in non-admin's does not" do
-    self.admin_enabled = true
-    self.logged_in_enabled = true
-    studio = public_link_sections.find { |section| section.fetch(:title) == "Studio" }
-    hrefs = studio.fetch(:links).map { |link| link.fetch(:href) }
-    assert_equal [ "/dashboard", "/applications" ], hrefs.first(2)
-
-    self.admin_enabled = false
-    all_hrefs = public_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
-    assert_not_includes all_hrefs, "/applications", "the registry entry is an admin's; an owner's link is their own"
+    every_list = sidebar_link_sections + public_link_sections + admin_link_sections + basement_link_sections
+    hrefs = every_list.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
+    assert_includes hrefs, "/deployments", "control: these are an admin's lists"
+    assert_empty hrefs & [ "/dashboard", "/applications", "/agents", "/tasks" ]
+    assert_empty sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) } &
+                 [ "/builders", "/news", "/contents", "/model_pipeline", "/body-archetypes", "/videos" ]
   end
 
   # task public-nfl-cards-stay-public: both NFL links are public pages, so the
@@ -337,19 +326,6 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # An admin is always signed in.
   def logged_in?
     !!(logged_in_enabled || admin_enabled)
-  end
-
-  test "the Studio section links the source videos beside the body archetypes" do
-    self.admin_enabled = true
-    self.logged_in_enabled = true
-
-    links = public_link_sections.flat_map { |section| section.fetch(:links) }
-    labels = links.map { |link| link[:label] }
-    videos = links.find { |link| link[:label] == "Videos" }
-
-    assert videos, "expected a Videos link"
-    assert_equal "/videos", videos.fetch(:href)
-    assert_equal labels.index("Body archetypes") + 1, labels.index("Videos")
   end
 
   def dashboard_path = "/dashboard"

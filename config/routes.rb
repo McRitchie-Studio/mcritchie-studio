@@ -445,7 +445,7 @@ Rails.application.routes.draw do
     get   "model_pricing/*model", to: "model_pricing#show", as: :model_pricing_model, format: false
     patch "model_pricing/*model", to: "model_pricing#update", format: false
 
-    # Admin link hub — gathers every admin/operator destination. It lists no
+    # Admin link hub — gathers the admin/operator destinations. It lists no
     # on-chain destination: the signing console was deleted 2026-09-04
     # (/tasks/retire-signing-console). admin#links, require_admin. /admin/links.
     get "links", to: "links#index", as: :links

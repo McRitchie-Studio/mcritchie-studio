@@ -165,7 +165,8 @@ test("logged-in link sidebar reopens after browser back from signed-in routes", 
     await page.locator("button[data-link-sidebar-trigger]:visible").first().click();
     await expect(page.locator("#studio-link-sidebar")).toBeVisible();
 
-    const destination = route === "/agents" ? "/tasks" : "/agents";
+    // Any page the admin sidebar still links; Docs is a plain one in the Directory section.
+    const destination = "/docs";
     await page.locator(`#studio-link-sidebar a[href="${destination}"]`).first().click();
     await expect(page).toHaveURL(destination);
 

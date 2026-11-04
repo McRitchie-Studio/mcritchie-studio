@@ -127,7 +127,7 @@ The categories are the keys under `categories:` in `config/books.yml`. Use
 `--category none` to undo an answer.
 
 **Alex McRitchie can answer on the page instead:** `/books` on the hub (admin
-only; Finance in the sidebar) lists each entity's waiting lines with a category,
+only; Books in the sidebar's Admin section) lists each entity's waiting lines with a category,
 purpose and note, and records his answer through the same code as `classify`,
 with his address as `by`. Recent answers show who and when, with an Undo. Bank
 text shows any account or card number by its last four digits only, however

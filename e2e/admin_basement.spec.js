@@ -21,6 +21,12 @@ const MOVED = [
   { href: "/admin/agent_messages", label: "Agent inbox", desc: "Messages to agents" },
   { href: "/admin/report_destinations", label: "Report destinations", desc: "Discord channel" },
   { href: "/admin/csp_reports", label: "CSP reports", desc: "Content-Security-Policy" },
+  { href: "/builders", label: "Builders", desc: "commit pace" },
+  { href: "/news", label: "News", desc: "News pipeline" },
+  { href: "/contents", label: "Content", desc: "Content pipeline" },
+  { href: "/model_pipeline", label: "Models", desc: "Character model" },
+  { href: "/body-archetypes", label: "Body archetypes", desc: "Body builds" },
+  { href: "/videos", label: "Videos", desc: "digested video" },
 ];
 const PHONE = { name: "phone", width: 390, height: 844 };
 const DESKTOP = { name: "desktop", width: 1440, height: 900 };
@@ -90,6 +96,10 @@ test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, 
     await expect(sidebar.locator(`a[href='${href}']`)).toContainText(word);
   }
   for (const { href } of MOVED) await expect(sidebar.locator(`a[href='${href}']`)).toHaveCount(0);
+  // Dropped from every list (Alex McRitchie, 2026-11-04); the admin dashboard links the last three.
+  for (const href of ["/dashboard", "/applications", "/agents", "/tasks"]) {
+    await expect(sidebar.locator(`a[href='${href}']`)).toHaveCount(0);
+  }
 
   await sidebar.locator("a[href='/admin/basement']").click();
   await expect(page).toHaveURL("/admin/basement");

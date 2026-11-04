@@ -134,12 +134,13 @@ test("an admin gets each sub-nav, marked, legible and inside the viewport in bot
   }
 });
 
-test("the admin sidebar names the two dashboards apart", async ({ page }) => {
+test("the admin hubs link the admin dashboard, and neither lists /dashboard", async ({ page }) => {
   await page.goto("/admin/links");
   const main = page.locator("div.max-w-5xl");
-  // The Admin section shortens its own to Dashboard; the Studio section's stays apart.
   await expect(main.locator("a[href='/admin/dashboard']")).toContainText("Dashboard");
+  await expect(main.locator("a[href='/dashboard']")).toHaveCount(0);
 
   await page.goto("/links");
-  await expect(page.locator("div.max-w-5xl a[href='/dashboard']")).toContainText("Studio dashboard");
+  await expect(page.locator("div.max-w-5xl a[href='/nfl']")).toHaveCount(1);
+  await expect(page.locator("div.max-w-5xl a[href='/dashboard']")).toHaveCount(0);
 });

@@ -95,7 +95,9 @@ class LinksHubTest < ActionDispatch::IntegrationTest
       contacts_path => "mailing list", broadcast_analytics_path => "Delivery, opens",
       error_logs_path => "Captured errors", admin_tiktok_path => "Connected account", admin_google_path => "Calendar",
       admin_fathom_path => "Meeting notes", admin_agent_messages_path => "Messages to agents",
-      admin_report_destinations_path => "Discord channel", admin_csp_reports_path => "Content-Security-Policy" }.each do |href, desc|
+      admin_report_destinations_path => "Discord channel", admin_csp_reports_path => "Content-Security-Policy",
+      builders_path => "commit pace", news_index_path => "News pipeline", contents_path => "Content pipeline",
+      model_pipeline_path => "Character model", body_archetypes_path => "Body builds", videos_path => "digested video" }.each do |href, desc|
       assert_select "[data-link-hub] a[href=?]", href, text: /#{Regexp.escape(desc)}/
     end
     [ logos_path, build_requests_path, books_path, activities_agents_path ].each { |href| assert_select "[data-link-hub] a[href=?]", href, count: 0 }
@@ -147,6 +149,27 @@ class LinksHubTest < ActionDispatch::IntegrationTest
       activities_agents_path, error_logs_path, admin_tiktok_path, admin_google_path, admin_fathom_path, admin_agent_messages_path,
       admin_report_destinations_path, admin_csp_reports_path ].each do |href|
       assert_select "[data-link-hub] a[href=?]", href
+    end
+  end
+
+  test "[component] an admin's sidebar, /links and /admin/links carry no Studio section, and the moved pages still answer" do
+    log_in_as users(:alex)
+    dropped = [ dashboard_path, applications_path, agents_path, tasks_path ]
+    moved = [ builders_path, news_index_path, contents_path, model_pipeline_path, body_archetypes_path, videos_path ]
+
+    get links_path
+    assert_select "[data-link-hub] a[href=?]", nfl_hub_path
+    (dropped + moved).each { |href| assert_select "[data-link-hub] a[href=?]", href, count: 0 }
+    assert_select "#studio-link-sidebar a[href=?]", deployments_path
+    (dropped + moved).each { |href| assert_select "#studio-link-sidebar a[href=?]", href, count: 0 }
+
+    get admin_links_path
+    dropped.each { |href| assert_select "[data-link-hub] a[href=?]", href, count: 0 }
+    moved.each { |href| assert_select "[data-link-hub] a[href=?]", href }
+
+    (dropped + moved).each do |href|
+      get href
+      assert_response :success, "#{href} keeps its route"
     end
   end
 

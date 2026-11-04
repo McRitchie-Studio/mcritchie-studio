@@ -20,7 +20,7 @@
 # sidebar   The link sections, in order. group: admin sections lead the sidebar for
 #           an admin; group: general sections follow and fill /links; group: basement
 #           sections never reach the sidebar and fill /admin/basement. /admin/links
-#           lists the admin and basement groups, so it stays the whole admin index.
+#           lists the admin and basement groups.
 #           Every sidebar also has Build: Chat and Portfolio. A signed-out visitor's
 #           sidebar is only Sign In and Build, one line each (LinkTreeHelper).
 #           An entry shows when its page is public or the viewer is an admin, and
@@ -93,7 +93,9 @@ pages:
 
   # ── Studio ───────────────────────────────────────────────────────────────
   # Two dashboards, two names: /dashboard is the studio overview, /admin/dashboard
-  # is the site's users and request logs.
+  # is the site's users and request logs. dashboard, applications and agents are in
+  # no sidebar section (Alex McRitchie, 2026-11-04); the admin dashboard links the last
+  # two, and tasks too. They stay here because the wall and the route check read this.
   dashboard:      { page: "dashboard#index",      audience: admin, label: Studio dashboard, emoji: "📊", hover_emoji: "📈", desc: Overview + activity }
   # Owners reach /applications too (AdminWall::SIGNED_IN); their own sidebar link
   # is AppOwnership.sidebar_links, so this entry shows to an admin only.
@@ -176,9 +178,8 @@ sidebar:
   - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
   # The recast pipeline: every generated version of every source video.
   - { title: Video,   group: admin, pages: [alt_videos] }
-  # Studio and Directory hold admin pages only, so a visitor never sees them.
-  - { title: Studio,    group: general, pages: [dashboard, applications, agents, builders, tasks, news_index, contents, model_pipeline, body_archetypes, videos] }
   - { title: NFL,       group: general, pages: [nfl_hub, games_season] }
+  # Directory holds admin pages only, so a visitor never sees it.
   - { title: Directory, group: general, pages: [teams, people, docs] }
   # Public on purpose: the App Builder is the funnel's front door and the packages
   # page is where customers compare the tiers.
@@ -190,6 +191,8 @@ sidebar:
   # The mailing list and what is sent to it.
   - { title: Email,     group: basement, pages: [broadcasts, contacts, broadcast_analytics] }
   - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
+  # What was the sidebar's Studio section, less the pages the admin dashboard links.
+  - { title: Studio,    group: basement, pages: [builders, news_index, contents, model_pipeline, body_archetypes, videos] }
 
 sub_navs:
   # The small link row above a board page's title.
