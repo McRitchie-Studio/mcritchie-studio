@@ -20,7 +20,7 @@ test("an owner picks the daily report channel for Turf and the choice persists",
   await expect(page.getByRole("heading", { name: "Turf Monster", level: 1 })).toBeVisible();
   const sidebar = page.locator("#studio-link-sidebar");
   await expect(sidebar.locator("a[href='/applications/turf-monster']")).toHaveCount(1);
-  await expect(sidebar.locator("a[href='/agents/turf-monster/settings']")).toContainText("Turf");
+  await expect(sidebar.locator("a[href='/agents/turf-monster/settings']")).toHaveCount(0);
 
   await page.locator("[data-test='application-cto-settings']").click();
   await expect(page.getByRole("heading", { name: "Turf", level: 1 })).toBeVisible();

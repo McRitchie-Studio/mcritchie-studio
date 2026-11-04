@@ -29,18 +29,27 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
     [ shared, turf ]
   end
 
-  test "[integration] the owner's sidebar names their app and CTO; a non-owner's has neither" do
+  test "[integration] the owner's sidebar names up to two apps, then All apps; the app page links the CTO; a non-owner's has neither" do
     log_in_as(@owner)
     get settings_agent_path("turf-monster")
     assert_response :success
     assert_select "#studio-link-sidebar a[href=?]", application_path("turf-monster"), text: /Turf Monster/
-    assert_select "#studio-link-sidebar a[href=?]", settings_agent_path("turf-monster"), text: /Turf/
+    assert_select "#studio-link-sidebar a[href=?]", settings_agent_path("turf-monster"), count: 0
     assert_select "#studio-link-sidebar a[href=?]", applications_path, count: 0
+
+    get application_path("turf-monster")
+    assert_select "main a[href=?]", settings_agent_path("turf-monster"), text: /Settings/
+    assert_select "main a[href=?]", pipeline_application_path("turf-monster")
 
     AppMembership.create!(app: @cyvasse, user: @owner)
     get applications_path
-    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /Applications/
-    assert_select "#studio-link-sidebar a[href=?]", settings_agents_path, text: /Agents/
+    assert_select "#studio-link-sidebar a[href=?]", application_path("cyvasse"), text: /Cyvasse/
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, count: 0
+
+    AppMembership.create!(app: apps(:mcritchie_studio), user: @owner)
+    get applications_path
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /All apps/
+    assert_select "#studio-link-sidebar a[href^='/applications/']", count: 2
 
     log_in_as(@stranger)
     get root_path
