@@ -168,7 +168,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     sections = sidebar_link_sections
 
-    assert_equal ["Account", "NFL", "Services", "Apps"], sections.map { |section| section.fetch(:title) }
+    assert_equal %w[Account Build], sections.map { |section| section.fetch(:title) }
     labels = sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
     refute_includes labels, "Studio dashboard"
     refute_includes labels, "Admin dashboard"
@@ -178,16 +178,14 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     refute_includes labels, "People"
   end
 
-  test "the App Builder, the packages page and integrations are linked for everyone, signed in or not" do
+  test "a signed-in user's sidebar links the App Builder, packages and integrations; a visitor reaches them from the footer" do
     self.admin_enabled = false
-    [ false, true ].each do |signed_in|
-      self.logged_in_enabled = signed_in
-      services = sidebar_link_sections.find { |section| section.fetch(:title) == "Services" }
+    self.logged_in_enabled = true
+    services = sidebar_link_sections.find { |section| section.fetch(:title) == "Services" }
 
-      assert services, "customers must reach /build and /packages without an account (signed_in=#{signed_in})"
-      assert_equal [ "/build", "/packages", "/integrations" ], services.fetch(:links).map { |link| link.fetch(:href) }
-      assert_equal "App Builder", services.fetch(:links).first.fetch(:label)
-    end
+    assert services, "a signed-in customer reaches /build and /packages from the sidebar"
+    assert_equal [ "/build", "/packages", "/integrations" ], services.fetch(:links).map { |link| link.fetch(:href) }
+    assert_equal "App Builder", services.fetch(:links).first.fetch(:label)
   end
 
   test "admins get a Clients section: app requests, stack and credentials" do
@@ -262,9 +260,13 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   test "a visitor's sidebar leads with Sign In and Chat; a signed-in user's has neither" do
     first = sidebar_link_sections.first
     assert_equal "Account", first.fetch(:title)
-    assert_equal [ [ "Sign In", "/login" ], [ "Chat", visitor_chat_path ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
-    assert_includes first.fetch(:links).last.fetch(:emoji), "/agents/alex.webp"
-    assert_equal "💬", first.fetch(:links).last.fetch(:hover_emoji)
+    assert_equal [ [ "Sign In", "/login" ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
+    assert_equal %w[Account Build], sidebar_link_sections.map { |section| section.fetch(:title) }
+    build = sidebar_link_sections.last.fetch(:links)
+    assert_equal [ "Chat", "Websites Built on Studio" ], build.map { |link| link.fetch(:label) }
+    assert_equal visitor_chat_path, build.first.fetch(:href)
+    assert_includes build.first.fetch(:emoji), "/agents/alex.webp"
+    assert_equal "💬", build.first.fetch(:hover_emoji)
     assert sidebar_link_sections.flat_map { |section| section.fetch(:links) }.none? { |link| link.key?(:desc) }, "a visitor's link is one line"
 
     self.logged_in_enabled = true
