@@ -45,9 +45,9 @@ module LinkTreeHelper
     [ { title: "Account", links: [ { label: "Sign In", href: login_path, emoji: "🔑", hover_emoji: "👋" } ] } ]
   end
 
-  # /chat while it is open to visitors; until then /build, where a visitor can
-  # already chat with Alex. /chat sits behind the admin wall, so linking it
-  # outright would send a visitor to "Not authorized".
+  # /chat while it is open to visitors (AdminWall::PUBLIC holds it today); were it
+  # ever closed, /build, where a visitor can already chat with Alex, instead of a
+  # link that answers "Not authorized".
   def visitor_chat_path
     AdminWall::PUBLIC.fetch("chat", []).include?("index") ? chat_index_path : build_path
   end

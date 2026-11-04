@@ -166,7 +166,7 @@ Public-facing chat interface powered by Claude API. Users can chat with an AI Al
 ### Architecture
 - **ChatController** — `index` renders chat page, `create` accepts JSON `{ message }` and returns `{ response }`. Conversation history stored in `session[:chat_messages]` (last 10 messages).
 - **Chat::AlexResponder** — Service using raw `Net::HTTP` to Claude API. Alex McRitchie persona system prompt. Model: `claude-haiku-4-5-20251001`, max tokens: 1024.
-- **The hub's chat with Alex** — the engine's `studio/agent_chat/chat`, drawn by `contact_submissions/_chat` on `/contact` beside the form. `/chat` redirects there.
+- **The hub's chat with Alex** — the engine's `studio/agent_chat/chat`, drawn by `chat/index` on `/chat`, with one quiet link to the SMS sign-up form at `/contact`.
 
 ### Landing Page
 - **Hero** — Denver skyline background with Ken Burns pan animation (15s linear), page-colour tint overlay for text contrast (navy in dark mode, pale in light).
