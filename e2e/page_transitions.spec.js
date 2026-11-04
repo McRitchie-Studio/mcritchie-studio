@@ -5,6 +5,10 @@
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 
+// The lane runs reduced (playwright.config.js). This file is about motion. A bare
+// test.use({ reducedMotion }) is ignored, so it has to be contextOptions. The reduced spec turns it back with open().
+test.use({ contextOptions: { reducedMotion: "no-preference" } });
+
 const LEFT_OUT = "pt-out-left";
 const LEFT_IN = ["pt-in-from-right", "pt-unfold-right"];
 
@@ -19,11 +23,18 @@ async function record(page, random) {
     }, { capture: true });
     window.__seen = [];
     window.__frames = [];
+    // One entry per page move drawn. __seen keeps names, so it cannot tell one move from two.
+    window.__moves = [];
+    const counted = new WeakSet();
     const tick = () => {
       const running = document.getAnimations().filter((a) => (a.effect?.pseudoElement || "").startsWith("::view-transition"));
       for (const animation of running) {
         const key = `${animation.effect.pseudoElement} ${animation.animationName || ""}`;
         if (!window.__seen.includes(key)) window.__seen.push(key);
+        if (animation.effect.pseudoElement === "::view-transition-old(root)" && (animation.animationName || "").startsWith("pt-") && !counted.has(animation)) {
+          counted.add(animation);
+          window.__moves.push(animation.animationName);
+        }
       }
       if (running.length) {
         const read = (pseudo) => getComputedStyle(document.documentElement, pseudo).transform;
@@ -47,7 +58,7 @@ const settled = (page) => page.evaluate(() => new Promise((done) => document.add
 
 async function visit(page, path) {
   const load = settled(page);
-  await page.evaluate((to) => { window.__seen.length = 0; window.__frames.length = 0; window.Turbo.visit(to); }, path);
+  await page.evaluate((to) => { window.__seen.length = 0; window.__frames.length = 0; window.__moves.length = 0; window.Turbo.visit(to); }, path);
   await load;
   await expect.poll(() => new URL(page.url()).pathname).toBe(path);
 }
@@ -192,4 +203,48 @@ test("a modal armed on turbo:load opens after a move, and takes input", async ({
   await expect(field).toBeFocused();
   await field.fill("Tess");
   await expect(field).toHaveValue("Tess");
+});
+
+// build/_launch stands at the chat's address, and build_launch.js visits that same address, so
+// the two pages share a path. An advance visit brings a new page: the portrait and the caption
+// morph, and no style plays. Seeded one shot (e2e/seed.rb).
+test("the launch panel morphs into the chat at its own address", async ({ browser }) => {
+  const chat = "/applications/launch-panel-probe/chat";
+  const context = await browser.newContext({ storageState: VISITOR });
+  const page = await context.newPage();
+  await record(page, null);
+  await loginWithMagicLink(page, "owner@launch-panel.test");
+  await page.goto(chat);
+  const panel = page.locator("[data-test='build-launch']");
+  await expect(panel, "no panel: the flag is spent, so reseed").toBeVisible();
+  expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), "the panel ran reduced").toBe(false);
+  await page.evaluate(() => {
+    document.addEventListener("turbo:visit", () => { window.__seen.length = 0; window.__moves.length = 0; }, { once: true });
+  });
+  const load = settled(page);
+  await load;
+  await expect(panel).toHaveCount(0);
+  await expect(page.locator("[data-test='agent-shell']")).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe(chat);
+  const names = await seen(page);
+  expect(pageStyles(names), JSON.stringify(names)).toEqual([]);
+  expect(names.some((name) => name.startsWith("::view-transition-group(agent-portrait)")), JSON.stringify(names)).toBe(true);
+  expect(names.some((name) => name.startsWith("::view-transition-group(agent-caption)")), JSON.stringify(names)).toBe(true);
+  await context.close();
+});
+
+// A GET that redirects: Turbo renders the response, then visits the final address with that same
+// response. /contact is the control: one move, so the count can read one.
+test("a GET that redirects moves the page once", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: VISITOR });
+  const page = await context.newPage();
+  await open(page, "/about");
+  await visit(page, "/contact");
+  expect(await page.evaluate(() => window.__moves), "the control").toHaveLength(1);
+  const load = settled(page);
+  await page.evaluate(() => { window.__seen.length = 0; window.__moves.length = 0; window.Turbo.visit("/login"); });
+  await load;
+  expect(new URL(page.url()).pathname).toBe("/signin");
+  expect(await page.evaluate(() => window.__moves)).toHaveLength(1);
+  await context.close();
 });

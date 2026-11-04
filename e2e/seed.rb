@@ -1869,6 +1869,21 @@ countdown_build = Task.create!(title: "Build Launch App countdown-probe", stage:
 countdown_build.update_columns(stage: "building", started_at: countdown_started, metadata: { "devops" => countdown_run.("building", countdown_started).merge("repositories" => [ "countdown-probe" ]) })
 puts "Seeded: a client app whose first version is building (the live pill countdown)"
 
+# The launch panel at its own address (e2e/page_transitions.spec.js): an app with its owner's
+# first visit still to come, so /applications/launch-panel-probe/chat plays build/_launch and
+# then visits itself. One shot: the visit spends the flag, and a reseed arms it again.
+launch_probe_palette = countdown_palette
+launch_probe = App.find_or_create_by!(slug: "launch-panel-probe") do |app|
+  app.assign_attributes(name: "Launch Panel Probe", emoji: "🚀", color: "#0F766E", package_tier: "vibe", theme_colors: launch_probe_palette)
+end
+AppCto.find_or_initialize_by(app_slug: launch_probe.slug).tap do |cto|
+  cto.assign_attributes(name: "Blast", portrait: "harbor", palette: launch_probe_palette, plan: "A launch panel probe.", facts: {}, launch_animation_pending: true)
+  cto.save!
+end
+launch_probe_owner = User.find_or_create_by!(email: "owner@launch-panel.test") { |user| user.assign_attributes(name: "Launch Owner", role: "viewer") }
+AppMembership.find_or_create_by!(app_slug: launch_probe.slug, user_slug: launch_probe_owner.slug) { |m| m.role = "owner" }
+puts "Seeded: an app whose owner has not seen its launch panel"
+
 # A client app on the Studio template (e2e/client_app_studio_kit.spec.js; docs/agents/
 # system/client-app-host.md, "The Studio template"): kit-demo holds a /build request
 # and a live bundle whose page carries only its content, so the shared host wraps it
