@@ -8,7 +8,7 @@ Turbo page swaps materialize behind the current page and present with a view
 transition — one render per navigation, no stale-preview flash. Engine-owned
 since studio-engine 0.24 (the former app-local copy is deleted):
 
-- `config/initializers/studio.rb` — `config.smooth_load = true` opts in; the
+- `config/initializers/studio.rb` — `config.page_transition_direction` (with `config.smooth_load = true` kept) opts in; the
   engine head then renders `layouts/studio/_smooth_load` (the `view-transition`
   meta Turbo 8 wraps swaps in `document.startViewTransition` +
   `turbo-cache-control: no-preview`). `config.nav_spinner_min_ms = 300` drops
@@ -18,19 +18,40 @@ since studio-engine 0.24 (the former app-local copy is deleted):
   transition group (the class stays on the app layout's header). **Exactly one
   `.vt-pinned-header` per page** — a duplicate `view-transition-name` makes the
   browser silently skip the whole transition.
-- `app/assets/tailwind/application.css` — ONE rule remains app-side: the
-  `studio-header` no-cross-fade fix (`animation: none`), which engine 0.24.0's
-  CSS lacks. Task `engine-navbar-self-pins` lifts it into the engine.
-- `test/integration/smooth_load_layout_test.rb` — request-level proof the layout
-  wires the metas (the component test alone can't see the render line dropped);
-  `test/views/smooth_load_component_test.rb` proves the engine partial honors
-  the `Studio.smooth_load` toggle.
+- **The hub's own direction.** `config.page_transition_direction = :left`: every page
+  change leaves to the left, in a 700ms `fade-left` or `unfold-right`, Back included
+  (studio-engine `docs/PAGE_TRANSITIONS.md`). The direction turns smooth-load on by itself.
+- **An inline `view-transition-name` needs `data-vt-morph="<the name>"`**, or the
+  element floats still over the moving page. Two pages that share a marked name play
+  the engine's fade and the morph, as /build, /build/:token and the app chat do.
+  `test/views/page_transition_adoption_test.rb` scans every view for it.
+- **The launch panel morphs at its own address.** `build/_launch` stands at the chat's path
+  and `build_launch.js` visits that path. It has to stay an advance visit: an advance to the
+  same path keeps a shared marked name (engine 0.125.0), and a refresh stays silent.
+- **A GET that redirects moves once**: `/login`, `/signup`, `/logout` (engine 0.125.0).
+  Turbo renders the response, then visits the final address with that response. The second
+  visit draws nothing, and it adds about 300ms before `turbo:load`.
+- **A full load moves too** (engine 0.125.0): a `data-turbo="false"` link or form to another
+  path plays the same pair, with the chrome held. A reload, a same-path form (the logo kit's
+  PATCH forms) and the magic link's consume page load plainly.
+- **`turbo:load` comes when the move ends**, about 700ms after the swap, and clicks do
+  nothing until then. `turbo:render` and Stimulus `connect` come at the swap. What
+  shapes the arriving page has to run at the swap: `agent_shell.js` sizes the shell on
+  `turbo:render`, and `agent_reveal.js` remembers the thread there. The others listen on
+  `turbo:load` by choice: they start motion or wire a control, and either can wait
+  for the end of the move (`scroll_tab_stop.js`, the first-name ask in the layout).
+- `app/assets/tailwind/application.css` holds only the agent elements' morph timing.
+- `test/integration/smooth_load_layout_test.rb` is the request-level proof that the
+  layout wires the metas (the component test alone cannot see the render line dropped);
+  `test/views/smooth_load_component_test.rb` proves the engine partial honors both
+  settings; `e2e/page_transitions.spec.js` shows what a browser plays.
 
-Slow-load feedback is Turbo's built-in progress bar (default 500ms delay).
-Browsers without view-transition support get an instant swap; under
-`prefers-reduced-motion` Turbo skips the transition itself. e2e runs with
-`reducedMotion: "reduce"` (playwright.config.js) so clicks never land
-mid-animation.
+Slow-load feedback is Turbo's built-in progress bar (default 500ms delay). Browsers
+without view-transition support get an instant swap, and under `prefers-reduced-motion`
+Turbo skips the transition. So the e2e lane sets `contextOptions: { reducedMotion:
+"reduce" }` in `playwright.config.js`. A bare `use.reducedMotion` does nothing. A spec
+about motion opts out with `page.emulateMedia({ reducedMotion: "no-preference" })`, or
+for a whole file with `test.use({ contextOptions: { reducedMotion: "no-preference" } })`.
 
 ## Modal host — this app renders the ENGINE's
 

@@ -2,7 +2,6 @@
 <%# /build: the agent shell (agent_chats/_shell) with Alex at its head. The first message
     answers in place (build/_first_form, BuildController#create): the thread grows here,
     the address becomes /build/<token>, and the page never reloads. %>
-<% content_for :head, tag.meta(name: "view-transition", content: "same-origin") %>
 <% turbo_refreshes_with method: :morph, scroll: :preserve %>
 
 <div data-test="build-page">

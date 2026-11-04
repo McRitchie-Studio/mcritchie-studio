@@ -57,7 +57,7 @@ answers on the summary card as a Turbo Stream with the reason and a next step, n
 pages are the agent shell (`app/views/agent_chats/_shell.html.erb`) and carry
 `<meta name="view-transition" content="same-origin">`; the shell names its portrait
 (`agent-portrait`), caption, status card (`agent-status`) and chat box
-(`agent-composer`) on every page, so Alex's portrait morphs into the new CTO's, the draft's
+(`agent-composer`) on every page, each marked with `data-vt-morph`, so Alex's portrait morphs into the new CTO's, the draft's
 Agent · Theme · Domain card into the app's Building · Releasing · Deploying card (in the
 palette's primary), and the rest cross-fades. Under reduced motion it is an instant swap.
 

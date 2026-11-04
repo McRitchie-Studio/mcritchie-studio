@@ -10,6 +10,8 @@ class SmoothLoadLayoutTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "meta[name='view-transition'][content='same-origin']", count: 1
     assert_select "meta[name='turbo-cache-control'][content='no-preview']", count: 1
+    assert_select "meta[name='page-transition-direction'][content='left']", count: 1
+    assert_includes response.body, %(import "studio/page_transitions"), "the engine's script loads with the direction"
 
     # The invariant the whole convention rests on: a duplicate
     # view-transition-name silently disables every transition on the page.

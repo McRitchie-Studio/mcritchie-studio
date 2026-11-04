@@ -19,11 +19,11 @@
               class="build-launch max-w-3xl mx-auto px-4 pt-8 sm:pt-12 pb-10 flex flex-col items-center gap-6 text-center <%= ClientCtoHelper::PALETTE_SWITCH %>"
               style="<%= client_cto_palette_style(app_cto) %>"
               data-href="<%= href %>" data-test="build-launch" data-app="<%= app_cto.app_slug %>">
-  <div class="build-launch-portrait cta-glow rounded-full" style="view-transition-name: agent-portrait;" data-test="build-launch-portrait">
+  <div class="build-launch-portrait cta-glow rounded-full" style="view-transition-name: agent-portrait;" data-vt-morph="agent-portrait" data-test="build-launch-portrait">
     <%= render "applications/cto_avatar", cto: cto, size: "xl" %>
   </div>
   <div class="space-y-1 min-w-0 max-w-full">
-    <p class="text-sm text-secondary break-words" style="view-transition-name: agent-caption;" data-test="build-launch-caption">
+    <p class="text-sm text-secondary break-words" style="view-transition-name: agent-caption;" data-vt-morph="agent-caption" data-test="build-launch-caption">
       <span class="font-semibold text-heading"><%= app_cto.name %></span> · CTO of <%= app_cto.app.name %>
     </p>
     <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words" data-test="build-launch-app"><%= app_cto.app.name %></h1>

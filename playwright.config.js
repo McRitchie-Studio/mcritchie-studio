@@ -91,10 +91,12 @@ const config = studioPlaywrightConfig({
   forbidOnly: !!process.env.CI,
   ...signedIn.setup,
   use: {
-    // The smooth-load convention animates every Turbo page swap; under
-    // prefers-reduced-motion Turbo never starts the view transition at all,
-    // so e2e gets instant swaps and clicks never land mid-animation.
-    reducedMotion: "reduce",
+    // The hub's page transition runs 700ms on every Turbo page change, and the browser
+    // swallows clicks for all of it. Under prefers-reduced-motion Turbo starts no view
+    // transition, so e2e gets instant swaps. It has to be contextOptions: Playwright does
+    // not read a bare `use.reducedMotion`, so the page never saw it (MEASURED,
+    // e2e/deployments_exit_fx.spec.js). A spec about motion opts out with page.emulateMedia.
+    contextOptions: { reducedMotion: "reduce" },
     ...signedIn.use,
   },
   webServer: {

@@ -33,6 +33,6 @@
          data-agent-shell data-shell-size="<%= agent_shell_size(turns) %>"
          data-shell-medium-share="<%= AgentShellHelper::MEDIUM_SHARE %>" data-shell-compact-share="<%= AgentShellHelper::COMPACT_SHARE %>">
   <div class="agent-shell-head" data-test="agent-shell-head"><%= head %></div>
-  <div class="agent-shell-status" style="view-transition-name: agent-status;" data-test="agent-shell-status"><%= status %></div>
+  <div class="agent-shell-status" style="view-transition-name: agent-status;" data-vt-morph="agent-status" data-test="agent-shell-status"><%= status %></div>
   <div class="agent-shell-chat" data-test="agent-shell-chat"><%= chat %></div>
 </section>

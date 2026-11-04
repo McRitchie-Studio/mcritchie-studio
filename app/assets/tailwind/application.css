@@ -616,9 +616,6 @@
   @media (max-width: 767px) {
     .nav-shell [data-nav-account] [data-nav-name-phone] { width: 2.75rem; max-width: 2.75rem; }
     .nav-shell [data-nav-tools][data-nav-rows="1"] > div:first-child { padding-inline: 0 !important; }
-    /* The engine's phone row draws the gear first through 0.123.0. Delete this
-       rule when the hub locks the engine with PR 514, which reorders the row. */
-    .nav-shell > .nav-row ~ div [data-link-sidebar-trigger] { order: 1; }
     /* The phone row's gear lights as the bar's gear does (engine.css, THE ACCOUNT
        GROUP). The row sits outside that group, and the gear's own hover fill is
        the row's colour, so it would show only a change of grey. Here the gear, the
@@ -649,7 +646,9 @@
     visibility: hidden;
     @apply shrink-0 items-center gap-2 overflow-hidden;
   }
-  .nav-shell[style*="--nav-p"]:not([style*="--nav-p: 0.0000"]) .nav-phone-tools { visibility: visible; }
+  /* The colon: the header's inline style also holds calc(... var(--nav-p, 0) ...), from
+     the first paint, and a match on that showed the pair at rest as two unseen Tab stops. */
+  .nav-shell[style*="--nav-p:"]:not([style*="--nav-p: 0.0000"]) .nav-phone-tools { visibility: visible; }
   @media (max-width: 767px) {
     .nav-shell:has([data-nav-account]) { --nav-ramp: 180px; }
     .nav-shell:has([data-nav-account]) > .nav-row ~ div {
@@ -684,23 +683,6 @@
      link-sidebar partial); the app-side copies are retired. */
 }
 
-/* ——— Smooth-load convention — engine-owned since studio-engine 0.24 ———
-   The metas render from layouts/studio/_smooth_load (Studio.smooth_load) and
-   the transition styling ships in the engine's engine.css, including the
-   .vt-pinned-header @utility. ONE rule stays app-side: engine 0.24.0's CSS
-   lacks the studio-header no-cross-fade fix (added here in PR #681's rework
-   after the engine shipped). Without it, the UA default runs a 250ms
-   plus-lighter blend between the header's two snapshots, and on any navigation
-   from a scrolled page (collapsed 100px header → expanded 132px at top) the
-   wordmark and buttons draw twice, ~16px apart. animation: none shows the
-   incoming header immediately while the group box still morphs its height.
-   Task engine-navbar-self-pins lifts this rule into the engine; delete this
-   block when the engine version that carries it lands. */
-::view-transition-old(studio-header),
-::view-transition-new(studio-header) {
-  animation: none;
-}
-
 /* ——— Site footer: the Contact column keeps its width ———
    studio-engine renders the footer (config/initializers/studio.rb holds the
    facts) and lays its link columns out in EQUAL tracks. This site's first
@@ -733,26 +715,15 @@ footer[data-site-footer] .ftr-link[href^="mailto:"] { overflow-wrap: normal; }
 }
 
 /* The agent shell's page moves (/build, /build/:token, /applications/:slug/chat;
-   app/views/agent_chats/_shell.html.erb). Turbo runs a view transition when both
-   pages carry <meta name="view-transition" content="same-origin">; the shell names
-   its portrait, caption, status card and chat box, so each glides to its place on
-   the next page (Alex's portrait becomes the CTO's) while the rest cross-fades.
-   Turbo skips the transition under prefers-reduced-motion; this rule holds the
-   same line for any other caller. */
+   app/views/agent_chats/_shell.html.erb). The shell marks its portrait, caption,
+   status card and chat box with data-vt-morph, so two of these pages share names:
+   the engine plays its fade and no page style, and each element glides to its place
+   on the next page (Alex's portrait becomes the CTO's). To any other page the hub's
+   left style plays and they move with the page (studio-engine docs/PAGE_TRANSITIONS.md).
+   engine.css holds reduced motion. */
 ::view-transition-group(agent-portrait),
 ::view-transition-group(agent-status),
 ::view-transition-group(agent-composer) {
   animation-duration: 320ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
-}
-::view-transition-old(root),
-::view-transition-new(root) {
-  animation-duration: 200ms;
-}
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*),
-  ::view-transition-old(*),
-  ::view-transition-new(*) {
-    animation: none !important;
-  }
 }
