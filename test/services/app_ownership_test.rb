@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] AppOwnership: who may see which app and CTO, the CTO map read from
-# config/cto_reports.yml, the owner's sidebar rule (singular / plural / none),
+# config/cto_reports.yml, the owner's sidebar rule (up to two apps, All apps third),
 # and the report channels a CTO's picker offers (docs/agents/system/app-owners.md).
 class AppOwnershipTest < ActiveSupport::TestCase
   setup do
