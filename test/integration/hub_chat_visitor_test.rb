@@ -23,6 +23,14 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='agent-chat-caption']", text: /Alex\s+·\s+AI Builder/
   end
 
+  test "[component] /chat's heading has the weight of /build's" do
+    get chat_index_path
+    assert_select "h1.font-bold[data-test='chat-heading']", count: 1
+
+    get build_path
+    assert_select "h1.font-bold", text: "Want to Build Something?", count: 1
+  end
+
   test "[component] /chat is only the chat: no form, no support rows, and one link to the sign-up" do
     get chat_index_path
     main = css_select("[data-test='alex-chat-page']").first
