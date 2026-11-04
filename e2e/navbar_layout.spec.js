@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, VISITOR } = require("./helpers");
+const { ADMIN_STATE } = require("./global-setup");
 
 const VIEWPORTS = [
   { width: 1366, height: 800 },
@@ -344,6 +345,106 @@ test("a visitor's phone row gear lights on hover too", async ({ browser }) => {
   await page.locator(ROW_GEAR).hover();
   await expectGearLit(page, { group: false });
   await context.close();
+});
+
+// A TOUCH DEVICE. A tap leaves the browser's :hover on what was tapped until the next
+// tap lands elsewhere, so a highlight read from :hover stays lit after the panel is
+// closed by tapping its trigger again. A touch device shows no highlight, open or closed.
+async function touchPhone(browser) {
+  const context = await browser.newContext({
+    storageState: ADMIN_STATE, viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto("/tasks");
+  return { context, page };
+}
+
+const touchLight = (page) => page.evaluate(([gearSelector, avatarSelector]) => {
+  const gear = document.querySelector(gearSelector);
+  const probe = document.createElement("span");
+  document.body.appendChild(probe);
+  const token = (name) => {
+    probe.style.color = `var(${name})`;
+    return getComputedStyle(probe).color;
+  };
+  const light = {
+    name: getComputedStyle(document.querySelector("header [data-nav-name]")).color,
+    gear: getComputedStyle(gear).color,
+    turn: getComputedStyle(gear.querySelector("svg")).transform,
+    glow: getComputedStyle(document.querySelector(avatarSelector)).boxShadow,
+    open: gear.getAttribute("aria-expanded"),
+    restName: token("--color-text"),
+    restGear: token("--color-text-secondary"),
+  };
+  probe.remove();
+  return light;
+}, [ROW_GEAR, AVATAR]);
+
+async function expectNothingLit(page, open) {
+  await expect.poll(async () => {
+    const light = await touchLight(page);
+    return light.open === String(open) && light.name === light.restName && light.gear === light.restGear &&
+      light.turn === "none" && light.glow === "none";
+  }, { message: `nothing lit with the panel ${open ? "open" : "closed"}` }).toBe(true);
+}
+
+test("on touch, tapping the name twice leaves nothing lit, open or closed", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  const name = page.locator("header [data-nav-account] [data-nav-name]");
+  await name.tap();
+  await expectNothingLit(page, true);
+  await name.tap();
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, tapping the gear twice leaves nothing lit, open or closed", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator(ROW_GEAR).tap();
+  await expectNothingLit(page, true);
+  await page.locator(ROW_GEAR).tap();
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, the panel's close button leaves nothing lit", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator("header [data-nav-account]").tap();
+  await expectNothingLit(page, true);
+  await page.locator("#studio-link-sidebar-mobile [aria-label*='Close' i]").tap();
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, a tap outside the panel leaves nothing lit", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator("header [data-nav-account]").tap();
+  await expectNothingLit(page, true);
+  const row = await page.locator(PHONE_ROW).boundingBox();
+  await page.touchscreen.tap(row.x + 20, row.y + row.height / 2);
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, Escape leaves nothing lit", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator("header [data-nav-account]").tap();
+  await expectNothingLit(page, true);
+  await page.keyboard.press("Escape");
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+// The control: the touch rule leaves a mouse alone.
+test("a desktop mouse still lights the bar's gear, name and avatar", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tasks");
+  await page.mouse.move(5, 600);
+  await page.locator("header [data-nav-tools] [data-link-sidebar-trigger]").filter({ visible: true }).first().hover();
+  await expect.poll(() => page.evaluate((avatar) => getComputedStyle(document.querySelector(avatar)).boxShadow, AVATAR)).not.toBe("none");
+  const { primary } = await accountLight(page);
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("header [data-nav-name]")).color)).toBe(primary);
 });
 
 // Each band, at rest and scrolled: nothing wraps or leaves the screen, and the bar

@@ -671,6 +671,20 @@
     .nav-shell[style*="--nav-p: 1.0000"]:has([data-nav-account]) > .nav-row ~ div { visibility: hidden; }
   }
 
+  /* A TOUCH DEVICE HAS NO HOVER. A tap leaves :hover on what was tapped until the
+     next tap lands elsewhere, so the account group's raw :hover (engine.css, THE
+     ACCOUNT GROUP, and this file's phone row) stayed lit after the panel closed.
+     Here the group shows no highlight, open or closed. Only this block needs
+     !important: it has to beat the engine's rule, whatever its layer. A keyboard
+     keeps the engine's focus ring. Delete this block if the engine gates the
+     group on (hover: hover). */
+  @media (hover: none) {
+    .nav-shell [data-nav-name] { color: var(--color-text) !important; }
+    .nav-shell [data-link-sidebar-trigger] { color: var(--color-text-secondary) !important; }
+    .nav-shell [data-link-sidebar-trigger] svg { transform: none !important; }
+    .nav-shell [data-nav-account] > [aria-hidden] > * { box-shadow: none !important; }
+  }
+
   /* Theme CSS custom properties are now engine-generated via studio_theme_css_tag */
   /* [x-cloak], .studio-link-sidebar-layer, and the html overflow-x clip slide
      guard are engine-owned since studio-engine 0.30 (engine.css + the
