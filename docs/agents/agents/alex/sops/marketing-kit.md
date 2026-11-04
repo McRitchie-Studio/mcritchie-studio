@@ -207,27 +207,31 @@ What a publish does to what is already there:
 ## Doc masters
 
 A **doc master** is the editable Google Doc of one document Alex McRitchie asked
-for: an agreement, a letter, a policy. Its home is the brand's `<Brand> Doc Masters`
-folder, outside the kit, because a kit holds nothing confidential and a doc master
-may.
+for: an agreement, a letter, a policy. Its home is the Workspace of the entity that
+signs or owns it, which may not be the brand it concerns. Keep it outside the kit,
+because a kit holds nothing confidential and a doc master may. Keep one master.
 
-1. Work out which brand the document serves.
-2. Start from the kit's `<SHORT> Template — General` in `05 Templates`. Find it
-   in Drive; a local search does not prove it is missing. Drop the template's
+1. Work out which brand the document serves, for the template, and which entity
+   signs or owns it, for the home. Use that entity's `team@` account as the owner.
+2. Start from the brand kit's `<SHORT> Template — General` in `05 Templates`. Find
+   it in Drive; a local search does not prove it is missing. Drop the template's
    parts that do not fit, such as a photo on a contract.
-3. Put the Google Doc in the Doc Masters folder, and hand back its Drive link.
+3. Put the Google Doc in a folder named for what it holds, such as
+   `<Entity> Records/Employment Agreements`, and hand back its Drive link.
 4. Share by name. Do not share the folder with a whole domain. Do not move a
    doc master into a kit.
+5. If it must also show in another folder, add a shortcut there. Do not copy it.
+   See [Shortcuts](#shortcuts).
 
 The Drive credential holds `drive.readonly` and `drive.file`. It can read what
-its subject can see, and it can write only to what it created. So a folder a person
-made by hand either is invisible to it or refuses every write. The Google Picker
-is not a way round this: the credential acts by domain-wide delegation and has no
-Picker step. The credential must create the folder itself. A person can then move
-that folder wherever it belongs; the credential keeps its access.
+its subject can see. A folder a person made by hand is invisible until it is shared
+with the subject. The Google Picker is not a way round this: the credential acts by
+domain-wide delegation and has no Picker step. So let the credential create the
+folder for a doc master. A person can then move that folder wherever it belongs;
+the credential keeps its access.
 
-No command does this yet. Use `Workspace::DriveClient` with the kit's
-`drive.subject`, from a checkout with a development database, as the publish does:
+No command does this yet. Use `Workspace::DriveClient` with the owning entity's
+`team@` account, from a checkout with a development database, as the publish does:
 
 1. Search with `files_list` for the exact name, the folder mime type and
    `trashed = false`. If one folder matches, use it. Do not create a second one
@@ -237,6 +241,34 @@ No command does this yet. Use `Workspace::DriveClient` with the kit's
 3. Share it with `permissions_create`, by name. Ask Alex McRitchie first.
 4. Create the Doc with `files_create`, sending HTML built from the template's
    export, so the Doc is a native Google Doc.
+
+### Shortcuts
+
+A shortcut shows a master folder or file in another folder, and it opens the one
+master. To add one, the account needs Editor on the destination folder and must be
+able to see the target. `DriveClient#files_create` has no shortcut option, so call
+its `service` directly:
+
+```ruby
+file = Google::Apis::DriveV3::File.new(
+  name: "Employment Agreements",
+  mime_type: "application/vnd.google-apps.shortcut",
+  parents: [destination_folder_id],
+  shortcut_details: Google::Apis::DriveV3::File::ShortcutDetails.new(target_id: master_id)
+)
+client.service.create_file(file, fields: "id", supports_all_drives: true)
+```
+
+- **It is one master.** On 2026-11-04, across two Workspaces, an edit made by the
+  owner read back through the other account.
+- **It grants no access.** Anyone not on the master folder reaches the access screen.
+  Add each person to the master by name as well. Ask Alex McRitchie first.
+- **Hand-made folders can work.** On 2026-11-04, with Editor on a folder a person
+  made, this credential added a shortcut. Ordinary files in such a folder are not
+  tested; the [rule above](#doc-masters) to let the credential create the folder
+  still stands for them.
+- **View-only destination:** a person with edit access adds the shortcut by hand:
+  right-click the master, then **Organize > Add shortcut**.
 
 ## Done when
 
