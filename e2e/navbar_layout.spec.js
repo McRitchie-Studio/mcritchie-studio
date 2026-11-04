@@ -184,27 +184,40 @@ async function shownName(page) {
   throw new Error(`no element in the header draws the name "${text}"`);
 }
 
-for (const width of [390, 700]) {
-  for (const [state, y] of [["at rest", 0], ["scrolled", 1500]]) {
-    test(`at ${width}px ${state}, the name lights the avatar and opens what the avatar opens`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 844 });
-      await page.goto("/tasks");
-      await page.evaluate((top) => window.scrollTo(0, top), y);
-      if (y) await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
-      await page.mouse.move(5, 500);
-      await expect.poll(async () => (await accountLight(page)).glow).toBe("none");
+// Each spec is its own bare declaration, so the e2e census counts it.
+async function expectNameLightsAndOpens(page, width, y) {
+  await page.setViewportSize({ width, height: 844 });
+  await page.goto("/tasks");
+  await page.evaluate((top) => window.scrollTo(0, top), y);
+  if (y) await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
+  await page.mouse.move(5, 500);
+  await expect.poll(async () => (await accountLight(page)).glow).toBe("none");
 
-      const name = await shownName(page);
-      await name.hover();
-      await expect.poll(async () => (await accountLight(page)).glow).not.toBe("none");
-      const lit = await accountLight(page);
-      await expect.poll(() => name.evaluate((el) => getComputedStyle(el).color)).toBe(lit.primary);
+  const name = await shownName(page);
+  await name.hover();
+  await expect.poll(async () => (await accountLight(page)).glow).not.toBe("none");
+  const lit = await accountLight(page);
+  await expect.poll(() => name.evaluate((el) => getComputedStyle(el).color)).toBe(lit.primary);
 
-      await name.click();
-      await expect(page.locator("header [data-nav-account]")).toHaveAttribute("aria-expanded", "true");
-    });
-  }
+  await name.click();
+  await expect(page.locator("header [data-nav-account]")).toHaveAttribute("aria-expanded", "true");
 }
+
+test("at 390px at rest, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 390, 0);
+});
+
+test("at 390px scrolled, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 390, 1500);
+});
+
+test("at 700px at rest, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 700, 0);
+});
+
+test("at 700px scrolled, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 700, 1500);
+});
 
 test("below 768px scrolled, the theme toggle draws left of the gear, and both left of the name", async ({ page }) => {
   for (const width of PHONE_WIDTHS) {
