@@ -30,10 +30,10 @@ class AdminLinkPreviewPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-link-preview-card-description]", text: "Saved description."
   end
 
-  test "the hub's admin sidebar links the page" do
-    get admin_link_preview_path
+  test "the hub's Basement links the page" do
+    get admin_basement_path
     assert_response :success
 
-    assert_select "a[href='/admin/link_preview']", minimum: 1
+    assert_select "[data-link-hub] a[href='/admin/link_preview']", minimum: 1
   end
 end
