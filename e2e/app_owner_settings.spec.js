@@ -1,6 +1,6 @@
 // [e2e] An app owner sets their CTO's daily report channel (docs/agents/system/app-owners.md).
 // owner@turf.test is a plain viewer who owns Turf Monster: signed in, the sidebar
-// names the app and its CTO ("Turf"); the CTO's settings page offers the shared
+// names the app, whose page links its CTO ("Turf"); the settings page offers the shared
 // bot's postable channels; they pick #cto-reports, save, and the choice persists.
 // Another app's page is a 404. At phone width nothing runs off the side.
 //
