@@ -76,7 +76,7 @@ class BuildController < ApplicationController
   LAUNCH_ID = "build-launch".freeze
   # The intake agent as the page names it. The soul slug stays BuildIntake.soul.
   AGENT_NAME = "Alex".freeze
-  AGENT_ROLE = "AI build agent".freeze
+  AGENT_ROLE = "AI Builder".freeze
 
   # Every app requested through the funnel, newest first. ?status= narrows it;
   # the default hides drafts (a prompt whose sender never signed in) behind
