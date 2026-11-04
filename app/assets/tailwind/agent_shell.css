@@ -242,3 +242,14 @@
   }
   .agent-shell-leaving { transition: none; }
 }
+
+/* /chat's heading, at /build's size. It stands over an empty thread and leaves with the
+   engine's empty line, which is the small line under it. */
+.chat-page-heading {
+  font-size: clamp(2.25rem, 10vw, 3rem);
+  line-height: 1.1;
+  margin-bottom: -2.5rem;
+}
+[data-voice-chat-page]:has([data-agent-chat-log] > :nth-child(2)) [data-agent-chat-cards] {
+  display: none;
+}

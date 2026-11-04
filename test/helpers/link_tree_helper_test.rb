@@ -263,7 +263,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal [ [ "Sign In", "/login" ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
     assert_equal %w[Account Build], sidebar_link_sections.map { |section| section.fetch(:title) }
     build = sidebar_link_sections.last.fetch(:links)
-    assert_equal [ "Chat", "Websites Built on Studio" ], build.map { |link| link.fetch(:label) }
+    assert_equal [ "Chat", "Portfolio" ], build.map { |link| link.fetch(:label) }
     assert_equal "/chat", build.first.fetch(:href)
     assert_includes build.first.fetch(:emoji), "/agents/alex.webp"
     assert_equal "💬", build.first.fetch(:hover_emoji)

@@ -59,7 +59,7 @@ pages:
   contact_form:   { page: "contact_submissions#new", audience: public, label: Contact }
   links:          { page: "links#index",             audience: public, label: Links }
   chat_index:     { page: "chat#index",              audience: public, label: Chat }
-  websites:       { page: "websites#index",          audience: public, label: Websites Built on Studio, emoji: "🌐", hover_emoji: "🚀" }
+  websites:       { page: "websites#index",          audience: public, label: Portfolio, emoji: "🌐", hover_emoji: "🚀" }
   schedule_index: { page: "schedule#index",          audience: public, label: Schedule a call }
 
   # ── NFL ──────────────────────────────────────────────────────────────────

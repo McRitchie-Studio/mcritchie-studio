@@ -22,7 +22,7 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     assert_select "#{panel} a", text: /Sign In/, count: 1
     assert_select "#{panel} a[href='#{chat_href}']", text: /Chat/, count: 1
     assert_select "#{panel} a[href='#{chat_href}'] img[src*='alex']", count: 1
-    assert_select "#{panel} a[href='#{websites_path}']", text: /Websites Built on Studio/, count: 1
+    assert_select "#{panel} a[href='#{websites_path}']", text: /Portfolio/, count: 1
     assert_select "#{panel} a span.text-xs", count: 0
     assert_select "#{panel} a", text: /Turf Monster/, count: 0
   end
