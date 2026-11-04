@@ -1,4 +1,4 @@
-// [e2e] Talk to Alex by voice on /contact (task talk-to-alex-by-voice; epic
+// [e2e] Talk to Alex by voice on /chat (task talk-to-alex-by-voice; epic
 // .agents/epics/studio-voice.md, card 4). The page is the engine's agent chat on
 // the admin's own thread with Alex (chat:alex:<user id>), with the engine's
 // hold-to-talk recorder and microphone chip under it (chat/_voice,
@@ -96,7 +96,7 @@ async function openChat(page) {
   // the thread has to wait for that poll, or an earlier spec's turn lands after the
   // count and reads as a second send.
   const firstPoll = page.waitForResponse((response) => response.url().includes("/agent_chat/turns"));
-  await page.goto("/contact");
+  await page.goto("/chat");
   await firstPoll;
   await expect(page.locator(CHAT)).toHaveAttribute("data-agent-chat-ready", "true");
   await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));

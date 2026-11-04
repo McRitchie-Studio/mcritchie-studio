@@ -2037,7 +2037,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   addresses, phone numbers or personal email; family only as written (Lauren, Margot, their
   birthday months); no commitment of his time, prices or contracts beyond what is published;
   the Hormozi floor. The page is public by construction, so these threads stay answered at
-  the public audience. The session-only `Chat::AlexResponder` (`POST /chat`, admin-only, no caller in the app) prints the same block.
+  the public audience. The session-only `Chat::AlexResponder` (`POST /chat`) prints the same block.
 - **Who answers.** The person's role, as everywhere, and the public on the public-intake
   soul's chat threads: `Answerers#intake?` and its SQL guard answer `chat:alex:` as they
   answer `web:build:`, a prefix built in code. Another soul's public row is `held`, so Turf on a satellite answers only an answered role (today the owner's email) until an operator releases a row or Alex McRitchie opens it to the public.
@@ -2063,18 +2063,16 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   and `person.anon_token` are filtered (`config/initializers/filter_parameter_logging.rb`).
 - **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked
   posted with no broadcast and the typing phase is kept on the row for the poll.
-- **The hub's own page: `/contact`** (tasks `chat-knows-who-is-asking`, `one-contact-page`; open to
-  everyone; `/chat` answers a 301 to it). The engine
-  chat (`studio/agent_chat/chat`, soul `alex`; `Studio.agent_chat_souls = %w[alex]`), beside the
-  contact form, on the
+- **The hub's own page: `/chat`** (task `chat-knows-who-is-asking`; open to everyone). The engine
+  chat (`studio/agent_chat/chat`, soul `alex`; `Studio.agent_chat_souls = %w[alex]`) on the
   person's `chat:alex:<user id>` thread, or a visitor's `chat:alex:anon:<digest>`. The row's
-  `envelope.viewer` (`AgentChat::Viewer`: visitor, member, admin) sets the prompt's tone and grants nothing. A row from this page (`via: agent_chat`, app `mcritchie-studio`, soul `alex`) also carries `ContextBuilder::CONTACT_PAGE_RULE` at every tier: ask what brought the person here, keep sales and builds in the chat, gather a support problem and hand it to the form or team@mcritchie.studio, point text messages at the form, and never collect SMS consent, which only the form's boxes record. It grants nothing. Its browser calls, `POST /agent_chat/messages`
+  `envelope.viewer` (`AgentChat::Viewer`: visitor, member, admin) sets the prompt's tone and grants nothing. A row from this page (`via: agent_chat`, app `mcritchie-studio`, soul `alex`) also carries `ContextBuilder::HUB_CHAT_RULE` at every tier: ask what brought the person here, keep sales and builds in the chat, gather a support problem and hand it to team@mcritchie.studio or the form, point text messages at the sign-up form at `/contact`, and never collect SMS consent, which only that form's boxes record. It grants nothing. Its browser calls, `POST /agent_chat/messages`
   and `GET /agent_chat/turns`, are answered IN-PROCESS by `HubAgentChatsController` (drawn
   before `Studio.routes`, which draws the same paths to the satellite proxy), through the
   same `AgentChat::Ingest` and `Turns`, app `mcritchie-studio` (`web: apps:`). No
   credential exists for that slug. The audience rule above holds here too.
 - **Spoken messages** (epic `.agents/epics/studio-voice.md`, card 4). Under the chat on the
-  hub's `/contact`, the engine's hold-to-talk recorder and microphone chip
+  hub's `/chat`, the engine's hold-to-talk recorder and microphone chip
   (`chat/_voice`, `app/javascript/voice_chat.js`). A take is embedded on the device when
   the user has a saved voice of the app's embedder, posted to the engine's
   `POST /voice/takes` (OpenAI under `STUDIO_VOICE_OPENAI_API_KEY`; the mock on QA, in tests

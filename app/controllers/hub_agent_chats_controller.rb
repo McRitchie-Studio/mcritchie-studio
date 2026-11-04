@@ -9,7 +9,7 @@ require "ipaddr"
 #   POST /agent_chat/messages   soul, text, voice (optional)   201 {turn, voice} · 422 · 429 · 404
 #   GET  /agent_chat/turns      soul, after, limit             200 {turns, pending}
 #
-# The page is /contact (contact_submissions/_chat), the hub's own chat with Alex on the
+# The page is /chat (ChatController#index), the hub's own chat with Alex on the
 # engine primitive: thread chat:<soul>:<user id> (AgentChat), the same thread a
 # satellite's chat with Alex reaches for this person.
 # Open to everyone (AdminWall::PUBLIC_ACTIONS). The session names a user with a proven

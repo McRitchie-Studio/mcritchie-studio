@@ -1,4 +1,4 @@
-# Talk to Alex by voice on /contact (epic .agents/epics/studio-voice.md, card 4;
+# Talk to Alex by voice on /chat (epic .agents/epics/studio-voice.md, card 4;
 # chat/_voice). The words a person reads about where their voice goes, and which
 # embedder (if any) the page runs on a take so the speaker can be named.
 module VoiceChatHelper

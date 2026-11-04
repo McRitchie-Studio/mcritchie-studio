@@ -114,7 +114,8 @@ style, script or Leaflet of its own.
   `config/initializers/studio.rb` (name, wordmark, logo, tagline, address,
   social profiles, link columns, legal line). The footer prints no phone number,
   by the operator's choice; it is where the SMS registration's reviewers find
-  the privacy policy, terms and `/contact`. A link with a `nil` path renders
+  the privacy policy and terms. Its Contact link opens `/chat`, whose quiet
+  "Text message sign-up" link reaches the opt-in form at `/contact`. A link with a `nil` path renders
   disabled (Career); a social entry with a `nil` URL renders its icon unlinked.
 - **Booking**: `config.booking_url` is the studio's Google Calendar appointment
   schedule. `studio_booking_frame` puts Google's page inline on `/` (in the

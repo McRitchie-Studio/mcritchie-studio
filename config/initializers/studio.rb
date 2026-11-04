@@ -153,7 +153,7 @@ Studio.configure do |config|
     config.voice_embedder = "fake" if Rails.env.test?
   end
   # ---- Talk to Alex by voice (epic .agents/epics/studio-voice.md, card 4) ----
-  # /contact holds the hub's own chat on the engine's agent chat (studio-engine
+  # /chat is the hub's own page on the engine's agent chat (studio-engine
   # docs/AGENT_CHAT.md), thread chat:alex:<user id>. The hub holds that thread,
   # so the page's /agent_chat/* calls are answered in-process by
   # HubAgentChatsController (drawn before Studio.routes), never proxied back to
@@ -222,11 +222,11 @@ Studio.configure do |config|
         # No phone number, on purpose: the operator removed it.
         # `booking: true` makes the link open the booking popup; /schedule is
         # this app's own page (ScheduleController), so the engine cannot tell
-        # from the path alone. Contact is the SMS opt-in form: its helper is
-        # `contact_form_path`; `contact_path` belongs to /contacts/:id.
+        # from the path alone. Contact opens the chat with Alex, the way to reach
+        # us; the SMS opt-in form stays at /contact, linked from that page.
         [ "Contact",   [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
                          [ "Schedule a call", view.schedule_index_path, { booking: true } ],
-                         [ "Contact", view.contact_form_path ] ] ],
+                         [ "Contact", view.chat_index_path ] ] ],
         [ "Solutions", [ [ "Packages", view.packages_path ], [ "Integrations", view.integrations_path ], [ "Build an app", view.build_path ] ] ],
         # Career has no page yet: a nil path renders the label disabled.
         [ "Company",   [ [ "Home", view.root_path ], [ "About", view.about_path ], [ "Marketing Kit", view.marketing_kit_path ], [ "Career", nil ] ] ],

@@ -45,6 +45,13 @@ module LinkTreeHelper
     [ { title: "Account", links: [ { label: "Sign In", href: login_path, emoji: "🔑", hover_emoji: "👋" } ] } ]
   end
 
+  # /chat while it is open to visitors; until then /build, where a visitor can
+  # already chat with Alex. /chat sits behind the admin wall, so linking it
+  # outright would send a visitor to "Not authorized".
+  def visitor_chat_path
+    AdminWall::PUBLIC.fetch("chat", []).include?("index") ? chat_index_path : build_path
+  end
+
   # An app owner's links, first in the sidebar: their app (or "Applications")
   # and its CTO (or "Agents"), counted from their own memberships, admins
   # included (AppOwnership.sidebar_links, docs/agents/system/app-owners.md).
@@ -65,8 +72,7 @@ module LinkTreeHelper
   def visitor_sidebar_sections
     page = Navigation.page(:websites)
     visitor_link_sections + [ { title: "Build", links: [
-      # /contact holds the chat with Alex (Alex McRitchie, 2026-11-03).
-      { label: "Chat", href: Navigation.page(:contact_form).path(self), hover_emoji: "💬",
+      { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
         emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") },
       { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji }
     ] } ]

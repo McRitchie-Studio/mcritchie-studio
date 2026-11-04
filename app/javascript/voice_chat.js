@@ -1,4 +1,4 @@
-// voice_chat: hold to talk to Alex on /contact (chat/_voice; epic
+// voice_chat: hold to talk to Alex on /chat (chat/_voice; epic
 // .agents/epics/studio-voice.md, card 4). Delegated and inert on every page
 // without a [data-voice-chat] section.
 //

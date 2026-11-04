@@ -7,8 +7,8 @@ replaced `about-alex.md` (his third-person profile, 2026-10-20) on 2026-10-28.
 
 `AgentMailbox::AlexPersona` (`bin/lib/agent_alex_persona.rb`) prints everything below
 the rule on EVERY answer the soul `alex` gives, through `ContextBuilder#persona_block`
-(the /build threads, the alex.build `chat:alex:` threads, Discord, the hub web chats,
-including `/contact`, and email), and on the legacy `POST /chat` (`Chat::AlexResponder`); on no other
+(the /build threads, the alex.build `chat:alex:` threads, Discord, the hub web chats
+and email), and on the hub's public `/chat` (`Chat::AlexResponder`); on no other
 soul's. Code adds the rules (`AlexPersona::RULES`): I am his AI and never claim to be
 human; the floor; his buy-then-build philosophy and published criteria are open, a
 specific deal never is; facts only from this page, else "I haven't shared that here"; no

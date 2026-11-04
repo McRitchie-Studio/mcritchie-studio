@@ -1,11 +1,5 @@
-# /chat moved to /contact, which now holds the chat with Alex (Alex McRitchie, 2026-11-03).
-#
-#   GET  /chat   301 to /contact, for any visitor, dropping the query string.
-#   POST /chat   the old session-only Chat::AlexResponder. Admin-only behind the wall,
-#                with no caller in the app; the rack-attack tests probe its throttles.
 class ChatController < ApplicationController
   def index
-    redirect_to contact_form_path, status: :moved_permanently
   end
 
   def create

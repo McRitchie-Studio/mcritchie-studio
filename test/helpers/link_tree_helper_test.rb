@@ -264,7 +264,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal %w[Account Build], sidebar_link_sections.map { |section| section.fetch(:title) }
     build = sidebar_link_sections.last.fetch(:links)
     assert_equal [ "Chat", "Websites Built on Studio" ], build.map { |link| link.fetch(:label) }
-    assert_equal "/contact", build.first.fetch(:href)
+    assert_equal "/chat", build.first.fetch(:href)
     assert_includes build.first.fetch(:emoji), "/agents/alex.webp"
     assert_equal "💬", build.first.fetch(:hover_emoji)
     assert sidebar_link_sections.flat_map { |section| section.fetch(:links) }.none? { |link| link.key?(:desc) }, "a visitor's link is one line"
@@ -336,7 +336,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_dashboard_path = "/admin"
   def admin_style_path = "/admin/style"
   def websites_path = "/websites"
-  def contact_form_path = "/contact"
+  def chat_index_path = "/chat"
   def safe_image_tag(url, **) = %(<img src="#{url}">).html_safe
   def admin_schema_path = "/admin/schema"
   def admin_emails_path = "/admin/emails"

@@ -7,7 +7,7 @@ module Chat
     MODEL = "claude-haiku-4-5-20251001"
     MAX_TOKENS = 1024
 
-    # The hub's legacy POST /chat speaks from the same persona page as every other
+    # The hub's public /chat speaks from the same persona page as every other
     # public Alex (AgentMailbox::AlexPersona; alex-has-my-personality), so its
     # facts cannot drift from alex.build's, /build's or Discord's.
     SYSTEM_PROMPT = <<~PROMPT

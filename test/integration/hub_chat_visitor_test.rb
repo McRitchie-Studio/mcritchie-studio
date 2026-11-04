@@ -2,8 +2,8 @@
 
 require "test_helper"
 
-# [integration] The hub's chat on /contact is open: a visitor chats on an anon thread, the
-# tier is the server's, and a browser cannot raise it. /chat redirects to it.
+# [integration] The hub's /chat is open: a visitor chats on an anon thread, the tier
+# is the server's, and a browser cannot raise it.
 class HubChatVisitorTest < ActionDispatch::IntegrationTest
   def last_viewer = AgentMessage.order(:id).last.envelope["viewer"]
 
@@ -13,58 +13,43 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
     User.connection.execute("UPDATE users SET email = #{User.connection.quote(email)}, email_verified_at = NULL WHERE id = #{user.id}")
   end
 
-  test "[component] a visitor opens the chat on /contact with no voice recorder" do
-    get contact_form_path
+  test "[component] a visitor opens /chat with no voice recorder" do
+    get chat_index_path
     assert_response :success
     assert_select "[data-test='alex-chat-page'] [data-test='agent-chat']"
     assert_select "[data-test='agent-chat-empty']", text: "What brought you here today?"
     assert_select "[data-test='voice-chat']", count: 0
   end
 
-  test "[component] a member gets no voice recorder and an admin's stays" do
+  test "[component] /chat is only the chat: no form, no support rows, and one link to the sign-up" do
+    get chat_index_path
+    main = css_select("[data-test='alex-chat-page']").first
+
+    assert_select "form[data-test='contact-form']", count: 0
+    assert_select "[data-test='sms-disclosure']", count: 0
+    assert_select "[data-test='contact-consent']", count: 0
+    assert_equal 0, main.css("a[href^='mailto:'], a[href='/schedule']").size
+    assert_select "[data-test='alex-chat-page'] a[href='/contact'][data-test='chat-sms-signup']", text: "Text message sign-up", count: 1
+  end
+
+  test "[component] a member and an admin get the same page; only an admin has the recorder" do
     Studio.stub(:voice_transcription, true) do
       log_in_as users(:viewer)
-      get contact_form_path
-      assert_select "[data-test='agent-chat']"
+      get chat_index_path
+      assert_response :success
+      assert_select "[data-test='chat-sms-signup']", count: 1
       assert_select "[data-test='voice-chat']", count: 0
 
       reset!
       log_in_as users(:alex)
-      get contact_form_path
+      get chat_index_path
+      assert_response :success
+      assert_select "[data-test='chat-sms-signup']", count: 1
       assert_select "[data-test='voice-chat']"
-      assert_select "[data-test='agent-chat-empty']", text: /hold to talk/
     end
   end
 
-  test "/chat answers a permanent redirect to /contact for a visitor, a member and an admin" do
-    get "/chat"
-    assert_response :moved_permanently
-    assert_equal contact_form_url, response.location
-
-    log_in_as users(:viewer)
-    get "/chat"
-    assert_response :moved_permanently
-    assert_equal contact_form_url, response.location
-
-    reset!
-    log_in_as users(:alex)
-    get "/chat"
-    assert_response :moved_permanently
-    assert_equal contact_form_url, response.location
-  end
-
-  test "/chat keeps no query string, so it cannot carry a source onto the form" do
-    get "/chat", params: { source: { page: "integrations", item: "github" }, x: "1" }
-    assert_response :moved_permanently
-    assert_equal contact_form_url, response.location
-  end
-
-  test "the legacy POST /chat stays admin-only behind the wall" do
-    post "/chat", params: { message: "hello" }, as: :json
-    refute response.successful?, "a visitor must not reach the session-only responder"
-  end
-
-  test "a row from the hub's page reaches the prompt with the contact page's directions" do
+  test "a row from the hub's chat reaches the prompt with its directions" do
     require Rails.root.join("bin/lib/agent_mailbox").to_s
     post "/agent_chat/messages", params: { soul: "alex", text: "I need help" }
     row = AgentMessage.order(:id).last
@@ -172,7 +157,7 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
   test "with forgery protection on, a first-visit token posts and no token is refused" do
     previous = ActionController::Base.allow_forgery_protection
     ActionController::Base.allow_forgery_protection = true
-    get contact_form_path
+    get chat_index_path
     token = css_select("[data-agent-chat-form] input[name='authenticity_token'], meta[name='csrf-token']").first
     value = token["value"] || token["content"]
 

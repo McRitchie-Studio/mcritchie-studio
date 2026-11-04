@@ -19,7 +19,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
                       "#{path}: the address, once, linking to directions"
         assert_select "a[href='#{privacy_path}']", { minimum: 1 }, "#{path}: privacy link"
         assert_select "a[href='#{terms_path}']", { minimum: 1 }, "#{path}: terms link"
-        assert_select "a[href='/contact']", { text: "Contact", count: 1 }, "#{path}: contact link"
+        assert_select "a[href='/chat']", { text: "Contact", count: 1 }, "#{path}: contact link"
         # data-studio-booking is the marker the engine's popup script answers to.
         assert_select "a[href='#{schedule_index_path}'][data-booking-popup][data-studio-booking]",
                       { text: "Schedule a call", count: 1 }, "#{path}: schedule link"
@@ -151,13 +151,13 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     assert_empty Dir[Rails.root.join("app/views/footers/*")], "the local footer partials must stay deleted"
   end
 
-  test "the Contact column lists email, scheduling, then the contact page, and no phone" do
+  test "the Contact column lists email, scheduling, then the chat, and no phone" do
     get root_path
 
     labels = css_select("footer[data-site-footer] nav[aria-label='Contact'] a").map { |link| [ link.text, link["href"] ] }
     assert_equal [ [ "team@mcritchie.studio", "mailto:team@mcritchie.studio" ],
                    [ "Schedule a call", schedule_index_path ],
-                   [ "Contact", "/contact" ] ], labels
+                   [ "Contact", "/chat" ] ], labels
     assert_select "footer[data-site-footer] a[href^='tel:']", 0
     assert_select "footer[data-site-footer] nav[aria-label='Help']", 0
   end

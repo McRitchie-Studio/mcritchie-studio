@@ -42,8 +42,6 @@ module AdminWall
     # opens the sign-in modal; the launch itself needs an account.
     "build" => %w[create check message turns choose update cto_animals],
     "contact_submissions" => %w[create],
-    # GET /chat: only a permanent redirect to /contact, so an old link never meets the wall.
-    "chat" => %w[index],
     # The chat with Alex: a message and the answer poll, under AgentChat::Caps.
     "hub_agent_chats" => %w[create turns],
     # The engine's same two paths. HubAgentChatsController's routes answer first,
