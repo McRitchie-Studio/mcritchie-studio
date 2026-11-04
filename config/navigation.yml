@@ -172,8 +172,7 @@ sidebar:
   # own: the sub-navs still say Admin dashboard and Deployments. Branding Kits is the
   # /logos page's own label, since no sub-nav reads it. App Requests is what the funnel
   # brought in. Books is Mack's seat (CFO): the books and what they report.
-  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, { page: build_requests, label: App Requests }, books, admin_basement] }
-  - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, activities_agents, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
+  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, { page: build_requests, label: App Requests }, books, activities_agents, admin_basement] }
   - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
   # The recast pipeline: every generated version of every source video.
   - { title: Video,   group: admin, pages: [alt_videos] }
@@ -190,6 +189,7 @@ sidebar:
   - { title: Clients,   group: basement, pages: [stack, credentials] }
   # The mailing list and what is sent to it.
   - { title: Email,     group: basement, pages: [broadcasts, contacts, broadcast_analytics] }
+  - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
 
 sub_navs:
   # The small link row above a board page's title.

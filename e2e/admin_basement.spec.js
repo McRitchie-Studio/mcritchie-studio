@@ -14,6 +14,13 @@ const MOVED = [
   { href: "/broadcasts", label: "Broadcasts", desc: "Compose, send" },
   { href: "/contacts", label: "Contacts", desc: "mailing list" },
   { href: "/broadcasts/analytics", label: "Email analytics", desc: "Delivery, opens" },
+  { href: "/error_logs", label: "Error logs", desc: "Captured errors" },
+  { href: "/admin/tiktok", label: "TikTok connection", desc: "Connected account" },
+  { href: "/admin/google", label: "Google connection", desc: "Calendar" },
+  { href: "/admin/fathom", label: "Fathom connection", desc: "Meeting notes" },
+  { href: "/admin/agent_messages", label: "Agent inbox", desc: "Messages to agents" },
+  { href: "/admin/report_destinations", label: "Report destinations", desc: "Discord channel" },
+  { href: "/admin/csp_reports", label: "CSP reports", desc: "Content-Security-Policy" },
 ];
 const PHONE = { name: "phone", width: 390, height: 844 };
 const DESKTOP = { name: "desktop", width: 1440, height: 900 };
@@ -62,7 +69,7 @@ test("the Basement lists the moved pages at desktop width, in both themes", asyn
   await listsTheMovedPages(page, DESKTOP);
 });
 
-test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, Books, Basement and takes you to the Basement", async ({ page }) => {
+test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, Books, Activities, Basement and takes you to the Basement", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/dashboard");
   await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
@@ -77,6 +84,7 @@ test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, 
     ["/logos", "Branding Kits"],
     ["/build/requests", "App Requests"],
     ["/books", "Books"],
+    ["/agents/activities", "Activities"],
     ["/admin/basement", "Basement"],
   ]) {
     await expect(sidebar.locator(`a[href='${href}']`)).toContainText(word);

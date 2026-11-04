@@ -15,7 +15,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   # Alex McRitchie, 2026-11-04: "this admin section reads Dashboard, DevOps, Design,
   # Basement", then "Don't move logos to the Basement, but call it Branding Kits", then
   # "Move 'App Requests' to the 'Admin' section with 'Books'. Move the rest to the
-  # basement". The short words are the section's own; those pages keep their labels for the sub-navs
+  # basement", then "Add activities to Admin section and the rest to the basement". The
+  # short words are the section's own; those pages keep their labels for the sub-navs
   # (see navigation_test.rb).
   test "admin sidebar starts with the main admin areas and omits the removed devops page" do
     self.admin_enabled = true
@@ -26,7 +27,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "Admin", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
     assert_equal [ [ "Dashboard", "/admin" ], [ "DevOps", "/deployments" ], [ "Design", "/admin/style" ], [ "Branding Kits", "/logos" ],
-                   [ "App Requests", "/build/requests" ], [ "Books", "/books" ], [ "Basement", "/admin/basement" ] ],
+                   [ "App Requests", "/build/requests" ], [ "Books", "/books" ], [ "Activities", "/agents/activities" ],
+                   [ "Basement", "/admin/basement" ] ],
                  sections.first.fetch(:links).map { |link| link.values_at(:label, :href) }
     # DevOps is now a word this section shows, so the removed page is held by its address alone.
     refute links.any? { |link| link[:href] == "/devops" }
@@ -39,7 +41,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     moved = [ [ "Schema", "/admin/schema" ], [ "Emails", "/admin/emails" ],
               [ "Link preview", "/admin/link_preview" ], [ "Assets", "/assets" ],
               [ "Stack", "/stack" ], [ "Credentials", "/credentials" ],
-              [ "Broadcasts", "/broadcasts" ], [ "Contacts", "/contacts" ], [ "Email analytics", "/broadcasts/analytics" ] ]
+              [ "Broadcasts", "/broadcasts" ], [ "Contacts", "/contacts" ], [ "Email analytics", "/broadcasts/analytics" ],
+              [ "Error logs", "/error_logs" ], [ "TikTok connection", "/admin/tiktok" ], [ "Google connection", "/admin/google" ],
+              [ "Fathom connection", "/admin/fathom" ], [ "Agent inbox", "/admin/agent_messages" ],
+              [ "Report destinations", "/admin/report_destinations" ], [ "CSP reports", "/admin/csp_reports" ] ]
     assert_equal moved, basement_links.map { |link| link.values_at(:label, :href) }
 
     sidebar_hrefs = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
@@ -89,13 +94,14 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "/assets", Rails.application.routes.url_helpers.asset_browser_path
   end
 
-  test "the Clients, Email and Finance sections leave the sidebar" do
+  test "the Clients, Email, Finance and Ops sections leave the sidebar; Data and Video stay" do
     self.admin_enabled = true
 
     titles = sidebar_link_sections.map { |section| section.fetch(:title) }
 
     assert_includes titles, "Admin", "control: the sidebar this reads is an admin's"
-    assert_empty titles & %w[Clients Email Finance Site]
+    assert_empty titles & %w[Clients Email Finance Ops Site]
+    assert_equal %w[Data Video], titles & %w[Data Video]
   end
 
   # task contacts-admin-page: the mailing list sits beside the broadcasts sent to it.
