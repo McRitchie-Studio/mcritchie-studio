@@ -1,4 +1,4 @@
-# The link sidebar, /links and /admin/links, built from the navigation registry
+# The link sidebar, /links, /admin/links and /admin/basement, built from the navigation registry
 # (config/navigation.yml). An entry shows when its page is public or the viewer
 # is an admin, so a section holding only admin pages never reaches a visitor.
 module LinkTreeHelper
@@ -26,6 +26,11 @@ module LinkTreeHelper
 
   def admin_link_sections
     registry_link_sections(:admin)
+  end
+
+  # The links kept off the sidebar: /admin/basement, and the end of /admin/links.
+  def basement_link_sections
+    registry_link_sections(:basement)
   end
 
   def sidebar_link_sections

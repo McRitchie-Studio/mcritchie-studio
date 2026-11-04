@@ -14,7 +14,8 @@ class Navigation
   # signed_in: a page AdminWall::SIGNED_IN lets any signed-in user open (its
   # controller decides who sees what), whose NAV entry is still an admin's.
   AUDIENCES = %w[public admin signed_in].freeze
-  GROUPS = %w[admin general].freeze
+  # basement: sections that fill /admin/basement and never reach the sidebar.
+  GROUPS = %w[admin general basement].freeze
   STYLES = %w[links buttons chips].freeze
 
   # `key` is the page's route name, so `tasks` links tasks_path.
@@ -135,11 +136,22 @@ class Navigation
 
   def build_sections(raw)
     Array(raw).map do |attrs|
-      raise Invalid, "sidebar section #{attrs['title'].inspect}: group must be admin or general" unless GROUPS.include?(attrs["group"])
+      raise Invalid, "sidebar section #{attrs['title'].inspect}: group must be one of #{GROUPS.join(', ')}" unless GROUPS.include?(attrs["group"])
 
       Section.new(title: attrs["title"].to_s, group: attrs["group"],
-                  pages: Array(attrs["pages"]).map { |key| page(key) }.freeze).freeze
+                  pages: Array(attrs["pages"]).map { |entry| placed_page(entry) }.freeze).freeze
     end.freeze
+  end
+
+  # A section entry is a page key, or { page:, label: } to show another word in
+  # that section only: the copy carries the word and the registry's page keeps its own.
+  def placed_page(entry)
+    return page(entry) unless entry.is_a?(Hash)
+
+    placed = page(entry["page"])
+    return placed if entry["label"].blank?
+
+    placed.dup.tap { |copy| copy.label = entry["label"].to_s }.freeze
   end
 
   def build_sub_navs(raw)

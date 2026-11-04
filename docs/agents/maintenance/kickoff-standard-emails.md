@@ -168,7 +168,8 @@ one task spanning both repos.
 
 ## Definition of done
 
-- `/admin/emails` renders in all four apps, linked from the admin sidebar.
+- `/admin/emails` renders in all four apps, linked from the admin sidebar (the
+  hub's from the Basement, `/admin/basement`).
 - The table shows name + live image per row, and says whether it is inherited or
   app-owned.
 - Uploading goes through the standard crop modal and results in an app-owned

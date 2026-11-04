@@ -154,7 +154,7 @@ heroku run:detached -a mcritchie-studio -e FILE_ID=<id> -- bin/rails "contacts:v
 heroku run -a mcritchie-studio -- bin/rails "broadcasts:batch_status[cyvasse-is-back]"
 ```
 
-To watch a run land, open **`/contacts`** (admin; the sidebar's Email section and
+To watch a run land, open **`/contacts`** (admin; the Basement's Email section and
 the admin dashboard link it). Its tiles and verification breakdown for one list
 (default `cyvasse-legacy`, or all) reload every 10 seconds while the tab is
 visible: total, subscribed, verified valid, undeliverable, not yet verified,

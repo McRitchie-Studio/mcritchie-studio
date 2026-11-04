@@ -144,7 +144,7 @@ class ContactsControllerTest < ActionDispatch::IntegrationTest
     assert_select "p", text: /No broadcast has been sent/
   end
 
-  test "the admin sidebar and the admin dashboard link to it" do
+  test "the admin dashboard links to it" do
     log_in_as(@admin)
     get admin_dashboard_path
     assert_select "a[href=?]", contacts_path, text: /Contacts/

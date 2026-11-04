@@ -1,7 +1,7 @@
 # THE NAVIGATION REGISTRY — every page the hub links from a nav, and every page a
 # visitor may open. Loaded by app/models/navigation.rb. Three readers:
 #
-#   · the link sidebar, /links and /admin/links   LinkTreeHelper
+#   · the link sidebar, /links, /admin/links and /admin/basement   LinkTreeHelper
 #   · the section sub-navs                        components/_sub_nav
 #   · the admin wall's public PAGE list           AdminWall::PUBLIC_PAGES
 #
@@ -17,12 +17,18 @@
 #             args      positional arguments for the route helper.
 #             label, emoji, hover_emoji, desc   how a nav shows the page.
 #
-# sidebar   The link sidebar's sections, in order. group: admin sections lead for
-#           an admin and fill /admin/links; group: general sections fill /links.
+# sidebar   The link sections, in order. group: admin sections lead the sidebar for
+#           an admin; group: general sections follow and fill /links; group: basement
+#           sections never reach the sidebar and fill /admin/basement. /admin/links
+#           lists the admin and basement groups, so it stays the whole admin index.
 #           Every sidebar also has Build: Chat and Portfolio. A signed-out visitor's
 #           sidebar is only Sign In and Build, one line each (LinkTreeHelper).
 #           An entry shows when its page is public or the viewer is an admin, and
 #           a section with no visible entry is dropped.
+#           An entry in pages is a page key, or { page:, label: } to show another
+#           word in that section only; the page keeps its label everywhere else.
+#           TO SEND A LINK TO THE BASEMENT, move its key to a basement section. To
+#           send a whole section, change its group to basement. Its route stays.
 #
 # sub_navs  One per section of the app. style picks the look (links, buttons or
 #           chips); label is the nav landmark's name. Item keys:
@@ -111,10 +117,11 @@ pages:
   deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board }
   admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks }
   admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser }
-  logos:              { page: "logos#index",                  audience: admin, label: Logos, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built }
+  logos:              { page: "logos#index",                  audience: admin, label: Branding Kits, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built }
   admin_emails:       { page: "studio/emails#index",          audience: admin, label: Emails, emoji: "✉️", hover_emoji: "🖼️", desc: Transactional emails + their banners }
   admin_link_preview: { page: "studio/site_identities#edit",  audience: admin, label: Link preview, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls" }
   asset_browser:      { page: "assets#index",                 audience: admin, label: Assets, emoji: "🗄️", hover_emoji: "🎞️", desc: Object store as a folder tree }
+  admin_basement:     { page: "admin/links#basement",         audience: admin, label: Basement, emoji: "🪜", hover_emoji: "📦", desc: Links kept off the sidebar }
 
   # ── Clients ──────────────────────────────────────────────────────────────
   build_requests: { page: "build#index",             audience: admin, label: App requests, emoji: "🧱", hover_emoji: "📥", desc: Every app requested through /build }
@@ -161,15 +168,11 @@ pages:
   mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
 
 sidebar:
-  - { title: Site,    group: admin, pages: [admin_dashboard, deployments, admin_style, admin_schema, logos, admin_emails, admin_link_preview, asset_browser] }
-  # The client side of the business: what the funnel brought in, what each client
-  # runs on, and the credentials behind it.
-  - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }
-  # The mailing list and what is sent to it.
-  - { title: Email,   group: admin, pages: [broadcasts, contacts, broadcast_analytics] }
-  # Mack's seat (CFO): the books and what they report.
-  - { title: Finance, group: admin, pages: [books] }
-  - { title: Ops,     group: admin, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, activities_agents, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
+  # The main areas (Alex McRitchie, 2026-11-04). The short words are this section's
+  # own: the sub-navs still say Admin dashboard and Deployments. Branding Kits is the
+  # /logos page's own label, since no sub-nav reads it. App Requests is what the funnel
+  # brought in. Books is Mack's seat (CFO): the books and what they report.
+  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, { page: build_requests, label: App Requests }, books, activities_agents, admin_basement] }
   - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
   # The recast pipeline: every generated version of every source video.
   - { title: Video,   group: admin, pages: [alt_videos] }
@@ -180,6 +183,13 @@ sidebar:
   # Public on purpose: the App Builder is the funnel's front door and the packages
   # page is where customers compare the tiers.
   - { title: Services,  group: general, pages: [build, packages, integrations] }
+  # The Basement: links worth keeping that the sidebar does not need to carry.
+  - { title: Site,      group: basement, pages: [admin_schema, admin_emails, admin_link_preview, asset_browser] }
+  # What each client runs on, and the credentials behind it.
+  - { title: Clients,   group: basement, pages: [stack, credentials] }
+  # The mailing list and what is sent to it.
+  - { title: Email,     group: basement, pages: [broadcasts, contacts, broadcast_analytics] }
+  - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
 
 sub_navs:
   # The small link row above a board page's title.

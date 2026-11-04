@@ -70,6 +70,86 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_no_match "Signing Console", response.body
   end
 
+  test "anonymous visitor cannot reach /admin/basement" do
+    get admin_basement_path
+    assert_redirected_to login_path
+  end
+
+  test "logged-in non-admin is refused /admin/basement" do
+    log_in_as users(:viewer)
+    get admin_basement_path
+    assert_redirected_to root_path
+  end
+
+  test "[component] an admin's Basement lists the moved pages with their descriptions, under the page header" do
+    log_in_as users(:alex)
+    get admin_basement_path
+    assert_response :success
+
+    assert_select "h1.page-header-title", "Basement"
+    assert_select "[data-pin='page']", 1
+    { admin_schema_path => "DB schema browser",
+      admin_emails_path => "Transactional emails", admin_link_preview_path => "Default title",
+      asset_browser_path => "Object store", stack_path => "tier and software",
+      credentials_path => "vault icons", broadcasts_path => "Compose, send",
+      contacts_path => "mailing list", broadcast_analytics_path => "Delivery, opens",
+      error_logs_path => "Captured errors", admin_tiktok_path => "Connected account", admin_google_path => "Calendar",
+      admin_fathom_path => "Meeting notes", admin_agent_messages_path => "Messages to agents",
+      admin_report_destinations_path => "Discord channel", admin_csp_reports_path => "Content-Security-Policy" }.each do |href, desc|
+      assert_select "[data-link-hub] a[href=?]", href, text: /#{Regexp.escape(desc)}/
+    end
+    [ logos_path, build_requests_path, books_path, activities_agents_path ].each { |href| assert_select "[data-link-hub] a[href=?]", href, count: 0 }
+  end
+
+  test "[component] the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, Books, Activities, Basement, and the moved pages leave it" do
+    log_in_as users(:alex)
+    get admin_basement_path
+
+    assert_select "#studio-link-sidebar a[href=?]", admin_dashboard_path, text: /Dashboard/
+    assert_select "#studio-link-sidebar a[href=?]", deployments_path, text: /DevOps/
+    assert_select "#studio-link-sidebar a[href=?]", admin_style_path, text: /Design/
+    assert_select "#studio-link-sidebar a[href=?]", logos_path, text: /Branding Kits/
+    assert_select "#studio-link-sidebar a[href=?]", build_requests_path, text: /App Requests/
+    assert_select "#studio-link-sidebar a[href=?]", books_path, text: /Books/
+    assert_select "#studio-link-sidebar a[href=?]", activities_agents_path, text: /Activities/
+    assert_select "#studio-link-sidebar a[href=?]", admin_basement_path, text: /Basement/
+    [ admin_schema_path, admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
+      broadcasts_path, contacts_path, broadcast_analytics_path, error_logs_path, admin_tiktok_path, admin_google_path,
+      admin_fathom_path, admin_agent_messages_path, admin_report_destinations_path, admin_csp_reports_path ].each do |href|
+      assert_select "#studio-link-sidebar a[href=?]", href, count: 0
+    end
+  end
+
+  # /admin/schema is held by its address and by the wall only. The engine's view
+  # (studio-engine 0.125.0, schema/index line 68) calls join on index columns, which
+  # Rails returns as a String for an expression index, so the page raises today, on
+  # any database holding one. That predates the Basement and is the engine's to fix.
+  test "every moved page keeps its route and still answers an admin" do
+    log_in_as users(:alex)
+
+    [ admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
+      broadcasts_path, contacts_path, broadcast_analytics_path, logos_path, build_requests_path, books_path,
+      activities_agents_path, error_logs_path, admin_tiktok_path, admin_google_path, admin_fathom_path, admin_agent_messages_path,
+      admin_report_destinations_path, admin_csp_reports_path ].each do |href|
+      get href
+      assert_response :success, "#{href} must still answer"
+    end
+    assert_equal "/admin/schema", admin_schema_path
+    assert_equal "schema#index", Navigation.page(:admin_schema).action_id
+  end
+
+  test "/admin/links still lists every admin destination, the Basement's pages included" do
+    log_in_as users(:alex)
+    get admin_links_path
+
+    [ admin_basement_path, admin_schema_path, logos_path, admin_emails_path, admin_link_preview_path, asset_browser_path, books_path,
+      build_requests_path, stack_path, credentials_path, broadcasts_path, contacts_path, broadcast_analytics_path,
+      activities_agents_path, error_logs_path, admin_tiktok_path, admin_google_path, admin_fathom_path, admin_agent_messages_path,
+      admin_report_destinations_path, admin_csp_reports_path ].each do |href|
+      assert_select "[data-link-hub] a[href=?]", href
+    end
+  end
+
   test "the cog and the identity both toggle the admin link sidebar" do
     log_in_as users(:alex)
     get dashboard_path

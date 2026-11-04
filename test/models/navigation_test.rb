@@ -147,13 +147,64 @@ class NavigationTest < ActiveSupport::TestCase
     assert_not hides.shown_on?("tasks")
   end
 
-  # The two dashboards point at different pages, so they carry different names.
+  # The two dashboards point at different pages, so they carry different names. The
+  # Admin section shortens its own to Dashboard; the page keeps its name elsewhere.
   test "[unit] no two sidebar entries share a label" do
     labels = (Navigation.sidebar(:admin) + Navigation.sidebar(:general)).flat_map(&:pages).map(&:label)
 
     assert_equal labels.uniq, labels
+    assert_includes labels, "Dashboard"
+    assert_includes labels, "Studio dashboard"
     assert_equal "Studio dashboard", Navigation.page(:dashboard).label
     assert_equal "Admin dashboard", Navigation.page(:admin_dashboard).label
     assert_not_equal Navigation.page(:dashboard).action_id, Navigation.page(:admin_dashboard).action_id
+  end
+
+  test "[unit] a section entry can override a page's label there, and only there" do
+    registry = Navigation.new(minimal(sidebar: [
+      { "title" => "Admin", "group" => "admin", "pages" => [ { "page" => "tasks", "label" => "Board" }, "root" ] },
+      { "title" => "Other", "group" => "general", "pages" => [ "tasks", { "page" => "root" } ] }
+    ]))
+    admin, general = registry.sidebar(:admin).first, registry.sidebar(:general).first
+
+    assert_equal [ "Board", "Home" ], admin.pages.map(&:label)
+    assert_equal [ "Tasks", "Home" ], general.pages.map(&:label)
+    assert_equal "Tasks", registry.page(:tasks).label
+    assert_equal %w[tasks root], admin.pages.map(&:key)
+    assert_equal "/tasks", admin.pages.first.path(Rails.application.routes.url_helpers), "the override moves no route"
+    assert_equal %w[tasks root], registry.placed_keys
+  end
+
+  test "[unit] the Admin section's short words stay in that section: the pages keep theirs for the sub-navs" do
+    assert_equal [ "Dashboard", "DevOps", "Design", "Branding Kits", "App Requests", "Books", "Activities", "Basement" ], Navigation.sidebar(:admin).first.pages.map(&:label)
+    assert_equal "Admin", Navigation.sidebar(:admin).first.title
+
+    assert_equal "Admin dashboard", Navigation.page(:admin_dashboard).label
+    assert_equal "Deployments", Navigation.page(:deployments).label
+    assert_equal "Design System", Navigation.page(:admin_style).label
+    assert_equal "App requests", Navigation.page(:build_requests).label
+    assert_equal "Admin dashboard", Navigation.sub_nav(:board_sections).items.first.text
+    assert_equal "Deployments", Navigation.sub_nav(:board_views).items.last.text
+  end
+
+  test "[unit] a section entry naming an unknown page does not load" do
+    assert_raises(Navigation::Invalid) do
+      Navigation.new(minimal(sidebar: [ { "title" => "Admin", "group" => "admin", "pages" => [ { "page" => "nowhere", "label" => "Gone" } ] } ]))
+    end
+    assert_raises(Navigation::Invalid) do
+      Navigation.new(minimal(sidebar: [ { "title" => "Admin", "group" => "admin", "pages" => [ { "label" => "No page" } ] } ]))
+    end
+  end
+
+  test "[unit] the basement group holds the moved pages, every one an admin page placed nowhere in the sidebar" do
+    assert_equal %w[admin_schema admin_emails admin_link_preview asset_browser stack credentials broadcasts contacts broadcast_analytics
+                    error_logs admin_tiktok admin_google admin_fathom admin_agent_messages admin_report_destinations admin_csp_reports],
+                 Navigation.sidebar(:basement).flat_map(&:pages).map(&:key)
+    assert Navigation.sidebar(:basement).flat_map(&:pages).all? { |page| page.audience == "admin" }
+
+    sidebar_keys = (Navigation.sidebar(:admin) + Navigation.sidebar(:general)).flat_map(&:pages).map(&:key)
+    assert_empty Navigation.sidebar(:basement).flat_map(&:pages).map(&:key) & sidebar_keys
+    assert_includes Navigation.placed_keys, "asset_browser", "a Basement page is still placed, so the wall test walks it"
+    assert_includes Navigation.placed_keys, "admin_basement"
   end
 end
