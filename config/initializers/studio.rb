@@ -47,6 +47,10 @@ Studio.configure do |config|
   # fresh response, so drop the nav spinner floor from the engine's 2500ms
   # default to a fast-load 300ms.
   config.smooth_load = true
+  # The hub's pages leave to the left (studio-engine docs/PAGE_TRANSITIONS.md). A view
+  # with an inline view-transition-name marks it with data-vt-morph, or it floats still
+  # over the moving page: test/views/page_transition_adoption_test.rb.
+  config.page_transition_direction = :left
   # Out-of-the-box navigation (engine 0.30): the sidebar data stays in the
   # hub's LinkTreeHelper; the engine renders it. The lambda hands the view
   # context over so the helper keeps its route helpers and admin? wall.

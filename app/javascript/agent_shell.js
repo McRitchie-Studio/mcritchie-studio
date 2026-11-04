@@ -300,10 +300,20 @@ if (typeof document !== "undefined") {
   // A morph refresh fires turbo:visit, turbo:morph, then turbo:load: the load it
   // ends keeps the step the morph re-applied.
   let morphed = false;
-  document.addEventListener("turbo:visit", () => { morphed = false; });
+  // A swapped page sizes at the swap, inside the view transition, so it arrives at
+  // its step. turbo:load comes when the transition ends, 700ms on under the hub's
+  // page transition (studio-engine docs/PAGE_TRANSITIONS.md), and the page would
+  // move in at the wrong size and snap. A first load has no render, so load does it.
+  let rendered = false;
+  document.addEventListener("turbo:visit", () => { morphed = false; rendered = false; });
   document.addEventListener("turbo:morph", () => { morphed = true; load({ morphed: true }); });
+  document.addEventListener("turbo:render", (event) => {
+    if (event.detail?.renderMethod === "morph") return;
+    rendered = true;
+    load();
+  });
   document.addEventListener("turbo:load", () => {
-    if (morphed) { morphed = false; return; }
+    if (morphed || rendered) { morphed = false; rendered = false; return; }
     load();
   });
   window.addEventListener("resize", () => {

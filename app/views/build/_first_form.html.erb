@@ -18,7 +18,7 @@
      "A booking site for my dog-grooming business, with text reminders"
    ] %>
 <%= form_with model: AppRequest.new, url: build_path, method: :post, id: "build-first-form",
-              data: { test: "build-form", build_first_form: true },
+              data: { test: "build-form", build_first_form: true, vt_morph: "agent-composer" },
               html: { style: "view-transition-name: agent-composer;" } do |f| %>
   <%= f.hidden_field :client_id, value: SecureRandom.uuid %>
   <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">

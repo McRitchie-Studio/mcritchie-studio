@@ -228,7 +228,10 @@ if (typeof document !== "undefined") {
 
   document.addEventListener("turbo:before-cache", finishRevealing);
 
-  // Whatever a load or a morph puts on the page is history: shown as it is.
+  // Whatever a load, a swap or a morph puts on the page is history: shown as it is.
+  // The swap too: turbo:load comes when the page transition ends, 700ms later, and a
+  // stream in that window must not type the thread's old answers again.
+  document.addEventListener("turbo:render", remember);
   document.addEventListener("turbo:load", remember);
   document.addEventListener("turbo:morph", remember);
   remember();
