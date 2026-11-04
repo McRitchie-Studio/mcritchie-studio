@@ -628,6 +628,28 @@
     /* The engine's phone row draws the gear first through 0.123.0. Delete this
        rule when the hub locks the engine with PR 514, which reorders the row. */
     .nav-shell > .nav-row ~ div [data-link-sidebar-trigger] { order: 1; }
+    /* The phone row's gear lights as the bar's gear does (engine.css, THE ACCOUNT
+       GROUP). The row sits outside that group, and the gear's own hover fill is
+       the row's colour, so it would show only a change of grey. Here the gear, the
+       name and the avatar light together from any of them, as they do in the bar. */
+    .nav-shell > .nav-row ~ div [data-link-sidebar-trigger]:hover { background-color: transparent; }
+    .nav-shell > .nav-row ~ div [data-link-sidebar-trigger] svg { transition: transform 200ms ease; }
+    .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible, [data-nav-account]:hover, [data-nav-account]:focus-visible) > .nav-row ~ div [data-link-sidebar-trigger] {
+      color: var(--color-primary);
+    }
+    .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible) [data-nav-name] {
+      color: var(--color-primary);
+    }
+    .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible) [data-nav-account] > [aria-hidden] > * {
+      box-shadow:
+        0 0 0 2px rgb(var(--color-primary-rgb) / 0.85),
+        0 0 14px 2px rgb(var(--color-primary-rgb) / 0.45);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible, [data-nav-account]:hover, [data-nav-account]:focus-visible) > .nav-row ~ div [data-link-sidebar-trigger] svg {
+        transform: rotate(45deg);
+      }
+    }
   }
   .nav-phone-tools {
     max-width: calc(4rem * var(--nav-p, 0));

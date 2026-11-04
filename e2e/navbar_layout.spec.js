@@ -257,6 +257,95 @@ test("a visitor's phone row draws the theme toggle left of the gear", async ({ b
   await context.close();
 });
 
+// The gear in the phone row is outside the engine's account group, and its own hover
+// fill is the row's colour, so nothing marked it but a grey-to-white. It takes what the
+// bar's gear takes: the primary colour, an eighth turn, no fill, and the group lit.
+const ROW_GEAR = `${PHONE_ROW} [data-link-sidebar-trigger]`;
+const AVATAR = "header [data-nav-account] > [aria-hidden] > *";
+
+const gearLight = (page) => page.evaluate(([gearSelector, avatarSelector]) => {
+  const gear = document.querySelector(gearSelector);
+  const avatar = document.querySelector(avatarSelector);
+  const probe = document.createElement("span");
+  probe.style.color = "var(--color-primary)";
+  document.body.appendChild(probe);
+  const primary = getComputedStyle(probe).color;
+  probe.remove();
+  return {
+    primary,
+    color: getComputedStyle(gear).color,
+    fill: getComputedStyle(gear).backgroundColor,
+    turn: getComputedStyle(gear.querySelector("svg")).transform,
+    glow: avatar ? getComputedStyle(avatar).boxShadow : null,
+  };
+}, [ROW_GEAR, AVATAR]);
+
+async function expectGearLit(page, { group }) {
+  await expect.poll(async () => {
+    const light = await gearLight(page);
+    return light.color === light.primary;
+  }).toBe(true);
+  await expect.poll(async () => (await gearLight(page)).turn).toContain("0.707107");
+  const light = await gearLight(page);
+  expect(light.fill, JSON.stringify(light)).toBe("rgba(0, 0, 0, 0)");
+  if (group) await expect.poll(async () => (await gearLight(page)).glow).not.toBe("none");
+}
+
+async function openRowAtRest(page, theme) {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 700, height: 844 });
+  await page.goto("/tasks");
+  const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  if (isDark !== (theme === "dark")) await page.locator(`${PHONE_ROW} button[title='Toggle theme']`).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(theme === "dark");
+  await page.mouse.move(5, 600);
+  await expect.poll(async () => {
+    const light = await gearLight(page);
+    return light.color !== light.primary && light.turn === "none";
+  }).toBe(true);
+}
+
+test("in dark, hovering the phone row's gear lights it as the bar's gear lights", async ({ page }) => {
+  await openRowAtRest(page, "dark");
+  await page.locator(ROW_GEAR).hover();
+  await expectGearLit(page, { group: true });
+});
+
+test("in light, hovering the phone row's gear lights it as the bar's gear lights", async ({ page }) => {
+  await openRowAtRest(page, "light");
+  await page.locator(ROW_GEAR).hover();
+  await expectGearLit(page, { group: true });
+});
+
+test("keyboard focus lights the phone row's gear, and clicking it opens the sidebar", async ({ page }) => {
+  await openRowAtRest(page, "dark");
+  // Back a stop and forward again, so the browser treats it as keyboard focus. The
+  // gear precedes the toggle in the DOM until the engine relock, so no single key
+  // from the toggle reaches it on both sides of that.
+  await page.locator(ROW_GEAR).focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(page.locator(ROW_GEAR)).toBeFocused();
+  await expectGearLit(page, { group: true });
+  await page.locator(ROW_GEAR).click();
+  await expect(page.locator(ROW_GEAR)).toHaveAttribute("aria-expanded", "true");
+});
+
+test("hovering the account lights the phone row's gear with it", async ({ page }) => {
+  await openRowAtRest(page, "dark");
+  await page.locator("header [data-nav-account]").hover();
+  await expectGearLit(page, { group: true });
+});
+
+test("a visitor's phone row gear lights on hover too", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE });
+  const page = await context.newPage();
+  await page.goto("/about");
+  await page.locator(ROW_GEAR).hover();
+  await expectGearLit(page, { group: false });
+  await context.close();
+});
+
 // Each band, at rest and scrolled: nothing wraps or leaves the screen, and the bar
 // still collapses. A wrapped name or brand shows as a taller bar than the band's.
 test("the signed-in rail holds at every width, at rest and scrolled", async ({ page }) => {
