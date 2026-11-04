@@ -108,11 +108,26 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
       assert_select "button[data-link-sidebar-trigger][aria-label='Toggle links menu']", minimum: 1
       assert_select "button[title='Toggle theme']", minimum: 1
       assert_select "a[href=?]", login_path, count: 0
-      # A phone draws the name beside the avatar; the account link names it for assistive tech.
-      assert_select "[data-nav-phone-name][aria-hidden='true']", text: first_name, count: 1
+      # A phone draws the name inside the account control (Studio.navbar_phone_name),
+      # so hovering or clicking it is hovering or clicking the control, and it is
+      # the control's accessible name, not a copy of it.
+      assert_select "[data-nav-account] [data-nav-name-phone] [data-nav-name]", text: first_name, count: 1
+      assert_select "[data-nav-account] [data-nav-name-phone][aria-hidden]", count: 0
+      assert_select "[data-nav-phone-name]", count: 0
       assert_select ".nav-phone-tools button[data-link-sidebar-trigger]", 1
       assert_select ".nav-phone-tools button[title='Toggle theme']", 1
     end
+  end
+
+  test "a member's phone tools draw the theme toggle, then the gear" do
+    log_in_as users(:viewer)
+    get about_path
+    assert_response :success
+
+    pair = css_select(".nav-phone-tools > *")
+    assert_equal 2, pair.size, "the phone tools are the pair: #{pair.to_html}"
+    assert pair.first.at_css("button[title='Toggle theme']"), "the theme toggle leads: #{pair.to_html}"
+    assert pair.last.matches?("[data-link-sidebar-trigger]") || pair.last.at_css("[data-link-sidebar-trigger]"), "the gear ends the pair: #{pair.to_html}"
   end
 
   test "an admin's menu button is the admin menu, with no second cog" do

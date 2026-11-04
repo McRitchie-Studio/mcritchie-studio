@@ -152,6 +152,105 @@ test("a signed-in phone header is 53px tall once scrolled", async ({ page }) => 
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toHaveAttribute("aria-expanded", "true");
 });
 
+// THE ACCOUNT ROW BELOW 768PX (task hub-phone-account-row). Every width the phone
+// rules serve, from the narrowest phone to the last width below md.
+const PHONE_WIDTHS = [320, 390, 700, 767];
+
+// What the highlight does to the three. The name is found by its text and size,
+// not by a hook, so this answers for whichever element draws the name on screen:
+// a separate span beside the control went unlit, and the spec read that as red.
+const accountLight = (page) => page.evaluate(() => {
+  const header = document.querySelector("header.nav-shell");
+  const probe = document.createElement("span");
+  probe.style.color = "var(--color-primary)";
+  document.body.appendChild(probe);
+  const primary = getComputedStyle(probe).color;
+  probe.remove();
+  return {
+    primary,
+    glow: getComputedStyle(header.querySelector("[data-nav-account] > [aria-hidden] > *")).boxShadow,
+  };
+});
+
+async function shownName(page) {
+  const text = (await page.locator("header [data-nav-name]").first().textContent()).trim();
+  const matches = page.locator("header").getByText(text, { exact: true });
+  for (let index = 0; index < await matches.count(); index += 1) {
+    const box = await matches.nth(index).boundingBox();
+    if (box && box.width > 16) return matches.nth(index);
+  }
+  throw new Error(`no element in the header draws the name "${text}"`);
+}
+
+for (const width of [390, 700]) {
+  for (const [state, y] of [["at rest", 0], ["scrolled", 1500]]) {
+    test(`at ${width}px ${state}, the name lights the avatar and opens what the avatar opens`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 844 });
+      await page.goto("/tasks");
+      await page.evaluate((top) => window.scrollTo(0, top), y);
+      if (y) await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
+      await page.mouse.move(5, 500);
+      await expect.poll(async () => (await accountLight(page)).glow).toBe("none");
+
+      const name = await shownName(page);
+      await name.hover();
+      await expect.poll(async () => (await accountLight(page)).glow).not.toBe("none");
+      const lit = await accountLight(page);
+      await expect.poll(() => name.evaluate((el) => getComputedStyle(el).color)).toBe(lit.primary);
+
+      await name.click();
+      await expect(page.locator("header [data-nav-account]")).toHaveAttribute("aria-expanded", "true");
+    });
+  }
+}
+
+test("below 768px scrolled, the theme toggle draws left of the gear, and both left of the name", async ({ page }) => {
+  for (const width of PHONE_WIDTHS) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/tasks");
+    await page.evaluate(() => window.scrollTo(0, 1500));
+    await expect(page.locator(".nav-phone-tools")).toBeVisible();
+
+    const name = await shownName(page);
+    const left = async (locator) => (await locator.boundingBox()).x;
+    const toggle = await left(page.locator(".nav-phone-tools button[title='Toggle theme']"));
+    const gear = await left(page.locator(".nav-phone-tools [data-link-sidebar-trigger]"));
+    const nameLeft = await left(name);
+    const message = JSON.stringify({ width, toggle, gear, nameLeft });
+    expect(toggle, message).toBeLessThan(gear);
+    expect(gear, message).toBeLessThan(nameLeft);
+  }
+});
+
+// Each band, at rest and scrolled: nothing wraps or leaves the screen, and the bar
+// still collapses. A wrapped name or brand shows as a taller bar than the band's.
+test("the signed-in rail holds at every width, at rest and scrolled", async ({ page }) => {
+  for (const width of [...PHONE_WIDTHS, 768, 820, 1024, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/tasks");
+    await page.evaluate(() => document.fonts.ready);
+    const header = page.locator("header.nav-shell");
+    const rest = await header.boundingBox();
+
+    for (const y of [0, 1500]) {
+      await page.evaluate((top) => window.scrollTo(0, top), y);
+      if (y) await expect(header).toHaveClass(/is-scrolled/);
+      const metrics = await navbarMetrics(page);
+      const message = JSON.stringify({ width, y, metrics }, null, 2);
+      expect(metrics.documentOverflow, message).toBeLessThanOrEqual(1);
+      expect(metrics.offscreen, message).toEqual([]);
+      const name = await (await shownName(page)).boundingBox();
+      expect(name.height, message).toBeLessThanOrEqual(28);
+    }
+
+    await expect.poll(async () => {
+      const box = await header.boundingBox();
+      return box.y + box.height;
+    }, { message: `the bar collapses at ${width}px` }).toBeLessThan(rest.y + rest.height);
+    if (width < 768) await expect.poll(async () => (await header.boundingBox()).height).toBe(53);
+  }
+});
+
 // Desktop: the avatar rides the scroll ramp with the logo and title, 40px at
 // rest to 32px collapsed, and the first name keeps the rule of 3 against it
 // (font size = avatar / 3 / Montserrat's 0.7 cap height).
