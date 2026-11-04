@@ -23,7 +23,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     end
     assert_includes response.body, "Your"
     assert_not_includes response.body, "Solutions For"
-    assert_includes response.body, "An acquisition entrepreneur partnering with owners"
+    assert_includes response.body, "Work with Alex. This site is the resume, and it all runs live."
     # About
     assert_includes response.body, "Acquisition Entrepreneur"
     assert_includes response.body, "Over a decade of operational"
