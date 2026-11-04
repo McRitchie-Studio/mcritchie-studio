@@ -121,7 +121,7 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/people/duplicates` — GET admin UI listing detected duplicate Person groups (Levenshtein distance scoring).
 - `/people/merge` — GET render the person-merge form (pick keep/merge slugs). `POST /people/merge` → `PeopleController#merge_execute` consolidates contracts, roster spots, coaches, and athlete grades from source → keep person, then deletes source.
 - `/usages` — Usage table
-- `/admin/basement` — Admin-only page of links kept off the sidebar: the Site, Clients, Email, Ops and Studio pages today (`group: basement` in `config/navigation.yml`).
+- `/admin/basement` — Admin-only page of links kept off the sidebar: the Site, Clients, Email, Ops, Directory, Data and Pipelines pages today (`group: basement` in `config/navigation.yml`).
 - `/admin/links` — The sidebar's admin sections, then the Basement's. Pages in no section (`/dashboard`, `/applications`, `/agents`, `/tasks`) are not on it; the admin dashboard links the last three.
 - `/admin/dashboard` — Admin dashboard with quick links, a users table, and a request-log table backed by `error_logs`.
 - `/admin/ai_builder_multiple` — Admin dashboard for latest AI Builder Multiple index weeks, cohort coverage, the latest 9 Saturday-Friday UTC weekly commit cache ranges by tracked builder, builder weekly commit pace metrics, and CSV export paths. `/admin/ai_builder_multiple.json` returns the same latest index data and commit log ranges as JSON. Includes a caveat that this is public GitHub builder activity, not a true productivity measure.

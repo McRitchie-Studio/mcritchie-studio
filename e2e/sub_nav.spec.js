@@ -71,7 +71,9 @@ test.describe("a visitor", () => {
     for (const href of ["/tasks", "/dashboard", "/admin/dashboard", "/deployments", "/agents", "/people", "/docs"]) {
       await expect(main.locator(`a[href='${href}']`), `${href} is an admin entry`).toHaveCount(0);
     }
-    await expect(main.locator("h2", { hasText: /^Studio$/ })).toHaveCount(0);
+    // Studio is the public section now: the rows a visitor may open, and none of the admin pages above.
+    await expect(main.locator("h2", { hasText: /^Studio$/ })).toHaveCount(1);
+    await expect(main.locator("a", { hasText: /App Builder/ })).toHaveCount(0);
     await shot(page, "visitor-links-desktop");
   });
 });

@@ -169,7 +169,10 @@ class NavigationTest < ActiveSupport::TestCase
     assert_empty Navigation.registry.route_mismatches(named_routes).grep(/\A(dashboard|applications|agents|tasks):/)
     assert_equal %w[dashboard applications agents tasks], %w[dashboard applications agents tasks].select { |key| Navigation.pages.key?(key) }
     assert_equal "/dashboard", Rails.application.routes.url_helpers.dashboard_path
-    assert_equal [], Navigation.sidebar(:general).select { |section| section.title == "Studio" }
+    assert_equal %w[Admin], Navigation.sidebar(:admin).map(&:title)
+    assert_equal %w[NFL], Navigation.sidebar(:general).map(&:title)
+    assert_equal "Build", Navigation.page(:build).label
+    assert_not_includes Navigation.sidebar(:basement).map(&:title), "Studio", "Studio names the public section LinkTreeHelper draws"
   end
 
   test "[unit] a section entry can override a page's label there, and only there" do
@@ -211,7 +214,8 @@ class NavigationTest < ActiveSupport::TestCase
   test "[unit] the basement group holds the moved pages, every one an admin page placed nowhere in the sidebar" do
     assert_equal %w[admin_schema admin_emails admin_link_preview asset_browser stack credentials broadcasts contacts broadcast_analytics
                     error_logs admin_tiktok admin_google admin_fathom admin_agent_messages admin_report_destinations admin_csp_reports
-                    builders news_index contents model_pipeline body_archetypes videos],
+                    teams people builders docs admin_ai_builder_multiple workflow_news_index merge_people duplicates_people
+                    news_index contents model_pipeline body_archetypes videos alt_videos],
                  Navigation.sidebar(:basement).flat_map(&:pages).map(&:key)
     assert Navigation.sidebar(:basement).flat_map(&:pages).all? { |page| page.audience == "admin" }
 

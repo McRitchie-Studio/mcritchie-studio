@@ -21,12 +21,20 @@ const MOVED = [
   { href: "/admin/agent_messages", label: "Agent inbox", desc: "Messages to agents" },
   { href: "/admin/report_destinations", label: "Report destinations", desc: "Discord channel" },
   { href: "/admin/csp_reports", label: "CSP reports", desc: "Content-Security-Policy" },
+  { href: "/teams", label: "Teams", desc: "All teams" },
+  { href: "/people", label: "People", desc: "Players + staff" },
   { href: "/builders", label: "Builders", desc: "commit pace" },
+  { href: "/docs", label: "Docs", desc: "Documentation" },
+  { href: "/admin/ai_builder_multiple", label: "AI Builder Multiple", desc: "commit pace backtest" },
+  { href: "/news/workflow", label: "News workflow", desc: "Intake" },
+  { href: "/people/merge", label: "Merge people", desc: "Resolve duplicate" },
+  { href: "/people/duplicates", label: "Duplicates", desc: "Duplicate candidates" },
   { href: "/news", label: "News", desc: "News pipeline" },
   { href: "/contents", label: "Content", desc: "Content pipeline" },
   { href: "/model_pipeline", label: "Models", desc: "Character model" },
   { href: "/body-archetypes", label: "Body archetypes", desc: "Body builds" },
   { href: "/videos", label: "Videos", desc: "digested video" },
+  { href: "/alt_videos", label: "Alt videos", desc: "recast version" },
 ];
 const PHONE = { name: "phone", width: 390, height: 844 };
 const DESKTOP = { name: "desktop", width: 1440, height: 900 };
@@ -100,6 +108,16 @@ test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, 
   for (const href of ["/dashboard", "/applications", "/agents", "/tasks"]) {
     await expect(sidebar.locator(`a[href='${href}']`)).toHaveCount(0);
   }
+  for (const [href, word] of [
+    ["/build", "Build"],
+    ["/chat", "Chat"],
+    ["/websites", "Portfolio"],
+    ["/packages", "Packages"],
+    ["/integrations", "Integrations"],
+  ]) {
+    await expect(sidebar.locator(`a[href='${href}']`)).toContainText(word);
+  }
+  await expect(sidebar.locator("a", { hasText: /App Builder/ })).toHaveCount(0);
 
   await sidebar.locator("a[href='/admin/basement']").click();
   await expect(page).toHaveURL("/admin/basement");

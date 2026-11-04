@@ -21,8 +21,10 @@
 #           an admin; group: general sections follow and fill /links; group: basement
 #           sections never reach the sidebar and fill /admin/basement. /admin/links
 #           lists the admin and basement groups.
-#           Every sidebar also has Build: Chat and Portfolio. A signed-out visitor's
-#           sidebar is only Sign In and Build, one line each (LinkTreeHelper).
+#           Every sidebar and /links also have Studio: Build, Chat, Portfolio, Packages
+#           and Integrations (LinkTreeHelper#studio_link_section), which is not a
+#           section here. A signed-out visitor's sidebar is only Sign In and Studio, one
+#           line each. No Basement section takes the name Studio.
 #           An entry shows when its page is public or the viewer is an admin, and
 #           a section with no visible entry is dropped.
 #           An entry in pages is a page key, or { page:, label: } to show another
@@ -60,7 +62,7 @@ pages:
   packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
   integrations:   { page: "integrations#index",      audience: public, label: Integrations, emoji: "🔌", hover_emoji: "🧩", desc: "Connect your tools, add services we run" }
   integrations_discord: { page: "integrations#discord", audience: public, label: Discord for your agents }
-  build:          { page: "build#new",               audience: public, label: App Builder, emoji: "🧱", hover_emoji: "✨", desc: Describe an app and we build it }
+  build:          { page: "build#new",               audience: public, label: Build, emoji: "🧱", hover_emoji: "✨", desc: Describe an app and we build it }
   build_request:  { page: "build#show",              audience: public, label: Your app request }
   contact_form:   { page: "contact_submissions#new", audience: public, label: Contact }
   links:          { page: "links#index",             audience: public, label: Links }
@@ -175,15 +177,7 @@ sidebar:
   # /logos page's own label, since no sub-nav reads it. App Requests is what the funnel
   # brought in. Books is Mack's seat (CFO): the books and what they report.
   - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, { page: build_requests, label: App Requests }, books, activities_agents, admin_basement] }
-  - { title: Data,    group: admin, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
-  # The recast pipeline: every generated version of every source video.
-  - { title: Video,   group: admin, pages: [alt_videos] }
   - { title: NFL,       group: general, pages: [nfl_hub, games_season] }
-  # Directory holds admin pages only, so a visitor never sees it.
-  - { title: Directory, group: general, pages: [teams, people, docs] }
-  # Public on purpose: the App Builder is the funnel's front door and the packages
-  # page is where customers compare the tiers.
-  - { title: Services,  group: general, pages: [build, packages, integrations] }
   # The Basement: links worth keeping that the sidebar does not need to carry.
   - { title: Site,      group: basement, pages: [admin_schema, admin_emails, admin_link_preview, asset_browser] }
   # What each client runs on, and the credentials behind it.
@@ -191,8 +185,11 @@ sidebar:
   # The mailing list and what is sent to it.
   - { title: Email,     group: basement, pages: [broadcasts, contacts, broadcast_analytics] }
   - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_agent_messages, admin_report_destinations, admin_csp_reports] }
-  # What was the sidebar's Studio section, less the pages the admin dashboard links.
-  - { title: Studio,    group: basement, pages: [builders, news_index, contents, model_pipeline, body_archetypes, videos] }
+  # Who is who, and the docs.
+  - { title: Directory, group: basement, pages: [teams, people, builders, docs] }
+  - { title: Data,      group: basement, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
+  # What the studio makes. Alt videos is the recast pipeline: every generated version of every source video.
+  - { title: Pipelines, group: basement, pages: [news_index, contents, model_pipeline, body_archetypes, videos, alt_videos] }
 
 sub_navs:
   # The small link row above a board page's title.
