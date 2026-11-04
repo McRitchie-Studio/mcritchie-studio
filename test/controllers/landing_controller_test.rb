@@ -13,17 +13,17 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
     # Hero
     assert_select "h1.hero-title" do
-      assert_select "span.dropping-texts[data-spacer=Workflow][data-interval='3000'] > span", count: 3
-      assert_equal %w[Idea Workflow Agent], css_select("span.dropping-texts > span").map { |word| word.text.strip }
+      assert_select "span.dropping-texts[data-spacer=Flow][data-interval='3000'] > span", count: 4
+      assert_equal %w[Idea Flow Agent Plan], css_select("span.dropping-texts > span").map { |word| word.text.strip }
       # The first word renders active, so it starts in place; only it does.
       assert_select "span.dropping-texts > span.drop-active", count: 1, text: "Idea"
-      # Your stands beside the word from 400px; Built Right keeps its own line.
-      assert_select "> span.min-\\[400px\\]\\:basis-auto", text: "Your"
-      assert_select "span", text: "Built Right"
+      # Your stands beside the word; the second line takes the full width.
+      assert_select "> span:not(.basis-full)", text: "Your"
+      assert_select "> span.basis-full", text: "Built for 2027"
     end
     assert_includes response.body, "Your"
     assert_not_includes response.body, "Solutions For"
-    assert_includes response.body, "An acquisition entrepreneur partnering with owners"
+    assert_includes response.body, "Build a best-in-class website in minutes"
     # About
     assert_includes response.body, "Acquisition Entrepreneur"
     assert_includes response.body, "Over a decade of operational"
@@ -54,12 +54,12 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
   # The hero's call to action is the /build funnel, in the rainbow glow (Alex McRitchie,
   # 2026-10-19; /tasks/landing-build-ctas). It stands alone: the Meet Alex link
   # was dropped (Alex, 2026-10-20; /tasks/drop-hero-meet-alex).
-  test "hero CTA is Build Your Website to /build in the rainbow glow" do
+  test "hero CTA is Launch Your Website to /build in the rainbow glow" do
     get root_path
 
     assert_response :success
     assert_select "span.cta-glow.cta-glow-rainbow[data-test='hero-build-glow']", 1 do
-      assert_select "> a.btn.btn-primary.hero-cta[href='#{build_path}']", text: "Build Your Website"
+      assert_select "> a.btn.btn-primary.hero-cta[href='#{build_path}']", text: "Launch Your Website"
     end
     assert_select "[data-test='hero-meet-alex']", 0, "the hero has no Meet Alex link"
     assert_select "a", text: "Meet Alex", count: 0
