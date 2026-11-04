@@ -676,8 +676,10 @@
      ACCOUNT GROUP, and this file's phone row) stayed lit after the panel closed.
      Here the group shows no highlight, open or closed. Only this block needs
      !important: it has to beat the engine's rule, whatever its layer. A keyboard
-     keeps the engine's focus ring. Delete this block if the engine gates the
-     group on (hover: hover). */
+     keeps the engine's focus ring. The engine gating its group on (hover: hover)
+     does not retire this block: this file's phone row rules read :hover too, and
+     without the block a tapped gear stays lit. Delete it only when those rules
+     carry the same gate. */
   @media (hover: none) {
     .nav-shell [data-nav-name] { color: var(--color-text) !important; }
     .nav-shell [data-link-sidebar-trigger] { color: var(--color-text-secondary) !important; }
