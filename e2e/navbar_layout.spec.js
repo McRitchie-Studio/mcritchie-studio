@@ -250,6 +250,26 @@ test("below 768px at rest, the phone row draws the theme toggle left of the gear
   await expectPhoneRowOrder(page);
 });
 
+// The header's inline style holds var(--nav-p, 0) from the first paint, and the rule that
+// shows the bar's pair once it collapses must not read that as the bar being collapsed.
+test("below 768px at rest, the bar's hidden pair takes no Tab stop, and the row tabs toggle then gear", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await page.goto("/tasks");
+  const header = page.locator("header.nav-shell");
+  await expect.poll(() => header.getAttribute("style"), { message: "the state that used to match" }).toContain("var(--nav-p");
+  expect(await header.evaluate((h) => h.style.getPropertyValue("--nav-p"))).toBe("");
+  await expect(page.locator(".nav-phone-tools")).toHaveCSS("visibility", "hidden");
+
+  await page.locator(`${PHONE_ROW} button[title='Toggle theme']`).focus();
+  await page.keyboard.press("Tab");
+  expect(await page.evaluate((row) => document.activeElement.closest(row)?.querySelector("[data-link-sidebar-trigger]") === document.activeElement, PHONE_ROW), "the gear follows the toggle").toBe(true);
+
+  await page.evaluate(() => window.scrollTo(0, 1500));
+  await expect(page.locator(".nav-phone-tools")).toHaveCSS("visibility", "visible");
+  await page.evaluate(() => window.scrollTo(0, 0));
+  await expect(page.locator(".nav-phone-tools")).toHaveCSS("visibility", "hidden");
+});
+
 test("a visitor's phone row draws the theme toggle left of the gear", async ({ browser }) => {
   const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE, reducedMotion: "reduce" });
   const page = await context.newPage();

@@ -21,16 +21,35 @@ class SmoothLoadComponentTest < ActionView::TestCase
     end
   end
 
-  test "[component] disabled: renders neither meta" do
+  test "[component] disabled, with no page transition: renders neither meta" do
+    with_page_transition(nil) do
+      with_smooth_load(false) do
+        render partial: "layouts/studio/smooth_load"
+
+        assert_select "meta[name='view-transition']", count: 0
+        assert_select "meta[name='turbo-cache-control']", count: 0
+      end
+    end
+  end
+
+  test "[component] the hub's page transition turns the metas on, whatever smooth_load says" do
     with_smooth_load(false) do
       render partial: "layouts/studio/smooth_load"
 
-      assert_select "meta[name='view-transition']", count: 0
-      assert_select "meta[name='turbo-cache-control']", count: 0
+      assert_select "meta[name='view-transition'][content='same-origin']", count: 1
+      assert_select "meta[name='page-transition-direction'][content='left']", count: 1
     end
   end
 
   private
+
+  def with_page_transition(direction)
+    original = Studio.page_transition_direction
+    Studio.page_transition_direction = direction
+    yield
+  ensure
+    Studio.page_transition_direction = original
+  end
 
   # Studio.smooth_load is a mattr_accessor (process-global), so always restore
   # the app's configured value — leaking a toggle would flip every later test.
