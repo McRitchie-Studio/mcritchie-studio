@@ -597,37 +597,54 @@
     .nav-shell .nav-title span:first-child { margin-bottom: 0; }
   }
   /* A SIGNED-IN PHONE (layouts/_navbar_phone_account, in the engine's icon
-     slot). The name sits beside the avatar, capped so the account column stays
-     narrow and the brand keeps its one line.
+     slot). The name sits inside the account control (Studio.navbar_phone_name).
 
-     The phone row (cog and theme toggle) rides --nav-p like the rest of the
-     band: it is gone once the bar is collapsed, and the slot's own cog and
-     toggle take its place beside the name, so the pinned bar is one row. The
-     row's height is its padding, its border and the 2.25rem cog. The ramp is
-     three times the collapse total, which the row makes 60px.
+     The phone row (theme toggle and cog) rides --nav-p like the rest of the
+     band: it is gone once the bar is collapsed, and the slot's own toggle and
+     cog take its place beside the name, so the pinned bar is one row. The row's
+     height is its padding, its border and the 2.25rem cog. The ramp is three
+     times the collapse total, which the row makes 60px.
 
      Whichever pair is out of sight is hidden outright, so it takes no focus.
      The engine writes --nav-p on the header with four decimals, and writes
      nothing until the first scroll. */
-  /* The account column holds the name's width whether or not a name is shown,
-     so the brand's room never depends on the name. Log out used to hold it (at
-     3.5rem); without that row the column was only as wide as the name, and on
-     CI's Linux fonts a name was the difference between the brand on one line
-     and on two. 3.5rem is the name's 2.75rem cap plus the engine's 6px row
-     padding each side, the same width Log out held. Phones only: from 768px
-     the icons size the column. */
+  /* The name's box is one width whatever the name, so the brand's room never
+     depends on the name: on CI's Linux fonts a name was the difference between
+     the brand on one line and on two. This overrides the engine's wider cap,
+     and the row gives back its padding, which held nothing at rest. Phones
+     only: from 768px the icons size the column. */
   @media (max-width: 767px) {
-    .nav-shell :has(> [data-nav-account]) > div:first-child { min-width: 3.5rem; }
-  }
-  .nav-phone-name {
-    max-width: 2.75rem;
-    @apply min-w-0 truncate text-right text-base font-semibold leading-none text-heading;
+    .nav-shell [data-nav-account] [data-nav-name-phone] { width: 2.75rem; max-width: 2.75rem; }
+    .nav-shell [data-nav-tools][data-nav-rows="1"] > div:first-child { padding-inline: 0 !important; }
+    /* The engine's phone row draws the gear first through 0.123.0. Delete this
+       rule when the hub locks the engine with PR 514, which reorders the row. */
+    .nav-shell > .nav-row ~ div [data-link-sidebar-trigger] { order: 1; }
+    /* The phone row's gear lights as the bar's gear does (engine.css, THE ACCOUNT
+       GROUP). The row sits outside that group, and the gear's own hover fill is
+       the row's colour, so it would show only a change of grey. Here the gear, the
+       name and the avatar light together from any of them, as they do in the bar. */
+    .nav-shell > .nav-row ~ div [data-link-sidebar-trigger]:hover { background-color: transparent; }
+    .nav-shell > .nav-row ~ div [data-link-sidebar-trigger] svg { transition: transform 200ms ease; }
+    .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible, [data-nav-account]:hover, [data-nav-account]:focus-visible) > .nav-row ~ div [data-link-sidebar-trigger] {
+      color: var(--color-primary);
+    }
+    .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible) [data-nav-name] {
+      color: var(--color-primary);
+    }
+    .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible) [data-nav-account] > [aria-hidden] > * {
+      box-shadow:
+        0 0 0 2px rgb(var(--color-primary-rgb) / 0.85),
+        0 0 14px 2px rgb(var(--color-primary-rgb) / 0.45);
+    }
+    @media (prefers-reduced-motion: no-preference) {
+      .nav-shell:has(> .nav-row ~ div [data-link-sidebar-trigger]:hover, > .nav-row ~ div [data-link-sidebar-trigger]:focus-visible, [data-nav-account]:hover, [data-nav-account]:focus-visible) > .nav-row ~ div [data-link-sidebar-trigger] svg {
+        transform: rotate(45deg);
+      }
+    }
   }
   .nav-phone-tools {
     max-width: calc(4rem * var(--nav-p, 0));
     max-height: calc(2.25rem * var(--nav-p, 0));
-    /* At rest the pair has no width, and takes back the slot's gap too. */
-    margin-inline-end: calc(-0.5rem * (1 - var(--nav-p, 0)));
     opacity: var(--nav-p, 0);
     visibility: hidden;
     @apply shrink-0 items-center gap-2 overflow-hidden;
@@ -643,6 +660,22 @@
       overflow: hidden;
     }
     .nav-shell[style*="--nav-p: 1.0000"]:has([data-nav-account]) > .nav-row ~ div { visibility: hidden; }
+  }
+
+  /* A TOUCH DEVICE HAS NO HOVER. A tap leaves :hover on what was tapped until the
+     next tap lands elsewhere, so the account group's raw :hover (engine.css, THE
+     ACCOUNT GROUP, and this file's phone row) stayed lit after the panel closed.
+     Here the group shows no highlight, open or closed. Only this block needs
+     !important: it has to beat the engine's rule, whatever its layer. A keyboard
+     keeps the engine's focus ring. The engine gating its group on (hover: hover)
+     does not retire this block: this file's phone row rules read :hover too, and
+     without the block a tapped gear stays lit. Delete it only when those rules
+     carry the same gate. */
+  @media (hover: none) {
+    .nav-shell [data-nav-name] { color: var(--color-text) !important; }
+    .nav-shell [data-link-sidebar-trigger] { color: var(--color-text-secondary) !important; }
+    .nav-shell [data-link-sidebar-trigger] svg { transform: none !important; }
+    .nav-shell [data-nav-account] > [aria-hidden] > * { box-shadow: none !important; }
   }
 
   /* Theme CSS custom properties are now engine-generated via studio_theme_css_tag */

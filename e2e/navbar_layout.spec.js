@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
-const { loginWithMagicLink } = require("./helpers");
+const { loginWithMagicLink, VISITOR } = require("./helpers");
+const { ADMIN_STATE } = require("./global-setup");
 
 const VIEWPORTS = [
   { width: 1366, height: 800 },
@@ -100,7 +101,7 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await page.goto("/dashboard");
 
-  const name = page.locator("header [data-nav-phone-name]");
+  const name = page.locator("header [data-nav-account] [data-nav-name]");
   await expect(name).toBeVisible();
   await expect(name).toHaveText(/\S/);
   const box = await name.boundingBox();
@@ -110,20 +111,22 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   expect(box.x + box.width).toBeLessThanOrEqual(PHONE.width);
   await expectNavbarContained(page);
 
-  // The name costs the bar no room: without it the header is the same height,
-  // so the brand wraps no sooner. (The height itself depends on the font, so
-  // measure only once Montserrat has loaded: CI once read 161px with the
-  // fallback face, which wraps the brand, and 129px a moment later.)
+  // The name costs the bar no room: a short name and a long one leave the account
+  // control one width and the header one height, so the brand wraps no sooner. (The
+  // height itself depends on the font, so measure only once Montserrat has loaded:
+  // CI once read 161px with the fallback face, which wraps the brand, and 129px a
+  // moment later.) The control's width is the font-independent half of the claim,
+  // so it bites on any machine.
   await page.evaluate(() => document.fonts.ready);
   const header = page.locator("header.nav-shell");
-  // The column beside the avatar is what the name could widen. Its width is
-  // the font-independent half of the claim, so it bites on any machine.
-  const column = page.locator("header :has(> [data-nav-account]) > div").first();
+  const account = page.locator("header [data-nav-account]");
   const withName = (await header.boundingBox()).height;
-  const columnWithName = (await column.boundingBox()).width;
-  await name.evaluate((element) => { element.style.display = "none"; });
-  expect((await column.boundingBox()).width).toBe(columnWithName);
-  expect((await header.boundingBox()).height).toBe(withName);
+  const accountWithName = (await account.boundingBox()).width;
+  for (const text of ["A", "Maximiliano-Bartholomew"]) {
+    await name.evaluate((element, value) => { element.textContent = value; }, text);
+    expect((await account.boundingBox()).width, text).toBe(accountWithName);
+    expect((await header.boundingBox()).height, text).toBe(withName);
+  }
   await expect(page.locator(`${PHONE_ROW} [data-link-sidebar-trigger]`)).toBeVisible();
   await expect(page.locator(".nav-phone-tools")).toBeHidden();
 });
@@ -143,13 +146,337 @@ test("a signed-in phone header is 53px tall once scrolled", async ({ page }) => 
   await expect(page.locator(PHONE_ROW)).toBeHidden();
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toBeVisible();
   await expect(page.locator(".nav-phone-tools button[title='Toggle theme']")).toBeVisible();
-  const name = page.locator("header [data-nav-phone-name]");
+  const name = page.locator("header [data-nav-account] [data-nav-name]");
   await expect(name).toBeVisible();
   const avatar = await page.locator("header [data-nav-account]").boundingBox();
   expect(avatar.x + avatar.width).toBeLessThanOrEqual(PHONE.width);
 
   await page.locator(".nav-phone-tools [data-link-sidebar-trigger]").click();
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toHaveAttribute("aria-expanded", "true");
+});
+
+// THE ACCOUNT ROW BELOW 768PX (task hub-phone-account-row). Every width the phone
+// rules serve, from the narrowest phone to the last width below md.
+const PHONE_WIDTHS = [320, 390, 700, 767];
+
+// What the highlight does to the three. The name is found by its text and size,
+// not by a hook, so this answers for whichever element draws the name on screen:
+// a separate span beside the control went unlit, and the spec read that as red.
+const accountLight = (page) => page.evaluate(() => {
+  const header = document.querySelector("header.nav-shell");
+  const probe = document.createElement("span");
+  probe.style.color = "var(--color-primary)";
+  document.body.appendChild(probe);
+  const primary = getComputedStyle(probe).color;
+  probe.remove();
+  return {
+    primary,
+    glow: getComputedStyle(header.querySelector("[data-nav-account] > [aria-hidden] > *")).boxShadow,
+  };
+});
+
+async function shownName(page) {
+  const text = (await page.locator("header [data-nav-name]").first().textContent()).trim();
+  const matches = page.locator("header").getByText(text, { exact: true });
+  for (let index = 0; index < await matches.count(); index += 1) {
+    const box = await matches.nth(index).boundingBox();
+    if (box && box.width > 16) return matches.nth(index);
+  }
+  throw new Error(`no element in the header draws the name "${text}"`);
+}
+
+// Each spec is its own bare declaration, so the e2e census counts it.
+async function expectNameLightsAndOpens(page, width, y) {
+  await page.setViewportSize({ width, height: 844 });
+  await page.goto("/tasks");
+  await page.evaluate((top) => window.scrollTo(0, top), y);
+  if (y) await expect(page.locator("header.nav-shell")).toHaveClass(/is-scrolled/);
+  await page.mouse.move(5, 500);
+  await expect.poll(async () => (await accountLight(page)).glow).toBe("none");
+
+  const name = await shownName(page);
+  await name.hover();
+  await expect.poll(async () => (await accountLight(page)).glow).not.toBe("none");
+  const lit = await accountLight(page);
+  await expect.poll(() => name.evaluate((el) => getComputedStyle(el).color)).toBe(lit.primary);
+
+  await name.click();
+  await expect(page.locator("header [data-nav-account]")).toHaveAttribute("aria-expanded", "true");
+}
+
+test("at 390px at rest, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 390, 0);
+});
+
+test("at 390px scrolled, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 390, 1500);
+});
+
+test("at 700px at rest, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 700, 0);
+});
+
+test("at 700px scrolled, the name lights the avatar and opens what the avatar opens", async ({ page }) => {
+  await expectNameLightsAndOpens(page, 700, 1500);
+});
+
+test("below 768px scrolled, the theme toggle draws left of the gear, and both left of the name", async ({ page }) => {
+  for (const width of PHONE_WIDTHS) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/tasks");
+    await page.evaluate(() => window.scrollTo(0, 1500));
+    await expect(page.locator(".nav-phone-tools")).toBeVisible();
+
+    const name = await shownName(page);
+    const left = async (locator) => (await locator.boundingBox()).x;
+    const toggle = await left(page.locator(".nav-phone-tools button[title='Toggle theme']"));
+    const gear = await left(page.locator(".nav-phone-tools [data-link-sidebar-trigger]"));
+    const nameLeft = await left(name);
+    const message = JSON.stringify({ width, toggle, gear, nameLeft });
+    expect(toggle, message).toBeLessThan(gear);
+    expect(gear, message).toBeLessThan(nameLeft);
+  }
+});
+
+// At rest the engine's phone row carries the pair, in the same order as the bar.
+const expectPhoneRowOrder = async (page) => {
+  const left = async (selector) => (await page.locator(`${PHONE_ROW} ${selector}`).boundingBox()).x;
+  expect(await left("button[title='Toggle theme']")).toBeLessThan(await left("[data-link-sidebar-trigger]"));
+};
+
+test("below 768px at rest, the phone row draws the theme toggle left of the gear", async ({ page }) => {
+  await page.setViewportSize(PHONE);
+  await page.goto("/tasks");
+  await expectPhoneRowOrder(page);
+});
+
+test("a visitor's phone row draws the theme toggle left of the gear", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE, reducedMotion: "reduce" });
+  const page = await context.newPage();
+  await page.goto("/about");
+  await expectPhoneRowOrder(page);
+  await context.close();
+});
+
+// The gear in the phone row is outside the engine's account group, and its own hover
+// fill is the row's colour, so nothing marked it but a grey-to-white. It takes what the
+// bar's gear takes: the primary colour, an eighth turn, no fill, and the group lit.
+const ROW_GEAR = `${PHONE_ROW} [data-link-sidebar-trigger]`;
+const AVATAR = "header [data-nav-account] > [aria-hidden] > *";
+
+const gearLight = (page) => page.evaluate(([gearSelector, avatarSelector]) => {
+  const gear = document.querySelector(gearSelector);
+  const avatar = document.querySelector(avatarSelector);
+  const probe = document.createElement("span");
+  probe.style.color = "var(--color-primary)";
+  document.body.appendChild(probe);
+  const primary = getComputedStyle(probe).color;
+  probe.remove();
+  return {
+    primary,
+    color: getComputedStyle(gear).color,
+    fill: getComputedStyle(gear).backgroundColor,
+    turn: getComputedStyle(gear.querySelector("svg")).transform,
+    glow: avatar ? getComputedStyle(avatar).boxShadow : null,
+  };
+}, [ROW_GEAR, AVATAR]);
+
+async function expectGearLit(page, { group }) {
+  await expect.poll(async () => {
+    const light = await gearLight(page);
+    return light.color === light.primary;
+  }).toBe(true);
+  await expect.poll(async () => (await gearLight(page)).turn).toContain("0.707107");
+  const light = await gearLight(page);
+  expect(light.fill, JSON.stringify(light)).toBe("rgba(0, 0, 0, 0)");
+  if (group) await expect.poll(async () => (await gearLight(page)).glow).not.toBe("none");
+}
+
+async function openRowAtRest(page, theme) {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 700, height: 844 });
+  await page.goto("/tasks");
+  const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
+  if (isDark !== (theme === "dark")) await page.locator(`${PHONE_ROW} button[title='Toggle theme']`).click();
+  await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(theme === "dark");
+  await page.mouse.move(5, 600);
+  await expect.poll(async () => {
+    const light = await gearLight(page);
+    return light.color !== light.primary && light.turn === "none";
+  }).toBe(true);
+}
+
+test("in dark, hovering the phone row's gear lights it as the bar's gear lights", async ({ page }) => {
+  await openRowAtRest(page, "dark");
+  await page.locator(ROW_GEAR).hover();
+  await expectGearLit(page, { group: true });
+});
+
+test("in light, hovering the phone row's gear lights it as the bar's gear lights", async ({ page }) => {
+  await openRowAtRest(page, "light");
+  await page.locator(ROW_GEAR).hover();
+  await expectGearLit(page, { group: true });
+});
+
+test("keyboard focus lights the phone row's gear, and clicking it opens the sidebar", async ({ page }) => {
+  await openRowAtRest(page, "dark");
+  // Back a stop and forward again, so the browser treats it as keyboard focus. The
+  // gear precedes the toggle in the DOM until the engine relock, so no single key
+  // from the toggle reaches it on both sides of that.
+  await page.locator(ROW_GEAR).focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(page.locator(ROW_GEAR)).toBeFocused();
+  await expectGearLit(page, { group: true });
+  await page.locator(ROW_GEAR).click();
+  await expect(page.locator(ROW_GEAR)).toHaveAttribute("aria-expanded", "true");
+});
+
+test("hovering the account lights the phone row's gear with it", async ({ page }) => {
+  await openRowAtRest(page, "dark");
+  await page.locator("header [data-nav-account]").hover();
+  await expectGearLit(page, { group: true });
+});
+
+test("a visitor's phone row gear lights on hover too", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE });
+  const page = await context.newPage();
+  await page.goto("/about");
+  await page.locator(ROW_GEAR).hover();
+  await expectGearLit(page, { group: false });
+  await context.close();
+});
+
+// A TOUCH DEVICE. A tap leaves the browser's :hover on what was tapped until the next
+// tap lands elsewhere, so a highlight read from :hover stays lit after the panel is
+// closed by tapping its trigger again. A touch device shows no highlight, open or closed.
+async function touchPhone(browser) {
+  const context = await browser.newContext({
+    storageState: ADMIN_STATE, viewport: { width: 393, height: 852 }, hasTouch: true, isMobile: true,
+  });
+  const page = await context.newPage();
+  await page.goto("/tasks");
+  return { context, page };
+}
+
+const touchLight = (page) => page.evaluate(([gearSelector, avatarSelector]) => {
+  const gear = document.querySelector(gearSelector);
+  const probe = document.createElement("span");
+  document.body.appendChild(probe);
+  const token = (name) => {
+    probe.style.color = `var(${name})`;
+    return getComputedStyle(probe).color;
+  };
+  const light = {
+    name: getComputedStyle(document.querySelector("header [data-nav-name]")).color,
+    gear: getComputedStyle(gear).color,
+    turn: getComputedStyle(gear.querySelector("svg")).transform,
+    glow: getComputedStyle(document.querySelector(avatarSelector)).boxShadow,
+    open: gear.getAttribute("aria-expanded"),
+    restName: token("--color-text"),
+    restGear: token("--color-text-secondary"),
+  };
+  probe.remove();
+  return light;
+}, [ROW_GEAR, AVATAR]);
+
+async function expectNothingLit(page, open) {
+  await expect.poll(async () => {
+    const light = await touchLight(page);
+    return light.open === String(open) && light.name === light.restName && light.gear === light.restGear &&
+      light.turn === "none" && light.glow === "none";
+  }, { message: `nothing lit with the panel ${open ? "open" : "closed"}` }).toBe(true);
+}
+
+test("on touch, tapping the name twice leaves nothing lit, open or closed", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  const name = page.locator("header [data-nav-account] [data-nav-name]");
+  await name.tap();
+  await expectNothingLit(page, true);
+  await name.tap();
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, tapping the gear twice leaves nothing lit, open or closed", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator(ROW_GEAR).tap();
+  await expectNothingLit(page, true);
+  await page.locator(ROW_GEAR).tap();
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, the panel's close button leaves nothing lit", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator("header [data-nav-account]").tap();
+  await expectNothingLit(page, true);
+  await page.locator("#studio-link-sidebar-mobile [aria-label*='Close' i]").tap();
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, a tap outside the panel leaves nothing lit", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator("header [data-nav-account]").tap();
+  await expectNothingLit(page, true);
+  const row = await page.locator(PHONE_ROW).boundingBox();
+  await page.touchscreen.tap(row.x + 20, row.y + row.height / 2);
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+test("on touch, Escape leaves nothing lit", async ({ browser }) => {
+  const { context, page } = await touchPhone(browser);
+  await page.locator("header [data-nav-account]").tap();
+  await expectNothingLit(page, true);
+  await page.keyboard.press("Escape");
+  await expectNothingLit(page, false);
+  await context.close();
+});
+
+// The control: the touch rule leaves a mouse alone.
+test("a desktop mouse still lights the bar's gear, name and avatar", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/tasks");
+  await page.mouse.move(5, 600);
+  await page.locator("header [data-nav-tools] [data-link-sidebar-trigger]").filter({ visible: true }).first().hover();
+  await expect.poll(() => page.evaluate((avatar) => getComputedStyle(document.querySelector(avatar)).boxShadow, AVATAR)).not.toBe("none");
+  const { primary } = await accountLight(page);
+  await expect.poll(() => page.evaluate(() => getComputedStyle(document.querySelector("header [data-nav-name]")).color)).toBe(primary);
+});
+
+// Each band, at rest and scrolled: nothing wraps or leaves the screen, and the bar
+// still collapses. A wrapped name or brand shows as a taller bar than the band's.
+test("the signed-in rail holds at every width, at rest and scrolled", async ({ page }) => {
+  for (const width of [...PHONE_WIDTHS, 768, 820, 1024, 1280, 1440]) {
+    await page.setViewportSize({ width, height: 844 });
+    await page.goto("/tasks");
+    await page.evaluate(() => document.fonts.ready);
+    const header = page.locator("header.nav-shell");
+    const rest = await header.boundingBox();
+
+    for (const y of [0, 1500]) {
+      await page.evaluate((top) => window.scrollTo(0, top), y);
+      if (y) await expect(header).toHaveClass(/is-scrolled/);
+      // The header's own overflow, not the document's: the board's filter bar is
+      // wider than a 320px phone, and that is the page's, not the rail's.
+      const metrics = await navbarMetrics(page);
+      const message = JSON.stringify({ width, y, metrics }, null, 2);
+      const headerOverflow = await header.evaluate((el) => el.scrollWidth - el.clientWidth);
+      expect(headerOverflow, message).toBeLessThanOrEqual(1);
+      expect(metrics.offscreen, message).toEqual([]);
+      const name = await (await shownName(page)).boundingBox();
+      expect(name.height, message).toBeLessThanOrEqual(28);
+    }
+
+    await expect.poll(async () => {
+      const box = await header.boundingBox();
+      return box.y + box.height;
+    }, { message: `the bar collapses at ${width}px` }).toBeLessThan(rest.y + rest.height);
+    if (width < 768) await expect.poll(async () => (await header.boundingBox()).height).toBe(53);
+  }
 });
 
 // Desktop: the avatar rides the scroll ramp with the logo and title, 40px at
