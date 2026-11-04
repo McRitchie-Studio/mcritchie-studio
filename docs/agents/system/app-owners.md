@@ -1,7 +1,7 @@
 # App owners and CTO settings
 
-A person can own an app. An owner signs in to the hub, sees their app and its
-CTO in the sidebar, and sets the CTO's settings. The CTO is downstream of the
+A person can own an app. An owner signs in to the hub, sees their app in the
+sidebar, opens it, and sets its CTO's settings. The CTO is downstream of the
 app, so the app's page comes first. The plan is Phase 6a of
 `.agents/epics/domain-agents.md`.
 
@@ -56,12 +56,13 @@ and nowhere else ("Confirm by reply" in the same page; Alex McRitchie, 2026-10-1
 ## The sidebar
 
 Owners get a **Your apps** section at the top of the link sidebar
-(`LinkTreeHelper#owner_link_sections`, `AppOwnership.sidebar_links`). The labels
-count the viewer's OWN memberships, admins included:
+(`LinkTreeHelper#owner_link_sections`, `AppOwnership.sidebar_links`). It counts the
+viewer's OWN memberships, admins included (Alex McRitchie, 2026-11-04):
 
-- one owned app reads as its name (`Cyvasse`), followed by its **Pipeline**; two
-  or more as **Applications** (each app's page links its own pipeline);
-- one CTO among them reads as its name (`Turf`), two or more as **Agents**;
+- at most two apps, each by name, with its CTO's portrait, and a rocket on hover;
+- with three or more, **All apps** is the third row, for an admin too, who then
+  also has **Applications** in the Studio section;
+- each app's page links its own pipeline and its CTO;
 - a user who owns nothing gets no section, admin or not. An admin still reaches
   every app at `/applications`.
 
@@ -79,7 +80,7 @@ A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 | `/applications/:slug/usage` | The usage meter as JSON |
 | `/applications/:slug/usage_cap` | `PATCH`, admin only (the wall refuses anyone else): the app's package tier and the cap lift |
 | `/applications/:slug/chat` | `GET` and `POST`: the viewer's own live chat with the app's CTO, with typing, the answer streamed in, and the usage meter in tokens. Detail: [`agent-message-loop.md`](agent-message-loop.md#web-chat-the-ctos-answer-on-mcritchie-studio-phase-7-step-3) |
-| `/agents/settings` | The visible CTOs and where each one reports |
+| `/agents/settings` | The visible CTOs and where each one reports. No page links it now; each CTO's own settings page is linked from its app's page |
 | `/agents/:slug/settings` | The CTO's name, avatar and app, its report setting, and the app's usage meter |
 
 `/agents/:slug` stays the admin soul page (tasks, activities, docs); owners get

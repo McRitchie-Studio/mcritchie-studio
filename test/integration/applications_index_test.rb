@@ -74,7 +74,7 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "[component] the admin sidebar links Applications once, even for an admin who owns apps; a non-admin owner's comes only from their own links" do
+  test "[component] an admin who owns up to two apps gets one /applications link, three or more get All apps too; a non-admin owner's comes only from their own links" do
     alex = users(:alex)
     alex.save!
     AppMembership.create!(app: apps(:turf_monster), user: alex)
@@ -82,6 +82,10 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
     log_in_as(alex)
     get applications_path
     assert_select "#studio-link-sidebar a[href='/applications']", { count: 1 }, "one Applications link, not two"
+
+    AppMembership.create!(app: apps(:mcritchie_studio), user: alex)
+    get applications_path
+    assert_select "#studio-link-sidebar a[href='/applications']", { count: 2 }, "All apps and Applications (Alex McRitchie, 2026-11-04: 3+ apps, no exception)"
 
     owner = User.create!(email: "single@example.com", name: "Single Owner", role: "viewer")
     AppMembership.create!(app: @pawsome, user: owner)

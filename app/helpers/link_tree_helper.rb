@@ -57,20 +57,35 @@ module LinkTreeHelper
     AdminWall::PUBLIC.fetch("chat", []).include?("index") ? chat_index_path : build_path
   end
 
-  # An app owner's links, first in the sidebar: their app (or "Applications")
-  # and its CTO (or "Agents"), counted from their own memberships, admins
-  # included (AppOwnership.sidebar_links, docs/agents/system/app-owners.md).
-  # Nothing for a visitor or a user who owns no app.
+  # An app owner's links, first in the sidebar: at most two apps, then All apps,
+  # counted from their own memberships, admins included (AppOwnership.sidebar_links,
+  # docs/agents/system/app-owners.md). An app shows its CTO's portrait, and every row
+  # swaps to a rocket on hover (Alex McRitchie, 2026-11-04). Nothing for a visitor or a
+  # user who owns no app.
   def owner_link_sections
     return [] unless logged_in? && current_user
 
     links = AppOwnership.sidebar_links(current_user).map do |link|
-      { label: link.label, href: link.href, emoji: link.emoji, hover_emoji: link.emoji, desc: nil }
+      { label: link.label, href: link.href, emoji: owner_row_icon(link), hover_emoji: "🚀", desc: nil }
     end
     links.any? ? [ { title: "Your apps", links: links } ] : []
   end
 
   private
+
+  # A row's small portrait: the Agent row's, else a client CTO's chosen one, else the
+  # app's emoji when the app has no CTO or the CTO has no picture.
+  def owner_row_icon(link)
+    cto = link.cto
+    css = "w-5 h-5 rounded-full object-cover"
+    if cto&.agent&.avatar.present?
+      safe_image_tag(cto.agent.avatar, alt: "", class: css)
+    elsif cto&.client? && (drawn = cto_avatar_tag(cto.app_cto.portrait, cto.app_cto.palette, label: cto.display_name, css_class: css))
+      drawn # nil for a portrait it does not know: this runs on every page, so that costs the emoji, not the page
+    else
+      link.emoji
+    end
+  end
 
   # A signed-out visitor's sidebar: sign in, or start building (Alex McRitchie,
   # 2026-11-03). /links still lists the public pages.

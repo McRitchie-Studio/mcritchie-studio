@@ -400,9 +400,9 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_report_destinations_path = "/admin/report_destinations"
   def admin_csp_reports_path = "/admin/csp_reports"
   # [component] The owner section (AppOwnership.sidebar_links): first in the
-  # sidebar, one app and one CTO by name, two of each as Applications and Agents,
-  # absent for a signed-in user who owns nothing and for a visitor.
-  test "[component] an owner's sidebar opens with their app and CTO by name, or Applications and Agents for two" do
+  # sidebar, at most two apps by name and All apps third, every row swapping to a
+  # rocket; absent for a signed-in user who owns nothing and for a visitor.
+  test "[component] an owner's sidebar opens with up to two apps, and All apps third for three or more" do
     owner = User.create!(email: "sidebar-owner@example.com", name: "Sidebar Owner", role: "viewer")
     cyvasse = App.create!(slug: "cyvasse", name: "Cyvasse", emoji: "🐉", color: "#DC2626", position: 5)
     AppMembership.create!(app: apps(:turf_monster), user: owner)
@@ -412,13 +412,19 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     first = sidebar_link_sections.first
     assert_equal "Your apps", first.fetch(:title)
-    assert_equal [ [ "Turf Monster", "/applications/turf-monster" ], [ "Pipeline", "/applications/turf-monster/pipeline" ],
-                   [ "Turf", "/agents/turf-monster/settings" ] ],
+    assert_equal [ [ "Turf Monster", "/applications/turf-monster" ] ],
                  first.fetch(:links).map { |link| [ link.fetch(:label), link.fetch(:href) ] }
-    assert first.fetch(:links).all? { |link| link[:hover_emoji].present? }
+    assert first.fetch(:links).all? { |link| link[:hover_emoji] == "🚀" }
 
     AppMembership.create!(app: cyvasse, user: owner)
-    assert_equal [ "Applications", "Agents" ], sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }
+    assert_equal 2, sidebar_link_sections.first.fetch(:links).size
+    assert_not_includes sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }, "All apps"
+
+    AppMembership.create!(app: apps(:mcritchie_studio), user: owner)
+    links = sidebar_link_sections.first.fetch(:links)
+    assert_equal 3, links.size
+    assert_equal [ "All apps", "/applications" ], links.last.values_at(:label, :href)
+    assert links.all? { |link| link[:hover_emoji] == "🚀" }
 
     self.current_user = User.create!(email: "sidebar-none@example.com", name: "No Apps", role: "viewer")
     assert_equal [ "Build", "NFL", "Services", "Apps" ], sidebar_link_sections.map { |section| section.fetch(:title) }

@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/report_destination_fixtures"
 
 # [integration] App owners (docs/agents/system/app-owners.md): an owner signs in,
-# sees their app and its CTO in the sidebar, opens the app and the CTO's settings,
+# sees their app in the sidebar, opens the app and, from it, the CTO's settings,
 # and sets the daily report's channel, writing the same ReportDestination row as
 # /admin/report_destinations. Anyone else gets 404, never 403; a visitor is sent
 # to sign in. Server-side, every action.
@@ -29,24 +29,49 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
     [ shared, turf ]
   end
 
-  test "[integration] the owner's sidebar names their app and CTO; a non-owner's has neither" do
+  test "[integration] the owner's sidebar names up to two apps, then All apps; the app page links the CTO; a non-owner's has neither" do
     log_in_as(@owner)
     get settings_agent_path("turf-monster")
     assert_response :success
     assert_select "#studio-link-sidebar a[href=?]", application_path("turf-monster"), text: /Turf Monster/
-    assert_select "#studio-link-sidebar a[href=?]", settings_agent_path("turf-monster"), text: /Turf/
+    assert_select "#studio-link-sidebar a[href=?]", settings_agent_path("turf-monster"), count: 0
     assert_select "#studio-link-sidebar a[href=?]", applications_path, count: 0
+
+    get application_path("turf-monster")
+    assert_select "main a[href=?]", settings_agent_path("turf-monster"), text: /Settings/
+    assert_select "main a[href=?]", pipeline_application_path("turf-monster")
 
     AppMembership.create!(app: @cyvasse, user: @owner)
     get applications_path
-    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /Applications/
-    assert_select "#studio-link-sidebar a[href=?]", settings_agents_path, text: /Agents/
+    assert_select "#studio-link-sidebar a[href=?]", application_path("cyvasse"), text: /Cyvasse/
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, count: 0
+
+    AppMembership.create!(app: apps(:mcritchie_studio), user: @owner)
+    get applications_path
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /All apps/
+    assert_select "#studio-link-sidebar a[href^='/applications/']", count: 2
 
     log_in_as(@stranger)
     get root_path
     assert_select "#studio-link-sidebar", 1, "the sidebar renders for the stranger, so the absence below is real"
     assert_select "#studio-link-sidebar a[href^='/applications']", count: 0
     assert_select "#studio-link-sidebar a[href$='/settings']", count: 0
+  end
+
+  test "[integration] a client CTO's row draws its avatar; an unusable portrait costs the emoji, never the page" do
+    AppMembership.create!(app: App.create!(slug: "pawsome", name: "Pawsome", emoji: "🐾", color: "#DC2626"), user: @stranger)
+    row = AppCto.new(app_slug: "pawsome", name: "Rex").tap { |cto| cto.save!(validate: false) }
+    log_in_as(@stranger)
+    icon = "#studio-link-sidebar a[href='/applications/pawsome'] .studio-emoji-swap-base"
+
+    { BuildIntake::Animals.all.first => "#{icon} svg.cto-animal", "harbor" => "#{icon} img[src*='cto_portraits/harbor']" }.each do |portrait, drawn|
+      row.update_column(:portrait, portrait)
+      get root_path
+      assert_select drawn, 1, portrait
+    end
+    row.update_column(:portrait, "retired")
+    get root_path
+    assert_select icon, text: "🐾"
   end
 
   test "[integration] an owner sees only their app: list, page, health frame and CTO card" do
