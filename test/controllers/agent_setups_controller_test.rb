@@ -218,12 +218,16 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "pending", setup.reload.status
   end
 
-  # Alex McRitchie 2026-10-28: "is a link in the admin sidebar? That's important so I can find this page".
-  test "[integration] the admin sidebar links the agents page and names its pending setups" do
+  # Alex McRitchie 2026-10-28: "is a link in the admin sidebar? That's important so I can find
+  # this page". 2026-11-04: Applications and Agents "are viewable from the admin dashboard so I
+  # think we can drop". So he still finds it by clicking, from the dashboard's stat card.
+  test "[integration] the admin dashboard links the agents page; the registry entry names its pending setups" do
     page = Navigation.registry.page(:agents)
     assert_equal "agents#index", page.action_id
     assert_match(/pending setups/, page.desc)
-    assert(Navigation.registry.sidebar("general").any? { |section| section.pages.map(&:key).include?("agents") },
-           "the Studio section lists the agents page")
+
+    log_in_as(users(:alex))
+    get admin_dashboard_path
+    assert_select "a[data-test='stat-card-agents'][href=?]", agents_path
   end
 end

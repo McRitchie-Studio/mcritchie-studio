@@ -1,9 +1,9 @@
 require "test_helper"
 
-# Guards the nav → sidebar move (application.html.erb + link_tree_helper.rb):
-# "Agents" and "Builders" no longer live in the global navbar. Signed-in users
-# reach them from the links sidebar's Studio section, pointing at /agents and
-# /builders — never the old activity-feed route.
+# "Agents" and "Builders" no longer live in the global navbar, or in the sidebar
+# since the Studio section left it (Alex McRitchie, 2026-11-04). An admin reaches
+# /agents from the admin dashboard and /builders from the Basement, never the old
+# activity-feed route.
 class SidebarAgentsBuildersLinkTest < ActionDispatch::IntegrationTest
   test "global navbar no longer carries the Agents or Builders links" do
     get links_path
@@ -15,15 +15,20 @@ class SidebarAgentsBuildersLinkTest < ActionDispatch::IntegrationTest
       "Agents should be gone from the mobile sub-navbar"
   end
 
-  test "signed-in sidebar links Agents and Builders to their index pages" do
+  test "the admin dashboard links Agents, the Basement links Builders, and the sidebar links neither" do
     log_in_as users(:alex)
-    get dashboard_path
+    get admin_dashboard_path
     assert_response :success
 
-    assert_select "#studio-link-sidebar a[href=?]", agents_path
-    assert_select "#studio-link-sidebar a[href=?]", builders_path
-    # the Agents item must not regress to the retired /activities path
+    assert_select "a[data-test='stat-card-agents'][href=?]", agents_path
+    assert_select "#studio-link-sidebar", 1
+    assert_select "#studio-link-sidebar a[href=?]", agents_path, count: 0
+    assert_select "#studio-link-sidebar a[href=?]", builders_path, count: 0
+    # no link may regress to the retired /activities path
     assert_select "#studio-link-sidebar a[href=?]", "/activities", count: 0
+
+    get admin_basement_path
+    assert_select "[data-link-hub] a[href=?]", builders_path
   end
 
   test "the old 'Meet the Agents' copy is gone" do

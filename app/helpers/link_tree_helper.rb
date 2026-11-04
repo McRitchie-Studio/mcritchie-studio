@@ -24,6 +24,11 @@ module LinkTreeHelper
     sections
   end
 
+  # /links: the Studio section, then the general sections and the apps.
+  def links_page_sections
+    [ studio_link_section(desc: true) ] + public_link_sections
+  end
+
   def admin_link_sections
     registry_link_sections(:admin)
   end
@@ -36,7 +41,7 @@ module LinkTreeHelper
   def sidebar_link_sections
     return visitor_sidebar_sections unless logged_in?
 
-    sections = [ build_link_section ] + public_link_sections
+    sections = [ studio_link_section ] + public_link_sections
     sections = admin_link_sections.map { |section| section.merge(admin: true) } + sections if admin?
     owner_link_sections + sections
   end
@@ -90,18 +95,22 @@ module LinkTreeHelper
   # A signed-out visitor's sidebar: sign in, or start building (Alex McRitchie,
   # 2026-11-03). /links still lists the public pages.
   def visitor_sidebar_sections
-    visitor_link_sections + [ build_link_section ]
+    visitor_link_sections + [ studio_link_section ]
   end
 
-  # Chat and Portfolio, at every level (Alex McRitchie, 2026-11-04: "add Chat and
-  # Portfolio to the logged in sidebar"). An admin is signed in, so an admin has them too.
-  def build_link_section
-    page = Navigation.page(:websites)
-    { title: "Build", links: [
-      { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
-        emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") },
-      { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji }
-    ] }
+  # Build, Chat, Portfolio, Packages and Integrations, at every level (Alex McRitchie,
+  # 2026-11-04: "change this to 'Studio' and have the first be Build"). Public on purpose:
+  # Build is the funnel's front door and Packages is where customers compare the tiers.
+  # One line each in the sidebar; /links has room for the descriptions.
+  def studio_link_section(desc: false)
+    row = lambda do |key|
+      page = Navigation.page(key)
+      { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, **(desc ? { desc: page.desc } : {}) }
+    end
+    chat = { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
+             emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") }
+
+    { title: "Studio", links: [ row.call(:build), chat, row.call(:websites), row.call(:packages), row.call(:integrations) ] }
   end
 
   def registry_link_sections(group)
