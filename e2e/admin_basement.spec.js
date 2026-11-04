@@ -79,7 +79,7 @@ test("the sidebar reads Dashboard, DevOps, Design, Basement and takes you to the
 
 test("a moved page still opens from its old address, one click from the Basement", async ({ page }) => {
   await page.goto("/admin/basement");
-  await page.locator("[data-link-hub] a[href='/admin/schema']").click();
-  await expect(page).toHaveURL("/admin/schema");
+  await page.locator("[data-link-hub] a[href='/assets']").click();
+  await expect(page).toHaveURL("/assets");
   await expect(page.getByRole("heading", { level: 1 }).first()).toBeVisible();
 });

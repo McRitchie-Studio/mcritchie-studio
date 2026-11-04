@@ -75,8 +75,8 @@ route table, so a new route is walled until it is listed.
 
 The public list has two sources. Pages come from the navigation registry,
 `config/navigation.yml`: each page declares `audience: public` or `admin`, and
-the same entries build the link sidebar, `/links`, `/admin/links` and the section
-sub-navs (`components/_sub_nav`), so a link and the page behind it cannot
+the same entries build the link sidebar, `/links`, `/admin/links`, `/admin/basement`
+and the section sub-navs (`components/_sub_nav`), so a link and the page behind it cannot
 disagree. Public actions that are not site pages (form posts, probes, tracking
 pixels, the auth, unsubscribe and local-development doors) stay an explicit list,
 `AdminWall::PUBLIC_ACTIONS`. `test/integration/admin_wall_public_set_test.rb`
