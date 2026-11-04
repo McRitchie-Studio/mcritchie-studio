@@ -218,11 +218,12 @@ test("the launch panel morphs into the chat at its own address", async ({ browse
   const panel = page.locator("[data-test='build-launch']");
   await expect(panel, "no panel: the flag is spent, so reseed").toBeVisible();
   expect(await page.evaluate(() => matchMedia("(prefers-reduced-motion: reduce)").matches), "the panel ran reduced").toBe(false);
-  await page.evaluate(() => {
-    document.addEventListener("turbo:visit", () => { window.__seen.length = 0; window.__moves.length = 0; }, { once: true });
-  });
-  const load = settled(page);
-  await load;
+  await page.evaluate(() => new Promise((done) => {
+    document.addEventListener("turbo:visit", () => {
+      window.__seen.length = 0;
+      document.addEventListener("turbo:load", done, { once: true });
+    }, { once: true });
+  }));
   await expect(panel).toHaveCount(0);
   await expect(page.locator("[data-test='agent-shell']")).toBeVisible();
   expect(new URL(page.url()).pathname).toBe(chat);
