@@ -22,6 +22,8 @@ async function chatPageIsOnlyTheChat(page, viewport) {
   await expect(page.locator("[data-test='contact-form']")).toHaveCount(0);
   await expect(page.locator("[data-test='sms-disclosure']")).toHaveCount(0);
   await expect(page.locator(LINK)).toBeVisible();
+  // WCAG 2.2 AA target size: the link is a phone user's only way to the form from here.
+  expect((await page.locator(LINK).boundingBox()).height).toBeGreaterThanOrEqual(24);
   expect(await sideways(page)).toBeLessThanOrEqual(0);
 }
 
