@@ -3,7 +3,7 @@
 // keeps what each view-transition pseudo ran, as only a browser shows it. NOT @qa-readonly in
 // spirit: it needs the seeded admin and the cyvasse chat.
 const { test, expect } = require("@playwright/test");
-const { blockThirdPartyRequests, watchPageErrors } = require("./helpers");
+const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 
 const LEFT_OUT = "pt-out-left";
 const LEFT_IN = ["pt-in-from-right", "pt-unfold-right"];
@@ -79,7 +79,7 @@ test("/ to /chat plays the left pair, each of the two, and no other direction's"
   await page.evaluate(() => { window.__random = 0.99; });
   await visit(page, "/");
   expect(pageStyles(await seen(page)).sort()).toEqual(["::view-transition-new(root) pt-unfold-right", "::view-transition-old(root) pt-out-left"]);
-  expect(errors).toEqual([]);
+  expect(errors.pageErrors, errors.report()).toEqual([]);
 });
 
 test("Back plays a left style too", async ({ page }) => {
@@ -155,7 +155,7 @@ test("reduced motion plays nothing, on a page change or between agent pages", as
   await expect(page.locator("[data-test='agent-portrait']")).toBeVisible();
 });
 
-test("the sidebar and a modal work after a move", async ({ page }) => {
+test("the sidebar opens and closes after a move", async ({ page }) => {
   const errors = watchPageErrors(page);
   await open(page, "/");
   await visit(page, "/chat");
@@ -164,17 +164,32 @@ test("the sidebar and a modal work after a move", async ({ page }) => {
   await expect(gear).toHaveAttribute("aria-expanded", "true");
   await page.keyboard.press("Escape");
   await expect(gear).toHaveAttribute("aria-expanded", "false");
-  expect(errors).toEqual([]);
+  expect(errors.pageErrors, errors.report()).toEqual([]);
 });
 
-test("the real login page plays the left style, its field takes input", async ({ browser }) => {
-  const context = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+test("the real sign-in page plays a left style, and its field takes input", async ({ browser }) => {
+  const context = await browser.newContext({ storageState: VISITOR });
   const page = await context.newPage();
   await open(page, "/about");
-  await visit(page, "/login");
+  await visit(page, "/signin");
   expectLeftStyle(await seen(page));
   const email = page.locator("input[type='email']").filter({ visible: true }).first();
   await email.fill("visitor@example.test");
   await expect(email).toHaveValue("visitor@example.test");
   await context.close();
+});
+
+// A modal the layout arms on turbo:load, which now comes when the move ends.
+test("a modal armed on turbo:load opens after a move, and takes input", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "no-preference" });
+  await record(page, null);
+  await loginWithMagicLink(page, "newcomer-move@test.com");
+  const field = page.locator("#onboarding-first-name");
+  await field.waitFor({ state: "visible" });
+  await visit(page, "/chat");
+  expectLeftStyle(await seen(page));
+  await expect(field).toBeVisible();
+  await expect(field).toBeFocused();
+  await field.fill("Tess");
+  await expect(field).toHaveValue("Tess");
 });
