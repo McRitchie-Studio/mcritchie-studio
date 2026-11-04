@@ -70,6 +70,62 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_no_match "Signing Console", response.body
   end
 
+  test "anonymous visitor cannot reach /admin/basement" do
+    get admin_basement_path
+    assert_redirected_to login_path
+  end
+
+  test "logged-in non-admin is refused /admin/basement" do
+    log_in_as users(:viewer)
+    get admin_basement_path
+    assert_redirected_to root_path
+  end
+
+  test "[component] an admin's Basement lists the moved pages with their descriptions, under the page header" do
+    log_in_as users(:alex)
+    get admin_basement_path
+    assert_response :success
+
+    assert_select "h1.page-header-title", "Basement"
+    assert_select "[data-pin='page']", 1
+    { admin_schema_path => "DB schema browser", logos_path => "navbar logos",
+      admin_emails_path => "Transactional emails", admin_link_preview_path => "Default title",
+      asset_browser_path => "Object store" }.each do |href, desc|
+      assert_select "[data-link-hub] a[href=?]", href, text: /#{Regexp.escape(desc)}/
+    end
+  end
+
+  test "[component] the sidebar reads Dashboard, DevOps, Design, Basement, and the moved pages leave it" do
+    log_in_as users(:alex)
+    get admin_basement_path
+
+    assert_select "#studio-link-sidebar a[href=?]", admin_dashboard_path, text: /Dashboard/
+    assert_select "#studio-link-sidebar a[href=?]", deployments_path, text: /DevOps/
+    assert_select "#studio-link-sidebar a[href=?]", admin_style_path, text: /Design/
+    assert_select "#studio-link-sidebar a[href=?]", admin_basement_path, text: /Basement/
+    [ admin_schema_path, logos_path, admin_emails_path, admin_link_preview_path, asset_browser_path ].each do |href|
+      assert_select "#studio-link-sidebar a[href=?]", href, count: 0
+    end
+  end
+
+  test "every moved page keeps its route and still answers an admin" do
+    log_in_as users(:alex)
+
+    [ admin_schema_path, logos_path, admin_emails_path, admin_link_preview_path, asset_browser_path ].each do |href|
+      get href
+      assert_response :success, "#{href} must still answer"
+    end
+  end
+
+  test "/admin/links still lists every admin destination, the Basement's pages included" do
+    log_in_as users(:alex)
+    get admin_links_path
+
+    [ admin_basement_path, admin_schema_path, logos_path, admin_emails_path, admin_link_preview_path, asset_browser_path, books_path ].each do |href|
+      assert_select "[data-link-hub] a[href=?]", href
+    end
+  end
+
   test "the cog and the identity both toggle the admin link sidebar" do
     log_in_as users(:alex)
     get dashboard_path

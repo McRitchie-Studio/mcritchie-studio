@@ -12,48 +12,74 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert links.all? { |link| link[:hover_emoji].present? }, "expected every sidebar link to define hover_emoji"
   end
 
-  test "admin sidebar starts with site admin links and omits removed devops page" do
+  # Alex McRitchie, 2026-11-04: "this admin section reads Dashboard, DevOps, Design,
+  # Basement for links to the four main areas". The short words are the section's
+  # own; each page keeps its label for the sub-navs (see navigation_test.rb).
+  test "admin sidebar starts with the four main admin areas and omits the removed devops page" do
     self.admin_enabled = true
 
     sections = sidebar_link_sections
     links = sections.flat_map { |section| section.fetch(:links) }
 
-    assert_equal "Site", sections.first.fetch(:title)
+    assert_equal "Admin", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal ["Admin dashboard", "Deployments", "Design System", "Schema", "Logos", "Emails", "Link preview", "Assets"], sections.first.fetch(:links).map { |link| link.fetch(:label) }
-    refute links.any? { |link| link[:href] == "/devops" || link[:label] == "DevOps" }
+    assert_equal [ [ "Dashboard", "/admin" ], [ "DevOps", "/deployments" ], [ "Design", "/admin/style" ], [ "Basement", "/admin/basement" ] ],
+                 sections.first.fetch(:links).map { |link| link.values_at(:label, :href) }
+    # DevOps is now a word this section shows, so the removed page is held by its address alone.
+    refute links.any? { |link| link[:href] == "/devops" }
   end
 
-  # The adoption of the engine's standard email page: the sidebar points at the
-  # shared /admin/emails, not the retired /admin/email_images fork. Asserted on
-  # the href because the label alone would still pass if the link were repointed.
-  test "admin sidebar links the shared emails page, not the retired image page" do
+  # "A page of links ... including Emails, Schema, Link Preview, and Assets", with
+  # Logos, which sat in the same section, going with them. Each keeps its route.
+  test "the Basement holds the moved pages, and none of them reaches the sidebar" do
     self.admin_enabled = true
 
-    links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
-    emails = links.find { |link| link[:label] == "Emails" }
+    moved = [ [ "Schema", "/admin/schema" ], [ "Logos", "/logos" ], [ "Emails", "/admin/emails" ],
+              [ "Link preview", "/admin/link_preview" ], [ "Assets", "/assets" ] ]
+    assert_equal moved, basement_links.map { |link| link.values_at(:label, :href) }
 
-    assert emails, "the Site section should carry an Emails link"
+    sidebar_hrefs = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
+    assert_empty moved.map(&:last) & sidebar_hrefs
+    assert_includes sidebar_hrefs, "/deployments", "control: the sidebar this reads is an admin's"
+  end
+
+  test "the Basement shows each page's description, and nothing to a non-admin" do
+    self.admin_enabled = true
+    assert basement_links.all? { |link| link[:desc].present? && link[:hover_emoji].present? }
+
+    self.admin_enabled = false
+    assert_empty basement_link_sections
+  end
+
+  # The adoption of the engine's standard email page: the Basement points at the
+  # shared /admin/emails, not the retired /admin/email_images fork. Asserted on
+  # the href because the label alone would still pass if the link were repointed.
+  test "the Basement links the shared emails page, not the retired image page" do
+    self.admin_enabled = true
+
+    emails = basement_links.find { |link| link[:label] == "Emails" }
+
+    assert emails, "the Basement should carry an Emails link"
     assert_equal "/admin/emails", emails.fetch(:href)
-    refute links.any? { |link| link[:href] == "/admin/email_images" }
+    refute (basement_links + sidebar_link_sections.flat_map { |section| section.fetch(:links) }).any? { |link| link[:href] == "/admin/email_images" }
   end
 
   # task hub-adopts-link-preview: the engine's site-identity page (studio-engine
   # 0.82) is reached from the hub's own admin menu. The second assertion pins the
   # stubbed href to the route the engine actually draws in this app.
-  test "admin sidebar links the engine link preview page" do
+  test "the Basement links the engine link preview page" do
     self.admin_enabled = true
 
-    preview = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.find { |link| link[:label] == "Link preview" }
+    preview = basement_links.find { |link| link[:label] == "Link preview" }
 
     assert_equal "/admin/link_preview", preview&.fetch(:href)
     assert_equal "/admin/link_preview", Rails.application.routes.url_helpers.admin_link_preview_path
   end
 
-  test "admin sidebar links the object store browser" do
+  test "the Basement links the object store browser" do
     self.admin_enabled = true
 
-    assets = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.find { |link| link[:label] == "Assets" }
+    assets = basement_links.find { |link| link[:label] == "Assets" }
 
     assert_equal "/assets", assets&.fetch(:href)
     assert_equal "/assets", Rails.application.routes.url_helpers.asset_browser_path
@@ -128,13 +154,13 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
   # [component] The engine's living style guide (/admin/style) is reachable from
   # the admin sidebar, and the engine-provided route resolves in this host app.
-  test "admin sidebar exposes the Design System page link" do
+  test "admin sidebar exposes the Design System page link, under the word Design" do
     self.admin_enabled = true
 
     links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
-    design_system = links.find { |link| link[:label] == "Design System" }
+    design_system = links.find { |link| link[:label] == "Design" }
 
-    assert design_system, "expected a Design System link in the admin sidebar"
+    assert design_system, "expected a Design link in the admin sidebar"
     assert_equal admin_style_path, design_system.fetch(:href)
     assert_equal "🎨", design_system.fetch(:emoji)
     assert design_system.fetch(:hover_emoji).present?, "expected a hover_emoji on the Design System link"
@@ -144,22 +170,22 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal "/admin/style", Rails.application.routes.url_helpers.admin_style_path
   end
 
-  test "admin sidebar links Deployments to the deploy lane board" do
+  test "admin sidebar links DevOps to the deploy lane board" do
     self.admin_enabled = true
 
     links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
-    deployments = links.find { |link| link[:label] == "Deployments" }
+    deployments = links.find { |link| link[:label] == "DevOps" }
 
-    assert deployments, "expected an admin Deployments link"
+    assert deployments, "expected an admin DevOps link"
     assert_equal deployments_path, deployments.fetch(:href)
   end
 
-  test "public sidebar omits the admin Deployments link" do
+  test "public sidebar omits the deploy lane board" do
     self.admin_enabled = false
 
-    labels = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
+    hrefs = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:href] }
 
-    refute_includes labels, "Deployments"
+    refute_includes hrefs, deployments_path
   end
 
   test "logged-out sidebar shows only the public sections" do
@@ -171,7 +197,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal %w[Account Build], sections.map { |section| section.fetch(:title) }
     labels = sections.flat_map { |section| section.fetch(:links) }.map { |link| link[:label] }
     refute_includes labels, "Studio dashboard"
-    refute_includes labels, "Admin dashboard"
+    refute_includes labels, "Dashboard"
+    refute_includes labels, "Basement"
     refute_includes labels, "Agents"
     refute_includes labels, "Builders"
     refute_includes labels, "Teams"
@@ -286,6 +313,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
   attr_accessor :admin_enabled, :logged_in_enabled, :current_user
 
+  def basement_links
+    basement_link_sections.flat_map { |section| section.fetch(:links) }
+  end
+
   def signed_in_build_links
     sidebar_link_sections.find { |section| section[:title] == "Build" }.fetch(:links).map { |link| link.fetch(:label) }
   end
@@ -345,6 +376,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def books_path = "/books"
   def deployments_path = "/deployments"
   def admin_dashboard_path = "/admin"
+  def admin_basement_path = "/admin/basement"
   def admin_style_path = "/admin/style"
   def websites_path = "/websites"
   def chat_index_path = "/chat"

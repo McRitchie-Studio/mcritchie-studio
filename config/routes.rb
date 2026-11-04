@@ -449,6 +449,8 @@ Rails.application.routes.draw do
     # on-chain destination: the signing console was deleted 2026-09-04
     # (/tasks/retire-signing-console). admin#links, require_admin. /admin/links.
     get "links", to: "links#index", as: :links
+    # The links kept off the sidebar (config/navigation.yml, group: basement).
+    get "basement", to: "links#basement", as: :basement
     get "ai_builder_multiple", to: "ai_builder_multiple#index"
     get "ai_builder_multiple/commit_history", to: "ai_builder_multiple#commit_history", as: :ai_builder_multiple_commit_history
 

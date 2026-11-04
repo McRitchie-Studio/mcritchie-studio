@@ -1,17 +1,26 @@
 <%#
-  Shared link-hub renderer used by both /links and /admin/links. Locals:
+  Shared link-hub renderer used by /links, /admin/links and /admin/basement. Locals:
     title    - String, page heading
     subtitle - String, sub line (optional)
     sections - Array of { title:, links: [ { label:, href:, emoji:, desc:, featured:, target: } ] }
+    pinned   - true for the standard page header (studio/page_header, the triple stack)
+                 in place of the plain one (optional)
   Passed as explicit locals (never a block), so it is safe in this shared partial.
 %>
-<div class="max-w-5xl mx-auto px-4 py-10">
-  <header class="mb-8">
-    <h1 class="text-3xl font-extrabold text-heading"><%= title %></h1>
+<div class="max-w-5xl mx-auto px-4 py-10" data-link-hub>
+  <% if local_assigns[:pinned] %>
+    <%= render "studio/page_header", title: title %>
     <% if local_assigns[:subtitle].present? %>
-      <p class="text-secondary mt-1"><%= subtitle %></p>
+      <p class="text-secondary mt-1 mb-8"><%= subtitle %></p>
     <% end %>
-  </header>
+  <% else %>
+    <header class="mb-8">
+      <h1 class="text-3xl font-extrabold text-heading"><%= title %></h1>
+      <% if local_assigns[:subtitle].present? %>
+        <p class="text-secondary mt-1"><%= subtitle %></p>
+      <% end %>
+    </header>
+  <% end %>
 
   <div class="space-y-10">
     <% sections.each do |section| %>

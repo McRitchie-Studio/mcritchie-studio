@@ -111,7 +111,7 @@ class AdminStylePageTest < ActionDispatch::IntegrationTest
     get dashboard_path
     assert_response :success
 
-    assert_select "#studio-link-sidebar a[href=?]", admin_style_path
+    assert_select "#studio-link-sidebar a[href=?]", admin_style_path, text: /Design/
   end
 
   test "the canonical admin_style route resolves" do

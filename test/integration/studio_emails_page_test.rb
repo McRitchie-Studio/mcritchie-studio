@@ -60,10 +60,10 @@ class StudioEmailsPageTest < ActionDispatch::IntegrationTest
                  Studio::EmailCatalog.keys
   end
 
-  # Acceptance: the admin sidebar points at the shared page.
-  test "the sidebar's emails link resolves to this page" do
+  # Acceptance: the Basement points at the shared page.
+  test "the Basement's emails link resolves to this page" do
     log_in_as(users(:alex))
-    get admin_dashboard_path
+    get admin_basement_path
     assert_response :success
     assert_select "a[href=?]", admin_emails_path
   end
