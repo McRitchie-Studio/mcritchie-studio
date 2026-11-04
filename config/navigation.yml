@@ -19,8 +19,8 @@
 #
 # sidebar   The link sidebar's sections, in order. group: admin sections lead for
 #           an admin and fill /admin/links; group: general sections fill /links.
-#           A signed-out visitor's sidebar is the general sections, one line each
-#           (LinkTreeHelper#visitor_sidebar_sections).
+#           Every sidebar also has Build: Chat and Portfolio. A signed-out visitor's
+#           sidebar is only Sign In and Build, one line each (LinkTreeHelper).
 #           An entry shows when its page is public or the viewer is an admin, and
 #           a section with no visible entry is dropped.
 #

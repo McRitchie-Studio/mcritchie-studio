@@ -31,9 +31,9 @@ module LinkTreeHelper
   def sidebar_link_sections
     return visitor_sidebar_sections unless logged_in?
 
-    sections = public_link_sections
+    sections = [ build_link_section ] + public_link_sections
     sections = admin_link_sections.map { |section| section.merge(admin: true) } + sections if admin?
-    visitor_link_sections + owner_link_sections + sections
+    owner_link_sections + sections
   end
 
   # A signed-out visitor's way in, first in the sidebar. The navbar keeps only
@@ -70,12 +70,18 @@ module LinkTreeHelper
   # A signed-out visitor's sidebar: sign in, or start building (Alex McRitchie,
   # 2026-11-03). /links still lists the public pages.
   def visitor_sidebar_sections
+    visitor_link_sections + [ build_link_section ]
+  end
+
+  # Chat and Portfolio, at every level (Alex McRitchie, 2026-11-04: "add Chat and
+  # Portfolio to the logged in sidebar"). An admin is signed in, so an admin has them too.
+  def build_link_section
     page = Navigation.page(:websites)
-    visitor_link_sections + [ { title: "Build", links: [
+    { title: "Build", links: [
       { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
         emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") },
       { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji }
-    ] } ]
+    ] }
   end
 
   def registry_link_sections(group)
