@@ -66,11 +66,11 @@ class AgentChatComponentTest < ActionView::TestCase
 
   test "[component] the shell's head: the agent's portrait, big and centered, one view-transition name, its name and role under it" do
     alex = AgentStub.new(slug: "alex", name: "Alex", avatar: "https://img.test/alex.png", avatar_color: "#6366f1", avatar_initials: "R")
-    render("agent_chats/header", name: "Alex", agent: alex, role: "AI build agent")
+    render("agent_chats/header", name: "Alex", agent: alex, role: "AI Builder")
 
     assert_select "[data-test='agent-chat-header'][data-agent-name='Alex']" do
       assert_select "[data-test='agent-portrait'][style='view-transition-name: agent-portrait;'] span.w-24 img[src='https://img.test/alex.png']"
-      assert_select "[data-test='agent-caption']", text: /Alex\s+· AI build agent/
+      assert_select "[data-test='agent-caption']", text: /Alex\s+· AI Builder/
     end
     assert_select "h1", 0, "the page's heading is its status slot's"
   end

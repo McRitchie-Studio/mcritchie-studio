@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [integration] alex-build-funnel-handoff (folded into ritch-renamed-alex): /build
-# greets the visitor as Alex, the AI build agent, and a sign-up that came from
+# greets the visitor as Alex, the AI Builder, and a sign-up that came from
 # alex.build's CTAs is recorded on its request (AppRequest#origin), by a `ref` or
 # `utm_source` naming alex.build, or by an alex.build referrer. A visit naming
 # nothing, or naming something else, records nothing.
@@ -18,7 +18,7 @@ class BuildAlexOriginTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "[data-test='build-form'] label", text: "Tell Alex what you want to build"
-    assert_includes response.body, "AI build agent"
+    assert_includes response.body, "AI Builder"
     assert_includes response.body, "/agents/alex.webp"
     refute_match(/\bRitch\b/, response.body)
   end
