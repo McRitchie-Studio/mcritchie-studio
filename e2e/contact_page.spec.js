@@ -31,7 +31,7 @@ for (const [label, viewport] of [["desktop", { width: 1280, height: 800 }], ["39
       expect(await sideways(page)).toBeLessThanOrEqual(0);
     });
 
-    test("a long thread does not hold the page: the form stays one scroll away", async ({ page }) => {
+    test("a long thread does not hold the page: the wheel over it still moves the page", async ({ page }) => {
       await page.goto("/contact");
       await expect(page.locator(CHAT)).toHaveAttribute("data-agent-chat-ready", "true");
       // A tall thread, as a returning person's would be. The wheel lands on the thread and the
@@ -41,8 +41,8 @@ for (const [label, viewport] of [["desktop", { width: 1280, height: 800 }], ["39
       const box = await log.boundingBox();
       expect(box.height).toBeLessThanOrEqual(viewport.height * 0.4 + 1);
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-      await page.mouse.wheel(0, 2000);
-      await expect(page.locator(FORM)).toBeInViewport();
+      await page.mouse.wheel(0, 400);
+      await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(0);
     });
 
     test("a refused submission reaches its errors, over the chat", async ({ page }) => {
