@@ -1,4 +1,4 @@
-<% content_for(:title, "McRitchie Studio — Your Workflow Built Right") %>
+<% content_for(:title, "McRitchie Studio — Your Idea Built for 2027") %>
 <% content_for(:full_width, true) %>
 
 <style>
@@ -16,25 +16,14 @@
   .dark .hero-subtitle-ink { color: var(--color-text-secondary); font-weight: 400; }
   /* The hero's one call to action, a size above btn-lg (Alex McRitchie, 2026-11-03):
      the type scale's subhead, with padding to match. */
-  .hero-cta { font-size: calc(var(--type-base, 16px) * 1.5); padding: 1rem 2.5rem; }
-  /* The narrowest phones trim the sides, so the label holds one line. */
-  @media (max-width: 359px) { .hero-cta { padding-inline: 1.25rem; } }
-  /* The box clips only the drop: the sides stay open for a word that hangs past it,
-     and the bottom gives the g in Agent its last pixel. */
+  .hero-cta { font-size: calc(var(--type-base, 16px) * 1.5); padding: 1rem 2.5rem; white-space: nowrap; }
+  /* Phones trim the sides, so the one-line label stays on screen. */
+  @media (max-width: 399px) { .hero-cta { padding-inline: 1.25rem; } }
+  /* The box clips only the drop: the sides stay open for Agent, which hangs past the
+     box's right edge, and the bottom gives its g the last pixel. */
   .hero-title .dropping-texts {
     overflow: visible;
     clip-path: inset(0 -100vw -0.05em);
-  }
-  /* Side by side, the cycling word starts at the box's left edge, against "Your".
-     The row centres on the median word, Agent (Alex McRitchie, 2026-11-03): the box
-     is Agent's 3.15em, and Workflow hangs past its right edge. The second term widens
-     the box only where Workflow would otherwise leave the screen: 12.67em is Your,
-     the gap and twice Workflow. Change a word and these numbers change with it. */
-  @media (min-width: 400px) {
-    .hero-title .dropping-texts {
-      width: max(3.15em, calc(12.67em - 100vw + 2rem));
-    }
-    .hero-title .dropping-texts > span { text-align: left; }
   }
 </style>
 
@@ -65,24 +54,23 @@
       where the headline is dark text. %>
   <div class="hero-scrim absolute inset-0" data-hero-scrim style="background: linear-gradient(135deg, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 0%, color-mix(in srgb, var(--color-page) var(--hero-scrim-mid), transparent) 50%, color-mix(in srgb, var(--color-page) var(--hero-scrim-edge), transparent) 100%);"></div>
   <div class="relative z-10 max-w-4xl mx-auto px-4 text-center section-padding-lg">
-    <%# Your ___ Built Right (Alex McRitchie, 2026-10-30; side by side 2026-11-03).
-        Your and the cycling word share the first line from 400px up, the width
-        where both fit at the type scale's sizes; below it Your stacks above a
-        centred word, in a box as wide as the longest word (data-spacer). The
-        spacing never moves (his call: no expanding title). The first word is
+    <%# Your ___ Built for 2027 (Alex McRitchie, 2026-11-03). Your and the cycling word
+        share the first line at every width. The box never moves or resizes: it is as
+        wide as the median word, Flow (data-spacer), so the row centres on that width
+        and each word starts at the box's left edge, against Your. The first word is
         rendered active, so it starts in place. %>
     <h1 class="font-extrabold text-heading tracking-tight mb-6 flex items-baseline justify-center flex-wrap hero-title" style="line-height: 1.1; column-gap: 0.25em;">
-      <span class="basis-full min-[400px]:basis-auto">Your</span>
-      <span class="dropping-texts dropping-texts-center text-primary" data-spacer="Workflow" data-interval="3000">
+      <span>Your</span>
+      <span class="dropping-texts text-primary" data-spacer="Flow" data-interval="3000">
         <span class="drop-active">Idea</span>
-        <span>Workflow</span>
+        <span>Flow</span>
         <span>Agent</span>
+        <span>Plan</span>
       </span>
-      <span class="basis-full">Built Right</span>
+      <span class="basis-full">Built for 2027</span>
     </h1>
     <p class="hero-subtitle-ink max-w-2xl mx-auto mb-10 leading-relaxed hero-subtitle">
-      An acquisition entrepreneur partnering with owners to carry proven
-      businesses into their next decade.
+      Build a best-in-class website in minutes
     </p>
     <%# The hero's call to action is the /build funnel (Alex McRitchie, 2026-10-19): Build
         Your App, in the CTA glow primitive's rainbow preset (cta-glow-rainbow,
@@ -90,7 +78,7 @@
         Meet Alex link was dropped (Alex, 2026-10-20; /tasks/drop-hero-meet-alex). %>
     <div class="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6">
       <%= tag.span class: "cta-glow cta-glow-rainbow", data: { test: "hero-build-glow" } do %>
-        <%= link_to "Build Your Website", build_path, class: "btn btn-primary btn-lg hero-cta", data: { test: "hero-build-cta" } %>
+        <%= link_to "Launch Your Website", build_path, class: "btn btn-primary btn-lg hero-cta", data: { test: "hero-build-cta" } %>
       <% end %>
     </div>
   </div>
