@@ -75,10 +75,8 @@ module LinkTreeHelper
     css = "w-5 h-5 rounded-full object-cover"
     if cto&.agent&.avatar.present?
       safe_image_tag(cto.agent.avatar, alt: "", class: css)
-    elsif cto&.client? && BuildIntake::Animals.avatar?(cto.app_cto.portrait)
-      cto_avatar_tag(cto.app_cto.portrait, cto.app_cto.palette, label: cto.display_name, css_class: css)
-    elsif cto&.client? && cto.app_cto.portrait_asset
-      safe_image_tag(image_path(cto.app_cto.portrait_asset), alt: "", class: css)
+    elsif cto&.client? && (drawn = cto_avatar_tag(cto.app_cto.portrait, cto.app_cto.palette, label: cto.display_name, css_class: css))
+      drawn # nil for a portrait it does not know: this runs on every page, so that costs the emoji, not the page
     else
       link.emoji
     end

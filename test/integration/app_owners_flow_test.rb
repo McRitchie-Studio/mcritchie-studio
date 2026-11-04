@@ -2,7 +2,7 @@ require "test_helper"
 require_relative "../support/report_destination_fixtures"
 
 # [integration] App owners (docs/agents/system/app-owners.md): an owner signs in,
-# sees their app and its CTO in the sidebar, opens the app and the CTO's settings,
+# sees their app in the sidebar, opens the app and, from it, the CTO's settings,
 # and sets the daily report's channel, writing the same ReportDestination row as
 # /admin/report_destinations. Anyone else gets 404, never 403; a visitor is sent
 # to sign in. Server-side, every action.
@@ -56,6 +56,22 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
     assert_select "#studio-link-sidebar", 1, "the sidebar renders for the stranger, so the absence below is real"
     assert_select "#studio-link-sidebar a[href^='/applications']", count: 0
     assert_select "#studio-link-sidebar a[href$='/settings']", count: 0
+  end
+
+  test "[integration] a client CTO's row draws its avatar; an unusable portrait costs the emoji, never the page" do
+    AppMembership.create!(app: App.create!(slug: "pawsome", name: "Pawsome", emoji: "🐾", color: "#DC2626"), user: @stranger)
+    row = AppCto.new(app_slug: "pawsome", name: "Rex").tap { |cto| cto.save!(validate: false) }
+    log_in_as(@stranger)
+    icon = "#studio-link-sidebar a[href='/applications/pawsome'] .studio-emoji-swap-base"
+
+    { BuildIntake::Animals.all.first => "#{icon} svg.cto-animal", "harbor" => "#{icon} img[src*='cto_portraits/harbor']" }.each do |portrait, drawn|
+      row.update_column(:portrait, portrait)
+      get root_path
+      assert_select drawn, 1, portrait
+    end
+    row.update_column(:portrait, "retired")
+    get root_path
+    assert_select icon, text: "🐾"
   end
 
   test "[integration] an owner sees only their app: list, page, health frame and CTO card" do
