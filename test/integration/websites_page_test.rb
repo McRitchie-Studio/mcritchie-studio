@@ -11,7 +11,8 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     get websites_path
     assert_response :success
 
-    assert_select "h1", text: "Websites Built on Studio", count: 1
+    assert_select "title", "Portfolio · McRitchie Studio"
+    assert_select "h1", text: "Portfolio", count: 1
     assert_select "[data-test='websites-grid'] [data-test='build-example']", count: BuildGallery.examples.size
   end
 

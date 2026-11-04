@@ -12,7 +12,7 @@
     composer. The small line is the engine's empty-thread line, so it goes with the first
     message, and chat-page-heading (agent_shell.css) takes the heading with it. %>
 <% heading = capture do %>
-  <h1 class="chat-page-heading text-center font-extrabold text-heading tracking-tight" data-test="chat-heading">How Can I Help?</h1>
+  <h1 class="chat-page-heading text-center font-bold text-heading tracking-tight" data-test="chat-heading">How Can I Help?</h1>
 <% end %>
 <div class="pb-8" data-voice-chat-page data-test="alex-chat-page">
   <%= render "studio/agent_chat/chat", soul: "alex", name: "Alex",

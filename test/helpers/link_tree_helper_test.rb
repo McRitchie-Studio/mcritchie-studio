@@ -260,7 +260,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   test "a visitor's sidebar leads with Sign In and Chat; a signed-in user's drops Sign In and keeps Chat" do
     first = sidebar_link_sections.first
     assert_equal "Account", first.fetch(:title)
-    assert_equal [ [ "Sign In", "/login" ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
+    assert_equal [ [ "Sign In", "/signin" ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
     assert_equal %w[Account Build], sidebar_link_sections.map { |section| section.fetch(:title) }
     build = sidebar_link_sections.last.fetch(:links)
     assert_equal [ "Chat", "Portfolio" ], build.map { |link| link.fetch(:label) }
@@ -272,7 +272,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.logged_in_enabled = true
     self.current_user = nil
     refute sidebar_link_sections.any? { |section| section[:title] == "Account" }
-    refute sidebar_link_sections.flat_map { |section| section.fetch(:links) }.any? { |link| link[:href] == "/login" }
+    refute sidebar_link_sections.flat_map { |section| section.fetch(:links) }.any? { |link| link[:href] == "/signin" }
     assert_equal [ "Chat", "Portfolio" ], signed_in_build_links
     assert_equal 1, sidebar_link_sections.count { |section| section[:title] == "Build" }
 
@@ -338,7 +338,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def packages_path = "/packages"
   def integrations_path = "/integrations"
   def build_path = "/build"
-  def login_path = "/login"
+  def signin_path = "/signin"
   def build_requests_path = "/build/requests"
   def stack_path = "/stack"
   def credentials_path = "/credentials"
