@@ -27,7 +27,7 @@
             <p class="text-heading font-semibold"><%= logo[:title] %></p>
             <div class="flex gap-3 text-sm">
               <% %w[light dark].each do |tone| %>
-                <a href="/brand/<%= logo[:file] %>-<%= tone %>.svg" download class="text-primary hover:underline">Download <%= tone %> SVG</a>
+                <a href="/brand/<%= logo[:file] %>-<%= tone %>.png" download class="text-primary hover:underline">Download <%= tone.capitalize %></a>
               <% end %>
             </div>
           </div>
@@ -40,12 +40,16 @@
     <h2 id="kit-colours" class="text-xl font-bold text-heading mb-4">Colours</h2>
     <div class="grid gap-4 grid-cols-2 md:grid-cols-5">
       <% @kit.palette.each do |swatch| %>
-        <div class="card overflow-hidden">
-          <div class="h-20 border-b border-subtle" style="background-color: <%= swatch.hex %>"></div>
-          <div class="p-3">
-            <p class="text-heading font-semibold"><%= swatch.name %></p>
-            <code class="font-mono text-sm text-secondary"><%= swatch.hex %></code>
-          </div>
+        <div>
+          <button type="button" data-copy-hex="<%= swatch.hex %>" aria-label="Copy <%= swatch.name %> <%= swatch.hex %>"
+                  class="group card overflow-hidden w-full text-left cursor-pointer hover:border-primary/60 transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+            <span class="block h-20 border-b border-subtle" style="background-color: <%= swatch.hex %>"></span>
+            <span class="block p-3">
+              <span class="block text-heading font-semibold"><%= swatch.name %></span>
+              <code class="block font-mono text-sm text-secondary group-hover:text-primary" data-copy-hex-label><%= swatch.hex %></code>
+            </span>
+          </button>
+          <span class="sr-only" role="status" data-copy-hex-status></span>
         </div>
       <% end %>
     </div>
@@ -63,3 +67,5 @@
     </div>
   </section>
 </div>
+
+<%= render "components/copy_text_script" %>

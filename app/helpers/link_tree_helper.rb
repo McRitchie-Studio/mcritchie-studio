@@ -42,11 +42,7 @@ module LinkTreeHelper
   def visitor_link_sections
     return [] if logged_in?
 
-    [ { title: "Account", links: [
-      { label: "Sign In", href: login_path, emoji: "🔑", hover_emoji: "👋" },
-      { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
-        emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") }
-    ] } ]
+    [ { title: "Account", links: [ { label: "Sign In", href: login_path, emoji: "🔑", hover_emoji: "👋" } ] } ]
   end
 
   # /chat while it is open to visitors; until then /build, where a visitor can
@@ -71,13 +67,15 @@ module LinkTreeHelper
 
   private
 
-  # A signed-out visitor's sidebar: one line per link (Alex McRitchie, 2026-11-03),
-  # and one link to the apps built on Studio in place of a row per app.
+  # A signed-out visitor's sidebar: sign in, or start building (Alex McRitchie,
+  # 2026-11-03). /links still lists the public pages.
   def visitor_sidebar_sections
     page = Navigation.page(:websites)
-    websites = { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji }
-    sections = visitor_link_sections + registry_link_sections(:general) + [ { title: "Apps", links: [ websites ] } ]
-    sections.map { |section| section.merge(links: section[:links].map { |link| link.except(:desc) }) }
+    visitor_link_sections + [ { title: "Build", links: [
+      { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
+        emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") },
+      { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji }
+    ] } ]
   end
 
   def registry_link_sections(group)
