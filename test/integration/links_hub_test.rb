@@ -142,7 +142,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_equal "schema#index", Navigation.page(:admin_schema).action_id
   end
 
-  test "/admin/links still lists every admin destination, the Basement's pages included" do
+  test "/admin/links lists the sidebar's Admin section and the Basement's pages" do
     log_in_as users(:alex)
     get admin_links_path
 
