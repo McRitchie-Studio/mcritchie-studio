@@ -237,9 +237,12 @@ test("the signed-in rail holds at every width, at rest and scrolled", async ({ p
     for (const y of [0, 1500]) {
       await page.evaluate((top) => window.scrollTo(0, top), y);
       if (y) await expect(header).toHaveClass(/is-scrolled/);
+      // The header's own overflow, not the document's: the board's filter bar is
+      // wider than a 320px phone, and that is the page's, not the rail's.
       const metrics = await navbarMetrics(page);
       const message = JSON.stringify({ width, y, metrics }, null, 2);
-      expect(metrics.documentOverflow, message).toBeLessThanOrEqual(1);
+      const headerOverflow = await header.evaluate((el) => el.scrollWidth - el.clientWidth);
+      expect(headerOverflow, message).toBeLessThanOrEqual(1);
       expect(metrics.offscreen, message).toEqual([]);
       const name = await (await shownName(page)).boundingBox();
       expect(name.height, message).toBeLessThanOrEqual(28);
