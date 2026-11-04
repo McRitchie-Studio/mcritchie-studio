@@ -100,7 +100,7 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   await page.setViewportSize(PHONE);
   await page.goto("/dashboard");
 
-  const name = page.locator("header [data-nav-phone-name]");
+  const name = page.locator("header [data-nav-account] [data-nav-name]");
   await expect(name).toBeVisible();
   await expect(name).toHaveText(/\S/);
   const box = await name.boundingBox();
@@ -110,20 +110,22 @@ test("a signed-in phone header shows the user's name", async ({ page }) => {
   expect(box.x + box.width).toBeLessThanOrEqual(PHONE.width);
   await expectNavbarContained(page);
 
-  // The name costs the bar no room: without it the header is the same height,
-  // so the brand wraps no sooner. (The height itself depends on the font, so
-  // measure only once Montserrat has loaded: CI once read 161px with the
-  // fallback face, which wraps the brand, and 129px a moment later.)
+  // The name costs the bar no room: a short name and a long one leave the account
+  // control one width and the header one height, so the brand wraps no sooner. (The
+  // height itself depends on the font, so measure only once Montserrat has loaded:
+  // CI once read 161px with the fallback face, which wraps the brand, and 129px a
+  // moment later.) The control's width is the font-independent half of the claim,
+  // so it bites on any machine.
   await page.evaluate(() => document.fonts.ready);
   const header = page.locator("header.nav-shell");
-  // The column beside the avatar is what the name could widen. Its width is
-  // the font-independent half of the claim, so it bites on any machine.
-  const column = page.locator("header :has(> [data-nav-account]) > div").first();
+  const account = page.locator("header [data-nav-account]");
   const withName = (await header.boundingBox()).height;
-  const columnWithName = (await column.boundingBox()).width;
-  await name.evaluate((element) => { element.style.display = "none"; });
-  expect((await column.boundingBox()).width).toBe(columnWithName);
-  expect((await header.boundingBox()).height).toBe(withName);
+  const accountWithName = (await account.boundingBox()).width;
+  for (const text of ["A", "Maximiliano-Bartholomew"]) {
+    await name.evaluate((element, value) => { element.textContent = value; }, text);
+    expect((await account.boundingBox()).width, text).toBe(accountWithName);
+    expect((await header.boundingBox()).height, text).toBe(withName);
+  }
   await expect(page.locator(`${PHONE_ROW} [data-link-sidebar-trigger]`)).toBeVisible();
   await expect(page.locator(".nav-phone-tools")).toBeHidden();
 });
@@ -143,7 +145,7 @@ test("a signed-in phone header is 53px tall once scrolled", async ({ page }) => 
   await expect(page.locator(PHONE_ROW)).toBeHidden();
   await expect(page.locator(".nav-phone-tools [data-link-sidebar-trigger]")).toBeVisible();
   await expect(page.locator(".nav-phone-tools button[title='Toggle theme']")).toBeVisible();
-  const name = page.locator("header [data-nav-phone-name]");
+  const name = page.locator("header [data-nav-account] [data-nav-name]");
   await expect(name).toBeVisible();
   const avatar = await page.locator("header [data-nav-account]").boundingBox();
   expect(avatar.x + avatar.width).toBeLessThanOrEqual(PHONE.width);

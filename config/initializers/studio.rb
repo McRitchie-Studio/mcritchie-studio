@@ -130,6 +130,9 @@ Studio.configure do |config|
   if Studio.respond_to?(:navbar_scroll_timeline=)
     config.navbar_scroll_timeline = true
   end
+  # A phone shows the signed-in name inside the account control, so hovering or
+  # clicking it does what the avatar does (application.css caps its width).
+  config.navbar_phone_name = true
   # The signed-out navbar's primary button sells the funnel (Alex McRitchie 2026-10-19):
   # "Build App" to /build, with sign-in kept as a quiet link beside it and in
   # the phone row (studio-engine's Studio.navbar_signed_out_cta). Sign-in's own

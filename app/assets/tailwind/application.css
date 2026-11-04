@@ -606,37 +606,29 @@
     .nav-shell .nav-title span:first-child { margin-bottom: 0; }
   }
   /* A SIGNED-IN PHONE (layouts/_navbar_phone_account, in the engine's icon
-     slot). The name sits beside the avatar, capped so the account column stays
-     narrow and the brand keeps its one line.
+     slot). The name sits inside the account control (Studio.navbar_phone_name).
 
-     The phone row (cog and theme toggle) rides --nav-p like the rest of the
-     band: it is gone once the bar is collapsed, and the slot's own cog and
-     toggle take its place beside the name, so the pinned bar is one row. The
-     row's height is its padding, its border and the 2.25rem cog. The ramp is
-     three times the collapse total, which the row makes 60px.
+     The phone row (theme toggle and cog) rides --nav-p like the rest of the
+     band: it is gone once the bar is collapsed, and the slot's own toggle and
+     cog take its place beside the name, so the pinned bar is one row. The row's
+     height is its padding, its border and the 2.25rem cog. The ramp is three
+     times the collapse total, which the row makes 60px.
 
      Whichever pair is out of sight is hidden outright, so it takes no focus.
      The engine writes --nav-p on the header with four decimals, and writes
      nothing until the first scroll. */
-  /* The account column holds the name's width whether or not a name is shown,
-     so the brand's room never depends on the name. Log out used to hold it (at
-     3.5rem); without that row the column was only as wide as the name, and on
-     CI's Linux fonts a name was the difference between the brand on one line
-     and on two. 3.5rem is the name's 2.75rem cap plus the engine's 6px row
-     padding each side, the same width Log out held. Phones only: from 768px
-     the icons size the column. */
+  /* The name's box is one width whatever the name, so the brand's room never
+     depends on the name: on CI's Linux fonts a name was the difference between
+     the brand on one line and on two. This overrides the engine's wider cap,
+     and the row gives back its padding, which held nothing at rest. Phones
+     only: from 768px the icons size the column. */
   @media (max-width: 767px) {
-    .nav-shell :has(> [data-nav-account]) > div:first-child { min-width: 3.5rem; }
-  }
-  .nav-phone-name {
-    max-width: 2.75rem;
-    @apply min-w-0 truncate text-right text-base font-semibold leading-none text-heading;
+    .nav-shell [data-nav-account] [data-nav-name-phone] { width: 2.75rem; max-width: 2.75rem; }
+    .nav-shell [data-nav-tools][data-nav-rows="1"] > div:first-child { padding-inline: 0 !important; }
   }
   .nav-phone-tools {
     max-width: calc(4rem * var(--nav-p, 0));
     max-height: calc(2.25rem * var(--nav-p, 0));
-    /* At rest the pair has no width, and takes back the slot's gap too. */
-    margin-inline-end: calc(-0.5rem * (1 - var(--nav-p, 0)));
     opacity: var(--nav-p, 0);
     visibility: hidden;
     @apply shrink-0 items-center gap-2 overflow-hidden;
