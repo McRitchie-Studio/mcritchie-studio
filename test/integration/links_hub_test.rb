@@ -88,22 +88,24 @@ class LinksHubTest < ActionDispatch::IntegrationTest
 
     assert_select "h1.page-header-title", "Basement"
     assert_select "[data-pin='page']", 1
-    { admin_schema_path => "DB schema browser", logos_path => "navbar logos",
+    { admin_schema_path => "DB schema browser",
       admin_emails_path => "Transactional emails", admin_link_preview_path => "Default title",
       asset_browser_path => "Object store" }.each do |href, desc|
       assert_select "[data-link-hub] a[href=?]", href, text: /#{Regexp.escape(desc)}/
     end
+    assert_select "[data-link-hub] a[href=?]", logos_path, count: 0
   end
 
-  test "[component] the sidebar reads Dashboard, DevOps, Design, Basement, and the moved pages leave it" do
+  test "[component] the sidebar reads Dashboard, DevOps, Design, Branding Kits, Basement, and the moved pages leave it" do
     log_in_as users(:alex)
     get admin_basement_path
 
     assert_select "#studio-link-sidebar a[href=?]", admin_dashboard_path, text: /Dashboard/
     assert_select "#studio-link-sidebar a[href=?]", deployments_path, text: /DevOps/
     assert_select "#studio-link-sidebar a[href=?]", admin_style_path, text: /Design/
+    assert_select "#studio-link-sidebar a[href=?]", logos_path, text: /Branding Kits/
     assert_select "#studio-link-sidebar a[href=?]", admin_basement_path, text: /Basement/
-    [ admin_schema_path, logos_path, admin_emails_path, admin_link_preview_path, asset_browser_path ].each do |href|
+    [ admin_schema_path, admin_emails_path, admin_link_preview_path, asset_browser_path ].each do |href|
       assert_select "#studio-link-sidebar a[href=?]", href, count: 0
     end
   end
@@ -115,7 +117,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
   test "every moved page keeps its route and still answers an admin" do
     log_in_as users(:alex)
 
-    [ logos_path, admin_emails_path, admin_link_preview_path, asset_browser_path ].each do |href|
+    [ admin_emails_path, admin_link_preview_path, asset_browser_path ].each do |href|
       get href
       assert_response :success, "#{href} must still answer"
     end

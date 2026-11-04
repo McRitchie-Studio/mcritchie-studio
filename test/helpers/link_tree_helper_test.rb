@@ -13,9 +13,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   end
 
   # Alex McRitchie, 2026-11-04: "this admin section reads Dashboard, DevOps, Design,
-  # Basement for links to the four main areas". The short words are the section's
-  # own; each page keeps its label for the sub-navs (see navigation_test.rb).
-  test "admin sidebar starts with the four main admin areas and omits the removed devops page" do
+  # Basement", then "Don't move logos to the Basement, but call it Branding Kits." The
+  # short words are the section's own; those pages keep their labels for the sub-navs
+  # (see navigation_test.rb).
+  test "admin sidebar starts with the main admin areas and omits the removed devops page" do
     self.admin_enabled = true
 
     sections = sidebar_link_sections
@@ -23,18 +24,18 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     assert_equal "Admin", sections.first.fetch(:title)
     assert sections.first.fetch(:admin)
-    assert_equal [ [ "Dashboard", "/admin" ], [ "DevOps", "/deployments" ], [ "Design", "/admin/style" ], [ "Basement", "/admin/basement" ] ],
+    assert_equal [ [ "Dashboard", "/admin" ], [ "DevOps", "/deployments" ], [ "Design", "/admin/style" ], [ "Branding Kits", "/logos" ],
+                   [ "Basement", "/admin/basement" ] ],
                  sections.first.fetch(:links).map { |link| link.values_at(:label, :href) }
     # DevOps is now a word this section shows, so the removed page is held by its address alone.
     refute links.any? { |link| link[:href] == "/devops" }
   end
 
-  # "A page of links ... including Emails, Schema, Link Preview, and Assets", with
-  # Logos, which sat in the same section, going with them. Each keeps its route.
+  # "A page of links ... including Emails, Schema, Link Preview, and Assets". Each keeps its route.
   test "the Basement holds the moved pages, and none of them reaches the sidebar" do
     self.admin_enabled = true
 
-    moved = [ [ "Schema", "/admin/schema" ], [ "Logos", "/logos" ], [ "Emails", "/admin/emails" ],
+    moved = [ [ "Schema", "/admin/schema" ], [ "Emails", "/admin/emails" ],
               [ "Link preview", "/admin/link_preview" ], [ "Assets", "/assets" ] ]
     assert_equal moved, basement_links.map { |link| link.values_at(:label, :href) }
 

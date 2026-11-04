@@ -566,7 +566,7 @@ It writes 36 files per brand, named
 An admin gallery (`LogosController`) shows the library's output. Its one store
 is each brand's **kit record** ([below](#the-kit-record)): the Navbar and
 Stacked Logo the brand uses, and its original artwork. It is linked from the
-Basement (`/admin/basement`) as **Logos**.
+admin sidebar as **Branding Kits**; the page's own heading still says Logos.
 
 | Route | Shows |
 |-------|-------|

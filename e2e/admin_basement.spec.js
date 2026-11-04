@@ -1,12 +1,11 @@
 const { test, expect } = require("@playwright/test");
 const { CONTRAST } = require("./contrast");
 
-// [e2e] The admin sidebar's first section is the four main areas, and the Basement
+// [e2e] The admin sidebar's first section is the main areas, and the Basement
 // (/admin/basement) is the page of links the rest live on. A moved page stays one
 // click away, at its old address, and the page holds at phone width in both themes.
 const MOVED = [
   { href: "/admin/schema", label: "Schema", desc: "DB schema browser" },
-  { href: "/logos", label: "Logos", desc: "navbar logos" },
   { href: "/admin/emails", label: "Emails", desc: "Transactional emails" },
   { href: "/admin/link_preview", label: "Link preview", desc: "Default title" },
   { href: "/assets", label: "Assets", desc: "Object store" },
@@ -58,7 +57,7 @@ test("the Basement lists the moved pages at desktop width, in both themes", asyn
   await listsTheMovedPages(page, DESKTOP);
 });
 
-test("the sidebar reads Dashboard, DevOps, Design, Basement and takes you to the Basement", async ({ page }) => {
+test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, Basement and takes you to the Basement", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/dashboard");
   await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
@@ -70,6 +69,7 @@ test("the sidebar reads Dashboard, DevOps, Design, Basement and takes you to the
     ["/admin/dashboard", "Dashboard"],
     ["/deployments", "DevOps"],
     ["/admin/style", "Design"],
+    ["/logos", "Branding Kits"],
     ["/admin/basement", "Basement"],
   ]) {
     await expect(sidebar.locator(`a[href='${href}']`)).toContainText(word);
@@ -79,6 +79,7 @@ test("the sidebar reads Dashboard, DevOps, Design, Basement and takes you to the
   await sidebar.locator("a[href='/admin/basement']").click();
   await expect(page).toHaveURL("/admin/basement");
   await expect(page.locator("[data-link-hub] a[href='/assets']")).toBeVisible();
+  await expect(page.locator("[data-link-hub] a[href='/logos']")).toHaveCount(0);
 });
 
 test("a moved page still opens from its old address, one click from the Basement", async ({ page }) => {

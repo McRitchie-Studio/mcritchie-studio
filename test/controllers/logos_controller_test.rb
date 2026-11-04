@@ -329,10 +329,11 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
+  # Alex McRitchie, 2026-11-04: "call it Branding Kits". The nav says so; the route stays.
   test "the admin tools list links to the page" do
     log_in_as(@admin)
     get logos_path
-    assert_select "a[href=?]", logos_path, text: /Logos/
+    assert_select "#studio-link-sidebar a[href=?]", logos_path, text: /Branding Kits/
   end
 
   # What a brand page's ONE logo (task logo-download-card) must be for its variants in page order (its light version

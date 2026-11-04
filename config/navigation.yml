@@ -117,7 +117,7 @@ pages:
   deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board }
   admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks }
   admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser }
-  logos:              { page: "logos#index",                  audience: admin, label: Logos, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built }
+  logos:              { page: "logos#index",                  audience: admin, label: Branding Kits, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built }
   admin_emails:       { page: "studio/emails#index",          audience: admin, label: Emails, emoji: "✉️", hover_emoji: "🖼️", desc: Transactional emails + their banners }
   admin_link_preview: { page: "studio/site_identities#edit",  audience: admin, label: Link preview, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls" }
   asset_browser:      { page: "assets#index",                 audience: admin, label: Assets, emoji: "🗄️", hover_emoji: "🎞️", desc: Object store as a folder tree }
@@ -168,9 +168,10 @@ pages:
   mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
 
 sidebar:
-  # The four main areas (Alex McRitchie, 2026-11-04). The short words are this
-  # section's own: the sub-navs still say Admin dashboard and Deployments.
-  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, admin_basement] }
+  # The main areas (Alex McRitchie, 2026-11-04). The short words are this section's
+  # own: the sub-navs still say Admin dashboard and Deployments. Branding Kits is the
+  # /logos page's own label, since no sub-nav reads it.
+  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, admin_basement] }
   # The client side of the business: what the funnel brought in, what each client
   # runs on, and the credentials behind it.
   - { title: Clients, group: admin, pages: [build_requests, stack, credentials] }
@@ -190,7 +191,7 @@ sidebar:
   # page is where customers compare the tiers.
   - { title: Services,  group: general, pages: [build, packages, integrations] }
   # The Basement: links worth keeping that the sidebar does not need to carry.
-  - { title: Site,      group: basement, pages: [admin_schema, logos, admin_emails, admin_link_preview, asset_browser] }
+  - { title: Site,      group: basement, pages: [admin_schema, admin_emails, admin_link_preview, asset_browser] }
 
 sub_navs:
   # The small link row above a board page's title.

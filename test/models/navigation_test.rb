@@ -176,7 +176,7 @@ class NavigationTest < ActiveSupport::TestCase
   end
 
   test "[unit] the Admin section's short words stay in that section: the pages keep theirs for the sub-navs" do
-    assert_equal [ "Dashboard", "DevOps", "Design", "Basement" ], Navigation.sidebar(:admin).first.pages.map(&:label)
+    assert_equal [ "Dashboard", "DevOps", "Design", "Branding Kits", "Basement" ], Navigation.sidebar(:admin).first.pages.map(&:label)
     assert_equal "Admin", Navigation.sidebar(:admin).first.title
 
     assert_equal "Admin dashboard", Navigation.page(:admin_dashboard).label
@@ -196,7 +196,7 @@ class NavigationTest < ActiveSupport::TestCase
   end
 
   test "[unit] the basement group holds the moved pages, every one an admin page placed nowhere in the sidebar" do
-    assert_equal %w[admin_schema logos admin_emails admin_link_preview asset_browser],
+    assert_equal %w[admin_schema admin_emails admin_link_preview asset_browser],
                  Navigation.sidebar(:basement).flat_map(&:pages).map(&:key)
     assert Navigation.sidebar(:basement).flat_map(&:pages).all? { |page| page.audience == "admin" }
 
