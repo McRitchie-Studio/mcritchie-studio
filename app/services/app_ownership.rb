@@ -14,12 +14,11 @@
 # else the soul titleized. The Agent row is keyed by the soul hyphenated
 # (`turf_monster` → `turf-monster`, config/souls.yml).
 #
-# THE SIDEBAR RULE counts the user's OWN memberships, admins included: one owned
-# app reads as that app's name, followed by its Pipeline (the app's tasks by lane,
-# docs/agents/system/client-pipeline.md), two or more as "Applications" (each app's
-# page links its own pipeline); one CTO among them
-# reads as the CTO's name, two or more as "Agents". A user who owns nothing gets
-# no links, admin or not; an admin reaches every app at /applications anyway.
+# THE SIDEBAR RULE counts the user's OWN memberships, admins included: at most two
+# apps, each by name with its CTO's portrait, and with three or more an All apps
+# link third (Alex McRitchie, 2026-11-04). Each app's page links its own pipeline
+# (docs/agents/system/client-pipeline.md) and CTO. A user who owns nothing gets no
+# links, admin or not; an admin reaches every app at /applications anyway.
 #
 # A CLIENT APP's CTO is data, not a soul on disk (AppCto, docs/agents/system/client-cto.md):
 # when config/cto_reports.yml names no CTO for an app, its AppCto row does, and
@@ -43,7 +42,9 @@ module AppOwnership
     def slug = agent&.slug || AppOwnership.agent_slug_for(soul)
   end
 
-  Link = Struct.new(:label, :href, :emoji, :kind, keyword_init: true)
+  Link = Struct.new(:label, :href, :emoji, :kind, :cto, keyword_init: true)
+
+  SIDEBAR_APPS = 2
 
   module_function
 
@@ -105,8 +106,8 @@ module AppOwnership
     ctos.select { |cto| owned.include?(cto.app_slug) }
   end
 
-  # The owner's sidebar links: an apps link (with a pipeline link for one app) and an agents link, both
-  # counted from the user's own memberships (see THE SIDEBAR RULE above).
+  # The owner's sidebar links, counted from the user's own memberships (see THE
+  # SIDEBAR RULE above). Each app carries its CTO, for the row's portrait.
   def sidebar_links(user, routes: Rails.application.routes.url_helpers)
     owned = owned_app_slugs(user)
     return [] if owned.empty?
@@ -114,22 +115,13 @@ module AppOwnership
     apps = App.where(slug: owned).order(:position, :name).to_a
     return [] if apps.empty?
 
-    owned_ctos = ctos.select { |cto| owned.include?(cto.app_slug) }
-    links = []
-    if apps.one?
-      links << Link.new(label: apps.first.name, href: routes.application_path(apps.first.slug), emoji: apps.first.emoji.presence || "📱", kind: "app")
-      links << Link.new(label: "Pipeline", href: routes.pipeline_application_path(apps.first.slug), emoji: "🛠️", kind: "pipeline")
-    elsif !admin?(user)
-      # An admin's sidebar already carries Applications (config/navigation.yml), so
-      # an admin who owns several apps does not get a second, identical link.
-      links << Link.new(label: "Applications", href: routes.applications_path, emoji: "📱", kind: "apps")
+    configured = ctos
+    clients = AppCto.for_apps(apps.first(SIDEBAR_APPS).map(&:slug))
+    links = apps.first(SIDEBAR_APPS).map do |app|
+      Link.new(label: app.name, href: routes.application_path(app.slug), emoji: app.emoji.presence || "📱", kind: "app",
+               cto: cto_for_app(app.slug, ctos: configured, client_ctos: clients))
     end
-    if owned_ctos.one?
-      cto = owned_ctos.first
-      links << Link.new(label: cto.display_name, href: routes.settings_agent_path(cto.slug), emoji: cto.agent&.emoji.presence || "🤖", kind: "agent")
-    elsif owned_ctos.many?
-      links << Link.new(label: "Agents", href: routes.settings_agents_path, emoji: "🤖", kind: "agents")
-    end
+    links << Link.new(label: "All apps", href: routes.applications_path, emoji: "📱", kind: "apps") if apps.size > SIDEBAR_APPS
     links
   end
 

@@ -56,12 +56,12 @@ and nowhere else ("Confirm by reply" in the same page; Alex McRitchie, 2026-10-1
 ## The sidebar
 
 Owners get a **Your apps** section at the top of the link sidebar
-(`LinkTreeHelper#owner_link_sections`, `AppOwnership.sidebar_links`). The labels
-count the viewer's OWN memberships, admins included:
+(`LinkTreeHelper#owner_link_sections`, `AppOwnership.sidebar_links`). It counts the
+viewer's OWN memberships, admins included (Alex McRitchie, 2026-11-04):
 
-- one owned app reads as its name (`Cyvasse`), followed by its **Pipeline**; two
-  or more as **Applications** (each app's page links its own pipeline);
-- one CTO among them reads as its name (`Turf`), two or more as **Agents**;
+- at most two apps, each by name, with its CTO's portrait, and a rocket on hover;
+- with three or more, **All apps** is the third row;
+- each app's page links its own pipeline and its CTO;
 - a user who owns nothing gets no section, admin or not. An admin still reaches
   every app at `/applications`.
 
