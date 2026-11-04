@@ -1,7 +1,6 @@
 // Configure your import map in config/importmap.rb. Read more: https://github.com/rails/importmap-rails
 import "@hotwired/turbo-rails"
 import "dropping_text"
-import "alex_chat"
 // The shared agent web chat (first page: /applications/:slug/chat): delegated listeners, inert on every other page.
 import "agent_chat"
 // The /build chat with Alex: polls for answers while one is pending, inert on every other page.
@@ -40,7 +39,7 @@ import "chat_attachments"
 import "usage_countdown"
 // The app chat status card's live pill countdown, MM:SS ticked each second: inert where no pill counts down.
 import "devops_countdown"
-// Hold to talk to Alex on /chat: transcribe a take, send it as a message naming who spoke; delegated, inert elsewhere.
+// Hold to talk to Alex on /contact: transcribe a take, send it as a message naming who spoke; delegated, inert elsewhere.
 import "voice_chat"
 
 // How a board page's chrome reaches the engine board it wraps (board/engine_board).

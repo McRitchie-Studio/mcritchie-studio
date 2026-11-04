@@ -3,7 +3,6 @@
 pin "application"
 pin "@hotwired/turbo-rails", to: "turbo.min.js"
 pin "dropping_text"
-pin "alex_chat"
 pin "agent_chat"
 pin "build_chat"
 pin "build_domain"
@@ -30,7 +29,7 @@ pin "chat_attachments"
 pin "usage_countdown"
 # The app chat status card's live pill countdown (app/views/agent_chats/_devops_stages.html.erb).
 pin "devops_countdown"
-# Hold to talk to Alex on /chat (app/views/chat/_voice.html.erb; epic studio-voice card 4).
+# Hold to talk to Alex on /contact (app/views/chat/_voice.html.erb; epic studio-voice card 4).
 pin "voice_chat"
 pin "dreams_filter"
 # The /books purpose field, shown only for a distribution (app/views/books/index.html.erb).

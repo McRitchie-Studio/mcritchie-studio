@@ -4,8 +4,8 @@ require "test_helper"
 
 # [integration] /websites: the public page of apps built on Studio.
 class WebsitesPageTest < ActionDispatch::IntegrationTest
-  # /chat once the wall opens it, /build until then (LinkTreeHelper#visitor_chat_path).
-  def chat_href = AdminWall::PUBLIC.fetch("chat", []).include?("index") ? chat_index_path : build_path
+  # The sidebar's Chat link: /contact holds the chat with Alex.
+  def chat_href = contact_form_path
 
   test "a signed-out visitor sees a card per app" do
     get websites_path

@@ -10,7 +10,7 @@ module AgentMailbox
   #   ContextBuilder#persona_block  every mailbox answer the soul `alex` gives
   #                                 (/build, alex.build `chat:alex:` threads, Discord,
   #                                 the hub web chat, email), and no other soul's
-  #   Chat::AlexResponder           the hub's public /chat
+  #   Chat::AlexResponder           the hub's legacy POST /chat (admin-only, no caller)
   #
   # The page is public by construction: chat threads answer at the public audience
   # (AgentMessages::MemoryBundle#audience_person), so it holds nothing private.

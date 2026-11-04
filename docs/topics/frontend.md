@@ -156,7 +156,6 @@ style, script or Leaflet of its own.
 - Templates are leaving `x-data` and script tags behind: `test/views/inline_script_and_x_data_ratchet_test.rb` pins each template's count of both in `inline_script_and_x_data_pins.yml` beside it. A gain fails, and a loss fails until its pin is lowered.
 - The deploy board's `kanbanBoard` Alpine factory stays inline in `tasks/_deploy_board`: Alpine starts before importmap modules run, so a factory defined in a module would not exist when `x-data` first evaluates.
 - `dropping_text` — animated text effect on landing page. Tracks timer IDs and cleans up on `turbo:before-cache` to prevent memory leaks.
-- `alex_chat` — Alpine.js `alexChat()` component for AI chat UI. Handles message sending via POST `/chat`, loading states, auto-scroll, basic markdown formatting. HTML-escape happens before markdown transforms (XSS-safe). Attached to `window.alexChat`.
 - `depth_chart` — Alpine `depthChart(reorderUrl)` component for `/teams/:slug/depth-chart`. Wires SortableJS per position (drag-reorder, locked rows filter out), calls reorder/toggle_lock endpoints. Attached to `window.depthChart`.
 
 ## AI Chat (Alex Agent)
@@ -166,8 +165,7 @@ Public-facing chat interface powered by Claude API. Users can chat with an AI Al
 ### Architecture
 - **ChatController** — `index` renders chat page, `create` accepts JSON `{ message }` and returns `{ response }`. Conversation history stored in `session[:chat_messages]` (last 10 messages).
 - **Chat::AlexResponder** — Service using raw `Net::HTTP` to Claude API. Alex McRitchie persona system prompt. Model: `claude-haiku-4-5-20251001`, max tokens: 1024.
-- **Chat widget partial** — `chat/_chat_widget.html.erb` accepts `compact:` local (true for landing page card, false for full `/chat` page). Used in both locations.
-- **Alpine.js component** — `alexChat()` in `alex_chat.js` handles message state, fetch to `/chat`, loading indicators, auto-scroll, basic markdown rendering.
+- **The hub's chat with Alex** — the engine's `studio/agent_chat/chat`, drawn by `contact_submissions/_chat` on `/contact` beside the form. `/chat` redirects there.
 
 ### Landing Page
 - **Hero** — Denver skyline background with Ken Burns pan animation (15s linear), page-colour tint overlay for text contrast (navy in dark mode, pale in light).

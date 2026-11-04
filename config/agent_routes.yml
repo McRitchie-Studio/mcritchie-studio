@@ -369,6 +369,6 @@ web:
     alex-build: [alex]
     turf-monster: [turf_monster]
     mcritchie-industries: [alex]
-    # The hub's own /chat (HubAgentChatsController), in-process: no credential
+    # The hub's own chat on /contact (HubAgentChatsController), in-process: no credential
     # is minted for it, so no satellite can speak as the hub.
     mcritchie-studio: [alex]

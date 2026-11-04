@@ -1,0 +1,15 @@
+<%# The other ways to reach the studio. The address and the booking link are the
+    site footer's (config/initializers/studio.rb). %>
+<div class="card p-5 min-w-0 self-start w-full lg:col-start-1 lg:row-start-2" data-test="contact-other-ways">
+  <h2 class="text-heading font-semibold mb-3">Other ways to reach us</h2>
+  <ul class="space-y-2">
+    <li class="flex flex-wrap justify-between gap-x-4">
+      <span class="text-secondary">Email</span>
+      <a href="mailto:team@mcritchie.studio" class="text-primary hover:underline break-all" data-test="contact-email">team@mcritchie.studio</a>
+    </li>
+    <li class="flex flex-wrap justify-between gap-x-4">
+      <span class="text-secondary">Talk to Alex McRitchie</span>
+      <%= studio_booking_link "Schedule a call", schedule_index_path, class: "text-primary hover:underline", data: { test: "contact-schedule" } %>
+    </li>
+  </ul>
+</div>

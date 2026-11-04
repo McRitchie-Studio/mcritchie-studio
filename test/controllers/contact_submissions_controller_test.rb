@@ -32,6 +32,67 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
 
   # --- [component] the page --------------------------------------------------
 
+  # Where the form starts in the page's HTML, against the chat.
+  def form_before_chat?
+    response.body.index("data-test=\"contact-form-column\"") < response.body.index("data-test=\"alex-chat-page\"")
+  end
+
+  test "[component] one page holds the chat and the form, chat first for a plain arrival" do
+    get contact_form_path
+
+    assert_response :success
+    assert_select "[data-test='alex-chat-page'] [data-test='agent-chat'][data-agent-chat-soul='alex']", count: 1
+    assert_select "form[data-test='contact-form']", count: 1
+    assert_select "[data-test='sms-disclosure']", count: 1
+    refute form_before_chat?
+    assert_select "title", text: "Contact or Chat with Alex · McRitchie Studio"
+  end
+
+  # A carrier reviewer sees these on arrival: nothing a script or a click must open.
+  test "[component] nothing around the form or the disclosure can start hidden" do
+    get contact_form_path
+
+    %w[contact-form-column contact-consent sms-disclosure].each do |hook|
+      node = css_select("[data-test='#{hook}']").first
+      assert node, hook
+      while node.respond_to?(:[]) && node.element?
+        %w[x-show x-if x-cloak hidden aria-hidden].each { |attr| assert_nil node[attr], "#{hook}: <#{node.name}> carries #{attr}" }
+        assert_no_match(/\bhidden\b/, node["class"].to_s, "#{hook}: <#{node.name}> is hidden by class")
+        assert_no_match(/\b(details|dialog|template)\b/, node.name, hook)
+        node = node.parent
+      end
+    end
+  end
+
+  test "[component] the other ways to reach us use the footer's address and booking page" do
+    get contact_form_path
+
+    assert_select "[data-test='contact-other-ways'] a[href='mailto:team@mcritchie.studio']", text: "team@mcritchie.studio"
+    assert_select "[data-test='contact-other-ways'] a[href='#{schedule_index_path}']", text: "Schedule a call"
+  end
+
+  test "[component] a refused submission puts the form and its errors before the chat" do
+    submit(email: "not-an-email")
+
+    assert_response :unprocessable_entity
+    assert_select "[data-test='contact-errors']"
+    assert form_before_chat?
+    assert_select "[data-test='alex-chat-page'] [data-test='agent-chat']", count: 1
+  end
+
+  test "[component] a card link and a sent confirmation land on the form" do
+    get contact_form_path, params: { source: { page: "integrations", item: "github", intent: "connect" } }
+    assert form_before_chat?
+
+    get contact_form_path, params: { source: { bogus: "x" } }
+    refute form_before_chat?, "a source with no known key is a plain arrival"
+
+    submit
+    follow_redirect!
+    assert_select "[data-test='contact-sent']"
+    assert form_before_chat?
+  end
+
   test "[component] anyone can open the form without signing in" do
     get contact_form_path
 

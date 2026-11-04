@@ -1,6 +1,7 @@
-# /contact — the public contact form, and the SMS opt-in page a carrier reviews.
+# /contact — the hub's chat with Alex, the public contact form, and the SMS opt-in
+# page a carrier reviews, on one page (/chat redirects here).
 #
-#   GET  /contact   the form, the three consent boxes, the disclosure under it
+#   GET  /contact   the chat, the form, the three consent boxes, the disclosure under it
 #   POST /contact   store the submission as proof of consent, then tell Alex McRitchie
 #
 # The consent rules live in ContactSubmission. This controller adds what only a
@@ -14,7 +15,7 @@
 # render time that only the page's JavaScript writes into the form, and a
 # submission without it, or faster than a person types, is flagged.
 class ContactSubmissionsController < ApplicationController
-  helper_method :form_proof
+  helper_method :form_proof, :land_on_form?
 
   # A public form that writes a row and sends an email: bounded per IP.
   rate_limit to: 5, within: 1.minute, only: :create,
@@ -75,6 +76,13 @@ class ContactSubmissionsController < ApplicationController
   end
 
   private
+
+  # The visitor came for the form, so it comes before the chat: a refused submission
+  # (its errors), a card link carrying a source, a sent confirmation, or the rate
+  # limit's alert. An order, not an anchor: Turbo scrolls to the top on a 422.
+  def land_on_form?
+    @submission.errors.any? || @submission.source.to_h.any? || flash[:contact_sent].present? || flash[:alert].present?
+  end
 
   # A re-rendered form keeps the render time the visitor's first page carried,
   # so fixing one field and resubmitting quickly does not read as too fast.

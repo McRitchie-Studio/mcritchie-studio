@@ -153,7 +153,7 @@ Studio.configure do |config|
     config.voice_embedder = "fake" if Rails.env.test?
   end
   # ---- Talk to Alex by voice (epic .agents/epics/studio-voice.md, card 4) ----
-  # /chat is the hub's own page on the engine's agent chat (studio-engine
+  # /contact holds the hub's own chat on the engine's agent chat (studio-engine
   # docs/AGENT_CHAT.md), thread chat:alex:<user id>. The hub holds that thread,
   # so the page's /agent_chat/* calls are answered in-process by
   # HubAgentChatsController (drawn before Studio.routes), never proxied back to

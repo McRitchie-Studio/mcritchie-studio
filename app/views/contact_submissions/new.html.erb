@@ -1,110 +1,132 @@
-<% content_for :title, "Contact · McRitchie Studio" %>
-<%# The SMS opt-in page a carrier reviews. The checkbox labels and the three
-    paragraphs under the form are fixed wording held in ContactSubmission, and
-    no box may ever render ticked on a fresh page. %>
+<% content_for :title, "Contact or Chat with Alex · McRitchie Studio" %>
+<%# Two jobs on one page (Alex McRitchie, 2026-11-03): the chat with Alex, the hub's window
+    to the agent, and the SMS opt-in page a carrier reviews. The checkbox labels and
+    the three paragraphs under the form are fixed wording held in ContactSubmission,
+    no box may ever render ticked on a fresh page, and the form and disclosure stay
+    in this HTML, visible with no click: no tab, no accordion, no default-hidden x-show.
 
-<section class="max-w-2xl mx-auto px-4 py-10" data-test="contact-page">
-  <header class="text-center mb-8">
+    On a phone the columns stack in source order. A visitor who came to send a message,
+    or who has just sent one (land_on_form?), gets the form first, with no script and
+    whatever Turbo does to the scroll position. On a wide screen the grid places the
+    chat left and the form right in both orders. %>
+
+<% chat_column = render("contact_submissions/chat") %>
+
+<section class="max-w-6xl mx-auto px-0 sm:px-4 py-4 sm:py-8" data-test="contact-page">
+  <header class="text-center mb-6">
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Contact</p>
     <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">Get in touch</h1>
-    <p class="text-secondary">Send a note and Alex McRitchie will reply by email.</p>
+    <p class="text-secondary">Chat with Alex, our AI agent, or send a message to Alex McRitchie.</p>
+    <p class="text-xs mt-2"><a href="#contact-form" class="text-primary hover:underline" data-test="contact-form-jump">Go to the contact form and text message sign-up</a></p>
   </header>
 
-  <% if flash[:contact_sent] %>
-    <div class="card p-5 mb-6 border border-subtle bg-surface-alt" role="status" data-test="contact-sent">
-      <h2 class="text-heading font-semibold mb-1">Thanks, your message is on its way.</h2>
-      <p class="text-secondary text-sm">We will reply to the email address you gave us.</p>
-      <% if flash[:contact_sent] == "sms" %>
-        <p class="text-muted text-sm mt-2" data-test="contact-sent-sms">You are signed up for text messages from <%= ContactSubmission::SMS_NUMBER %>. Msg frequency varies. Msg &amp; data rates may apply. Reply HELP for help. Reply STOP to cancel.</p>
-      <% end %>
-    </div>
-  <% end %>
+  <div class="grid gap-6 lg:grid-cols-2 lg:grid-rows-[auto_1fr] min-w-0">
+    <%= chat_column unless land_on_form? %>
 
-  <div class="card p-6"
-       x-data="{ care: <%= @submission.sms_care_consent? %>, marketing: <%= @submission.sms_marketing_consent? %>, declined: <%= @submission.sms_declined? %> }">
-    <%= form_with model: @submission, scope: :contact_submission, url: contact_form_path, method: :post,
-                  html: { class: "space-y-5", data: { test: "contact-form" } } do |f| %>
-      <% if @submission.errors.any? %>
-        <div class="rounded-lg border border-subtle bg-surface-alt p-4" role="alert" data-test="contact-errors">
-          <p class="text-heading font-semibold mb-1">Please fix the following:</p>
-          <ul class="list-disc pl-5 text-sm text-secondary space-y-1">
-            <% @submission.errors.full_messages.each do |message| %>
-              <li><%= message %></li>
-            <% end %>
-          </ul>
+    <div id="contact-form" class="min-w-0 scroll-mt-20 lg:col-start-2 lg:row-start-1 lg:row-span-2" data-test="contact-form-column">
+      <h2 class="text-2xl font-bold text-heading mb-1">Send a message</h2>
+      <p class="text-secondary mb-4">Send a note and Alex McRitchie will reply by email.</p>
+
+      <% if flash[:contact_sent] %>
+        <div class="card p-5 mb-6 border border-subtle bg-surface-alt" role="status" data-test="contact-sent">
+          <h2 class="text-heading font-semibold mb-1">Thanks, your message is on its way.</h2>
+          <p class="text-secondary text-sm">We will reply to the email address you gave us.</p>
+          <% if flash[:contact_sent] == "sms" %>
+            <p class="text-muted text-sm mt-2" data-test="contact-sent-sms">You are signed up for text messages from <%= ContactSubmission::SMS_NUMBER %>. Msg frequency varies. Msg &amp; data rates may apply. Reply HELP for help. Reply STOP to cancel.</p>
+          <% end %>
         </div>
       <% end %>
 
-      <div>
-        <%= f.label :name, "Name", class: "block text-sm font-semibold text-heading mb-1" %>
-        <%= f.text_field :name, required: true, maxlength: ContactSubmission::NAME_LIMIT, autocomplete: "name", class: "input-field w-full" %>
-      </div>
+    <div class="card p-6"
+         x-data="{ care: <%= @submission.sms_care_consent? %>, marketing: <%= @submission.sms_marketing_consent? %>, declined: <%= @submission.sms_declined? %> }">
+      <%= form_with model: @submission, scope: :contact_submission, url: contact_form_path, method: :post,
+                    html: { class: "space-y-5", data: { test: "contact-form" } } do |f| %>
+        <% if @submission.errors.any? %>
+          <div class="rounded-lg border border-subtle bg-surface-alt p-4" role="alert" data-test="contact-errors">
+            <p class="text-heading font-semibold mb-1">Please fix the following:</p>
+            <ul class="list-disc pl-5 text-sm text-secondary space-y-1">
+              <% @submission.errors.full_messages.each do |message| %>
+                <li><%= message %></li>
+              <% end %>
+            </ul>
+          </div>
+        <% end %>
 
-      <div>
-        <%= f.label :email, "Email", class: "block text-sm font-semibold text-heading mb-1" %>
-        <%= f.email_field :email, required: true, maxlength: ContactSubmission::EMAIL_LIMIT, autocomplete: "email", class: "input-field w-full" %>
-      </div>
+        <div>
+          <%= f.label :name, "Name", class: "block text-sm font-semibold text-heading mb-1" %>
+          <%= f.text_field :name, required: true, maxlength: ContactSubmission::NAME_LIMIT, autocomplete: "name", class: "input-field w-full" %>
+        </div>
 
-      <div>
-        <%= f.label :phone, "Mobile phone number", class: "block text-sm font-semibold text-heading mb-1" %>
-        <%= f.telephone_field :phone, maxlength: ContactSubmission::PHONE_LIMIT, autocomplete: "tel", class: "input-field w-full",
-                              "aria-describedby": "contact-phone-hint", ":required": "care || marketing" %>
-        <p id="contact-phone-hint" class="text-xs text-muted mt-1">Optional. Needed only if you choose to receive text messages below.</p>
-      </div>
+        <div>
+          <%= f.label :email, "Email", class: "block text-sm font-semibold text-heading mb-1" %>
+          <%= f.email_field :email, required: true, maxlength: ContactSubmission::EMAIL_LIMIT, autocomplete: "email", class: "input-field w-full" %>
+        </div>
 
-      <div>
-        <%= f.label :message, "Message", class: "block text-sm font-semibold text-heading mb-1" %>
-        <%= f.text_area :message, required: true, rows: 5, maxlength: ContactSubmission::MESSAGE_LIMIT, class: "input-field w-full" %>
-      </div>
+        <div>
+          <%= f.label :phone, "Mobile phone number", class: "block text-sm font-semibold text-heading mb-1" %>
+          <%= f.telephone_field :phone, maxlength: ContactSubmission::PHONE_LIMIT, autocomplete: "tel", class: "input-field w-full",
+                                "aria-describedby": "contact-phone-hint", ":required": "care || marketing" %>
+          <p id="contact-phone-hint" class="text-xs text-muted mt-1">Optional. Needed only if you choose to receive text messages below.</p>
+        </div>
 
-      <%# Off-screen, out of the tab order and hidden from assistive tech: only
-          a script fills this in. The name comes from the controller, which
-          explains why it must not look like anything a browser autofills. %>
-      <% honeypot = ContactSubmissionsController::HONEYPOT_FIELD %>
-      <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
-        <label for="contact_submission_<%= honeypot %>">Leave this field empty</label>
-        <input type="text" name="contact_submission[<%= honeypot %>]" id="contact_submission_<%= honeypot %>" tabindex="-1" autocomplete="off" data-test="contact-honeypot">
-      </div>
+        <div>
+          <%= f.label :message, "Message", class: "block text-sm font-semibold text-heading mb-1" %>
+          <%= f.text_area :message, required: true, rows: 5, maxlength: ContactSubmission::MESSAGE_LIMIT, class: "input-field w-full" %>
+        </div>
 
-      <%# The browser proof: the signed render time sits in a data attribute and
-          only the page's script writes it, reversed, into the field. A bot that
-          posts the HTML back without running it sends the field blank. %>
-      <% proof = ContactSubmissionsController::PROOF_FIELD %>
-      <input type="hidden" name="contact_submission[<%= proof %>]" id="contact_submission_<%= proof %>"
-             data-proof="<%= form_proof %>" data-min-seconds="<%= ContactSubmissionsController::MIN_FILL_SECONDS %>"
-             x-init="$el.value = $el.dataset.proof.split('').reverse().join('')" data-test="contact-proof">
+        <%# Off-screen, out of the tab order and hidden from assistive tech: only
+            a script fills this in. The name comes from the controller, which
+            explains why it must not look like anything a browser autofills. %>
+        <% honeypot = ContactSubmissionsController::HONEYPOT_FIELD %>
+        <div style="position:absolute;left:-9999px;top:auto;width:1px;height:1px;overflow:hidden;" aria-hidden="true">
+          <label for="contact_submission_<%= honeypot %>">Leave this field empty</label>
+          <input type="text" name="contact_submission[<%= honeypot %>]" id="contact_submission_<%= honeypot %>" tabindex="-1" autocomplete="off" data-test="contact-honeypot">
+        </div>
 
-      <%# Where the visitor came from, when a card link carried it (an
-          /integrations button): kept as hidden fields so it reaches the stored
-          submission. ContactSubmission keeps only its known keys. %>
-      <% @submission.source.to_h.each do |key, value| %>
-        <input type="hidden" name="contact_submission[source][<%= key %>]" value="<%= value %>" data-test="contact-source" data-source-key="<%= key %>">
+        <%# The browser proof: the signed render time sits in a data attribute and
+            only the page's script writes it, reversed, into the field. A bot that
+            posts the HTML back without running it sends the field blank. %>
+        <% proof = ContactSubmissionsController::PROOF_FIELD %>
+        <input type="hidden" name="contact_submission[<%= proof %>]" id="contact_submission_<%= proof %>"
+               data-proof="<%= form_proof %>" data-min-seconds="<%= ContactSubmissionsController::MIN_FILL_SECONDS %>"
+               x-init="$el.value = $el.dataset.proof.split('').reverse().join('')" data-test="contact-proof">
+
+        <%# Where the visitor came from, when a card link carried it (an
+            /integrations button): kept as hidden fields so it reaches the stored
+            submission. ContactSubmission keeps only its known keys. %>
+        <% @submission.source.to_h.each do |key, value| %>
+          <input type="hidden" name="contact_submission[source][<%= key %>]" value="<%= value %>" data-test="contact-source" data-source-key="<%= key %>">
+        <% end %>
+
+        <fieldset class="space-y-3" data-test="contact-consent">
+          <legend class="text-sm font-semibold text-heading mb-2">Text messages</legend>
+          <label class="flex items-start gap-3 text-secondary">
+            <%= f.check_box :sms_care_consent, { class: "mt-1", "x-model": "care", "@change": "if (care) declined = false", data: { test: "consent-care" } } %>
+            <span><%= ContactSubmission::CONSENT_LABELS[:sms_care_consent] %></span>
+          </label>
+          <label class="flex items-start gap-3 text-secondary">
+            <%= f.check_box :sms_marketing_consent, { class: "mt-1", "x-model": "marketing", "@change": "if (marketing) declined = false", data: { test: "consent-marketing" } } %>
+            <span><%= ContactSubmission::CONSENT_LABELS[:sms_marketing_consent] %></span>
+          </label>
+          <label class="flex items-start gap-3 text-secondary">
+            <%= f.check_box :sms_declined, { class: "mt-1", "x-model": "declined", "@change": "if (declined) { care = false; marketing = false }", data: { test: "consent-declined" } } %>
+            <span><%= ContactSubmission::CONSENT_LABELS[:sms_declined] %></span>
+          </label>
+        </fieldset>
+
+        <%= f.submit "Send message", class: "btn btn-primary w-full sm:w-auto", data: { test: "contact-submit" } %>
       <% end %>
 
-      <fieldset class="space-y-3" data-test="contact-consent">
-        <legend class="text-sm font-semibold text-heading mb-2">Text messages</legend>
-        <label class="flex items-start gap-3 text-secondary">
-          <%= f.check_box :sms_care_consent, { class: "mt-1", "x-model": "care", "@change": "if (care) declined = false", data: { test: "consent-care" } } %>
-          <span><%= ContactSubmission::CONSENT_LABELS[:sms_care_consent] %></span>
-        </label>
-        <label class="flex items-start gap-3 text-secondary">
-          <%= f.check_box :sms_marketing_consent, { class: "mt-1", "x-model": "marketing", "@change": "if (marketing) declined = false", data: { test: "consent-marketing" } } %>
-          <span><%= ContactSubmission::CONSENT_LABELS[:sms_marketing_consent] %></span>
-        </label>
-        <label class="flex items-start gap-3 text-secondary">
-          <%= f.check_box :sms_declined, { class: "mt-1", "x-model": "declined", "@change": "if (declined) { care = false; marketing = false }", data: { test: "consent-declined" } } %>
-          <span><%= ContactSubmission::CONSENT_LABELS[:sms_declined] %></span>
-        </label>
-      </fieldset>
-
-      <%= f.submit "Send message", class: "btn btn-primary w-full sm:w-auto", data: { test: "contact-submit" } %>
-    <% end %>
-
-    <div class="mt-6 pt-6 border-t border-subtle space-y-3 text-sm text-muted leading-relaxed" data-test="sms-disclosure">
-      <% ContactSubmission::DISCLOSURE_PARAGRAPHS.each do |paragraph| %>
-        <% before, url, after = paragraph.partition(ContactSubmission::PRIVACY_URL) %>
-        <p><%= before %><% if url.present? %><%= link_to url, privacy_path, class: "text-primary hover:underline" %><% end %><%= after %></p>
-      <% end %>
+      <div class="mt-6 pt-6 border-t border-subtle space-y-3 text-sm text-muted leading-relaxed" data-test="sms-disclosure">
+        <% ContactSubmission::DISCLOSURE_PARAGRAPHS.each do |paragraph| %>
+          <% before, url, after = paragraph.partition(ContactSubmission::PRIVACY_URL) %>
+          <p><%= before %><% if url.present? %><%= link_to url, privacy_path, class: "text-primary hover:underline" %><% end %><%= after %></p>
+        <% end %>
+      </div>
     </div>
+    </div>
+
+    <%= chat_column if land_on_form? %>
+    <%= render "contact_submissions/other_ways" %>
   </div>
 </section>
