@@ -123,7 +123,7 @@ Parallel surface to the X workflow above; entry points create TikTok-flavored Co
 - `/usages` — Usage table
 - `/admin/basement` — Admin-only page of links kept off the sidebar: the Site, Clients, Email and Ops pages today (`group: basement` in `config/navigation.yml`).
 - `/admin/links` — The whole admin index: the sidebar's admin sections, then the Basement's.
-- `/admin/dashboard` — Admin dashboard with four quick links, a users table, and a request-log table backed by `error_logs`.
+- `/admin/dashboard` — Admin dashboard with quick links, a users table, and a request-log table backed by `error_logs`.
 - `/admin/ai_builder_multiple` — Admin dashboard for latest AI Builder Multiple index weeks, cohort coverage, the latest 9 Saturday-Friday UTC weekly commit cache ranges by tracked builder, builder weekly commit pace metrics, and CSV export paths. `/admin/ai_builder_multiple.json` returns the same latest index data and commit log ranges as JSON. Includes a caveat that this is public GitHub builder activity, not a true productivity measure.
 - `/admin/ai_builder_multiple/commit_history` — Full five-year AI Builder Multiple commit cache table using the same builder/range table format as the dashboard commit log.
 - `/admin/theme` — Engine route with no sidebar link. The theme editor's home is the Theme section of `/admin/style`.
