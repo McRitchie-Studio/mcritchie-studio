@@ -30,7 +30,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     get links_path
     assert_response :success
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
-    # The emoji-swap proves the visitor sections rendered (Apps is one link to /websites).
+    # The emoji-swap proves the visitor sections rendered (Portfolio is one link to /websites).
     assert_select "#studio-link-sidebar .studio-emoji-swap"
     # Studio is behind the session wall
     assert_select "#studio-link-sidebar a[href=?]", dashboard_path, count: 0

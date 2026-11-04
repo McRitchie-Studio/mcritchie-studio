@@ -19,8 +19,8 @@
 #
 # sidebar   The link sidebar's sections, in order. group: admin sections lead for
 #           an admin and fill /admin/links; group: general sections fill /links.
-#           A signed-out visitor's sidebar is the general sections, one line each
-#           (LinkTreeHelper#visitor_sidebar_sections).
+#           Every sidebar also has Build: Chat and Portfolio. A signed-out visitor's
+#           sidebar is only Sign In and Build, one line each (LinkTreeHelper).
 #           An entry shows when its page is public or the viewer is an admin, and
 #           a section with no visible entry is dropped.
 #
@@ -59,7 +59,7 @@ pages:
   contact_form:   { page: "contact_submissions#new", audience: public, label: Contact }
   links:          { page: "links#index",             audience: public, label: Links }
   chat_index:     { page: "chat#index",              audience: public, label: Chat }
-  websites:       { page: "websites#index",          audience: public, label: Websites Built on Studio, emoji: "🌐", hover_emoji: "🚀" }
+  websites:       { page: "websites#index",          audience: public, label: Portfolio, emoji: "🌐", hover_emoji: "🚀" }
   schedule_index: { page: "schedule#index",          audience: public, label: Schedule a call }
 
   # ── NFL ──────────────────────────────────────────────────────────────────

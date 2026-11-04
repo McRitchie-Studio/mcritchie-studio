@@ -18,6 +18,12 @@ async function chatPageIsOnlyTheChat(page, viewport) {
 
   await expect(page.locator(CHAT)).toHaveAttribute("data-agent-chat-ready", "true");
   await expect(page.locator("[data-test='agent-chat-empty']")).toHaveText("What brought you here today?");
+  await expect(page.locator("[data-test='chat-heading']")).toHaveText("How Can I Help?");
+  await expect(page.locator("[data-test='agent-chat-caption']")).toContainText("AI Builder");
+  // The heading stands over an empty thread and leaves with the first turn.
+  await page.locator("[data-agent-chat-log]").evaluate((log) => log.append(document.createElement("div")));
+  await expect(page.locator("[data-test='chat-heading']")).toBeHidden();
+  await page.locator("[data-agent-chat-log] > div").last().evaluate((turn) => turn.remove());
   await expect(page.locator("[data-test='agent-chat-input']")).toBeInViewport();
   await expect(page.locator("[data-test='contact-form']")).toHaveCount(0);
   await expect(page.locator("[data-test='sms-disclosure']")).toHaveCount(0);

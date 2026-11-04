@@ -210,7 +210,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.admin_enabled = false
     self.logged_in_enabled = true
 
-    assert_equal ["NFL", "Services", "Apps"], sidebar_link_sections.map { |section| section.fetch(:title) }
+    assert_equal ["Build", "NFL", "Services", "Apps"], sidebar_link_sections.map { |section| section.fetch(:title) }
   end
 
   test "the admin's link hub reveals Studio with Agents and Builders together" do
@@ -257,13 +257,13 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
   # The navbar carries no sign-in link, so a visitor finds Sign In at the top of
   # the sidebar (/tasks/drop-hero-meet-alex); a signed-in user does not.
-  test "a visitor's sidebar leads with Sign In and Chat; a signed-in user's has neither" do
+  test "a visitor's sidebar leads with Sign In and Chat; a signed-in user's drops Sign In and keeps Chat" do
     first = sidebar_link_sections.first
     assert_equal "Account", first.fetch(:title)
     assert_equal [ [ "Sign In", "/login" ] ], first.fetch(:links).map { |link| link.values_at(:label, :href) }
     assert_equal %w[Account Build], sidebar_link_sections.map { |section| section.fetch(:title) }
     build = sidebar_link_sections.last.fetch(:links)
-    assert_equal [ "Chat", "Websites Built on Studio" ], build.map { |link| link.fetch(:label) }
+    assert_equal [ "Chat", "Portfolio" ], build.map { |link| link.fetch(:label) }
     assert_equal "/chat", build.first.fetch(:href)
     assert_includes build.first.fetch(:emoji), "/agents/alex.webp"
     assert_equal "💬", build.first.fetch(:hover_emoji)
@@ -273,11 +273,22 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.current_user = nil
     refute sidebar_link_sections.any? { |section| section[:title] == "Account" }
     refute sidebar_link_sections.flat_map { |section| section.fetch(:links) }.any? { |link| link[:href] == "/login" }
+    assert_equal [ "Chat", "Portfolio" ], signed_in_build_links
+    assert_equal 1, sidebar_link_sections.count { |section| section[:title] == "Build" }
+
+    self.admin_enabled = true
+    assert_equal [ "Chat", "Portfolio" ], signed_in_build_links, "an admin is signed in, so an admin has them too"
+    assert_equal 1, sidebar_link_sections.count { |section| section[:title] == "Build" }
+    refute public_link_sections.any? { |section| section[:title] == "Build" }, "/links does not change"
   end
 
   private
 
   attr_accessor :admin_enabled, :logged_in_enabled, :current_user
+
+  def signed_in_build_links
+    sidebar_link_sections.find { |section| section[:title] == "Build" }.fetch(:links).map { |link| link.fetch(:label) }
+  end
 
   def admin?
     !!admin_enabled
@@ -377,7 +388,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal [ "Applications", "Agents" ], sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }
 
     self.current_user = User.create!(email: "sidebar-none@example.com", name: "No Apps", role: "viewer")
-    assert_equal [ "NFL", "Services", "Apps" ], sidebar_link_sections.map { |section| section.fetch(:title) }
+    assert_equal [ "Build", "NFL", "Services", "Apps" ], sidebar_link_sections.map { |section| section.fetch(:title) }
 
     self.logged_in_enabled = false
     self.current_user = nil
