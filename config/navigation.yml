@@ -121,7 +121,7 @@ pages:
   admin_emails:       { page: "studio/emails#index",          audience: admin, label: Emails, emoji: "✉️", hover_emoji: "🖼️", desc: Transactional emails + their banners }
   admin_link_preview: { page: "studio/site_identities#edit",  audience: admin, label: Link preview, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls" }
   asset_browser:      { page: "assets#index",                 audience: admin, label: Assets, emoji: "🗄️", hover_emoji: "🎞️", desc: Object store as a folder tree }
-  admin_basement:     { page: "admin/links#basement",         audience: admin, label: Basement, emoji: "🪜", hover_emoji: "📦", desc: "Links kept off the sidebar: Schema, Logos, Emails and more" }
+  admin_basement:     { page: "admin/links#basement",         audience: admin, label: Basement, emoji: "🪜", hover_emoji: "📦", desc: Links kept off the sidebar }
 
   # ── Clients ──────────────────────────────────────────────────────────────
   build_requests: { page: "build#index",             audience: admin, label: App requests, emoji: "🧱", hover_emoji: "📥", desc: Every app requested through /build }

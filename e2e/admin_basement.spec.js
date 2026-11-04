@@ -11,48 +11,52 @@ const MOVED = [
   { href: "/admin/link_preview", label: "Link preview", desc: "Default title" },
   { href: "/assets", label: "Assets", desc: "Object store" },
 ];
-const SIZES = [
-  { name: "phone", width: 390, height: 844 },
-  { name: "desktop", width: 1440, height: 900 },
-];
+const PHONE = { name: "phone", width: 390, height: 844 };
+const DESKTOP = { name: "desktop", width: 1440, height: 900 };
 // The muted section word is the faintest text the page draws, as on the sub-navs.
 const LEGIBLE = 3.0;
 
 const setTheme = (page, theme) =>
   page.evaluate((t) => document.documentElement.classList.toggle("dark", t === "dark"), theme);
 
-for (const size of SIZES) {
-  test(`the Basement lists the moved pages at ${size.name} width, in both themes`, async ({ page }) => {
-    await page.setViewportSize({ width: size.width, height: size.height });
-    await page.goto("/admin/basement");
+const listsTheMovedPages = async (page, size) => {
+  await page.setViewportSize({ width: size.width, height: size.height });
+  await page.goto("/admin/basement");
 
-    await expect(page.getByRole("heading", { level: 1, name: "Basement" })).toBeVisible();
-    const hub = page.locator("[data-link-hub]");
-    for (const { href, label, desc } of MOVED) {
-      const link = hub.locator(`a[href='${href}']`);
-      await expect(link).toBeVisible();
-      await expect(link).toContainText(label);
-      await expect(link).toContainText(desc);
-    }
+  await expect(page.getByRole("heading", { level: 1, name: "Basement" })).toBeVisible();
+  const hub = page.locator("[data-link-hub]");
+  for (const { href, label, desc } of MOVED) {
+    const link = hub.locator(`a[href='${href}']`);
+    await expect(link).toBeVisible();
+    await expect(link).toContainText(label);
+    await expect(link).toContainText(desc);
+  }
 
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-    expect(overflow, "the page must not scroll sideways").toBeLessThanOrEqual(0);
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+  expect(overflow, "the page must not scroll sideways").toBeLessThanOrEqual(0);
 
-    for (const theme of ["dark", "light"]) {
-      await setTheme(page, theme);
-      // Links ease between theme colours, so the faintest is polled until it settles.
-      await expect
-        .poll(
-          async () => {
-            const ratios = await page.evaluate(CONTRAST, "[data-link-hub] a, [data-link-hub] h2");
-            return ratios.length ? Math.min(...ratios.map(({ ratio }) => ratio)) : 0;
-          },
-          { message: `the faintest Basement text in ${theme} at ${size.name}`, timeout: 5_000 }
-        )
-        .toBeGreaterThanOrEqual(LEGIBLE);
-    }
-  });
-}
+  for (const theme of ["dark", "light"]) {
+    await setTheme(page, theme);
+    // Links ease between theme colours, so the faintest is polled until it settles.
+    await expect
+      .poll(
+        async () => {
+          const ratios = await page.evaluate(CONTRAST, "[data-link-hub] a, [data-link-hub] h2");
+          return ratios.length ? Math.min(...ratios.map(({ ratio }) => ratio)) : 0;
+        },
+        { message: `the faintest Basement text in ${theme} at ${size.name}`, timeout: 5_000 }
+      )
+      .toBeGreaterThanOrEqual(LEGIBLE);
+  }
+};
+
+test("the Basement lists the moved pages at phone width, in both themes", async ({ page }) => {
+  await listsTheMovedPages(page, PHONE);
+});
+
+test("the Basement lists the moved pages at desktop width, in both themes", async ({ page }) => {
+  await listsTheMovedPages(page, DESKTOP);
+});
 
 test("the sidebar reads Dashboard, DevOps, Design, Basement and takes you to the Basement", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
