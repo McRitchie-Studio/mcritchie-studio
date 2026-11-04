@@ -13,7 +13,7 @@ test("the admin users table shows auth chips with no wallet among them", async (
   await loginWithMagicLink(page, "alex@test.com");
 
   await page.goto("/admin/models/users");
-  await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
 
   const usersTable = page.locator("#models-users-table");
   await expect(usersTable).toBeVisible();
