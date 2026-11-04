@@ -42,7 +42,7 @@ module LinkTreeHelper
   def visitor_link_sections
     return [] if logged_in?
 
-    [ { title: "Account", links: [ { label: "Sign In", href: login_path, emoji: "🔑", hover_emoji: "👋" } ] } ]
+    [ { title: "Account", links: [ { label: "Sign In", href: signin_path, emoji: "🔑", hover_emoji: "👋" } ] } ]
   end
 
   # /chat while it is open to visitors (AdminWall::PUBLIC holds it today); were it

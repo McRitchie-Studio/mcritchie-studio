@@ -147,7 +147,7 @@ test("nav links work without errors @quarantine", async ({ page }) => {
   } else {
     await page.waitForFunction(() => window.Alpine && Alpine.store("sidebars"));
     await page.locator("button[data-link-sidebar-trigger]:visible").first().click();
-    await page.locator('#studio-link-sidebar a[href="/login"]').click();
+    await page.locator('#studio-link-sidebar a[href="/signin"]').click();
   }
   await expect(page).toHaveURL("/signin");
 });
