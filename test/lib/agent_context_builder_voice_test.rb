@@ -2,7 +2,7 @@ require "test_helper"
 require "tmpdir"
 require Rails.root.join("bin/lib/agent_mailbox").to_s
 
-# [unit] A spoken /chat message in the dispatcher's prompt (task
+# [unit] A spoken chat message in the dispatcher's prompt (task
 # talk-to-alex-by-voice): the row's envelope.voice becomes a "Spoken by" line
 # INSIDE the fence (a person's name is their own text) and one code-written rule
 # outside it, so Alex knows who spoke. A typed message carries neither.

@@ -1,4 +1,4 @@
-// [unit] voice_chat: hold to talk to Alex on /chat (task talk-to-alex-by-voice).
+// [unit] voice_chat: hold to talk to Alex on /contact (task talk-to-alex-by-voice).
 // The refusal lines for every answer POST /voice/takes can give, the take's
 // multipart body, the message's `voice`, and one take end to end against a
 // stand-in page and fetch: embed when a saved voice is named, transcribe, then
@@ -71,7 +71,7 @@ test("the CSRF token: the meta tag, else the chat form's hidden field", () => {
   assert.equal(csrfToken({ querySelector: () => null }), null);
 });
 
-// A stand-in /chat: the engine chat (form, input, retry, log) and the voice section.
+// A stand-in /contact: the engine chat (form, input, retry, log) and the voice section.
 function page({ embedder = null } = {}) {
   const turns = [];
   const clicks = { retry: 0 };

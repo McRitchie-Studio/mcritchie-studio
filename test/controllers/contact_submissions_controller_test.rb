@@ -448,8 +448,12 @@ class ContactSubmissionsControllerTest < ActionDispatch::IntegrationTest
       assert_redirected_to contact_form_path
       assert_equal "Too many messages. Try again in a minute.", flash[:alert]
 
+      follow_redirect!
+      assert form_before_chat?, "the rate limit's alert lands on the form"
+
       get contact_form_path
       assert_response :success
+      refute form_before_chat?
     end
     assert_equal 6, hits, "only the six POSTs were counted"
   end

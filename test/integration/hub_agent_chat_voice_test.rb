@@ -86,9 +86,9 @@ class HubAgentChatVoiceTest < ActionDispatch::IntegrationTest
     assert_nil AgentMessage.order(:id).last.envelope["voice"]
   end
 
-  test "[component] /chat renders the engine chat with hold to talk, the chip and the approved privacy line" do
+  test "[component] /contact renders the engine chat with hold to talk, the chip and the approved privacy line" do
     log_in_as(@alex)
-    get "/chat"
+    get "/contact"
 
     assert_response :ok
     assert_select "[data-studio-controller='agent-chat'][data-agent-chat-soul='alex']" do
@@ -109,13 +109,13 @@ class HubAgentChatVoiceTest < ActionDispatch::IntegrationTest
     model = Studio::VoiceMatch.model_id(Studio.voice_embedder)
     @alex.update!(voice_embedding: Array.new(256) { 0.0625 }, voice_embedding_model: model, voice_embedding_updated_at: Time.current)
     log_in_as(@alex)
-    get "/chat"
+    get "/contact"
 
     config = JSON.parse(css_select("[data-test='voice-chat']").first["data-voice-chat-embedder"])
     assert_equal [ Studio.voice_embedder, model ], config.values_at("name", "id")
 
     @alex.update!(voice_embedding_model: "an-older-model")
-    get "/chat"
+    get "/contact"
     assert_select "[data-voice-chat-embedder]", count: 0, message: "a saved voice from another model is never compared"
   end
 
