@@ -211,16 +211,19 @@ for: an agreement, a letter, a policy. Its home is the Workspace of the entity t
 signs or owns it, which may not be the brand it concerns. Keep it outside the kit,
 because a kit holds nothing confidential and a doc master may. Keep one master.
 
-1. Work out which brand the document serves, for the template, and which entity
-   signs or owns it, for the home. Use that entity's `team@` account as the owner.
-2. Start from the brand kit's `<SHORT> Template — General` in `05 Templates`. Find
+1. Work out which brand the document serves, for the template. That is the party
+   that issues it: a lease carries the landlord's format, not a tenant's. A party
+   with no kit uses the plain format of its own documents.
+2. Work out which entity signs or owns it, for the home. Use that entity's `team@`
+   account as the owner.
+3. Start from the brand kit's `<SHORT> Template — General` in `05 Templates`. Find
    it in Drive; a local search does not prove it is missing. Drop the template's
    parts that do not fit, such as a photo on a contract.
-3. Put the Google Doc in a folder named for what it holds, such as
+4. Put the Google Doc in a folder named for what it holds, such as
    `<Entity> Records/Employment Agreements`, and hand back its Drive link.
-4. Share by name. Do not share the folder with a whole domain. Do not move a
+5. Share by name. Do not share the folder with a whole domain. Do not move a
    doc master into a kit.
-5. If it must also show in another folder, add a shortcut there. Do not copy it.
+6. If it must also show in another folder, add a shortcut there. Do not copy it.
    See [Shortcuts](#shortcuts).
 
 The Drive credential holds `drive.readonly` and `drive.file`. It can read what
@@ -241,7 +244,8 @@ may not see the kit:
    beside it. If several match, or Drive refuses a write into the match, stop and
    tell Alex McRitchie.
 2. If it does not exist, create it with `files_create`.
-3. Share it with `permissions_create`, by name. Ask Alex McRitchie first.
+3. `files_create` shares a new folder with the Workspace's folder user. Share it
+   with anyone else with `permissions_create`, by name. Ask Alex McRitchie first.
 4. Create the Doc with `files_create`, sending HTML built from the template's
    export, so the Doc is a native Google Doc.
 

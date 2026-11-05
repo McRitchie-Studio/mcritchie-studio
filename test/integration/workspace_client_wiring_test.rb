@@ -71,6 +71,24 @@ class WorkspaceClientWiringTest < ActionDispatch::IntegrationTest
     Workspace::GmailClient.new(service: service, sleeper: ->(_s) { })
   end
 
+  test "a new folder's share goes out with no notification email" do
+    WorkspaceAccount.create!(domain: "mason.test", folder_user_email: "owner@mason.test")
+    transport = Transport.new.reply("/permissions", { "permissions" => [] })
+                             .reply("/drive/v3/files", { "id" => "new-folder", "name" => "Records" })
+    service = Google::Apis::DriveV3::DriveService.new
+    service.authorization = "ya29.test-bearer"
+    service.client = transport.connection
+    client = Workspace::DriveClient.new(subject: "team@mason.test", service: service, sleeper: ->(_s) { })
+
+    client.files_create(name: "Records", parents: "root", mime_type: Workspace::DriveClient::FOLDER_MIME)
+
+    share = transport.requests.find { |r| r[:method] == :post && r[:path].include?("/permissions") }
+    assert share, "the folder was never shared"
+    assert_includes share[:path], "new-folder"
+    assert_equal "false", Rack::Utils.parse_nested_query(share[:query].to_s)["sendNotificationEmail"]
+    assert_includes share[:body].to_s, "owner@mason.test"
+  end
+
   test "files_list puts the query, page size and owner field on the wire" do
     transport = Transport.new.reply("/drive/v3/files", {
       "files" => [ { "id" => "f1", "name" => "Doc", "mimeType" => "application/pdf",

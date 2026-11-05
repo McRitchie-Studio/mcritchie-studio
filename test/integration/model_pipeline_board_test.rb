@@ -343,11 +343,11 @@ class ModelPipelineBoardTest < ActionDispatch::IntegrationTest
 
   # THE LINK INTO THE NAV, so the board is reachable by clicking rather than by knowing a
   # URL — the same argument the person page makes for the model page it links to.
-  test "the links menu carries the board" do
+  test "the Basement carries the board" do
     log_in_as(users(:alex))
 
-    get links_path
+    get admin_basement_path
 
-    assert_select "a[href='#{model_pipeline_path}']", minimum: 1
+    assert_select "[data-link-hub] a[href='#{model_pipeline_path}']", minimum: 1
   end
 end

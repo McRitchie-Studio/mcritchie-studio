@@ -148,16 +148,31 @@ class NavigationTest < ActiveSupport::TestCase
   end
 
   # The two dashboards point at different pages, so they carry different names. The
-  # Admin section shortens its own to Dashboard; the page keeps its name elsewhere.
+  # Admin section shortens its own to Dashboard, and /dashboard is placed in no section.
   test "[unit] no two sidebar entries share a label" do
     labels = (Navigation.sidebar(:admin) + Navigation.sidebar(:general)).flat_map(&:pages).map(&:label)
 
     assert_equal labels.uniq, labels
     assert_includes labels, "Dashboard"
-    assert_includes labels, "Studio dashboard"
+    assert_not_includes labels, "Studio dashboard"
     assert_equal "Studio dashboard", Navigation.page(:dashboard).label
     assert_equal "Admin dashboard", Navigation.page(:admin_dashboard).label
     assert_not_equal Navigation.page(:dashboard).action_id, Navigation.page(:admin_dashboard).action_id
+  end
+
+  # The dropped pages stay in the registry, which is the wall's page list and the route check.
+  test "[unit] the dropped Studio pages are placed in no section, yet the registry and their routes keep them" do
+    section_keys = (Navigation.sidebar(:admin) + Navigation.sidebar(:general) + Navigation.sidebar(:basement)).flat_map(&:pages).map(&:key)
+
+    assert_includes section_keys, "deployments", "control: every section is read"
+    assert_empty section_keys & %w[dashboard applications agents tasks]
+    assert_empty Navigation.registry.route_mismatches(named_routes).grep(/\A(dashboard|applications|agents|tasks):/)
+    assert_equal %w[dashboard applications agents tasks], %w[dashboard applications agents tasks].select { |key| Navigation.pages.key?(key) }
+    assert_equal "/dashboard", Rails.application.routes.url_helpers.dashboard_path
+    assert_equal %w[Admin], Navigation.sidebar(:admin).map(&:title)
+    assert_equal %w[NFL], Navigation.sidebar(:general).map(&:title)
+    assert_equal "Build", Navigation.page(:build).label
+    assert_not_includes Navigation.sidebar(:basement).map(&:title), "Studio", "Studio names the public section LinkTreeHelper draws"
   end
 
   test "[unit] a section entry can override a page's label there, and only there" do
@@ -198,7 +213,9 @@ class NavigationTest < ActiveSupport::TestCase
 
   test "[unit] the basement group holds the moved pages, every one an admin page placed nowhere in the sidebar" do
     assert_equal %w[admin_schema admin_emails admin_link_preview asset_browser stack credentials broadcasts contacts broadcast_analytics
-                    error_logs admin_tiktok admin_google admin_fathom admin_agent_messages admin_report_destinations admin_csp_reports],
+                    error_logs admin_tiktok admin_google admin_fathom admin_agent_messages admin_report_destinations admin_csp_reports
+                    teams people builders docs admin_ai_builder_multiple workflow_news_index merge_people duplicates_people
+                    news_index contents model_pipeline body_archetypes videos alt_videos],
                  Navigation.sidebar(:basement).flat_map(&:pages).map(&:key)
     assert Navigation.sidebar(:basement).flat_map(&:pages).all? { |page| page.audience == "admin" }
 

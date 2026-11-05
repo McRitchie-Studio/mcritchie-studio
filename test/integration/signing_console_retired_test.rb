@@ -48,10 +48,10 @@ class SigningConsoleRetiredTest < ActionDispatch::IntegrationTest
 
   # An admin session is the only one that could ever see the link, so it is the
   # one that has to come back without it.
-  test "the admin hub and dashboard no longer advertise the console" do
+  test "the Basement and dashboard no longer advertise the console" do
     log_in_as(users(:alex))
 
-    get admin_links_path
+    get admin_basement_path
     assert_response :success
     assert_no_match "Signing Console", response.body
 

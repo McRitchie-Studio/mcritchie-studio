@@ -8,6 +8,17 @@ class WorkspaceAccountTest < ActiveSupport::TestCase
     assert_equal "team@mason.test", WorkspaceAccount.create!(domain: "mason.test").subject
   end
 
+  test "folder_user_for finds the row's folder user by subject, whatever its case" do
+    WorkspaceAccount.create!(domain: "mason.test", folder_user_email: " Owner@Mason.test ")
+
+    assert_equal "owner@mason.test", WorkspaceAccount.folder_user_for("TEAM@mason.test")
+    assert_nil WorkspaceAccount.folder_user_for("team@nobody.test")
+  end
+
+  test "a folder user must be an email address" do
+    assert_not WorkspaceAccount.new(domain: "mason.test", folder_user_email: "not an email").valid?
+  end
+
   test "domain and subject normalize, so casing and spaces cannot fork a row" do
     a = WorkspaceAccount.create!(domain: "  Mason.TEST ")
     assert_equal "mason.test", a.domain

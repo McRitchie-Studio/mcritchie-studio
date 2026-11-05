@@ -60,11 +60,10 @@ Owners get a **Your apps** section at the top of the link sidebar
 viewer's OWN memberships, admins included (Alex McRitchie, 2026-11-04):
 
 - at most two apps, each by name, with its CTO's portrait, and a rocket on hover;
-- with three or more, **All apps** is the third row, for an admin too, who then
-  also has **Applications** in the Studio section;
+- with three or more, **All apps** is the third row, for an admin too;
 - each app's page links its own pipeline and its CTO;
 - a user who owns nothing gets no section, admin or not. An admin still reaches
-  every app at `/applications`.
+  every app at `/applications`, linked from the admin dashboard.
 
 A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 (`Turf`), else the Agent row's name (`Tyrion`), else the soul titleized.

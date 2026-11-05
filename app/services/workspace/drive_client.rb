@@ -3,7 +3,8 @@ require "stringio"
 module Workspace
   # Thin wrapper over the Drive v3 calls the knowledge layer needs. No business
   # logic: no filing, no snapshotting, no ownership decisions. Those belong to
-  # the tasks that consume this.
+  # the tasks that consume this. The one exception is that a new folder is shared
+  # with its Workspace's folder user (#files_create).
   #
   # WRITE SURFACE, stated plainly because it matters more than the read surface:
   # #files_create, #files_copy, #files_update, #files_trash, #permissions_create
@@ -26,6 +27,12 @@ module Workspace
                   "shortcutDetails(targetId,targetMimeType)".freeze
 
     LIST_FIELDS = "nextPageToken,files(#{FILE_FIELDS})".freeze
+
+    FOLDER_MIME = "application/vnd.google-apps.folder".freeze
+
+    # A role that lets the folder user edit. A reader who inherits access still
+    # needs the Editor share.
+    EDIT_ROLES = %w[owner organizer fileOrganizer writer].freeze
 
     def initialize(subject: nil, credentials: Credentials, sleeper: method(:sleep), service: nil)
       @subject = subject
@@ -97,14 +104,18 @@ module Workspace
     # A new file or folder in `parents`. `mime_type` is what Drive should STORE:
     # pass a Google type (document, spreadsheet, presentation) with a `body` of
     # another `content_type` and Drive converts on upload. A folder has no body.
+    # A new folder is also shared with its Workspace's named user: a folder only
+    # team@ can see is one nobody can find.
     def files_create(name:, parents:, mime_type: nil, body: nil, content_type: nil)
       metadata = ::Google::Apis::DriveV3::File.new(name: name, parents: Array(parents))
       metadata.mime_type = mime_type if mime_type
 
-      with_retries("files.create", sleeper: @sleeper, idempotent: false) do
+      created = with_retries("files.create", sleeper: @sleeper, idempotent: false) do
         service.create_file(metadata, upload_source: (StringIO.new(body) if body), content_type: content_type,
                                       fields: FILE_FIELDS, supports_all_drives: true)
       end
+      share_with_folder_user(created) if mime_type == FOLDER_MIME
+      created
     end
 
     def files_update(id, name: nil, body: nil, content_type: nil)
@@ -154,6 +165,43 @@ module Workspace
         service.create_permission(id, permission, fields: "id,type,role,domain", supports_all_drives: true)
       end
     end
+
+    # Editor for the Workspace's folder user, unless access is already inherited
+    # from the parent, by name or by domain. A client built with no subject has no
+    # Workspace to ask. A share that fails for any reason warns, logs the error and
+    # returns the folder: the folder has landed, and raising would only make a retry
+    # find it and never share it.
+    def share_with_folder_user(folder)
+      return if @subject.blank?
+
+      email = WorkspaceAccount.folder_user_for(@subject)
+      if email.blank?
+        warn "drive: folder #{folder.name.inspect} is not shared: #{@subject}'s Workspace names no folder user"
+        return
+      end
+
+      permissions_create(folder.id, email: email) unless access_inherited?(folder.id, email)
+    rescue StandardError => e
+      warn "drive: folder #{folder.name.inspect} (#{folder.id}) was created but not shared with #{email}: #{e.message}"
+      log_share_failure(e, folder)
+    end
+
+    def log_share_failure(error, folder)
+      ErrorLog.capture!(error).update(target_name: "drive folder share #{folder.id}")
+    rescue StandardError => e
+      warn "drive: could not record the failed share of #{folder.id}: #{e.class}"
+    end
+
+    def access_inherited?(id, email)
+      domain = email.split("@").last
+      Array(permissions_list(id).permissions).any? do |p|
+        EDIT_ROLES.include?(p.role) &&
+          (p.email_address&.downcase == email || (p.type == "domain" && p.domain&.downcase == domain))
+      end
+    end
+    private :access_inherited?
+    private :share_with_folder_user
+    private :log_share_failure
 
     # Walks every page and concatenates `files`. Google signals the last page by
     # OMITTING next_page_token; an empty string would loop forever, so .presence

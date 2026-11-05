@@ -225,13 +225,22 @@ test("below 768px scrolled, the theme toggle draws left of the gear, and both le
     await page.setViewportSize({ width, height: 844 });
     await page.goto("/tasks");
     await page.evaluate(() => window.scrollTo(0, 1500));
-    await expect(page.locator(".nav-phone-tools")).toBeVisible();
+    // Settled, then one evaluate: one layout. The pair widens with --nav-p, so with the ramp
+    // running the toggle is at 560 at 0.5000 and the gear is at 556 at 1.0000 (700px). Two
+    // boundingBox round trips that straddled those frames read the toggle right of the gear,
+    // though no single frame draws that. toBeVisible passes at the first nonzero --nav-p.
+    const header = page.locator("header.nav-shell");
+    await expect.poll(() => header.evaluate((h) => h.style.getPropertyValue("--nav-p"))).toBe("1.0000");
 
     const name = await shownName(page);
-    const left = async (locator) => (await locator.boundingBox()).x;
-    const toggle = await left(page.locator(".nav-phone-tools button[title='Toggle theme']"));
-    const gear = await left(page.locator(".nav-phone-tools [data-link-sidebar-trigger]"));
-    const nameLeft = await left(name);
+    const { toggle, gear, nameLeft } = await name.evaluate((nameElement) => {
+      const left = (selector) => document.querySelector(selector).getBoundingClientRect().left;
+      return {
+        toggle: left(".nav-phone-tools button[title='Toggle theme']"),
+        gear: left(".nav-phone-tools [data-link-sidebar-trigger]"),
+        nameLeft: nameElement.getBoundingClientRect().left,
+      };
+    });
     const message = JSON.stringify({ width, toggle, gear, nameLeft });
     expect(toggle, message).toBeLessThan(gear);
     expect(gear, message).toBeLessThan(nameLeft);

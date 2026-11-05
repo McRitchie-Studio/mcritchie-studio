@@ -49,6 +49,7 @@ class WorkspaceAccount < ApplicationRecord
                                message: "must be a dot-separated domain with no trailing dot" }
   validates :subject, presence: true, uniqueness: true
   validates :status, inclusion: { in: STATUSES }
+  validates :folder_user_email, format: { with: URI::MailTo::EMAIL_REGEXP, allow_blank: true }
   validate :subject_belongs_to_this_domain
   validate :severed_is_final
 
@@ -57,6 +58,9 @@ class WorkspaceAccount < ApplicationRecord
   scope :active, -> { where(status: "active") }
 
   def self.default_subject_for(domain) = "#{DEFAULT_LOCAL_PART}@#{domain.to_s.strip.downcase}"
+
+  # Who a folder created as `subject` is shared with. Nil when the row names nobody.
+  def self.folder_user_for(subject) = find_by(subject: subject.to_s.strip.downcase)&.folder_user_email
 
   # What an impersonation is FOR. The Google grant cannot tell these apart — one
   # key holds Drive and Gmail scopes for every address — so the purpose is the
@@ -184,6 +188,7 @@ class WorkspaceAccount < ApplicationRecord
     self.domain = domain.to_s.strip.downcase.presence
     self.subject = (subject.presence || self.class.default_subject_for(domain)).to_s.strip.downcase
     self.name = name.presence || domain
+    self.folder_user_email = folder_user_email.to_s.strip.downcase.presence
   end
 
   # Every write path refuses to move a severed row — this is the backstop that

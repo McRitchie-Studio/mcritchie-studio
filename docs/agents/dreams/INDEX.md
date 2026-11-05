@@ -90,12 +90,13 @@ Loads at: `bin/dream mason`
 |---|---|---|---|
 | [`lead-with-the-finding-that-outranks-the-work`](carl/lead-with-the-finding-that-outranks-the-work.md) | A review turns up something pre-existing and outside the diff. Is it out of scope? | stage: submitted; topic: review | approved |
 
-## Pokémon (2)
+## Pokémon (3)
 
 Loads at: `bin/dream pokemon`
 
 | Dream | Question | Tags | Status |
 |---|---|---|---|
+| [`a-drawn-box-hides-nothing`](pokemon/a-drawn-box-hides-nothing.md) | I drew a box over a number in a PDF and it looks hidden. Can I send it? | topic: pdf, flatten, redact, annotation, image | proposed |
 | [`extend-the-model-that-already-is-that-thing`](pokemon/extend-the-model-that-already-is-that-thing.md) | The plan calls for a new table. Do I design it? | shape: backend, ui+db; topic: schema | approved |
 | [`prove-read-only-by-measuring-writes`](pokemon/prove-read-only-by-measuring-writes.md) | I am about to run an audit against production and call it read-only. What makes that true? | shape: backend; topic: audit, production | approved |
 

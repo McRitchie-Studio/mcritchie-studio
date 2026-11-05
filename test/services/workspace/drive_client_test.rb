@@ -8,7 +8,8 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
   class ServiceDouble
     attr_reader :calls
 
-    def initialize(pages: [], raises: nil)
+    def initialize(pages: [], raises: nil, permissions: [])
+      @permissions = permissions
       @pages = pages
       @raises = Array(raises)
       @calls = []
@@ -57,7 +58,8 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
 
     def create_permission(id, permission, **kwargs)
       @calls << [ :create_permission, id, { type: permission.type, role: permission.role, domain: permission.domain,
-                                            discoverable: permission.allow_file_discovery } ]
+                                            discoverable: permission.allow_file_discovery,
+                                            email: permission.email_address }.compact ]
       raise @raises.shift if @raises.any?
 
       permission
@@ -65,7 +67,7 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
 
     def list_permissions(id, **kwargs)
       @calls << [ :list_permissions, id ]
-      Struct.new(:permissions).new([])
+      Struct.new(:permissions).new(@permissions)
     end
 
     def self.page(files:, next_page_token: nil)
@@ -175,6 +177,92 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
     assert_equal "application/vnd.google-apps.document", args[:mime_type]
     assert_equal "text/html", args[:content_type]
     assert args[:has_body]
+  end
+
+  FOLDER = Workspace::DriveClient::FOLDER_MIME
+
+  def house_client(service, folder_user: "owner@mason.test")
+    WorkspaceAccount.create!(domain: "mason.test", folder_user_email: folder_user)
+    Workspace::DriveClient.new(subject: "team@mason.test", service: service, sleeper: ->(_) { })
+  end
+
+  def shares(service) = service.calls.select { |name, *| name == :create_permission }
+
+  test "a new folder is shared with its Workspace's folder user as Editor" do
+    service = ServiceDouble.new
+    house_client(service).files_create(name: "Records", parents: "root", mime_type: FOLDER)
+
+    assert_equal 1, shares(service).size
+    args = shares(service).first.last
+    assert_equal "owner@mason.test", args[:email]
+    assert_equal "writer", args[:role]
+  end
+
+  test "a folder that inherits the user's access is not shared again" do
+    inherited = Struct.new(:email_address, :type, :domain, :role, keyword_init: true).new(email_address: "Owner@mason.test", type: "user", role: "writer")
+    service = ServiceDouble.new(permissions: [ inherited ])
+    house_client(service).files_create(name: "Sub", parents: "records", mime_type: FOLDER)
+
+    assert_empty shares(service)
+  end
+
+  test "a folder that inherits access through the user's domain is not shared again" do
+    inherited = Struct.new(:email_address, :type, :domain, :role, keyword_init: true).new(type: "domain", domain: "mason.test", role: "writer")
+    service = ServiceDouble.new(permissions: [ inherited ])
+    house_client(service).files_create(name: "Sub", parents: "kit", mime_type: FOLDER)
+
+    assert_empty shares(service)
+  end
+
+  test "a folder the user can only read is still shared as Editor" do
+    inherited = Struct.new(:email_address, :type, :domain, :role, keyword_init: true).new(email_address: "owner@mason.test", type: "user", role: "reader")
+    service = ServiceDouble.new(permissions: [ inherited ])
+    house_client(service).files_create(name: "Sub", parents: "records", mime_type: FOLDER)
+
+    assert_equal "writer", shares(service).first.last[:role]
+  end
+
+  test "a share that fails for a reason Google did not raise logs it and still returns the folder" do
+    service = ServiceDouble.new
+    client = house_client(service)
+    service.define_singleton_method(:create_permission) { |*, **| raise "token refused" }
+    folder = nil
+    err = nil
+    assert_difference -> { ErrorLog.count }, 1 do
+      _out, err = capture_io { folder = client.files_create(name: "Records", parents: "root", mime_type: FOLDER) }
+    end
+
+    assert_equal "Records", folder.name
+    assert_match(/created but not shared/, err)
+    assert_match(/drive folder share/, ErrorLog.order(:id).last.target_name)
+  end
+
+  test "a share that fails warns and still returns the folder that landed" do
+    service = ServiceDouble.new
+    client = house_client(service)
+    service.define_singleton_method(:create_permission) { |*, **| raise Google::Apis::ClientError.new("forbidden", status_code: 403) }
+    folder = nil
+    _out, err = capture_io { folder = client.files_create(name: "Records", parents: "root", mime_type: FOLDER) }
+
+    assert_equal "Records", folder.name
+    assert_match(/created but not shared/, err)
+  end
+
+  test "a Workspace with no folder user still creates the folder, and warns" do
+    service = ServiceDouble.new
+    _out, err = capture_io { house_client(service, folder_user: nil).files_create(name: "Records", parents: "root", mime_type: FOLDER) }
+
+    assert_equal :create_file, service.calls.first.first
+    assert_empty shares(service)
+    assert_match(/not shared/, err)
+  end
+
+  test "a file that is not a folder is not shared" do
+    service = ServiceDouble.new
+    house_client(service).files_create(name: "Doc", parents: "records", mime_type: "application/vnd.google-apps.document",
+                                       body: "<p>x</p>", content_type: "text/html")
+
+    assert_empty shares(service)
   end
 
   test "a create retries a throttle but never a server error, which may have landed" do

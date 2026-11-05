@@ -192,6 +192,7 @@ runs inside `pr-review`. Retired names resolve only in git history (`docs/agents
 | `download-tiktok` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
+| `flatten-document` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/flatten-document.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `agent-dispatcher` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
