@@ -29,6 +29,7 @@ a signed letter. The kit's General template was in Drive the whole time, in
 `05 Templates`. When Alex McRitchie asked for a URL, the session could offer only
 links that opened on one Mac. He then set the rule: find the context, start from the
 Marketing Kit template, and deliver an editable, shareable master in Drive. A
-**doc master** is that Google Doc. Where it lives and how others reach it are in
+**doc master** is that Google Doc. A test on 2026-11-04 proved that a shortcut opens
+the one master and grants no access. Where it lives and how others reach it are in
 [`one-master-and-shortcuts`](one-master-and-shortcuts.md) and the
 [`marketing-kit`](../../agents/alex/sops/marketing-kit.md#doc-masters) SOP.
