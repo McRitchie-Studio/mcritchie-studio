@@ -1,6 +1,6 @@
-# Workflows — the six soul launchers
+# Workflows — the soul launchers
 
-The **Workflows card** on `/deployments` (`tasks/_heartbeats_card`) renders six
+The **Workflows card** on `/deployments` (`tasks/_heartbeats_card`) renders eight
 **soul-avatar heartbeat launchers** (`ApplicationHelper#heartbeat_launchers`, one
 `tasks/_heartbeat_launcher` per soul) from ONE chip list: a five-minute carousel of
 one soul at a time, and a click-through **Workflows sidebar** listing every soul
@@ -8,13 +8,14 @@ and command. Each launcher links to that soul's `/agents/<slug>` page and carrie
 a **prompt-like row 1** plus **copyable action rows**:
 
 - **Row 1** (❤️): `Carl Heartbeat` · `Avi Heartbeat` · `Steffon Heartbeat` ·
-  `Mason Heartbeat` · `Alex Heartbeat` · `Turf Monster Heartbeat`.
+  `Mason Heartbeat` · `Alex Heartbeat` · `Mack Heartbeat` · `Turf Monster Heartbeat`.
 - **The action rows**, ordered along the pipeline (keycaps read review → assemble → ship):
   - **Carl** → `1️⃣ pr-review` · `🐢 pr-review-slow`
   - **Avi** → `2️⃣ qa-release` · `⚡ deploy-with-task` · `🔭 intent-scout`
   - **Steffon** → `3️⃣ production-deploy` · `🧹 clean-infra`
   - **Mason** → `🧑🏻‍🏫 grade-events` (optional: every task is graded at ship) · `📡 share-insights` · `🌎 full-cycle` · `⏱️ ship-clock`
   - **Alex** → `🎯 focus-session`
+  - **Mack** → `📒 close-the-month`
   - **Turf Monster** → `🏈 live-score-watch` · `🎬 contest-rehearsal` · `📣 post-to-x`
 
   Seven registered acts are deliberately NOT chips; each stays invocable by name:
@@ -43,6 +44,7 @@ one release **atom**, except Mason's learning-loop acts. Each soul's procedure l
 with that soul ([`Carl`](../agents/carl/HEARTBEAT.md),
 [`Avi`](../agents/avi/HEARTBEAT.md), [`Steffon`](../agents/steffon/HEARTBEAT.md),
 [`Mason`](../agents/mason/HEARTBEAT.md),
+[`Mack`](../agents/mack/HEARTBEAT.md),
 [`Turf Monster`](../agents/turf_monster/HEARTBEAT.md)); this page is the
 cross-soul map. History cut from it lives in
 [`heartbeats-2026-09-25.md`](../archive/README.md).
@@ -54,7 +56,7 @@ cross-soul map. History cut from it lives in
 | **Steffon** (`steffon`) | `Steffon Heartbeat` | `production-deploy`, `clean-infra`, `archive-shipped` (registered, not a chip — production-deploy runs it), `db-restore-drill` (registered, not a chip — monthly, when the heartbeat finds an app due) | a QA-green (`assembled`) release ready to ship / a machine carrying finished work | the ready release `shipped` (archived on the way out, or no-op); the machine swept |
 | **Mason** (`mason`) | `Mason Heartbeat` | `share-insights`, `full-cycle`, `ship-clock` (a chip; Alex's from 2026-10-14 until the accountability chart moved it to Mason, the COO, on 2026-10-28; runs when named); `clean-up` and `dream-swap` (registered, not chips; run when named); `grade-events` is optional (every task is graded at ship) and runs only when named | activities to grade / a non-empty insight bank to share / a full pipeline to run | 10 graded + banked; the bank shared out; or the whole release `shipped` |
 | **Alex** (`alex`) | `Alex Heartbeat` | client threads, `launch-build-queue` (registered, not a chip — its 18-character slug clips the carousel's act chip), and the demand acts Rex brought when he folded into Alex on 2026-10-28: `launch-warmup`, `constraint-diagnosis`, `content-sprint` (registered, not chips); `focus-session` (a chip since 2026-10-28, the Sales/Marketing seat's epic with Alex McRitchie) runs when named. Alex builds nothing himself: Operations delivers | a client or `/build` thread waiting, a queued `/build` request, a launch mid-ramp, a client with no named constraint or an unscored prediction | threads answered; requests handed to builders or live; each client's constraint named and last prediction scored |
-| **Mack** (`mack`) | `Mack Heartbeat` (registered; not a card row yet) | `close-the-month` (monthly, from the 5th, after `BooksReminderJob` posts) | last month not closed FINAL | the month closed FINAL, or a DRAFT with its open items handed to Alex McRitchie |
+| **Mack** (`mack`) | `Mack Heartbeat` | `close-the-month` (monthly, from the 5th, after `BooksReminderJob` posts) | last month not closed FINAL | the month closed FINAL, or a DRAFT with its open items handed to Alex McRitchie |
 | **Turf Monster** (`turf-monster`) | `Turf Monster Heartbeat` | `live-score-watch`, `contest-rehearsal`, `post-to-x` (a chip since 2026-10-06: Alex McRitchie copies it and pastes it into a fresh session with an MP4 path), `sleeper-auction-watch` (registered, not a chip — the slug clips the card), `entry-forfeit` (registered, not a chip — on-demand incident SOP), `market-refresh` (registered, not a chip — weekly, but the moment is read off the schedule), `content-build` (registered, not a chip — queue-shaped; it runs when games finalise), `collect-vault-revenue` (registered, not a chip — operator-triggered and it moves money) | a live NFL slot with the poller deployed, QA reachable on devnet, or a Sleeper auction about to start | the slot final or the window elapsed; the rehearsal contest settled and closed; or the draft board full |
 
 > **Direct-drive the mutating acts.** `qa-release`, `production-deploy`, and
