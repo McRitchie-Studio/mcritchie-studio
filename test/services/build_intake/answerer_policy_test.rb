@@ -93,6 +93,17 @@ class BuildIntakeAnswererPolicyTest < ActiveSupport::TestCase
     assert_match(/Sign in to continue/, BuildIntake::Caps.reply(:request, signed_in: false))
   end
 
+  test "caps: a held satellite chat row spends none of /build's IP or daily answers" do
+    policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 1; p.daily_total = 1 }
+    caps = BuildIntake::Caps.new(policy: policy)
+    ip = BuildIntake::Ingest.ip_hash("203.0.113.9")
+    row(thread_key: "chat:turf_monster:anon:flood", soul: "turf_monster", status: "held",
+        envelope: { "ip_hash" => ip, "signed_in" => false })
+
+    assert_nil caps.check(token: @request.token, signed_in: false, ip_hash: ip)
+    assert_equal :ip, caps.public_cap(ip, rows: AgentMessage.where(status: "held")), "the same numbers read a passed count"
+  end
+
   test "caps: per IP per hour across requests, and a daily total of signed-out answers" do
     policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 2; p.daily_total = 3 }
     caps = BuildIntake::Caps.new(policy: policy)

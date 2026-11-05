@@ -8,7 +8,10 @@ module AgentChat
   #   pending    stored, waiting for the dispatcher (received)
   #   typing     the dispatcher holds it (claimed): the answer is being written
   #   answered   the answer is in (completed, with words)
-  #   failed     no answer is coming: held, dead, unrouted, or completed empty
+  #   held       stored, and no soul will answer unless an operator releases it
+  #              (Answerers). Settled for a client, as failed is, but not a failure:
+  #              a client that knows no `held` shows the words and no failed line
+  #   failed     no answer is coming: dead, unrouted, or completed empty
   module Turns
     LIMIT = 50
 
@@ -31,6 +34,7 @@ module AgentChat
       when "received" then "pending"
       when "claimed" then "typing"
       when "completed" then row.response_text.present? ? "answered" : "failed"
+      when "held" then "held"
       else "failed"
       end
     end

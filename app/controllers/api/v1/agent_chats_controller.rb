@@ -11,6 +11,10 @@ module Api
     #   GET  /api/v1/agent_chat/turns     soul, person, after, limit (≤ 50)
     #        200 {turns: [...], pending: bool}
     #
+    # A turn's status is pending, typing, answered, held or failed
+    # (AgentChat::Turns). A 429 stores nothing; its count includes held rows
+    # (AgentChat::Caps).
+    #
     # AUTH is the calling APP's own bearer credential (AppCredential, purpose
     # agent-chat; 1Password `agent-chat.<slug>.applications`, the app's AGENT_CHAT_TOKEN),
     # never an agent session or a user token: 401 without a live one. The app
