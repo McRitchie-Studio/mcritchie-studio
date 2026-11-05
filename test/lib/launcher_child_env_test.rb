@@ -4,9 +4,9 @@
 # bin/ecosystem-build's Phase 8, LaneRunner and the detached lease renewers
 # (bin/devops-shift, review_claim_cli, release_claim_cli). On macOS `ps` and `pgrep -fl`
 # print a renamed process's environment. Each REAL spawn site runs in a clean subprocess
-# (unsetenv_others) with fake credentials and a stub child that writes its env. THE CONTROL:
-# rerun with the scrub replaced by the parent's whole environment; the stub must SEE the
-# credentials, or "no secret" and "never planted" are the same observation.
+# with fake credentials and a stub child that moves its env dump into place, so a dump that
+# exists is whole. THE CONTROL: rerun with the parent's whole environment; the stub must SEE
+# the credentials, or "no secret" and "never planted" are the same observation.
 # History: task secrets-scrub-follow-ups.
 require "minitest/autorun"
 require "open3"
@@ -37,6 +37,12 @@ class LauncherChildEnvTest < Minitest::Test
   def base_env(extra = {})
     path = [extra.delete("STUB_PATH"), RbConfig::CONFIG["bindir"], "/usr/bin", "/bin"].compact.join(":")
     { "PATH" => path, "HOME" => Dir.home }.merge(KEPT).merge(PLANTED).merge(extra)
+  end
+
+  # The stub child's command. `write_delay` holds the dump open after its first line.
+  def write_env(dump, write_delay: nil)
+    started = write_delay ? "echo DUMP_STARTED=1; sleep #{write_delay}; " : ""
+    "{ #{started}env; } > #{dump}.tmp && mv #{dump}.tmp #{dump}"
   end
 
   def read_env(dump)
@@ -71,7 +77,7 @@ class LauncherChildEnvTest < Minitest::Test
     "bin/lib/release_claim_cli.rb" => ["ReleaseClaimCli", "RELEASE_CONDUCTOR_CLAIM"]
   }.freeze
 
-  def launch_renewer(file, klass, prefix, prelude: "", extra: {})
+  def launch_renewer(file, klass, prefix, prelude: "", extra: {}, write_delay: nil)
     Dir.mktmpdir("renewer-env") do |dir|
       dump = File.join(dir, "env.out")
       script = <<~RUBY
@@ -79,7 +85,7 @@ class LauncherChildEnvTest < Minitest::Test
         #{prelude}
         cli = #{klass}.new(env: ENV)
         cli.send(:spawn_detached, { "#{prefix}_SESSION" => "sess-1", "TASK_CLAIM_NONCE" => "nonce-1" },
-                 ["/bin/sh", "-c", "env > #{dump}"])
+                 ["/bin/sh", "-c", #{write_env(dump, write_delay: write_delay).inspect}])
       RUBY
       run_ruby(script, "ATOMIC_CAPTURE_URL" => "http://127.0.0.1:9", "CLAUDE_PROJECTS_DIR" => dir,
                        "#{prefix}_RENEW_INTERVAL" => "7", **extra)
@@ -97,6 +103,17 @@ class LauncherChildEnvTest < Minitest::Test
       assert_equal "http://127.0.0.1:9", seen["ATOMIC_CAPTURE_URL"], "#{file}: the renewer lost the board URL"
       assert seen.key?("CLAUDE_PROJECTS_DIR"), "#{file}: the renewer lost the token cache's directory"
       assert_equal "7", seen["#{prefix}_RENEW_INTERVAL"], "#{file}: the renewer lost its interval"
+    end
+  end
+
+  # A renewer is the one child here that outlives its launcher, so its dump is read
+  # while it may still be writing.
+  def test_a_renewers_slow_dump_is_read_only_once_it_is_whole
+    RENEWERS.each do |file, (klass, prefix)|
+      seen = launch_renewer(file, klass, prefix, write_delay: 0.5)
+
+      assert seen.key?("PATH"), "#{file}: a partial dump was read (names: #{seen.keys.sort.inspect})"
+      assert_equal "sess-1", seen["#{prefix}_SESSION"], "#{file}: a partial dump was read"
     end
   end
 
@@ -148,7 +165,7 @@ class LauncherChildEnvTest < Minitest::Test
       script = <<~RUBY
         require #{File.join(ROOT, "bin/lib/lane_runner").inspect}
         #{prelude}
-        r = LaneRunner.run({ "RAILS_ENV" => "test" }, "env > #{dump}", chdir: #{dir.inspect}, timeout: 30)
+        r = LaneRunner.run({ "RAILS_ENV" => "test" }, #{write_env(dump).inspect}, chdir: #{dir.inspect}, timeout: 30)
         exit(r.ok ? 0 : 1)
       RUBY
       run_ruby(script, "PARALLEL_WORKERS" => "1", "STUB_LOG" => "/tmp/x", "SSH_AUTH_SOCK" => "/tmp/agent.sock",
@@ -200,7 +217,7 @@ class LauncherChildEnvTest < Minitest::Test
       stubs = File.join(dir, "stubs")
       FileUtils.mkdir_p(stubs)
       stub(stubs, "gem", "exit 0") # `gem list foreman -i` answers installed; nothing is installed
-      stub(stubs, "foreman", "env > #{dump}")
+      stub(stubs, "foreman", write_env(dump))
       dev = File.join(ROOT, "bin/dev")
       if control
         bin = control_child_env(File.join(dir, "bin"))
@@ -230,7 +247,7 @@ class LauncherChildEnvTest < Minitest::Test
       dump = File.join(dir, "env.out")
       stubs = File.join(dir, "stubs")
       FileUtils.mkdir_p([stubs, File.join(dir, "projects", "fake-app")])
-      stub(stubs, "bundle", "env > #{dump}")
+      stub(stubs, "bundle", write_env(dump))
       stub(stubs, "lsof", "exit 0")
       stub(stubs, "curl", "printf 200")
       bin_dir = control ? control_child_env(File.join(dir, "bin")) : File.join(ROOT, "bin")
