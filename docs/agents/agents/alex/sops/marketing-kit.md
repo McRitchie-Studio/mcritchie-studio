@@ -147,7 +147,7 @@ bin/marketing-kit publish <working folder>/kit.yml --out <working folder>/out --
 bin/marketing-kit publish <working folder>/kit.yml --out <working folder>/out
 ```
 
-The credential holds `drive.readonly` and `drive.file`, so the publisher can read what its subject can see and write only to files this app created. A hand-made folder the subject can see is found by name and then refuses every write; one it cannot see is invisible, and the publisher creates its own beside it. Adopt a hand-made kit by moving its files into the folders the publisher made. The first publish creates the root folder `Brand Kit: <name>` (or uses
+The credential holds `drive.readonly` and `drive.file`, so the publisher can read what its subject can see and write only to files this app created. A hand-made folder the subject can see is found by name, and the publish cannot count on writing into it: with Editor, a shortcut landed in one ([Shortcuts](#shortcuts)), and ordinary files are not tested. One it cannot see is invisible, and the publisher creates its own beside it. Adopt a hand-made kit by moving its files into the folders the publisher made. The first publish creates the root folder `Brand Kit: <name>` (or uses
 `drive.root_id`), the whole layout and every file, and shares the root with the
 people in `drive.share_with` and, as writers who can find it in their Drive,
 everyone in each Workspace domain in `drive.share_domains`. List the owner's own
