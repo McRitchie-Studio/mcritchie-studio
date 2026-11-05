@@ -234,7 +234,8 @@ No command does this yet. Use `Workspace::DriveClient` with the kit's
    beside it. If several match, or Drive refuses a write into the match, stop and
    tell Alex McRitchie.
 2. If it does not exist, create it with `files_create`.
-3. Share it with `permissions_create`, by name. Ask Alex McRitchie first.
+3. `files_create` shares a new folder with the Workspace's folder user. Share it
+   with anyone else with `permissions_create`, by name. Ask Alex McRitchie first.
 4. Create the Doc with `files_create`, sending HTML built from the template's
    export, so the Doc is a native Google Doc.
 

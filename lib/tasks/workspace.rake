@@ -4,17 +4,19 @@ namespace :workspace do
   # granting delegation in their own admin console, which Google offers no API
   # for. These tasks cover everything either side of that one click.
 
-  desc "Register a Google Workspace: workspace:register[domain,name,entity] (subject defaults to team@domain)"
-  task :register, [ :domain, :name, :entity ] => :environment do |_t, args|
-    abort "usage: bin/rails 'workspace:register[<domain>,<name>,<entity>]'" if args[:domain].blank?
+  desc "Register a Google Workspace: workspace:register[domain,name,entity,folder_user] (subject defaults to team@domain)"
+  task :register, [ :domain, :name, :entity, :folder_user ] => :environment do |_t, args|
+    abort "usage: bin/rails 'workspace:register[<domain>,<name>,<entity>,<folder user email>]'" if args[:domain].blank?
 
     account = WorkspaceAccount.find_or_initialize_by(domain: args[:domain].to_s.strip.downcase)
     account.name = args[:name].presence || account.name
     account.entity = args[:entity].presence || account.entity
+    account.folder_user_email = args[:folder_user].presence || account.folder_user_email
     account.scopes = Workspace::Credentials::SCOPES
     account.save!
 
     puts "#{account.domain} registered — acting as #{account.subject} (#{account.status})"
+    puts "New Drive folders are shared with: #{account.folder_user_email || '(nobody: name a folder user)'}"
     puts
     puts "Hand this to that domain's super-admin (admin.google.com → Security → Access and data"
     puts "control → API controls → Manage domain wide delegation → Add new):"
@@ -24,11 +26,23 @@ namespace :workspace do
     puts "Then prove it: bin/rails 'workspace:check[#{account.domain}]'"
   end
 
+  desc "Set who new Drive folders are shared with: workspace:folder_user[domain,email]. Touches nothing else on the row"
+  task :folder_user, [ :domain, :email ] => :environment do |_t, args|
+    abort "usage: bin/rails 'workspace:folder_user[<domain>,<email>]'" if args[:domain].blank? || args[:email].blank?
+
+    account = WorkspaceAccount.find_by(domain: args[:domain].to_s.strip.downcase)
+    abort "#{args[:domain]} is not registered" if account.nil?
+
+    account.update!(folder_user_email: args[:email])
+    puts "#{account.domain}: new Drive folders are shared with #{account.folder_user_email}"
+  end
+
   desc "List registered workspaces and whether their delegation is proven"
   task accounts: :environment do
     WorkspaceAccount.order(:domain).each do |a|
       verified = a.delegation_verified_at ? a.delegation_verified_at.utc.iso8601 : "never"
-      puts "#{a.domain.ljust(28)} #{a.status.ljust(8)} acting as #{a.subject.ljust(30)} verified #{verified}" \
+      puts "#{a.domain.ljust(28)} #{a.status.ljust(8)} acting as #{a.subject.ljust(30)} verified #{verified} " \
+           "folder user #{a.folder_user_email || '(none)'}" \
            "#{" — last refusal: #{a.last_check_error}" if a.last_check_error}"
     end
     puts "(no workspaces registered — bin/rails 'workspace:register[<domain>]')" if WorkspaceAccount.none?
