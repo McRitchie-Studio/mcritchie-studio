@@ -100,8 +100,7 @@
   }
   html[data-surface-style="glass"] .kanban-card.bg-surface.border-subtle { border-color: var(--surface-glass-line); }
   html[data-surface-style="glass"] .kanban-card.bg-surface:hover { background-color: var(--surface-glass-fill-hover); }
-  html[data-surface-style="glass"] .kanban-card.bg-surface.task-card-stage-glow,
-  html[data-surface-style="glass"] .kanban-card.bg-surface.studio-border-glow {
+  html[data-surface-style="glass"] .kanban-card.task-card-stage-glow.bg-surface {
     background-color: color-mix(in srgb, color-mix(in srgb, var(--color-surface) 72%, var(--color-page)) 93%, transparent);
   }
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
