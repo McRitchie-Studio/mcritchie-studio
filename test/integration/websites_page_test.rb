@@ -22,7 +22,12 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     panel = "#studio-link-sidebar"
     assert_select "#{panel} a", text: /Sign In/, count: 1
     assert_select "#{panel} a[href='#{chat_href}']", text: /Chat/, count: 1
-    assert_select "#{panel} a[href='#{chat_href}'] img[src*='alex']", count: 1
+    # Chat is Alex's portrait on the drawer and a line icon under the glass style.
+    if Studio.respond_to?(:sidebar_style)
+      assert_select "#{panel} a[href='#{chat_href}'] [data-sidebar-row-icon] svg", count: 1
+    else
+      assert_select "#{panel} a[href='#{chat_href}'] img[src*='alex']", count: 1
+    end
     assert_select "#{panel} a[href='#{websites_path}']", text: /Portfolio/, count: 1
     assert_select "#{panel} a span.text-xs", count: 0
     assert_select "#{panel} a", text: /Turf Monster/, count: 0

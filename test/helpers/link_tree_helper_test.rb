@@ -12,6 +12,31 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert links.all? { |link| link[:hover_emoji].present? }, "expected every sidebar link to define hover_emoji"
   end
 
+  # The glass sidebar (Alex McRitchie, 2026-11-04). App rows keep their portrait and rocket.
+  # Every other row names one line icon, keeps its emoji as the fallback, and the engine
+  # holds the name.
+  test "each sidebar row but an app names a line icon and keeps its emoji" do
+    self.admin_enabled = true
+
+    links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
+    apps, rows = links.partition { |link| link[:hover_emoji] == "🚀" && link[:icon].blank? }
+
+    assert_equal({ "Dashboard" => "chart-column", "DevOps" => "rocket", "Design" => "palette", "Branding Kits" => "diamond",
+                   "App Requests" => "inbox", "Books" => "book-open", "Activities" => "activity", "Basement" => "door-stairwell",
+                   "Build" => "hammer", "Chat" => "message-circle", "Portfolio" => "globe", "Packages" => "package",
+                   "Integrations" => "plug" }, rows.to_h { |link| link.values_at(:label, :icon) }.except(*apps.map { |link| link[:label] }))
+    assert rows.all? { |link| link[:emoji].present? }, "the emoji stays the fallback"
+    assert links.any? { |link| link[:label] == "Books" }, "control: this reads an admin's rows"
+    # The locked engine may not hold the icon set yet; once it does, it holds every name.
+    assert_empty rows.pluck(:icon).reject { |name| Studio::Icons.known?(name) }, "the engine vendors every name" if defined?(Studio::Icons)
+  end
+
+  test "the sign-in row names a line icon too" do
+    self.logged_in_enabled = false
+
+    assert_equal "key-round", visitor_link_sections.first.fetch(:links).first.fetch(:icon)
+  end
+
   # Alex McRitchie, 2026-11-04: "this admin section reads Dashboard, DevOps, Design,
   # Basement", then "Don't move logos to the Basement, but call it Branding Kits", then
   # "Move 'App Requests' to the 'Admin' section with 'Books'. Move the rest to the
