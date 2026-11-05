@@ -328,6 +328,10 @@ async function openRowAtRest(page, theme) {
   const isDark = await page.evaluate(() => document.documentElement.classList.contains("dark"));
   if (isDark !== (theme === "dark")) await page.locator(`${PHONE_ROW} button[title='Toggle theme']`).click();
   await expect.poll(() => page.evaluate(() => document.documentElement.classList.contains("dark"))).toBe(theme === "dark");
+  // During the engine's theme crossfade Chromium sends every pointer hit to <html>, so a
+  // mouse move made inside it leaves :hover off until the next move. Engines without the
+  // crossfade never set this attribute, and the wait passes at once.
+  await page.waitForFunction(() => document.documentElement.dataset.themeFlip === undefined);
   await page.mouse.move(5, 600);
   await expect.poll(async () => {
     const light = await gearLight(page);
