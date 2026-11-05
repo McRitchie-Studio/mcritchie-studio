@@ -213,8 +213,7 @@ may.
 
 1. Work out which brand the document serves. That is the party that issues it:
    a lease carries the landlord's format, not a tenant's. A party with no kit
-   uses the plain format of its own documents; East 49th's lease follows its
-   operating agreement.
+   uses the plain format of its own documents.
 2. Start from the kit's `<SHORT> Template — General` in `05 Templates`. Find it
    in Drive; a local search does not prove it is missing. Drop the template's
    parts that do not fit, such as a photo on a contract.

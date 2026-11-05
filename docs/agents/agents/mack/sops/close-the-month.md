@@ -235,7 +235,7 @@ not run through this.
   `internal_transfer`. The Balance Sheet carries it as an asset under "Transfers
   in transit between own accounts" until the account joins `config/books.yml`
   or the money comes back. Name the paying account from the statement, not from
-  memory: MI's $5,500 to PNC left MI checking, though it was recalled as Studio's.
+  memory.
 - **A Huntington "Transfer Credit" names no sender.** Industries' rules hold every
   one for an answer. Its first two (2026-09-02: $400,000 to the money market and
   $30,000 to checking, both from Studio) are member contributions, per Alex
