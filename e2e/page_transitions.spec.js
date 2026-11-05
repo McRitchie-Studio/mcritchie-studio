@@ -10,15 +10,17 @@ const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } 
 test.use({ contextOptions: { reducedMotion: "no-preference" } });
 
 const LEFT_OUT = "pt-out-left";
-const LEFT_IN = ["pt-in-from-right", "pt-unfold-right"];
+const LEFT_IN = ["pt-in-from-right"];
 
-async function record(page, random) {
+// The hub's one style is the slide. The pin makes an engine below Studio.page_transition_style
+// draw it too, and goes when the release relocks the engine.
+async function record(page, random = 0) {
   await page.addInitScript((value) => {
     // Only for the pick: Turbo draws its history ids from Math.random too.
     window.__random = value;
     window.addEventListener("turbo:before-render", () => {
       const real = Math.random;
-      if (window.__random !== null) Math.random = () => window.__random;
+      Math.random = () => window.__random;
       setTimeout(() => { Math.random = real; }, 0);
     }, { capture: true });
     window.__seen = [];
@@ -46,7 +48,7 @@ async function record(page, random) {
   }, random);
 }
 
-async function open(page, path, { motion = "no-preference", random = null } = {}) {
+async function open(page, path, { motion = "no-preference", random = 0 } = {}) {
   await blockThirdPartyRequests(page);
   await page.emulateMedia({ reducedMotion: motion });
   await record(page, random);
@@ -81,15 +83,14 @@ function expectLeftStyle(names) {
   expect(LEFT_IN).toContain(incoming[0]);
 }
 
-test("/ to /chat plays the left pair, each of the two, and no other direction's", async ({ page }) => {
+test("/ to /chat and back play the one slide, moving left, on both visits", async ({ page }) => {
   const errors = watchPageErrors(page);
-  await open(page, "/", { random: 0 });
+  await open(page, "/");
   await expect(page.locator("html")).toHaveAttribute("data-page-transition-direction", "left");
-  await visit(page, "/chat");
-  expect(pageStyles(await seen(page)).sort()).toEqual(["::view-transition-new(root) pt-in-from-right", "::view-transition-old(root) pt-out-left"]);
-  await page.evaluate(() => { window.__random = 0.99; });
-  await visit(page, "/");
-  expect(pageStyles(await seen(page)).sort()).toEqual(["::view-transition-new(root) pt-unfold-right", "::view-transition-old(root) pt-out-left"]);
+  for (const path of ["/chat", "/"]) {
+    await visit(page, path);
+    expect(pageStyles(await seen(page)).sort()).toEqual(["::view-transition-new(root) pt-in-from-right", "::view-transition-old(root) pt-out-left"]);
+  }
   expect(errors.pageErrors, errors.report()).toEqual([]);
 });
 
@@ -193,7 +194,7 @@ test("the real sign-in page plays a left style, and its field takes input", asyn
 // A modal the layout arms on turbo:load, which now comes when the move ends.
 test("a modal armed on turbo:load opens after a move, and takes input", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await record(page, null);
+  await record(page);
   await loginWithMagicLink(page, "newcomer-move@test.com");
   const field = page.locator("#onboarding-first-name");
   await field.waitFor({ state: "visible" });
@@ -212,7 +213,7 @@ test("the launch panel morphs into the chat at its own address", async ({ browse
   const chat = "/applications/launch-panel-probe/chat";
   const context = await browser.newContext({ storageState: VISITOR });
   const page = await context.newPage();
-  await record(page, null);
+  await record(page);
   await loginWithMagicLink(page, "owner@launch-panel.test");
   await page.goto(chat);
   const panel = page.locator("[data-test='build-launch']");

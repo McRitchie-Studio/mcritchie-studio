@@ -41,7 +41,7 @@ Studio.configure do |config|
   config.sticky_table_headers = true
 
   # The hub's pages leave to the left (studio-engine docs/PAGE_TRANSITIONS.md). The
-  # direction is the one switch: it turns on the engine's smooth-load convention
+  # direction is the switch, and the style below names the one move: it turns on the engine's smooth-load convention
   # (layouts/studio/_smooth_load renders the view-transition + no-preview metas) by
   # itself. smooth_load stays set, so a removed direction falls back to the fade. A view
   # with an inline view-transition-name marks it with data-vt-morph, or it floats still
@@ -50,6 +50,9 @@ Studio.configure do |config|
   # nav spinner floor from the engine's 2500ms default to a fast-load 300ms.
   config.smooth_load = true
   config.page_transition_direction = :left
+  # One style for the whole app (Alex McRitchie's ruling, 2026-11-04). Guarded until the
+  # release relocks an engine with the setter; the engine's default is this same slide.
+  config.page_transition_style = :slide if config.respond_to?(:page_transition_style=)
   # Out-of-the-box navigation (engine 0.30): the sidebar data stays in the
   # hub's LinkTreeHelper; the engine renders it. The lambda hands the view
   # context over so the helper keeps its route helpers and admin? wall.

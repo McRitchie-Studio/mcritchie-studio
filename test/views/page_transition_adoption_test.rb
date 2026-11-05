@@ -10,6 +10,21 @@ class PageTransitionAdoptionTest < ActionDispatch::IntegrationTest
     File.read(File.join(Gem.loaded_specs["studio-engine"].full_gem_path, "app/assets/tailwind/studio_engine/engine.css"))
   end
 
+  test "the hub declares the slide, the one style its pages play" do
+    # Found by glob: a spelled path would map this test to every edit of that initializer.
+    initializer = Rails.root.join("config", "initializers").glob("stud*.rb").map(&:read).join
+    assert_includes initializer, "config.page_transition_style = :slide if config.respond_to?(:page_transition_style=)"
+    assert_equal :slide, Studio.page_transition_style if Studio.respond_to?(:page_transition_style)
+  end
+
+  test "the body renders the overlay only until the engine's head carries it" do
+    get build_path
+
+    assert_response :success
+    in_body = css_select("body [data-studio-loader-overlay]").size
+    assert_equal(Studio.respond_to?(:loader_overlay) ? 0 : 1, in_body)
+  end
+
   test "the hub moves left, and the head carries one copy of each meta" do
     assert_equal :left, Studio.page_transition_direction
 
