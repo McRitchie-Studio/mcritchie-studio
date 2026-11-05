@@ -19,6 +19,8 @@
 #             icon      the link sidebar's line icon, a name from studio-engine's
 #                       Studio::Icons. It replaces the emoji and the hover swap under
 #                       Studio.sidebar_style = :glass; the emoji stays the fallback.
+#                       Not the sub-nav item's `icon: true` below, which means lead
+#                       with the page's emoji.
 #
 # sidebar   The link sections, in order. group: admin sections lead the sidebar for
 #           an admin; group: general sections follow and fill /links; group: basement

@@ -28,7 +28,8 @@ The link sidebar, `/links`, `/admin/basement` and the section sub-navs all read
 `config/navigation.yml` (`app/models/navigation.rb`):
 
 1. Add the page under `pages`, keyed by its route name, with `page`, `audience`,
-   `label` and, for the sidebar, `emoji`, `hover_emoji` and `desc`.
+   `label` and, for the sidebar, `emoji`, `hover_emoji`, `desc` and `icon` (a line icon's
+   name from studio-engine's `Studio::Icons`).
 2. Place it: add the key to a `sidebar` section, or add an item to a `sub_navs` entry
    (`only`, `except` and `hide_when_current` decide where it shows). A link that the
    sidebar need not carry goes in a `group: basement` section: it shows on

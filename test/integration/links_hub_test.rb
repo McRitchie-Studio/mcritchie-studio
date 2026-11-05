@@ -30,8 +30,9 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     get links_path
     assert_response :success
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
-    # The emoji-swap proves the visitor sections rendered (Portfolio is one link to /websites).
-    assert_select "#studio-link-sidebar .studio-emoji-swap"
+    # A row's icon proves the visitor sections rendered (Portfolio is one link to /websites):
+    # an emoji swap on the locked engine, a line icon under the glass style.
+    assert_select "#studio-link-sidebar :is(.studio-emoji-swap, [data-sidebar-row-icon])"
     # Studio is behind the session wall
     assert_select "#studio-link-sidebar a[href=?]", dashboard_path, count: 0
   end
@@ -216,6 +217,23 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     assert_select "[data-nav-account][data-profile-image-toggle][aria-controls=?] [data-nav-name]",
                   "studio-link-sidebar studio-link-sidebar-mobile", text: Studio.navbar_user_name_for(users(:alex))
-    assert_select "#studio-link-sidebar .studio-emoji-swap-hover"
+    assert_select "#studio-link-sidebar :is(.studio-emoji-swap-hover, [data-sidebar-row-icon])"
+  end
+
+  # Alex McRitchie, 2026-11-04: "I think 3 is my favorite nav". Skips until the release
+  # relocks an engine that has the setting.
+  test "the glass sidebar lights this page's row and draws line icons" do
+    skip "the locked engine has no sidebar_style yet" unless Studio.respond_to?(:sidebar_style)
+
+    log_in_as users(:alex)
+    get admin_dashboard_path
+    assert_response :success
+    assert_select "#studio-link-sidebar[data-sidebar-glass]:not([data-sidebar-edge])"
+    assert_select "#studio-link-sidebar a[aria-current=page]", count: 1 do |rows|
+      assert_includes rows.first.text, "Dashboard"
+    end
+    assert_select "#studio-link-sidebar a[href=?] [data-sidebar-row-icon] svg", admin_dashboard_path
+    assert_select "#studio-link-sidebar a[href=?] .studio-emoji-swap", admin_dashboard_path, count: 0
+    assert_select "#studio-link-sidebar a[href=?] svg", logout_path
   end
 end
