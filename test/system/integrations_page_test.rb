@@ -107,14 +107,17 @@ class IntegrationsPageTest < ApplicationSystemTestCase
   end
 
   # The owner's ask (task simplify-integrations-page-layout): less scrolling.
-  # Production measured 4,935px at 1440 before the change.
-  test "[e2e] signed out at 1440 the page is under 2,000px; Details opens in place and a chip jumps to its group under the pinned chips" do
+  # Production measured 4,935px at 1440 before the change, the page's content
+  # ending near 3,900px; the engine's site footer below it (about 1,000px) is
+  # the same on every page and not this page's to cut, so the budget is the
+  # content's bottom edge.
+  test "[e2e] signed out at 1440 the content ends above 2,000px; Details opens in place and a chip jumps to its group under the pinned chips" do
     visit logout_path
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 1440, height: 900, deviceScaleFactor: 1, mobile: false)
     visit integrations_path
 
-    height = page.evaluate_script("document.documentElement.scrollHeight")
-    assert_operator height, :<, 2000, "signed-out /integrations at 1440 is #{height}px tall"
+    bottom = page.evaluate_script("document.querySelector(\"[data-test='integrations-page']\").getBoundingClientRect().bottom + window.scrollY")
+    assert_operator bottom, :<, 2000, "signed-out /integrations at 1440 ends its content at #{bottom}px"
 
     within("[data-test='integration-entry'][data-entry='discord']") do
       assert_no_selector "[data-test='entry-details']" # the control: closed by default
