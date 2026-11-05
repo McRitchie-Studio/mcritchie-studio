@@ -1,9 +1,7 @@
 // [e2e] The landing hero's Launch Your Website (task landing-build-ctas).
 //
-// The hero CTA wears the cta-glow primitive's rainbow preset, until the app runs an engine with
-// the glass surfaces (Studio.surface_style): there the button is lit in its own color and the
-// rainbow is off (cta_glow.css). This reads whichever the locked engine gives. On a 375px phone the
-// glow never scrolls the page sideways at any point of its motion; under reduced
+// The hero CTA wears the rainbow preset, or under Studio.surface_style its own lit glow: this reads
+// whichever the locked engine gives. On a 375px phone the glow never scrolls the page sideways at any point of its motion; under reduced
 // motion the glow holds still; in light mode it takes deeper stops than in dark
 // (task preview-domain-mcritchie-app); and the CTA goes to /build.
 // @qa-readonly: it only reads the signed-out landing page.
