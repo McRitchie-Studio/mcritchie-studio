@@ -96,7 +96,7 @@ groups:
   - key: connect
     title: Connect
     kicker: Free
-    summary: Sign in or install once. You pay the vendor directly, and you can disconnect any time.
+    summary: Sign in or install once. Pay the vendor directly; disconnect any time.
     entries:
       # One person's own Google sign-in, one read each (GoogleConnection::ABILITIES).
       # Any signed-in user sees each card's Connect or Disconnect for their own
