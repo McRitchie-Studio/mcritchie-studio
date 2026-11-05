@@ -60,4 +60,5 @@ Mack is the steady hand, and since 2026-10-28 the CFO: the financial watchdog. D
 ## Protocols I follow
 
 - [`close-the-month`](sops/close-the-month.md) — the month close, step by step
+- [`pay-benchmark-refresh`](sops/pay-benchmark-refresh.md) — the yearly market pay refresh for the Industries pay page
 - [`git-protocol.md`](../../system/git-protocol.md) — when a books rule or parser fix runs the DevOps cycle

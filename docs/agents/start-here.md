@@ -112,6 +112,7 @@ its invocation exactly.
 | Carl `pr-review` SOP (the orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
 | `Mack Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mack/HEARTBEAT.md` |
 | Mack `close-the-month` SOP (file last month's bank statements, answer the lines no rule could classify, write the close to Drive) | `mcritchie-studio/docs/agents/agents/mack/sops/close-the-month.md` |
+| Mack `pay-benchmark-refresh` SOP (refresh the BLS wage percentiles behind /admin/pay, check them, and flag anyone below their role's target) | `mcritchie-studio/docs/agents/agents/mack/sops/pay-benchmark-refresh.md` |
 | `Mason Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
 | Mason `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
 | Mason `dream-swap` SOP (print the dream cards (adds, swaps, retires) for Alex McRitchie and record his answer with his words) | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |

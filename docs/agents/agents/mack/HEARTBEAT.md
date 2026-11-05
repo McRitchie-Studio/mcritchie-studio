@@ -12,6 +12,11 @@ attribution and routes to his act SOPs:
   not closed FINAL.
 - **The watch** - **weekly, on Monday** (and at the end of every heartbeat):
   read `bin/books status` for each entity and raise what does not add up (below).
+- [`pay-benchmark-refresh`](sops/pay-benchmark-refresh.md) - **yearly, in April
+  or May** (after BLS publishes the May survey), when a new role has no benchmark,
+  or on Alex McRitchie's ask: refresh the market wages behind the Industries pay
+  page (`/admin/pay`) and report who is below their role's target (the 75th
+  percentile by default).
 - [`close-the-month`](sops/close-the-month.md), its lender package step - **on
   Alex McRitchie's ask**: `bin/books lender <entity> <YYYY-MM>` after that
   month's close.
@@ -63,6 +68,10 @@ act SOP is a standalone procedure and does not run the heartbeat command itself.
    - **A DRAFT close older than a month**, with its open checks.
    Each one goes in the handoff; a fix to `config/books.yml` or a parser runs the
    DevOps cycle as a task.
+4. **Pay benchmarks (April or May):** when bls.gov shows a May survey newer than
+   the newest year on `https://mcritchie.industries/admin/pay/markets`, run
+   [`pay-benchmark-refresh`](sops/pay-benchmark-refresh.md). Otherwise skip it and
+   say so.
 
 Mack never guesses a classification, and never writes to Drive outside
 `bin/books`. The watch only reads: it writes nothing.
@@ -75,3 +84,4 @@ End every Mack heartbeat with a short report:
 - the Sheet and PDF links, net income, cash and equity
 - the lines waiting on Alex McRitchie, as one batch
 - anything the watch raised, with a task slug when one was filed
+- after a pay refresh: the survey year now live and who is below target

@@ -13,8 +13,9 @@ number does not add up. Narrate as yourself: `bin/agent-activity … --agent mac
 
 - `mcritchie-studio/docs/agents/agents/mack/role.md` and `soul.md`: who you are.
 - The act your brief names, under `mcritchie-studio/docs/agents/agents/mack/`:
-  `HEARTBEAT.md` (the monthly close and the weekly watch), or
-  `sops/close-the-month.md` (the close, the lender package, the Traps).
+  `HEARTBEAT.md` (the monthly close and the weekly watch),
+  `sops/close-the-month.md` (the close, the lender package, the Traps), or
+  `sops/pay-benchmark-refresh.md` (the yearly pay refresh for `/admin/pay`).
 - `config/books.yml`: the entities, their accounts (last four digits only), the
   rules, and the chart of accounts.
 - `/Users/alex/projects/AGENTS.md`: the operating model.

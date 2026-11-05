@@ -180,6 +180,7 @@ runs inside `pr-review`. Retired names resolve only in git history (`docs/agents
 | `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
 | `Mack Heartbeat` | Mack | `mcritchie-studio/docs/agents/agents/mack/HEARTBEAT.md` |
 | `close-the-month` | Mack | `mcritchie-studio/docs/agents/agents/mack/sops/close-the-month.md` |
+| `pay-benchmark-refresh` | Mack | `mcritchie-studio/docs/agents/agents/mack/sops/pay-benchmark-refresh.md` |
 | `Mason Heartbeat` | Mason | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
 | `clean-up` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
 | `dream-swap` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |
