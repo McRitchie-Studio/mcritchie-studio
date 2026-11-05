@@ -83,7 +83,7 @@ digits, so the glob keeps the pages in order. Compare the page count with the so
 All of these must pass before you say the file is flat:
 
 ```bash
-pdftotext "<output.pdf>" - | tr -d '\f\n '   # prints nothing
+pdftotext "<output.pdf>" - | tr -d '\f\n ' | wc -c   # 0; never print this text
 pdffonts "<output.pdf>"                      # headers only, no font rows
 pdfimages -list "<output.pdf>"               # one image per page
 pdfinfo "<output.pdf>" | grep Pages          # the same count as the source
