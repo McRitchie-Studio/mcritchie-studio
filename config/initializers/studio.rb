@@ -41,7 +41,7 @@ Studio.configure do |config|
   config.sticky_table_headers = true
 
   # The hub's pages leave to the left (studio-engine docs/PAGE_TRANSITIONS.md). The
-  # direction is the one switch: it turns on the engine's smooth-load convention
+  # direction is the switch, and the style below names the one move: it turns on the engine's smooth-load convention
   # (layouts/studio/_smooth_load renders the view-transition + no-preview metas) by
   # itself. smooth_load stays set, so a removed direction falls back to the fade. A view
   # with an inline view-transition-name marks it with data-vt-morph, or it floats still

@@ -42,7 +42,15 @@ class BrandedLoaderTest < ActionDispatch::IntegrationTest
     get about_path
     assert_response :success
 
-    if LOADER_ENGINE
+    if Studio.respond_to?(:loader_overlay)
+      # The engine's head carries it, and studio/loader adds it to the body at need. It must
+      # not be in the body as well. The hub's Sparkle comes with it.
+      template = Nokogiri::HTML(response.body).at_css("head template[data-studio-loader-overlay-template]")
+      assert template, "no overlay in the head"
+      assert_includes template.inner_html, "/brand/icon-dark.svg"
+      assert_equal 5, template.inner_html.scan("studio-loader-sparkle").size
+      assert_select "body [data-studio-loader-overlay]", 0
+    elsif LOADER_ENGINE
       assert_select "[data-studio-loader-overlay][hidden]", 1 do
         assert_select ".studio-loader[data-loader-style='sparkle'] img.studio-loader-icon[src='/brand/icon-dark.svg']"
         assert_select ".studio-loader path.studio-loader-sparkle", 5
