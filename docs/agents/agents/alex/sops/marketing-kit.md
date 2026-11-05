@@ -224,8 +224,9 @@ because a kit holds nothing confidential and a doc master may. Keep one master.
    See [Shortcuts](#shortcuts).
 
 The Drive credential holds `drive.readonly` and `drive.file`. It can read what
-its subject can see. A folder a person made by hand is invisible until it is shared
-with the subject. The Google Picker is not a way round this: the credential acts by
+its subject can see, and it edits only what it created. A folder a person made by
+hand is invisible until it is shared with the subject. The Google Picker is not a
+way round this: the credential acts by
 domain-wide delegation and has no Picker step. So let the credential create the
 folder for a doc master. A person can then move that folder wherever it belongs;
 the credential keeps its access.
