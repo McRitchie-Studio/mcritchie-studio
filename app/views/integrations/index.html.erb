@@ -1,37 +1,63 @@
 <% content_for :title, "Integrations & Add-ons · McRitchie Studio" %>
 
-<section class="max-w-7xl mx-auto px-4 py-10" data-test="integrations-page">
-  <header class="text-center mb-10">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Integrations &amp; Add-ons</p>
-    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-3">Build smarter. Your backend runs itself.</h1>
+<%# /integrations: three groups of compact tiles (config/integrations.yml), so the
+    page reads in a screen or two (task simplify-integrations-page-layout). A tile
+    shows its lead, name, status, tier, one line and its action; how it connects,
+    what it can do and the price note sit behind its Details toggle. %>
+<section class="max-w-7xl mx-auto px-4 py-6 sm:py-8" data-test="integrations-page">
+  <header class="text-center mb-5">
+    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-1">Integrations &amp; Add-ons</p>
+    <h1 class="text-3xl sm:text-4xl font-bold text-heading mb-2">Build smarter. Your backend runs itself.</h1>
     <p class="text-muted max-w-2xl mx-auto">
       Every plan connects to the tools you already use, and we will run the rest if you want us to.
     </p>
   </header>
 
+  <%# The group chips: one jump per group, pinned under the site header (the
+      engine composes --pin-stack-bottom from whatever chrome is pinned above). %>
+  <nav class="sticky z-20 -mx-4 mb-2 bg-page/90 px-4 py-2 backdrop-blur" style="top: var(--pin-stack-bottom, 0px)"
+       aria-label="Jump to a group" data-test="group-nav">
+    <ul class="flex gap-2 overflow-x-auto sm:justify-center">
+      <% @groups.each do |group| %>
+        <li class="shrink-0">
+          <a href="#<%= group.key.dasherize %>" data-test="group-chip" data-group="<%= group.key %>"
+             class="inline-flex items-center gap-1.5 rounded-full border border-subtle bg-surface px-3 py-1.5 text-sm font-medium text-heading hover:border-primary hover:text-primary transition-colors">
+            <%= group.title %>
+            <span class="rounded-full bg-surface-alt px-1.5 text-xs text-muted"><%= group.entries.size %></span>
+          </a>
+        </li>
+      <% end %>
+    </ul>
+  </nav>
+
   <% @groups.each do |group| %>
-    <section class="mt-10 first-of-type:mt-0" data-test="integration-group" data-group="<%= group.key %>" aria-labelledby="group-<%= group.key %>">
-      <div class="mb-5 flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
-        <div class="min-w-0">
-          <p class="text-xs font-semibold uppercase tracking-wider text-primary" data-test="group-kicker"><%= group.kicker %></p>
-          <h2 id="group-<%= group.key %>" class="mt-1 text-2xl font-bold text-heading"><%= group.title %></h2>
+    <section id="<%= group.key.dasherize %>" class="mt-6" style="scroll-margin-top: calc(var(--pin-stack-bottom, 0px) + 3.5rem)"
+             data-test="integration-group" data-group="<%= group.key %>" aria-labelledby="group-<%= group.key %>">
+      <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
+        <div class="flex min-w-0 items-baseline gap-2">
+          <h2 id="group-<%= group.key %>" class="text-xl font-bold text-heading"><%= group.title %></h2>
+          <span class="text-xs font-semibold uppercase tracking-wider text-primary" data-test="group-kicker"><%= group.kicker %></span>
         </div>
-        <p class="max-w-xl text-sm text-muted sm:text-right"><%= group.summary %></p>
+        <p class="max-w-xl text-sm text-muted sm:text-right" data-test="group-summary"><%= group.summary %></p>
       </div>
 
-      <%# Connect Google, for a signed-in user: one full-width row above the Google
-          cards, outside their grid, so the card rows stay as they are. %>
+      <%# Connect Google, for a signed-in user: one full-width row above the
+          group's tiles, outside their grid, so the tile rows stay as they are. %>
       <% if @google && group.key == IntegrationsController::GOOGLE_GROUP %>
-        <div class="mb-5">
+        <div class="mb-3">
           <%= render "integrations/google_connect_all", connections: @google.slice(*GoogleConnection::ABILITIES.keys), connectable: @google[:connectable], own: @google[:own], return_to: integrations_path, gmail_gate: true %>
         </div>
       <% end %>
 
-      <%# One rhythm for every section: four across at xl, two at md, one on a
-          phone. Grid rows stretch, so cards in a row end level. %>
-      <div class="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+      <%# Four across at xl, three at lg, two from sm, one on a phone. Grid rows
+          stretch, so tiles in a row end level. %>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <% group.entries.each do |entry| %>
-          <article class="flex flex-col rounded-2xl border border-subtle bg-surface p-5"
+          <% google_ability = @google && IntegrationsController::GOOGLE_CARDS[entry.key] %>
+          <% fathom_here = @fathom && entry.key == IntegrationsController::FATHOM_CARD %>
+          <% shows_blurb = entry.line != entry.blurb %>
+          <% details = shows_blurb || entry.tier_note.present? || entry.connection_methods.any? || entry.price_note.present? || entry.price_label %>
+          <article class="flex flex-col rounded-xl border border-subtle bg-surface p-4" x-data="{ open: false }"
                    data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>">
             <div class="flex items-start gap-3">
               <% if entry.brand %>
@@ -41,7 +67,7 @@
                       aria-hidden="true" data-test="entry-lead" data-lead="emoji"><%= entry.icon %></span>
               <% end %>
               <div class="min-w-0 flex-1">
-                <h3 class="font-semibold text-heading" data-test="entry-name"><%= entry.name %></h3>
+                <h3 class="font-semibold leading-snug text-heading" data-test="entry-name"><%= entry.name %></h3>
                 <p class="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
                   <% if entry.soon? %>
                     <span class="inline-block whitespace-nowrap rounded-full bg-surface-alt px-2 py-0.5 font-medium" data-test="coming-soon">Coming soon</span>
@@ -60,96 +86,111 @@
               </div>
             </div>
 
-            <div class="mb-4">
-            <p class="mt-3 text-sm text-body" data-test="entry-blurb"><%= entry.blurb %></p>
-            <% if entry.tier_note.present? %>
-              <p class="mt-1 text-xs text-muted" data-test="entry-tier-note"><%= entry.tier_note %></p>
+            <p class="mt-2 text-sm text-body" data-test="entry-line"><%= entry.line %></p>
+            <%# An add-on's price is the fact a reader shops by, so it stays on the
+                tile; its note waits in Details. %>
+            <% if group.add_ons? %>
+              <p class="mt-1 text-sm font-bold text-heading [overflow-wrap:anywhere]" data-test="entry-price"><%= entry.price_label %></p>
             <% end %>
-            </div>
 
-            <%# How the entry connects (who each way covers, its setup and its
-                upkeep) and what it can do once connected. An ability names
-                the ways that unlock it only when there is more than one way. %>
-            <% if entry.connection_methods.any? %>
-              <div class="mb-4 space-y-3 text-xs" data-test="entry-connections">
-                <div>
-                  <p class="font-semibold uppercase tracking-wider text-muted">How it connects</p>
-                  <ul class="mt-1 space-y-1.5">
-                    <% entry.connection_methods.each do |method| %>
-                      <%# A Coming soon card already says so once; no chip repeats it. %>
-                      <% method_soon = entry.method_soon?(method.key) %>
-                      <li data-test="entry-method" data-method="<%= method.key %>" data-soon="<%= method_soon %>">
-                        <span class="font-medium text-heading"><%= method.label %></span>
-                        <% if method_soon && !entry.soon? %>
-                          <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
-                        <% end %>
-                        <span class="block text-muted" data-test="method-terms"><%= method.covers %> · <%= method.setup %> · <%= method.upkeep %></span>
-                        <% google_ability = @google && method.key == IntegrationsController::GOOGLE_METHOD && IntegrationsController::GOOGLE_CARDS[entry.key] %>
-                        <% if google_ability %>
-                          <%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable], own: @google[:own] %>
-                        <% end %>
-                        <% if @fathom && method.key == IntegrationsController::GOOGLE_METHOD && entry.key == IntegrationsController::FATHOM_CARD %>
-                          <%= render "integrations/fathom_connection", connection: @fathom[:connection], connectable: @fathom[:connectable] %>
-                        <% end %>
-                      </li>
-                    <% end %>
-                  </ul>
-                </div>
-                <% if entry.abilities.any? %>
-                  <div>
-                    <p class="font-semibold uppercase tracking-wider text-muted">What it can do</p>
-                    <ul class="mt-1 space-y-1">
-                      <% entry.abilities.each do |ability| %>
-                        <li class="flex items-start gap-1.5 text-body" data-test="entry-ability" data-ability="<%= ability.key %>" data-status="<%= ability.status %>">
-                          <svg class="mt-0.5 h-3 w-3 shrink-0 <%= ability.soon? ? 'text-muted' : 'text-success-ink' %>" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
-                          <span class="min-w-0">
-                            <%= ability.name %>
-                            <% if entry.connection_methods.size > 1 %>
-                              <span class="text-muted" data-test="ability-via">· <%= ability.via.map { |key| entry.connection_methods.find { _1.key == key }.label }.join(" or ") %></span>
-                            <% end %>
-                            <% if ability.soon? && !entry.soon? %>
-                              <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
-                            <% end %>
-                          </span>
-                        </li>
-                      <% end %>
-                    </ul>
-                  </div>
+            <%# The action row: a signed-in user's real Connect or Disconnect on a
+                Google tile (an admin's on the Fathom tile), else the tile's button,
+                with the Details toggle beside it. %>
+            <div class="mt-auto pt-3">
+              <div class="flex flex-wrap items-center justify-between gap-2" data-test="entry-action">
+                <% if google_ability %>
+                  <div class="min-w-0 flex-1 text-xs"><%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable], own: @google[:own] %></div>
+                <% elsif fathom_here %>
+                  <div class="min-w-0 flex-1 text-xs"><%= render "integrations/fathom_connection", connection: @fathom[:connection], connectable: @fathom[:connectable] %></div>
+                <% elsif !logged_in? && IntegrationsController::GOOGLE_CARDS.key?(entry.key) %>
+                  <%# Signed out, a Google tile's Connect opens the sign-in modal; the
+                      emailed link brings them back here, to the real Connect. %>
+                  <button type="button" class="btn btn-primary btn-sm shrink-0 justify-center"
+                          data-test="entry-cta" data-intent="<%= entry.intent %>" data-opens="auth"
+                          @click="$store.modals.open('auth', { returnTo: '<%= integrations_path %>', title: 'Sign in to connect Google', subtitle: 'Connecting needs an account. New here? The same step creates your free one.' })"><%= entry.cta_label %></button>
+                <% else %>
+                  <%# Every other button opens the contact form prefilled, carrying
+                      where it came from, or, for an entry with a guide, the guide page first. %>
+                  <%= link_to entry.cta_label, (entry.guide ? public_send("integrations_#{entry.guide}_path") : contact_form_path(source: entry.contact_source)),
+                        class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} btn-sm shrink-0 justify-center",
+                        data: { test: "entry-cta", intent: entry.intent } %>
+                <% end %>
+                <% if details %>
+                  <button type="button" class="ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted hover:text-heading"
+                          data-test="entry-details-toggle" aria-controls="details-<%= entry.key %>" :aria-expanded="open.toString()" aria-expanded="false"
+                          @click="open = !open">
+                    Details
+                    <svg class="h-3 w-3 transition-transform" :class="open && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z" clip-rule="evenodd"/></svg>
+                  </button>
                 <% end %>
               </div>
-            <% end %>
 
-            <%# The footer: price line and button side by side when they fit; the
-                button wraps below the price (never squeezes it) on a narrow card.
-                A custom entry has no price line, only its button. %>
-            <div class="mt-auto flex flex-wrap items-end justify-between gap-3 border-t border-subtle pt-4">
-              <% if entry.price_label %>
-                <div class="min-w-0 flex-[1_1_9rem]" data-test="entry-price">
-                  <p class="font-bold text-heading [overflow-wrap:anywhere]"><%= entry.price_label %></p>
-                  <% if entry.price_note.present? %>
-                    <p class="text-xs text-muted" data-test="entry-price-note"><%= entry.price_note %></p>
-                  <% elsif group.add_ons? %>
-                    <p class="text-xs text-muted">Scoped on a call</p>
-                  <% else %>
-                    <p class="text-xs text-muted">You pay the vendor directly</p>
+              <% if details %>
+                <div id="details-<%= entry.key %>" class="mt-3 space-y-3 border-t border-subtle pt-3 text-xs" x-show="open" x-cloak data-test="entry-details">
+                  <% if shows_blurb %>
+                    <p class="text-sm text-body" data-test="entry-blurb"><%= entry.blurb %></p>
+                  <% end %>
+                  <% if entry.tier_note.present? %>
+                    <p class="text-muted" data-test="entry-tier-note"><%= entry.tier_note %></p>
+                  <% end %>
+
+                  <%# How the entry connects (who each way covers, its setup and its
+                      upkeep) and what it can do once connected. An ability names
+                      the ways that unlock it only when there is more than one way. %>
+                  <% if entry.connection_methods.any? %>
+                    <div class="space-y-3" data-test="entry-connections">
+                      <div>
+                        <p class="font-semibold uppercase tracking-wider text-muted">How it connects</p>
+                        <ul class="mt-1 space-y-1.5">
+                          <% entry.connection_methods.each do |method| %>
+                            <%# A Coming soon tile already says so once; no chip repeats it. %>
+                            <% method_soon = entry.method_soon?(method.key) %>
+                            <li data-test="entry-method" data-method="<%= method.key %>" data-soon="<%= method_soon %>">
+                              <span class="font-medium text-heading"><%= method.label %></span>
+                              <% if method_soon && !entry.soon? %>
+                                <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
+                              <% end %>
+                              <span class="block text-muted" data-test="method-terms"><%= method.covers %> · <%= method.setup %> · <%= method.upkeep %></span>
+                            </li>
+                          <% end %>
+                        </ul>
+                      </div>
+                      <% if entry.abilities.any? %>
+                        <div>
+                          <p class="font-semibold uppercase tracking-wider text-muted">What it can do</p>
+                          <ul class="mt-1 space-y-1">
+                            <% entry.abilities.each do |ability| %>
+                              <li class="flex items-start gap-1.5 text-body" data-test="entry-ability" data-ability="<%= ability.key %>" data-status="<%= ability.status %>">
+                                <svg class="mt-0.5 h-3 w-3 shrink-0 <%= ability.soon? ? 'text-muted' : 'text-success-ink' %>" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M16.7 5.3a1 1 0 0 1 0 1.4l-8 8a1 1 0 0 1-1.4 0l-4-4a1 1 0 1 1 1.4-1.4L8 12.6l7.3-7.3a1 1 0 0 1 1.4 0Z" clip-rule="evenodd"/></svg>
+                                <span class="min-w-0">
+                                  <%= ability.name %>
+                                  <% if entry.connection_methods.size > 1 %>
+                                    <span class="text-muted" data-test="ability-via">· <%= ability.via.map { |key| entry.connection_methods.find { _1.key == key }.label }.join(" or ") %></span>
+                                  <% end %>
+                                  <% if ability.soon? && !entry.soon? %>
+                                    <span class="ml-1 inline-block whitespace-nowrap rounded-full bg-surface-alt px-1.5 py-0.5 font-medium text-muted">Coming soon</span>
+                                  <% end %>
+                                </span>
+                              </li>
+                            <% end %>
+                          </ul>
+                        </div>
+                      <% end %>
+                    </div>
+                  <% end %>
+
+                  <%# A connect tile's price is Free, and the vendor bills the client;
+                      an add-on's note (or "Scoped on a call") explains its price
+                      above. A custom entry has no price line. %>
+                  <% if group.add_ons? %>
+                    <p class="text-muted" data-test="entry-price-note"><%= entry.price_note.presence || "Scoped on a call" %></p>
+                  <% elsif entry.price_label %>
+                    <div data-test="entry-price">
+                      <p class="font-bold text-heading"><%= entry.price_label %></p>
+                      <p class="text-muted">You pay the vendor directly</p>
+                    </div>
                   <% end %>
                 </div>
-              <% end %>
-              <%# Every other button opens the contact form prefilled, carrying where
-                  it came from, or, for an entry with a guide, the guide page first.
-                  A signed-out visitor on a Google card connects their own Google
-                  once signed in, so its Connect opens the sign-in modal and the
-                  emailed link brings them back here, to the real Connect.
-                  A signed-in user on a Google card, and an admin on the Fathom card, has the real Connect and
-                  Disconnect above instead, so no contact-form Connect shows there. %>
-              <% if !logged_in? && IntegrationsController::GOOGLE_CARDS.key?(entry.key) %>
-              <button type="button" class="btn btn-primary shrink-0 justify-center"
-                      data-test="entry-cta" data-intent="<%= entry.intent %>" data-opens="auth"
-                      @click="$store.modals.open('auth', { returnTo: '<%= integrations_path %>', title: 'Sign in to connect Google', subtitle: 'Connecting needs an account. New here? The same step creates your free one.' })"><%= entry.cta_label %></button>
-              <% elsif !connection_card?(entry.key) %>
-              <%= link_to entry.cta_label, (entry.guide ? public_send("integrations_#{entry.guide}_path") : contact_form_path(source: entry.contact_source)),
-                    class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} shrink-0 justify-center",
-                    data: { test: "entry-cta", intent: entry.intent } %>
               <% end %>
             </div>
           </article>
@@ -158,22 +199,18 @@
     </section>
   <% end %>
 
-  <section class="mt-12 rounded-2xl border border-subtle bg-surface-alt p-5 md:p-6" data-test="not-listed" aria-labelledby="not-listed-heading">
-    <div class="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
+  <section class="mt-8 rounded-2xl border border-subtle bg-surface-alt p-4 md:p-5" data-test="not-listed" aria-labelledby="not-listed-heading">
+    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
       <div class="min-w-0">
-        <p class="text-xs font-semibold uppercase tracking-wider text-primary">Something else</p>
-        <h2 id="not-listed-heading" class="mt-1 text-xl font-semibold text-heading">Need something not listed?</h2>
-        <p class="mt-2 text-sm text-body">Tell us what you use. If your agent should read it or your app should talk to it, we will scope it with you.</p>
+        <h2 id="not-listed-heading" class="text-lg font-semibold text-heading">Need something not listed?</h2>
+        <p class="mt-1 text-sm text-body">Tell us what you use. If your agent should read it or your app should talk to it, we will scope it with you.</p>
       </div>
-      <%= studio_booking_link "Book a call", schedule_index_path, class: "btn btn-primary shrink-0 justify-center md:w-auto w-full", data: { test: "not-listed-cta" } %>
+      <div class="flex shrink-0 flex-col gap-2 sm:flex-row">
+        <%= studio_booking_link "Book a call", schedule_index_path, class: "btn btn-primary justify-center", data: { test: "not-listed-cta" } %>
+        <%= link_to packages_path, class: "btn btn-neutral justify-center", data: { test: "packages-link" } do %>
+          Compare the plans <span aria-hidden="true">→</span>
+        <% end %>
+      </div>
     </div>
   </section>
-
-  <div class="mt-10 text-center">
-    <%= link_to packages_path, class: "inline-flex items-center gap-2 rounded-full border border-primary px-5 py-2.5 font-semibold text-primary hover:bg-primary hover:text-white transition-colors",
-          data: { test: "packages-link" } do %>
-      Compare the plans <span aria-hidden="true">→</span>
-    <% end %>
-    <p class="mt-2 text-sm text-muted">Your agent-powered backend, from a free app to a connected company.</p>
-  </div>
 </section>
