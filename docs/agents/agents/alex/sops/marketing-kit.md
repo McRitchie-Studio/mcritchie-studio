@@ -231,7 +231,9 @@ folder for a doc master. A person can then move that folder wherever it belongs;
 the credential keeps its access.
 
 No command does this yet. Use `Workspace::DriveClient` with the owning entity's
-`team@` account, from a checkout with a development database, as the publish does:
+`team@` account, from a checkout with a development database, as the publish does.
+Read the template as the kit's `drive.subject`, because the owning entity's account
+may not see the kit:
 
 1. Search with `files_list` for the exact name, the folder mime type and
    `trashed = false`. If one folder matches, use it. Do not create a second one
