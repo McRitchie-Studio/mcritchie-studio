@@ -101,14 +101,14 @@ test("a visitor compares the tiers, books a call from a paid card and reaches th
   await expect(pro.locator("[data-test='price-annual']")).toContainText("$450");
   await expect(pro.locator("[data-test='price-monthly']")).toBeHidden();
 
-  // Pro's CTA opens the booking dialog on this page, not /schedule.
-  await pro.locator("[data-test='package-cta']").click();
+  // Builder, Pro and Team talk to Alex about their tier: the engine's talk-to-agent
+  // modal takes the click where it ships, and /chat is the link's own target
+  // (the modal itself is driven in studio-engine's e2e/talk_to_agent.spec.js).
+  const proCta = pro.locator("[data-test='package-cta']");
+  await expect(proCta).toHaveAttribute("href", "/chat");
+  await expect(proCta).toHaveAttribute("data-talk-topic", "Pro");
+  await expect(page.locator("[data-package='builder'] [data-test='package-cta']")).toHaveText("Become a Builder");
   const dialog = page.locator("dialog[data-booking-dialog]");
-  await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/packages$/);
-  await expect(page.frameLocator("iframe[data-booking-popup-frame]").locator("#stub")).toHaveText("booking stub");
-  await dialog.locator("[data-booking-close]").click();
-  await expect(dialog).toBeHidden();
 
   // Enterprise is no card: a Talk to us line under the cards. Its Book a call is
   // live: with no enterprise URL configured it opens the same booking popup

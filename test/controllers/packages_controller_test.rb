@@ -167,14 +167,27 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='featured-badge']", 1
   end
 
-  test "Vibe builds; Builder, Pro and Team open the booking popup on /schedule" do
+  test "Vibe builds; Builder, Pro and Team open a chat with Alex about their tier" do
     get packages_path
 
     assert_select "#{cta('vibe')}[href='/build'][data-cta-target='build']", text: "Build your app"
-    %w[builder pro team].each do |key|
-      assert_select "#{cta(key)}[href='/schedule'][data-booking-popup='true'][data-studio-booking='true'][data-cta-target='schedule']"
+    { "builder" => "Become a Builder", "pro" => "Talk to us about Pro", "team" => "Talk to us about Team" }.each do |key, label|
+      name = WorkspacePackage.find(key).name
+      link = css_select("#{cta(key)}[href='/chat'][data-cta-target='talk'][data-studio-talk-to-agent='true']").first
+      assert link, "#{key} opens the talk-to-agent modal, /chat without it"
+      assert_equal label, link.text.strip
+      assert_equal "alex", link["data-talk-soul"]
+      assert_equal name, link["data-talk-topic"]
+      assert_equal "I'm looking at the #{name} plan. Can you tell me about it?", link["data-talk-opener"]
+      assert_equal "dialog", link["aria-haspopup"]
     end
-    assert_select "dialog[data-booking-dialog][data-studio-booking]", 1, "the popup the schedule CTAs open must be on the page"
+    assert_select "dialog[data-booking-dialog][data-studio-booking]", 1, "Enterprise's Book a call still opens the booking popup"
+  end
+
+  test "[component] the talk-to-agent modal renders once when the engine ships it, and never otherwise" do
+    get packages_path
+    shipped = ActionController::Base.new.lookup_context.exists?("talk_modal", [ "studio/agent_chat" ], true)
+    assert_select "[data-test='talk-to-agent'][data-talk-to-agent-soul='alex']", shipped ? 1 : 0
   end
 
   test "Enterprise Book a call falls back to the studio's booking popup while no URL is configured" do
@@ -192,7 +205,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{TALK_CTA}[href='#{BOOKING}'][target='_blank'][rel='noopener'][data-cta-target='enterprise-booking']",
                   text: "Book a call"
     assert_select "#{TALK_CTA}[data-booking-popup]", 0
-    assert_select "#{cta('team')}[href='/schedule']", 1, "only Enterprise takes the enterprise URL"
+    assert_select "#{cta('team')}[href='/chat']", 1, "only Enterprise takes the enterprise URL"
   end
 
   test "the billing toggle tells assistive tech which option is selected" do

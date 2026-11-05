@@ -22,15 +22,26 @@ class PackagesHelperTest < ActionView::TestCase
     assert_nil link["data-booking-popup"]
   end
 
-  test "Builder, Pro and Team open the booking popup, with /schedule as the no-script fallback" do
+  # CONTROL: drop the `talk` branch from package_cta_link and every assert here
+  # fails: the three fall to the booking popup on /schedule.
+  test "Builder, Pro and Team talk to Alex about their tier, with /chat as the link's own target" do
     %i[builder pro team].each do |key|
+      package = WorkspacePackage.find(key)
       link = link_for(key)
-      assert_equal "/schedule", link["href"], key
-      assert_equal "true", link["data-booking-popup"], key
-      assert_equal "true", link["data-studio-booking"], "#{key}: the engine's popup script answers only to its own marker"
-      assert_equal "schedule", link["data-cta-target"], key
-      assert_nil link["target"], "#{key}: the popup keeps the visitor on the page"
+      assert_equal "/chat", link["href"], key
+      assert_equal "talk", link["data-cta-target"], key
+      assert_equal "true", link["data-studio-talk-to-agent"], "#{key}: the engine's talk-to-agent script answers only to its own marker"
+      assert_equal "alex", link["data-talk-soul"], key
+      assert_equal package.name, link["data-talk-topic"], key
+      assert_includes link["data-talk-opener"], package.name, key
+      assert_nil link["data-booking-popup"], key
     end
+    assert_equal "Become a Builder", link_for(:builder).text
+  end
+
+  test "package_talk_modal? follows the engine's partial and the app's souls" do
+    assert_equal lookup_context.exists?("talk_modal", [ "studio/agent_chat" ], true), package_talk_modal?
+    Studio.stub(:agent_chat_soul_list, []) { refute package_talk_modal?, "an app that chats with no Alex renders no modal" }
   end
 
   test "Enterprise falls back to the booking popup while the URL is blank — never a dead link" do
