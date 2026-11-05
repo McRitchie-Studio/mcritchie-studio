@@ -26,19 +26,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
                    "Build" => "hammer", "Chat" => "message-circle", "Portfolio" => "globe", "Packages" => "package",
                    "Integrations" => "plug" }, rows.to_h { |link| link.values_at(:label, :icon) }.except(*apps.map { |link| link[:label] }))
     assert rows.all? { |link| link[:emoji].present? }, "the emoji stays the fallback"
-    assert links.pluck(:href).include?("/admin"), "control: this reads an admin's rows"
+    assert links.any? { |link| link[:label] == "Books" }, "control: this reads an admin's rows"
     skip "the locked engine has no Studio::Icons yet" unless defined?(Studio::Icons)
 
     assert_empty rows.pluck(:icon).reject { |name| Studio::Icons.known?(name) }, "the engine vendors every name"
-  end
-
-  test "the admin dashboard row stays off the pages beneath /admin" do
-    self.admin_enabled = true
-
-    links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
-
-    assert links.find { |link| link[:label] == "Dashboard" }[:exact]
-    refute links.find { |link| link[:label] == "Books" }[:exact]
   end
 
   test "the sign-in row names a line icon too" do

@@ -125,7 +125,7 @@ module LinkTreeHelper
   def registry_link_sections(group)
     Navigation.sidebar(group).filter_map do |section|
       links = section.pages.select { |page| page.public? || admin? }.map do |page|
-        { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, desc: page.desc, icon: page.icon, exact: page.exact }
+        { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, desc: page.desc, icon: page.icon }
       end
       { title: section.title, links: links, **(section.header ? { header: true } : {}) } if links.any?
     end

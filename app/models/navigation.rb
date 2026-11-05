@@ -21,7 +21,7 @@ class Navigation
   STYLES = %w[links buttons chips].freeze
 
   # `key` is the page's route name, so `tasks` links tasks_path.
-  Page = Struct.new(:key, :controller, :action, :audience, :args, :label, :emoji, :hover_emoji, :desc, :icon, :exact,
+  Page = Struct.new(:key, :controller, :action, :audience, :args, :label, :emoji, :hover_emoji, :desc, :icon,
                     keyword_init: true) do
     def public? = audience == "public"
     def action_id = "#{controller}##{action}"
@@ -128,8 +128,7 @@ class Navigation
 
       [key.to_s, Page.new(key: key.to_s, controller: controller, action: action, audience: attrs["audience"],
                           args: Array(attrs["args"]).freeze, label: attrs["label"].to_s, emoji: attrs["emoji"],
-                          hover_emoji: attrs["hover_emoji"], desc: attrs["desc"], icon: attrs["icon"],
-                          exact: attrs["exact"] == true).freeze]
+                          hover_emoji: attrs["hover_emoji"], desc: attrs["desc"], icon: attrs["icon"]).freeze]
     end
     twice = pages.values.group_by(&:action_id).select { |_, list| list.size > 1 }
     raise Invalid, "declared twice: #{twice.keys.join(', ')}" if twice.any?
