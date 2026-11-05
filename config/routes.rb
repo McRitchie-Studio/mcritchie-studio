@@ -329,8 +329,7 @@ Rails.application.routes.draw do
   end
 
   # Public link hub — general (non-admin) destinations. The admin counterpart
-  # lives at /admin/links (admin#links, require_admin). Both are surfaced from
-  # the nav dropdown (Admin Links shows only to admins).
+  # is the Basement, /admin/basement (admin/links#basement, require_admin).
   get "links", to: "links#index", as: :links
 
   # Session entry launcher — terminal-styled chooser for the avenue you enter a
@@ -445,9 +444,8 @@ Rails.application.routes.draw do
     get   "model_pricing/*model", to: "model_pricing#show", as: :model_pricing_model, format: false
     patch "model_pricing/*model", to: "model_pricing#update", format: false
 
-    # Admin link hub — gathers the admin/operator destinations. It lists no
-    # on-chain destination: the signing console was deleted 2026-09-04
-    # (/tasks/retire-signing-console). admin#links, require_admin. /admin/links.
+    # The old admin link hub: an admin's bookmark lands on the Basement, and a
+    # non-admin is refused by require_admin (Admin::LinksController#index).
     get "links", to: "links#index", as: :links
     # The links kept off the sidebar (config/navigation.yml, group: basement).
     get "basement", to: "links#basement", as: :basement

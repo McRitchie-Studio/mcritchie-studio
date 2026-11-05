@@ -47,23 +47,30 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_match 'x-transition:leave-end="translate-x-full"', response.body
   end
 
-  test "anonymous visitor cannot reach /admin/links" do
+  # The redirect sits behind require_admin in the controller, not in routes.rb, where
+  # it would answer before the wall and name the Basement to anyone who asked.
+  test "anonymous visitor is sent to sign-in by /admin/links, and never told of the Basement" do
     get admin_links_path
-    assert_response :redirect # require_authentication bounces anon
+    assert_redirected_to login_path
+    assert_no_match(/basement/i, response.location)
+    assert_no_match(/basement/i, response.body)
   end
 
-  test "logged-in non-admin is redirected from /admin/links" do
+  test "logged-in non-admin gets the same refusal from /admin/links, and never told of the Basement" do
     log_in_as users(:viewer)
     get admin_links_path
     assert_redirected_to root_path # require_admin -> root with "Not authorized"
+    assert_no_match(/basement/i, response.body)
   end
 
-  test "admin sees the admin hub" do
+  test "an admin's /admin/links redirects to the Basement, the single page of links" do
     log_in_as users(:alex) # role: admin
     get admin_links_path
+    assert_redirected_to admin_basement_path
+
+    follow_redirect!
     assert_response :success
-    assert_select "h1", "Admin Links"
-    assert_select "a[href=?]", admin_dashboard_path
+    assert_select "h1", "Basement"
     # The hub's only On-chain link was the Signing Console, and the section went
     # with it (/tasks/retire-signing-console). Turf Monster is the web3 hub, so
     # this one must not grow back.
@@ -142,15 +149,29 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_equal "schema#index", Navigation.page(:admin_schema).action_id
   end
 
-  test "/admin/links lists the sidebar's Admin section and the Basement's pages" do
+  # What /admin/links listed stays one click away: the Admin section in the sidebar, the rest here.
+  test "the sidebar's Admin section and the Basement together carry what /admin/links listed" do
     log_in_as users(:alex)
-    get admin_links_path
+    get admin_basement_path
 
-    [ admin_basement_path, admin_schema_path, logos_path, admin_emails_path, admin_link_preview_path, asset_browser_path, books_path,
-      build_requests_path, stack_path, credentials_path, broadcasts_path, contacts_path, broadcast_analytics_path,
-      activities_agents_path, error_logs_path, admin_tiktok_path, admin_google_path, admin_fathom_path, admin_agent_messages_path,
-      admin_report_destinations_path, admin_csp_reports_path ].each do |href|
+    [ admin_dashboard_path, deployments_path, admin_style_path, logos_path, build_requests_path, books_path,
+      activities_agents_path, admin_basement_path ].each do |href|
+      assert_select "#studio-link-sidebar a[href=?]", href
+    end
+    [ admin_schema_path, admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
+      broadcasts_path, contacts_path, broadcast_analytics_path, error_logs_path, admin_tiktok_path, admin_google_path,
+      admin_fathom_path, admin_agent_messages_path, admin_report_destinations_path, admin_csp_reports_path ].each do |href|
       assert_select "[data-link-hub] a[href=?]", href
+    end
+  end
+
+  # The Basement carries what the sidebar does not: the Admin section's rows stay off it.
+  test "the Basement does not repeat the sidebar's Admin section" do
+    log_in_as users(:alex)
+    get admin_basement_path
+
+    [ admin_dashboard_path, deployments_path, admin_style_path, logos_path, build_requests_path, books_path, activities_agents_path ].each do |href|
+      assert_select "[data-link-hub] a[href=?]", href, count: 0
     end
   end
 
@@ -182,7 +203,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "#studio-link-sidebar a[href=?]", deployments_path
     (dropped + moved).each { |href| assert_select "#studio-link-sidebar a[href=?]", href, count: 0 }
 
-    get admin_links_path
+    get admin_basement_path
     dropped.each { |href| assert_select "[data-link-hub] a[href=?]", href, count: 0 }
     moved.each { |href| assert_select "[data-link-hub] a[href=?]", href }
 
