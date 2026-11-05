@@ -111,7 +111,8 @@ This removes transparency and metadata. `-auto-orient` applies the rotation tag 
 because `-strip` deletes it and a phone photo then shows sideways. A transparent area
 can still hold the original pixels, and a PNG comment or EXIF block can hold text or a
 location. Check
-with `magick "<output.jpg>" -format '%[channels] [%c]\n' info:`, then look at the image.
+with `magick "<output.jpg>" -format '%[channels] [%c]\n' info:`. A pass prints no alpha
+channel (`srgb  3.0` or `gray  2.0`) and empty brackets. Then look at the image.
 
 ## Other documents
 
