@@ -27,6 +27,7 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
       assert_select "#{carousel} .carousel-slide[aria-label=?] [data-test='build-example']", example.name, count: 1
     end
     assert_select "#{carousel} button[aria-label='Next slides'][aria-controls='websites-apps']", count: 1
+    assert_select "#{carousel} button.carousel-dot", count: BuildGallery.examples.size
     assert_select "[data-test='websites-grid']", count: 0
   end
 
