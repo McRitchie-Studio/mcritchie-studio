@@ -39,7 +39,8 @@ and in the session log. Keep the source: never overwrite it, and write to a new
 
 ## 3. Render every page at 300 DPI
 
-Work in your scratchpad, because the pages are sensitive.
+Work in a new folder in your scratchpad, one folder per source file. The pages are
+sensitive, sibling agents share the scratchpad, and step 4's glob takes every `page-*`.
 
 **Fonts all embedded:** use Poppler. It draws annotations.
 
