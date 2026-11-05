@@ -64,12 +64,14 @@ module AgentChat
       raise Refused.new("Keep it under #{max} characters.", code: "TOO_LONG") if text.length > max
       raise NotAvailable, "#{soul} has no web chat for #{@app}" unless AgentChat.available?(@app, soul, routes: @routes)
 
-      thread_key = @visitor.thread_key!
-      fold!(thread_key)
-      cap = Caps.new(policy: @policy, now: @now).check(thread_key: thread_key, signed_in: @visitor.signed_in?, ip_hash: @ip_hash)
+      # Read without making a person: a capped post stores nothing, a new email's
+      # person included. A fold has rows to move, so it makes the person first.
+      fold!(@visitor.thread_key!) if anon_rows?
+      cap = Caps.new(policy: @policy, now: @now).check(soul: soul, thread_key: @visitor.thread_key,
+                                                       signed_in: @visitor.signed_in?, ip_hash: @ip_hash)
       raise Capped, cap if cap
 
-      store(text, thread_key, @visitor.person!, voice, viewer)
+      store(text, @visitor.thread_key!, @visitor.person!, voice, viewer)
     end
 
     # THE FOLD. A visitor who chatted signed out and then signs in carries their
@@ -99,6 +101,11 @@ module AgentChat
     end
 
     private
+
+    def anon_rows?
+      anon_key = @visitor.anon_thread_key
+      anon_key.present? && AgentMessage.where(channel: "web", thread_key: anon_key).exists?
+    end
 
     def store(text, thread_key, person, voice = nil, viewer = nil)
       attrs = { channel: "web", external_id: "chat:#{SecureRandom.uuid}", guild_id: nil, channel_ref: AgentChat::CHANNEL_REF,

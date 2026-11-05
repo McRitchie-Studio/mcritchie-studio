@@ -173,6 +173,142 @@ class AgentChatIngestTest < ActiveSupport::TestCase
     end
   end
 
+  # --- Held rows (a soul that does not answer the public): stored, so counted ---
+
+  test "held caps: a signed-out thread's held rows reach turns_per_request and the next post stores nothing" do
+    policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 2 }
+    2.times { |i| assert_equal "held", ingest("q#{i}", soul: "avi", anon_token: ANON, policy: policy).status }
+
+    error = assert_no_difference([ -> { AgentMessage.count }, -> { AgentPerson.count } ]) do
+      assert_raises(AgentChat::Ingest::Capped) { ingest("one more", soul: "avi", anon_token: ANON, policy: policy) }
+    end
+    assert_equal :thread, error.code
+  end
+
+  test "held caps: fresh anon tokens from one IP reach per_ip_per_hour, and another IP still posts" do
+    policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 2 }
+    2.times { |i| ingest("q#{i}", soul: "avi", anon_token: "flood-anon-token-000#{i}", ip: "203.0.113.9", policy: policy) }
+
+    error = assert_no_difference(-> { AgentMessage.count }) do
+      assert_raises(AgentChat::Ingest::Capped) { ingest("q", soul: "avi", anon_token: "flood-anon-token-0009", ip: "203.0.113.9", policy: policy) }
+    end
+    assert_equal :ip, error.code
+    assert_equal "held", ingest("q", soul: "avi", anon_token: "flood-anon-token-0009", ip: "198.51.100.1", policy: policy).status
+  end
+
+  test "held caps: fresh anon tokens with no IP at all reach the daily total" do
+    policy = BuildIntake.policy.dup.tap { |p| p.daily_total = 2 }
+    2.times { |i| ingest("q#{i}", soul: "avi", anon_token: "flood-anon-token-000#{i}", ip: nil, policy: policy) }
+
+    error = assert_no_difference(-> { AgentMessage.count }) do
+      assert_raises(AgentChat::Ingest::Capped) { ingest("q", soul: "avi", anon_token: "flood-anon-token-0009", ip: nil, policy: policy) }
+    end
+    assert_equal :daily, error.code
+  end
+
+  test "held caps: made-up emails buy nothing, and a capped one makes no person" do
+    policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 2 }
+    2.times { |i| assert_equal "held", ingest("q#{i}", soul: "avi", email: "fake#{i}@example.com", ip: "203.0.113.9", policy: policy).status }
+
+    error = assert_no_difference([ -> { AgentMessage.count }, -> { AgentPerson.count }, -> { AgentPersonIdentity.count } ]) do
+      assert_raises(AgentChat::Ingest::Capped) { ingest("q", soul: "avi", email: "fake9@example.com", ip: "203.0.113.9", policy: policy) }
+    end
+    assert_equal :ip, error.code
+
+    policy = BuildIntake.policy.dup.tap { |p| p.daily_total = 2 }
+    error = assert_no_difference([ -> { AgentMessage.count }, -> { AgentPerson.count } ]) do
+      assert_raises(AgentChat::Ingest::Capped) { ingest("q", soul: "avi", email: "fake10@example.com", ip: nil, policy: policy) }
+    end
+    assert_equal :daily, error.code
+  end
+
+  test "a capped first post that carries an empty anon thread makes no person either" do
+    policy = BuildIntake.policy.dup.tap { |p| p.daily_total = 1 }
+    ingest("first", anon_token: ANON, ip: nil, policy: policy)
+
+    assert_no_difference(-> { AgentPerson.count }) do
+      assert_raises(AgentChat::Ingest::Capped) do
+        ingest("q", email: "newcomer@example.com", anon_token: "unused-anon-token-0004", ip: nil, policy: policy)
+      end
+    end
+  end
+
+  test "a made-up email's fold still runs before the cap: the visitor already had a row" do
+    policy = BuildIntake.policy.dup.tap { |p| p.daily_total = 1 }
+    anon_row = ingest("before sign-in", anon_token: ANON, ip: nil, policy: policy)
+
+    assert_raises(AgentChat::Ingest::Capped) { ingest("q", email: "newcomer@example.com", anon_token: ANON, ip: nil, policy: policy) }
+
+    assert_equal "chat:alex:person:#{anon_row.reload.person_id}", anon_row.thread_key
+  end
+
+  test "held rows spend no answered budget: /build and the intake soul's chat still answer" do
+    policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 2; p.daily_total = 2 }
+    2.times { |i| ingest("q#{i}", soul: "avi", anon_token: "flood-anon-token-000#{i}", ip: "203.0.113.9", policy: policy) }
+    assert_raises(AgentChat::Ingest::Capped) { ingest("q", soul: "avi", anon_token: "flood-anon-token-0009", ip: "203.0.113.9", policy: policy) }
+
+    assert_equal "received", ingest("alex stays open", anon_token: ANON, ip: "203.0.113.9", policy: policy).status
+
+    request = AppRequest.create!(prompt: "A league site")
+    built = BuildIntake::Ingest.new(request: request, ip: "203.0.113.9", policy: policy).call("on /build")
+    assert_equal "received", built.status, "a held chat flood leaves /build's answered budget alone"
+    assert_nil built.action_summary
+  end
+
+  test "the intake soul's answered budget still caps its own chat, held rows or none" do
+    policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 2 }
+    request = AppRequest.create!(prompt: "A league site")
+    2.times { |i| BuildIntake::Ingest.new(request: request, ip: "203.0.113.9", policy: policy).call("on /build #{i}") }
+
+    assert_equal :ip, assert_raises(AgentChat::Ingest::Capped) { ingest("hi", anon_token: ANON, ip: "203.0.113.9", policy: policy) }.code
+    assert_equal :ip, assert_raises(AgentChat::Ingest::Capped) { ingest("hi", soul: "avi", anon_token: ANON, ip: "203.0.113.9", policy: policy) }.code,
+                 "the shared answered budget stops a held post too"
+  end
+
+  test "a released held row keeps its place in the count" do
+    policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 1 }
+    row = ingest("q", soul: "avi", anon_token: ANON, policy: policy)
+    row.update!(status: "received")
+
+    assert_equal :thread, assert_raises(AgentChat::Ingest::Capped) { ingest("q2", soul: "avi", anon_token: ANON, policy: policy) }.code
+  end
+
+  # Each clock is one that has bitten a window test: the two DST days and a month start.
+  [ [ "spring forward", [ 2026, 3, 8, 12, 0 ] ], [ "fall back", [ 2026, 11, 1, 12, 0 ] ],
+    [ "a month start", [ 2026, 12, 1, 0, 30 ] ] ].each do |name, clock|
+    test "held caps: the daily count starts at Denver midnight on #{name}" do
+      travel_to Time.find_zone("America/Denver").local(*clock) do
+        policy = BuildIntake.policy.dup.tap { |p| p.daily_total = 1 }
+        row = ingest("first", soul: "avi", anon_token: ANON, ip: nil, policy: policy)
+        midnight = Time.current.in_time_zone("America/Denver").beginning_of_day
+
+        row.update_columns(created_at: midnight - 1.minute)
+        assert ingest("yesterday's row does not count", soul: "avi", anon_token: "fresh-anon-token-0003", ip: nil, policy: policy)
+        AgentMessage.where.not(id: row.id).delete_all
+
+        row.update_columns(created_at: midnight)
+        assert_equal :daily, assert_raises(AgentChat::Ingest::Capped) {
+          ingest("midnight's row counts", soul: "avi", anon_token: "fresh-anon-token-0004", ip: nil, policy: policy)
+        }.code
+      end
+    end
+
+    test "held caps: the per-IP count is the last hour on #{name}" do
+      travel_to Time.find_zone("America/Denver").local(*clock) do
+        policy = BuildIntake.policy.dup.tap { |p| p.per_ip_per_hour = 1 }
+        row = ingest("first", soul: "avi", anon_token: ANON, ip: "203.0.113.9", policy: policy)
+
+        row.update_columns(created_at: 59.minutes.ago)
+        assert_equal :ip, assert_raises(AgentChat::Ingest::Capped) {
+          ingest("inside the hour", soul: "avi", anon_token: "fresh-anon-token-0003", ip: "203.0.113.9", policy: policy)
+        }.code
+
+        row.update_columns(created_at: 61.minutes.ago)
+        assert ingest("past the hour", soul: "avi", anon_token: "fresh-anon-token-0003", ip: "203.0.113.9", policy: policy)
+      end
+    end
+  end
+
   test "the answer is delivered by the mark alone and the typing phase kept on the row: the app polls" do
     message = ingest("hello", anon_token: ANON)
     message.update!(status: "claimed", claimed_by: "w1", claimed_at: Time.current)

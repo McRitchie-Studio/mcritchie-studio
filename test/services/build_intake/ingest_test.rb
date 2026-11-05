@@ -46,6 +46,23 @@ class BuildIntakeIngestTest < ActiveSupport::TestCase
     assert_equal true, message.envelope["signed_in"]
   end
 
+  # No cap counts a bot-shielded row: /build's caps stay answered-only, so a flagged
+  # post from a script stores a request and a held row past every number here. The
+  # only bound is BuildController's `rate_limit` on create, per IP per minute. This
+  # pins the gap task chat-caps-count-held-messages reported and left open.
+  test "the bot shield's held rows pass the caps: only the controller's rate limit bounds them" do
+    policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 1; p.per_ip_per_hour = 1; p.daily_total = 1 }
+
+    assert_difference -> { AgentMessage.where(status: "held").count }, 3 do
+      3.times do |i|
+        request = AppRequest.create!(prompt: "bot #{i}")
+        BuildIntake::Ingest.new(request: request, ip: "203.0.113.9", policy: policy).call("bot #{i}", bot_reason: "no_browser_proof")
+      end
+    end
+    assert_nil BuildIntake::Caps.new(policy: policy).public_cap(BuildIntake::Ingest.ip_hash("203.0.113.9")),
+               "held rows spend nothing of /build's answered budget"
+  end
+
   test "the bot shield holds a flagged message, so it is never answered" do
     message = ingest("price?", bot_reason: "no_browser_proof")
     assert_equal "held", message.status

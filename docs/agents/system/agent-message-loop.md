@@ -2025,7 +2025,7 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
 | Which app reaches which soul | `config/agent_routes.yml` `web: apps: <slug>: [souls]` (`alex-build: [alex]`, `turf-monster: [turf_monster]`, `mcritchie-industries: [alex]`), and the soul must be in `web: souls:`; else 404 |
 | The person and the thread | `AgentChat::Visitor`: `person.email` that is a hub User is their web person, thread `chat:<soul>:<user id>`; an email with no User is the person its `email` identity names, else a new public one (`AgentPerson.resolve!`), thread `chat:<soul>:person:<id>`; `person.anon_token` is a public Visitor (web identity `chat-anon:<HMAC digest>`), thread `chat:<soul>:anon:<digest>` (the token itself is never stored) |
 | Inbound | `AgentChat::Ingest`: a `web` row, `channel_ref` `chat`, the app in `envelope.app` (never in the key), the visitor's IP hashed as /build's |
-| Turns | `AgentChat::Turns`: a row is a user turn and, once answered, an agent turn, both carrying the row's id (`after` is a message id; key a turn by id and role). Status `pending` (received), `typing` (claimed), `answered`, `failed` (held, dead, or no words) |
+| Turns | `AgentChat::Turns`: a row is a user turn and, once answered, an agent turn, both carrying the row's id (`after` is a message id; key a turn by id and role). Status `pending` (received), `typing` (claimed), `answered`, `held` (stored; no soul answers unless an operator releases it), `failed` (dead, unrouted, or no words). Only `pending` and `typing` are unsettled, so a client that knows no `held` stops asking about the turn and shows the visitor's words with no failed line (studio-engine `studio/agent_chat`, which shows that line only on `failed`). A released row reaches such a page on its next load |
 
 - **Alex's persona.** Every answer the soul `alex` gives, on every channel (these `chat:alex:`
   threads, /build, Discord, the hub web chat, email), carries PERSONA
@@ -2058,8 +2058,13 @@ SERVER calls the hub; its browser talks only to its own app, which polls.
   out, `turns_per_request` per anon thread; signed in, `WebIngest::RATE_LIMIT` per
   thread per hour; and on EVERY post, the per-IP hourly and daily totals shared with
   /build (`BuildIntake::Caps#public_cap`). An email with no hub User counts toward the
-  daily total as a signed-out visitor does, so made-up emails buy nothing. At a cap the
-  hub answers 429 with the line to show and stores nothing.
+  daily total as a signed-out visitor does, so made-up emails buy nothing. **Held rows
+  count too**, because they are stored: a soul's chat rows of every status count toward
+  the thread cap, and toward the same per-IP and daily numbers as a second count kept per
+  soul. They spend nothing of the budget shared with /build, so a held flood on Turf shuts
+  neither /build nor Alex's chat. At a cap the hub answers 429 with the line to show and
+  stores nothing, not even a new email's person. /build's own bot-shield `held` rows are
+  outside every cap count; `BuildController`'s `rate_limit` on create is their only bound.
 - **The request log** never holds the visitor: `ip` (this controller only), `person.email`
   and `person.anon_token` are filtered (`config/initializers/filter_parameter_logging.rb`).
 - **Delivery.** `WebChat.polled?` covers these threads as /build's: the answer is marked

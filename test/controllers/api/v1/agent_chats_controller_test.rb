@@ -265,6 +265,73 @@ module Api
                      "scoped to the agent chat API"
       end
 
+      # --- A signed-out Turf visitor: only Alex answers the public, so every row is held ---
+
+      test "a held message's turn says held, on the POST and the poll, and nothing is pending" do
+        _row, turf = AppCredential.issue!(app_slug: "turf-monster", purpose: "agent-chat")
+
+        post_message(soul: "turf_monster", secret: turf)
+        assert_response :created
+        row = AgentMessage.order(:id).last
+        assert_equal "held", row.status
+        assert_equal "held", response.parsed_body.dig("turn", "status")
+
+        get api_v1_agent_chat_turns_path, params: { soul: "turf_monster", person: { anon_token: ANON } }, headers: headers(turf)
+        assert_response :ok
+        assert_equal [ [ row.id, "user", "held" ] ], response.parsed_body["turns"].map { |t| t.values_at("id", "role", "status") }
+        assert_equal false, response.parsed_body["pending"]
+      end
+
+      test "a signed-out Turf visitor reaches 429 at the configured thread cap, with no new row" do
+        _row, turf = AppCredential.issue!(app_slug: "turf-monster", purpose: "agent-chat")
+        limit = BuildIntake.policy.turns_per_request
+
+        limit.times do |i|
+          post_message(text: "q#{i}", soul: "turf_monster", secret: turf)
+          assert_response :created
+        end
+
+        assert_no_difference [ -> { AgentMessage.count }, -> { AgentPerson.count } ] do
+          post_message(text: "one more", soul: "turf_monster", secret: turf)
+        end
+        assert_response :too_many_requests
+        assert_equal "CAPPED", response.parsed_body["error_code"]
+      end
+
+      test "a Turf flood of fresh tokens reaches 429 at the configured per-IP cap, with no new row or person" do
+        _row, turf = AppCredential.issue!(app_slug: "turf-monster", purpose: "agent-chat")
+        limit = BuildIntake.policy.per_ip_per_hour
+
+        limit.times do |i|
+          post_message(text: "q#{i}", soul: "turf_monster", person: { anon_token: "flood-anon-token-#{i.to_s.rjust(4, '0')}" }, secret: turf)
+          assert_response :created
+        end
+
+        assert_no_difference [ -> { AgentMessage.count }, -> { AgentPerson.count }, -> { AgentPersonIdentity.count } ] do
+          post_message(soul: "turf_monster", person: { anon_token: "flood-anon-token-last" }, secret: turf)
+          post_message(soul: "turf_monster", person: { email: "made-up@example.com" }, secret: turf)
+        end
+        assert_response :too_many_requests
+
+        post_message(person: { anon_token: "alex-anon-token-0001" })
+        assert_response :created, "Alex's chat keeps its own budget through a Turf flood"
+      end
+
+      test "a Turf flood with no IP reaches 429 at the daily total" do
+        _row, turf = AppCredential.issue!(app_slug: "turf-monster", purpose: "agent-chat")
+        BuildIntake.policy = BuildIntake.policy.dup.tap { |p| p.daily_total = 2 }
+
+        2.times do |i|
+          post_message(soul: "turf_monster", person: { anon_token: "flood-anon-token-#{i.to_s.rjust(4, '0')}" }, ip: nil, secret: turf)
+          assert_response :created
+        end
+
+        assert_no_difference -> { AgentMessage.count } do
+          post_message(soul: "turf_monster", person: { anon_token: "flood-anon-token-last" }, ip: nil, secret: turf)
+        end
+        assert_response :too_many_requests
+      end
+
       test "429 at a cap, with the line the app shows, and nothing stored" do
         BuildIntake.policy = BuildIntake.policy.dup.tap { |p| p.turns_per_request = 1 }
         post_message
