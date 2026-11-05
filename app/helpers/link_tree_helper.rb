@@ -2,8 +2,10 @@
 # (config/navigation.yml). An entry shows when its page is public or the viewer
 # is an admin, so a section holding only admin pages never reaches a visitor.
 module LinkTreeHelper
-  # The general sections, then the satellite apps.
-  def public_link_sections
+  # The general sections, then the satellite apps: /links for everyone, and the
+  # Basement for an admin, with each app's description. They left the sidebar (Alex
+  # McRitchie, 2026-11-04: "Lets move these all to the basement").
+  def public_link_sections(desc: false)
     sections = registry_link_sections(:general)
 
     if defined?(Satellite) && Satellite.active.any?
@@ -16,6 +18,7 @@ module LinkTreeHelper
             emoji: satellite.emoji.presence || "🛰️",
             hover_emoji: satellite_hover_emoji(satellite.slug),
             target: "_blank",
+            **(desc ? { desc: satellite.description } : {}),
           }
         end,
       }
@@ -33,22 +36,26 @@ module LinkTreeHelper
     registry_link_sections(:admin)
   end
 
-  # The links kept off the sidebar: /admin/basement.
+  # The links kept off the sidebar: /admin/basement, for an admin only, though the
+  # NFL pages and the apps stay public at /links. The view adds the engine's Geo row.
   def basement_link_sections
-    registry_link_sections(:basement)
+    return [] unless admin?
+
+    registry_link_sections(:basement) + public_link_sections(desc: true)
   end
 
   def sidebar_link_sections
     return visitor_sidebar_sections unless logged_in?
 
-    sections = [ studio_link_section ] + public_link_sections
+    sections = [ studio_link_section ]
     sections = admin_link_sections.map { |section| section.merge(admin: true) } + sections if admin?
     owner_link_sections + sections
   end
 
   # A signed-out visitor's way in, first in the sidebar. The navbar keeps only
   # the Build App button, so Sign In lives here (Alex McRitchie, 2026-10-20;
-  # /tasks/drop-hero-meet-alex). Nothing once signed in.
+  # /tasks/drop-hero-meet-alex). Nothing once signed in. It carries no header,
+  # unlike the sections below it.
   def visitor_link_sections
     return [] if logged_in?
 
@@ -73,7 +80,7 @@ module LinkTreeHelper
     links = AppOwnership.sidebar_links(current_user).map do |link|
       { label: link.label, href: link.href, emoji: owner_row_icon(link), hover_emoji: "🚀", desc: nil }
     end
-    links.any? ? [ { title: "Your apps", links: links } ] : []
+    links.any? ? [ { title: "My Apps", header: true, links: links } ] : []
   end
 
   private
@@ -110,7 +117,7 @@ module LinkTreeHelper
     chat = { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
              emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") }
 
-    { title: "Studio", links: [ row.call(:build), chat, row.call(:websites), row.call(:packages), row.call(:integrations) ] }
+    { title: "Studio", header: true, links: [ row.call(:build), chat, row.call(:websites), row.call(:packages), row.call(:integrations) ] }
   end
 
   def registry_link_sections(group)
@@ -118,7 +125,7 @@ module LinkTreeHelper
       links = section.pages.select { |page| page.public? || admin? }.map do |page|
         { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, desc: page.desc }
       end
-      { title: section.title, links: links } if links.any?
+      { title: section.title, links: links, **(section.header ? { header: true } : {}) } if links.any?
     end
   end
 

@@ -35,6 +35,8 @@ const MOVED = [
   { href: "/body-archetypes", label: "Body archetypes", desc: "Body builds" },
   { href: "/videos", label: "Videos", desc: "digested video" },
   { href: "/alt_videos", label: "Alt videos", desc: "recast version" },
+  { href: "/nfl", label: "NFL Hub", desc: "Rankings" },
+  { href: "/games/2026", label: "2026 Season", desc: "Schedule" },
 ];
 const PHONE = { name: "phone", width: 390, height: 844 };
 const DESKTOP = { name: "desktop", width: 1440, height: 900 };
@@ -118,11 +120,16 @@ test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, 
     await expect(sidebar.locator(`a[href='${href}']`)).toContainText(word);
   }
   await expect(sidebar.locator("a", { hasText: /App Builder/ })).toHaveCount(0);
+  // Moved with NFL Hub and 2026 Season, which MOVED holds (Alex McRitchie, 2026-11-04).
+  await expect(sidebar.locator("a", { hasText: /Turf Monster|McRitchie Industries/ })).toHaveCount(0);
 
   await sidebar.locator("a[href='/admin/basement']").click();
   await expect(page).toHaveURL("/admin/basement");
   await expect(page.locator("[data-link-hub] a[href='/assets']")).toBeVisible();
   await expect(page.locator("[data-link-hub] a[href='/logos']")).toHaveCount(0);
+  await expect(page.locator("[data-link-hub] a[target='_blank']", { hasText: "Turf Monster" })).toBeVisible();
+  await expect(page.locator("[data-link-hub] a[target='_blank']", { hasText: "McRitchie Industries" })).toBeVisible();
+  await expect(page.locator("[data-test='basement-geo']")).toContainText("Geo");
 });
 
 test("a moved page still opens from its old address, one click from the Basement", async ({ page }) => {

@@ -7,10 +7,13 @@
 class AppMembership < ApplicationRecord
   ROLES = %w[owner].freeze
 
-  # The known owners, app slug => email (Alex McRitchie, 2026-10-16). The table's own
-  # migration seeds the same three; this is the re-seed and post-deploy step.
+  # The known owners, app slug => email (Alex McRitchie, 2026-10-16; alex-build and
+  # voicebox, 2026-11-04). The table's own migration seeds the first three; this is the
+  # re-seed and post-deploy step (bin/rails apps:seed apps:seed_owners).
   OWNERS = {
     "mcritchie-studio" => "alex@mcritchie.studio",
+    "alex-build" => "alex@mcritchie.studio",
+    "voicebox" => "alex@mcritchie.studio",
     "turf-monster" => "alex@turfmonster.media",
     "cyvasse" => "amcritchie@gmail.com"
   }.freeze
@@ -41,5 +44,14 @@ class AppMembership < ApplicationRecord
         end
       [ app_slug, outcome ]
     end
+  end
+
+  # The seed_owners! outcomes a release must not pass over. After apps:seed every
+  # catalog app has a row, so "no app" is a real failure. "no user" is one only for the
+  # hub's own owner: the QA database has no alex@turfmonster.media, and that must not
+  # stop a QA deploy.
+  def self.seed_failures(outcomes, owners = OWNERS)
+    hub_owner = owners[App::DEFAULT_SLUG]
+    outcomes.select { |slug, outcome| outcome == "no app" || (outcome == "no user" && owners[slug] == hub_owner) }
   end
 end

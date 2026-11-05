@@ -8,7 +8,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     links = sidebar_link_sections.flat_map { |section| section.fetch(:links) }
 
-    assert links.any? { |link| link[:label] == "Turf Monster" && link[:hover_emoji].present? }
+    assert links.any? { |link| link[:label] == "Build" && link[:hover_emoji].present? }
     assert links.all? { |link| link[:hover_emoji].present? }, "expected every sidebar link to define hover_emoji"
   end
 
@@ -49,8 +49,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
               [ "AI Builder Multiple", "/admin/ai_builder_multiple" ], [ "News workflow", "/news/workflow" ],
               [ "Merge people", "/people/merge" ], [ "Duplicates", "/people/duplicates" ],
               [ "News", "/news" ], [ "Content", "/contents" ], [ "Models", "/model_pipeline" ],
-              [ "Body archetypes", "/body-archetypes" ], [ "Videos", "/videos" ], [ "Alt videos", "/alt_videos" ] ]
-    assert_equal moved, basement_links.map { |link| link.values_at(:label, :href) }
+              [ "Body archetypes", "/body-archetypes" ], [ "Videos", "/videos" ], [ "Alt videos", "/alt_videos" ],
+              [ "NFL Hub", "/nfl" ], [ "2026 Season", "/games/2026" ] ]
+    apps = Satellite.active.map(&:display_name)
+    assert_equal moved, basement_links.reject { |link| apps.include?(link[:label]) }.map { |link| link.values_at(:label, :href) }
 
     sidebar_hrefs = sidebar_link_sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
     assert_empty moved.map(&:last) & sidebar_hrefs
@@ -150,7 +152,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     sections = basement_link_sections.to_h { |section| [ section.fetch(:title), section.fetch(:links).map { |link| link.fetch(:href) } ] }
 
-    assert_equal %w[Site Clients Email Ops Directory Data Pipelines], sections.keys
+    assert_equal %w[Site Clients Email Ops Directory Data Pipelines NFL Apps], sections.keys
     assert_equal [ "/teams", "/people", "/builders", "/docs" ], sections.fetch("Directory")
     assert_equal [ "/news", "/contents", "/model_pipeline", "/body-archetypes", "/videos", "/alt_videos" ], sections.fetch("Pipelines")
   end
@@ -267,18 +269,18 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.admin_enabled = false
     self.logged_in_enabled = true
 
-    assert_equal %w[Studio NFL Apps], sidebar_link_sections.map { |section| section.fetch(:title) }
+    assert_equal %w[Studio], sidebar_link_sections.map { |section| section.fetch(:title) }
   end
 
   # Alex McRitchie, 2026-11-04: "I don't see a purpose for /dashboard"; Applications and
   # Agents "are viewable from the admin dashboard"; Tasks "we can drop as Devops is a
   # better version". They leave every list; their routes stay.
-  test "an admin's sidebar is Admin, Studio, NFL, Apps, and the four dropped pages are in no list" do
+  test "an admin's sidebar is Admin and Studio, and the four dropped pages are in no list" do
     self.admin_enabled = true
     self.logged_in_enabled = true
 
     assert_equal [ "NFL", "Apps" ], public_link_sections.map { |section| section.fetch(:title) }
-    assert_equal %w[Admin Studio NFL Apps], sidebar_link_sections.map { |section| section.fetch(:title) }
+    assert_equal %w[Admin Studio], sidebar_link_sections.map { |section| section.fetch(:title) }
 
     every_list = sidebar_link_sections + links_page_sections + admin_link_sections + basement_link_sections
     hrefs = every_list.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:href) }
@@ -404,6 +406,80 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_agent_messages_path = "/admin/agent_messages"
   def admin_report_destinations_path = "/admin/report_destinations"
   def admin_csp_reports_path = "/admin/csp_reports"
+  # The engine's _link_sidebar draws the header (link-sidebar-section-headers, its own
+  # task, default off). Until it ships the key changes nothing, so these read the hash.
+  test "[component] My Apps, Admin and Studio carry header: true, and Account does not" do
+    users(:alex).save!
+    AppMembership.create!(app: apps(:turf_monster), user: users(:alex))
+    self.admin_enabled = true
+    self.logged_in_enabled = true
+    self.current_user = users(:alex)
+
+    sections = sidebar_link_sections.to_h { |section| [ section.fetch(:title), section ] }
+    assert_equal({ "My Apps" => true, "Admin" => true, "Studio" => true }, sections.transform_values { |section| section[:header] })
+
+    self.admin_enabled = false
+    self.logged_in_enabled = false
+    self.current_user = nil
+    visitor = sidebar_link_sections.to_h { |section| [ section.fetch(:title), section ] }
+    assert_equal %w[Account Studio], visitor.keys
+    refute visitor.fetch("Account").key?(:header), "Sign In sits under no header"
+    assert visitor.fetch("Studio")[:header]
+
+    self.admin_enabled = true
+    assert basement_link_sections.any?, "control: the Basement has sections"
+    assert basement_link_sections.none? { |section| section.key?(:header) }, "the Basement page draws its own titles"
+  end
+
+  # Alex McRitchie, 2026-11-04, of the admin sidebar: "Lets move these all to the basement".
+  test "[component] NFL Hub, 2026 Season and the two apps left the sidebar for the Basement, and /links keeps them" do
+    self.logged_in_enabled = true
+    self.admin_enabled = true
+    rows = %w[NFL\ Hub 2026\ Season Turf\ Monster McRitchie\ Industries]
+    labels = ->(sections) { sections.flat_map { |section| section.fetch(:links) }.map { |link| link.fetch(:label) } }
+
+    assert_empty labels.call(sidebar_link_sections) & rows
+    assert_equal rows, labels.call(basement_link_sections) & rows
+    assert_equal rows, labels.call(links_page_sections) & rows
+
+    turf = basement_links.find { |link| link[:label] == "Turf Monster" }
+    assert_equal "_blank", turf[:target]
+    assert turf[:desc].present?, "the Basement describes an app"
+    refute links_page_sections.flat_map { |section| section.fetch(:links) }.find { |link| link[:label] == "Turf Monster" }.key?(:desc)
+
+    self.admin_enabled = false
+    assert_empty labels.call(sidebar_link_sections) & rows
+    assert_equal rows, labels.call(links_page_sections) & rows
+  end
+
+  # Alex McRitchie, 2026-11-04: "give [these] the section title Studio".
+  test "[component] the five Studio rows sit under the Studio header for a visitor, a user and an admin" do
+    [ [ false, false ], [ true, false ], [ true, true ] ].each do |signed_in, admin|
+      self.logged_in_enabled = signed_in
+      self.admin_enabled = admin
+      studio = sidebar_link_sections.find { |section| section[:title] == "Studio" }
+      assert studio.fetch(:header), "signed_in=#{signed_in} admin=#{admin}"
+      assert_equal %w[Build Chat Portfolio Packages Integrations], studio.fetch(:links).map { |link| link.fetch(:label) }
+    end
+  end
+
+  # The production order (Alex McRitchie's four, 2026-11-04): position, then name, so
+  # the two client-position rows stay ahead of alex.build and Voicebox.
+  test "[component] with four memberships the sidebar shows the two lowest positions, then All apps" do
+    owner = users(:alex)
+    owner.save!
+    team_notes = App.create!(slug: "team-notes", name: "Team Voice Notes to Webhook", position: 0)
+    alex_build = App.create!(slug: "alex-build", name: "alex.build", position: 15)
+    voicebox = App.create!(slug: "voicebox", name: "Voicebox", position: 16)
+    [ apps(:mcritchie_studio), team_notes, alex_build, voicebox ].each { |app| AppMembership.create!(app: app, user: owner) }
+    self.admin_enabled = false
+    self.logged_in_enabled = true
+    self.current_user = owner
+
+    assert_equal [ "McRitchie Studio", "Team Voice Notes to Webhook", "All apps" ],
+                 sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }
+  end
+
   # [component] The owner section (AppOwnership.sidebar_links): first in the
   # sidebar, at most two apps by name and All apps third, every row swapping to a
   # rocket; absent for a signed-in user who owns nothing and for a visitor.
@@ -416,7 +492,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.current_user = owner
 
     first = sidebar_link_sections.first
-    assert_equal "Your apps", first.fetch(:title)
+    assert_equal "My Apps", first.fetch(:title)
+    assert first.fetch(:header), "the owner section asks for its header"
     assert_equal [ [ "Turf Monster", "/applications/turf-monster" ] ],
                  first.fetch(:links).map { |link| [ link.fetch(:label), link.fetch(:href) ] }
     assert first.fetch(:links).all? { |link| link[:hover_emoji] == "🚀" }
@@ -432,10 +509,10 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert links.all? { |link| link[:hover_emoji] == "🚀" }
 
     self.current_user = User.create!(email: "sidebar-none@example.com", name: "No Apps", role: "viewer")
-    assert_equal %w[Studio NFL Apps], sidebar_link_sections.map { |section| section.fetch(:title) }
+    assert_equal %w[Studio], sidebar_link_sections.map { |section| section.fetch(:title) }
 
     self.logged_in_enabled = false
     self.current_user = nil
-    refute sidebar_link_sections.any? { |section| section.fetch(:title) == "Your apps" }
+    refute sidebar_link_sections.any? { |section| section.fetch(:title) == "My Apps" }
   end
 end

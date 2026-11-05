@@ -39,15 +39,31 @@ class AppMembershipTest < ActiveSupport::TestCase
   test "[unit] seed_owners! links the known owners that exist, says what it did, and is idempotent" do
     turf_owner = owner("alex@turfmonster.media", name: "Alex McRitchie Turf")
 
+    users(:alex).save! # a fixture has no slug; seed_owners! gives it one
+    App.create!(slug: "alex-build", name: "alex.build", position: 15)
+    App.create!(slug: "voicebox", name: "Voicebox", position: 16)
+
     first = AppMembership.seed_owners!
-    assert_equal({ "mcritchie-studio" => "created", "turf-monster" => "created", "cyvasse" => "no app" }, first)
+    assert_equal({ "mcritchie-studio" => "created", "alex-build" => "created", "voicebox" => "created",
+                   "turf-monster" => "created", "cyvasse" => "no app" }, first)
+    assert AppMembership.exists?(app_slug: "alex-build", user_slug: users(:alex).slug)
+    assert AppMembership.exists?(app_slug: "voicebox", user_slug: users(:alex).slug)
     assert AppMembership.exists?(app_slug: "mcritchie-studio", user_slug: users(:alex).slug)
     assert AppMembership.exists?(app_slug: "turf-monster", user_slug: turf_owner.slug)
 
     again = AppMembership.seed_owners!
-    assert_equal({ "mcritchie-studio" => "present", "turf-monster" => "present", "cyvasse" => "no app" }, again)
-    assert_equal 2, AppMembership.count
+    assert_equal({ "mcritchie-studio" => "present", "alex-build" => "present", "voicebox" => "present",
+                   "turf-monster" => "present", "cyvasse" => "no app" }, again)
+    assert_equal 4, AppMembership.count
 
     assert_equal({ "turf-monster" => "no user" }, AppMembership.seed_owners!({ "turf-monster" => "nobody@example.com" }))
+  end
+
+  # QA holds no alex@turfmonster.media, so that outcome must not stop a QA deploy.
+  test "[unit] seed_failures keeps a missing app and the hub owner's missing user, and passes another owner's" do
+    outcomes = { "mcritchie-studio" => "present", "voicebox" => "no user", "turf-monster" => "no user", "cyvasse" => "no app" }
+
+    assert_equal({ "voicebox" => "no user", "cyvasse" => "no app" }, AppMembership.seed_failures(outcomes))
+    assert_empty AppMembership.seed_failures({ "mcritchie-studio" => "created", "turf-monster" => "no user" })
   end
 end

@@ -3,3 +3,14 @@
       subtitle: "Links worth keeping that the sidebar does not need to carry.",
       sections: basement_link_sections,
       pinned: true %>
+<%# Geo is the engine's row, not a registry page, and it carries its own admin gate. %>
+<div class="max-w-5xl mx-auto px-4 pb-10" data-test="basement-geo">
+  <section>
+    <h2 class="text-xs font-mono uppercase tracking-wider text-muted mb-3">Geo</h2>
+    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <div class="border border-subtle bg-surface-alt rounded-xl overflow-hidden">
+        <%= render "components/geo_signpost", variant: :sidebar %>
+      </div>
+    </div>
+  </section>
+</div>

@@ -22,6 +22,29 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
 
   def sidebar = css_select("#studio-link-sidebar")
 
+  # The release's post_deploy_cmd, end to end: the catalog writes the rows, the seed the
+  # memberships. The hub owner is an admin (User's seats restore the role at sign-in), so
+  # the page opens on the row alone, and the sidebar is what the memberships change.
+  test "[integration] after the release's seed, the hub owner opens Voicebox and the sidebar counts three apps" do
+    log_in_as(User.find_by!(email: "alex@mcritchie.studio"))
+    get application_path("voicebox")
+    assert_response :not_found, "control: before the seed there is no such app"
+    get links_path
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, count: 0
+
+    capture_io { load Rails.root.join("db/seeds/00_apps.rb") }
+    assert_empty AppMembership.seed_failures(AppMembership.seed_owners!)
+
+    get application_path("voicebox")
+    assert_response :success
+    assert_select "h1, h2", text: /Voicebox/
+    get links_path
+    assert_select "#studio-link-sidebar a[href=?]", application_path("mcritchie-studio")
+    assert_select "#studio-link-sidebar a[href=?]", application_path("alex-build")
+    assert_select "#studio-link-sidebar a[href=?]", application_path("voicebox"), count: 0
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /All apps/
+  end
+
   def turf_channels
     shared = channel!(external_id: REPORTS, name: "reports")
     turf = DiscordChannel.create!(guild_external_id: GUILD, external_id: NEWS, name: "turf-reports", kind: "text",

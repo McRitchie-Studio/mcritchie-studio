@@ -6,6 +6,17 @@ namespace :apps do
     # deploy (devops.post_deploy_cmd). Idempotent: the seed upserts by slug.
     load Rails.root.join("db/seeds/00_apps.rb")
   end
+
+  # Run after apps:seed, since an owner row needs its App row. Exits non-zero on a row
+  # it could not make, so `bin/rails apps:seed apps:seed_owners` as a post_deploy_cmd
+  # proves the owners landed rather than that a process exited 0.
+  desc "Seed the app owners (AppMembership::OWNERS); idempotent; fails on a row it could not make"
+  task seed_owners: :environment do
+    outcomes = AppMembership.seed_owners!
+    outcomes.each { |app, outcome| puts "App owner: #{app} #{outcome}" }
+    failures = AppMembership.seed_failures(outcomes)
+    abort("apps:seed_owners: #{failures.map { |app, outcome| "#{app} #{outcome}" }.join('; ')}") if failures.any?
+  end
 end
 
 namespace :agents do
