@@ -59,7 +59,7 @@ module LinkTreeHelper
   def visitor_link_sections
     return [] if logged_in?
 
-    [ { title: "Account", links: [ { label: "Sign In", href: signin_path, emoji: "🔑", hover_emoji: "👋" } ] } ]
+    [ { title: "Account", links: [ { label: "Sign In", href: signin_path, emoji: "🔑", hover_emoji: "👋", icon: "key-round" } ] } ]
   end
 
   # /chat while it is open to visitors (AdminWall::PUBLIC holds it today); were it
@@ -72,13 +72,15 @@ module LinkTreeHelper
   # An app owner's links, first in the sidebar: at most two apps, then All N Apps,
   # counted from their own memberships, admins included (AppOwnership.sidebar_links,
   # docs/agents/system/app-owners.md). An app shows its CTO's portrait, and every row
-  # swaps to a rocket on hover (Alex McRitchie, 2026-11-04). Nothing for a visitor or a
-  # user who owns no app.
+  # swaps to a rocket on hover (Alex McRitchie, 2026-11-04). All apps is no app: it takes a
+  # line icon under the glass sidebar, and an app row keeps its portrait and rocket. Nothing
+  # for a visitor or a user who owns no app.
   def owner_link_sections
     return [] unless logged_in? && current_user
 
     links = AppOwnership.sidebar_links(current_user).map do |link|
-      { label: link.label, href: link.href, emoji: owner_row_icon(link), hover_emoji: "🚀", desc: nil }
+      { label: link.label, href: link.href, emoji: owner_row_icon(link), hover_emoji: "🚀", desc: nil,
+        **(link.kind == "apps" ? { icon: "layout-grid" } : {}) }
     end
     links.any? ? [ { title: "My Apps", header: true, links: links } ] : []
   end
@@ -112,9 +114,9 @@ module LinkTreeHelper
   def studio_link_section(desc: false)
     row = lambda do |key|
       page = Navigation.page(key)
-      { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, **(desc ? { desc: page.desc } : {}) }
+      { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, icon: page.icon, **(desc ? { desc: page.desc } : {}) }
     end
-    chat = { label: "Chat", href: visitor_chat_path, hover_emoji: "💬",
+    chat = { label: "Chat", href: visitor_chat_path, hover_emoji: "💬", icon: "message-circle",
              emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") }
 
     { title: "Studio", header: true, links: [ row.call(:build), chat, row.call(:websites), row.call(:packages), row.call(:integrations) ] }
@@ -123,7 +125,7 @@ module LinkTreeHelper
   def registry_link_sections(group)
     Navigation.sidebar(group).filter_map do |section|
       links = section.pages.select { |page| page.public? || admin? }.map do |page|
-        { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, desc: page.desc }
+        { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, desc: page.desc, icon: page.icon, exact: page.exact }
       end
       { title: section.title, links: links, **(section.header ? { header: true } : {}) } if links.any?
     end

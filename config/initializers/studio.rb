@@ -54,6 +54,11 @@ Studio.configure do |config|
   # hub's LinkTreeHelper; the engine renders it. The lambda hands the view
   # context over so the helper keeps its route helpers and admin? wall.
   config.sidebar_sections = ->(view) { view.sidebar_link_sections }
+  # The floating glass panel (Alex McRitchie, 2026-11-04: "I think 3 is my favorite nav").
+  # Geo now lives on /admin/basement. Guarded until the release relocks an engine that has
+  # both settings.
+  config.sidebar_style = :glass if config.respond_to?(:sidebar_style=)
+  config.sidebar_geo_signpost = false if config.respond_to?(:sidebar_geo_signpost=)
   config.nav_spinner_min_ms = 300
 
   # Passwordless: magic-link email + Google. No :password, and User has no
