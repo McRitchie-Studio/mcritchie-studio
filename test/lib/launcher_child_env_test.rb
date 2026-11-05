@@ -4,10 +4,9 @@
 # bin/ecosystem-build's Phase 8, LaneRunner and the detached lease renewers
 # (bin/devops-shift, review_claim_cli, release_claim_cli). On macOS `ps` and `pgrep -fl`
 # print a renamed process's environment. Each REAL spawn site runs in a clean subprocess
-# (unsetenv_others) with fake credentials and a stub child that writes its env to a temp
-# name and moves it into place, so a dump that exists is whole. THE CONTROL:
-# rerun with the scrub replaced by the parent's whole environment; the stub must SEE the
-# credentials, or "no secret" and "never planted" are the same observation.
+# with fake credentials and a stub child that moves its env dump into place, so a dump that
+# exists is whole. THE CONTROL: rerun with the parent's whole environment; the stub must SEE
+# the credentials, or "no secret" and "never planted" are the same observation.
 # History: task secrets-scrub-follow-ups.
 require "minitest/autorun"
 require "open3"
