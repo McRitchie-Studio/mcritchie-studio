@@ -69,7 +69,7 @@ module LinkTreeHelper
     AdminWall::PUBLIC.fetch("chat", []).include?("index") ? chat_index_path : build_path
   end
 
-  # An app owner's links, first in the sidebar: at most two apps, then All apps,
+  # An app owner's links, first in the sidebar: at most two apps, then All N Apps,
   # counted from their own memberships, admins included (AppOwnership.sidebar_links,
   # docs/agents/system/app-owners.md). An app shows its CTO's portrait, and every row
   # swaps to a rocket on hover (Alex McRitchie, 2026-11-04). Nothing for a visitor or a

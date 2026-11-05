@@ -65,7 +65,9 @@ Owners get a **My Apps** section at the top of the link sidebar
 viewer's OWN memberships, admins included (Alex McRitchie, 2026-11-04):
 
 - at most two apps, each by name, with its CTO's portrait, and a rocket on hover;
-- with three or more, **All apps** is the third row, for an admin too;
+- with three or more, **All N Apps** is the third row, for an admin too. N is the
+  number of apps `/applications` lists for that viewer (`AppOwnership.visible_apps`),
+  so an admin's N counts every app, libraries and archived ones included;
 - each app's page links its own pipeline and its CTO;
 - a user who owns nothing gets no section, admin or not. An admin still reaches
   every app at `/applications`, linked from the admin dashboard.

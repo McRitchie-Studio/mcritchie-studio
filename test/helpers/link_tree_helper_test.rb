@@ -465,7 +465,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
   # The production order (Alex McRitchie's four, 2026-11-04): position, then name, so
   # the two client-position rows stay ahead of alex.build and Voicebox.
-  test "[component] with four memberships the sidebar shows the two lowest positions, then All apps" do
+  test "[component] with four memberships the sidebar shows the two lowest positions, then All N Apps" do
     owner = users(:alex)
     owner.save!
     team_notes = App.create!(slug: "team-notes", name: "Team Voice Notes to Webhook", position: 0)
@@ -476,14 +476,14 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     self.logged_in_enabled = true
     self.current_user = owner
 
-    assert_equal [ "McRitchie Studio", "Team Voice Notes to Webhook", "All apps" ],
+    assert_equal [ "McRitchie Studio", "Team Voice Notes to Webhook", "All #{App.count} Apps" ],
                  sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }
   end
 
   # [component] The owner section (AppOwnership.sidebar_links): first in the
-  # sidebar, at most two apps by name and All apps third, every row swapping to a
+  # sidebar, at most two apps by name and All N Apps third, every row swapping to a
   # rocket; absent for a signed-in user who owns nothing and for a visitor.
-  test "[component] an owner's sidebar opens with up to two apps, and All apps third for three or more" do
+  test "[component] an owner's sidebar opens with up to two apps, and All N Apps third for three or more" do
     owner = User.create!(email: "sidebar-owner@example.com", name: "Sidebar Owner", role: "viewer")
     cyvasse = App.create!(slug: "cyvasse", name: "Cyvasse", emoji: "🐉", color: "#DC2626", position: 5)
     AppMembership.create!(app: apps(:turf_monster), user: owner)
@@ -500,12 +500,12 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
 
     AppMembership.create!(app: cyvasse, user: owner)
     assert_equal 2, sidebar_link_sections.first.fetch(:links).size
-    assert_not_includes sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }, "All apps"
+    assert_not_includes sidebar_link_sections.first.fetch(:links).map { |link| link.fetch(:label) }.join, "All "
 
     AppMembership.create!(app: apps(:mcritchie_studio), user: owner)
     links = sidebar_link_sections.first.fetch(:links)
     assert_equal 3, links.size
-    assert_equal [ "All apps", "/applications" ], links.last.values_at(:label, :href)
+    assert_equal [ "All 3 Apps", "/applications" ], links.last.values_at(:label, :href)
     assert links.all? { |link| link[:hover_emoji] == "🚀" }
 
     self.current_user = User.create!(email: "sidebar-none@example.com", name: "No Apps", role: "viewer")

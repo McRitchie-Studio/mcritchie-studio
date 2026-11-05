@@ -25,7 +25,7 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
   # The release's post_deploy_cmd, end to end: the catalog writes the rows, the seed the
   # memberships. The hub owner is an admin (User's seats restore the role at sign-in), so
   # the page opens on the row alone, and the sidebar is what the memberships change.
-  test "[integration] after the release's seed, the hub owner opens Voicebox and the sidebar counts three apps" do
+  test "[integration] after the release's seed, the hub owner opens Voicebox and the sidebar counts every app" do
     log_in_as(User.find_by!(email: "alex@mcritchie.studio"))
     get application_path("voicebox")
     assert_response :not_found, "control: before the seed there is no such app"
@@ -42,7 +42,7 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
     assert_select "#studio-link-sidebar a[href=?]", application_path("mcritchie-studio")
     assert_select "#studio-link-sidebar a[href=?]", application_path("alex-build")
     assert_select "#studio-link-sidebar a[href=?]", application_path("voicebox"), count: 0
-    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /All apps/
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /All \d+ Apps/
   end
 
   def turf_channels
@@ -71,7 +71,7 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
 
     AppMembership.create!(app: apps(:mcritchie_studio), user: @owner)
     get applications_path
-    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /All apps/
+    assert_select "#studio-link-sidebar a[href=?]", applications_path, text: /All \d+ Apps/
     assert_select "#studio-link-sidebar a[href^='/applications/']", count: 2
 
     log_in_as(@stranger)
