@@ -50,6 +50,9 @@ deliberate decision, never a default.
 - **Managed satellite** → run `bin/register-satellite` (dry-run first), land it in
   `config/satellites.yml` at `status: planned`, then follow
   `studio-engine/docs/NEW_APP_SETUP.md` for the engine wiring.
+  A new `config/apps.yml` record reaches the hub's `App` table only through a declared
+  hook, so set `--post-deploy-cmd 'bin/rails apps:seed'` on the registering task
+  ([`app-registry.md`](../modules/app-registry.md#adding-an-app)).
 - **Standalone / client app** → do **not** mark it `planned` or `active`. It may
   have a `status: reserved` row to protect a future port block, but remains an
   *unmanaged candidate*: app-specific docs live in its own repo, and it is
