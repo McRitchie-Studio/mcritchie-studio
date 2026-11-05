@@ -220,6 +220,17 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "#studio-link-sidebar .studio-emoji-swap-hover, #studio-link-sidebar [data-sidebar-row-icon]"
   end
 
+  # Four one-click PNGs on /admin/style, each from a file the hub really serves, in both tones.
+  test "the style guide's logo block offers the four downloads" do
+    html = ApplicationController.render(partial: "style/host/logos")
+    page = Nokogiri::HTML5.fragment(html)
+    links = page.css("[data-download-format=png] a[data-logo-raster]")
+
+    assert_equal %w[Favicon Favicon Stacked Stacked Nav Nav Loader Loader], links.map { |link| link["data-label"] }
+    assert_equal %w[long:256 width:800 width:800 long:512], links.map { |link| link["data-raster-size"] }.each_slice(2).map(&:first)
+    links.each { |link| assert_path_exists Rails.public_path.join(link["data-svg"].delete_prefix("/")), link["data-svg"] }
+  end
+
   # The root attribute is what turns the glass cards on. The setting is guarded until the
   # release relocks an engine that has it, so a locked engine without it writes no attribute.
   test "the root carries the surface style only when the app opts in" do

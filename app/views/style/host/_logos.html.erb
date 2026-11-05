@@ -1,0 +1,42 @@
+<%# The hub's logos on /admin/style: four one-click PNGs, drawn in the browser from each logo's own SVG by
+    app/javascript/logo_download.js (the /logos table's a[data-logo-raster]). Each href is the SVG, so with
+    JavaScript off the link gives the SVG. Each logo has both tones, and the page's theme shows one.
+
+    The Loader is animated, so its PNG is one still: icon-dark.svg, the icon the sparkle loader draws its
+    sparkles over, since loader-sparkle.svg holds only the sparkles. The Favicon is favicon-mark.svg, the
+    small-size mark favicon.png is drawn from (script/brand_png.cjs), at the size that install uses. %>
+<%
+  logo_cards = [
+    { title: "Favicon", size: "long:256", note: "256 px", test: "favicon", tones: { light: "favicon-mark.svg", dark: "favicon-mark.svg" }, name: "studio-favicon.svg" },
+    { title: "Stacked", size: "width:800", note: "800 px wide", test: "stacked", tones: { light: "brand/stacked-light.svg", dark: "brand/stacked-dark.svg" }, name: "studio-stacked-%s.svg" },
+    { title: "Nav", size: "width:800", note: "800 px wide", test: "nav", tones: { light: "brand/navbar-light.svg", dark: "brand/navbar-dark.svg" }, name: "studio-nav-%s.svg" },
+    { title: "Loader", size: "long:512", note: "512 px, a still frame", test: "loader", tones: { light: "brand/icon-dark.svg", dark: "brand/icon-dark.svg" }, name: "studio-loader.svg" }
+  ]
+%>
+<div class="space-y-3" data-test="style-logos">
+  <p class="label-upper">Logos</p>
+  <p class="text-2xs font-semibold text-warning-ink" role="status" data-test="logo-raster-error" data-logo-raster-error hidden></p>
+  <div class="grid gap-4 grid-cols-2 md:grid-cols-4" data-download-format="png">
+    <% logo_cards.each do |logo| %>
+      <div class="card p-4 flex flex-col gap-3 min-w-0" data-test="style-logo-<%= logo[:test] %>">
+        <p class="text-sm text-heading font-medium"><%= logo[:title] %></p>
+        <% logo[:tones].each do |tone, file| %>
+          <% shown = tone == :light ? "dark:hidden" : "hidden dark:flex" %>
+          <% extra = tone == :light ? "flex" : "" %>
+          <div class="<%= class_names("flex-col gap-3 flex-1", shown, extra) %>" data-logo-tone="<%= tone %>">
+            <div class="flex items-center justify-center h-20 rounded-lg bg-surface-alt p-2">
+              <img src="/<%= file %>" alt="" class="max-h-16 max-w-full">
+            </div>
+            <%= link_to "Download PNG", "/#{file}", download: format(logo[:name], tone),
+                  class: "btn btn-sm btn-neutral mt-auto",
+                  data: { test: "style-logo-download", turbo: false, logo_raster: true, svg: "/#{file}",
+                          filename: format(logo[:name], tone), background: Logos::PngSizes::BACKGROUNDS.fetch(tone),
+                          raster_size: logo[:size], label: logo[:title] },
+                  aria: { label: "Download: #{logo[:title]}" } %>
+            <p class="text-2xs text-muted"><%= logo[:note] %></p>
+          </div>
+        <% end %>
+      </div>
+    <% end %>
+  </div>
+</div>
