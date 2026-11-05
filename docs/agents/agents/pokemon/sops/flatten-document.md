@@ -102,11 +102,13 @@ A digit-only search does not see a number inside the page image. Only your eyes 
 ## Images
 
 ```bash
-magick "<source-image>" -background white -alpha remove -alpha off -strip "<output.jpg>"
+magick "<source-image>" -auto-orient -background white -alpha remove -alpha off -strip "<output.jpg>"
 ```
 
-This removes transparency and metadata. A transparent area can still hold the
-original pixels, and a PNG comment or EXIF block can hold text or a location. Check
+This removes transparency and metadata. `-auto-orient` applies the rotation tag first,
+because `-strip` deletes it and a phone photo then shows sideways. A transparent area
+can still hold the original pixels, and a PNG comment or EXIF block can hold text or a
+location. Check
 with `magick "<output.jpg>" -format '%[channels] [%c]\n' info:`, then look at the image.
 
 ## Other documents
