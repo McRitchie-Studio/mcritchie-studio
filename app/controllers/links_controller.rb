@@ -1,6 +1,6 @@
 class LinksController < ApplicationController
-  # Public link hub (AdminWall::PUBLIC). The ops sections render for admins only
-  # (LinkTreeHelper#public_link_sections).
+  # Public link hub (AdminWall::PUBLIC): the Studio section, NFL and the apps
+  # (LinkTreeHelper#links_page_sections).
 
   def index; end
 end

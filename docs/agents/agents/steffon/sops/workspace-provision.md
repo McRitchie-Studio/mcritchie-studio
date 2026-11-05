@@ -44,7 +44,9 @@ remove.
 
 You need: the client's domain, a `team@<domain>` user existing in their
 Workspace, and a named contact who is a **super-admin** of that domain. If any
-of the three is missing, stop at the decline path.
+of the three is missing, stop at the decline path. You also need the **folder
+user**: the person new Drive folders are shared with. If you do not have that name,
+ask, but do not stop; see step 1.
 
 ```bash
 cd /Users/alex/projects/mcritchie-studio
@@ -87,8 +89,29 @@ bin/rails workspace:accounts          # who is reachable today
 ## 1. Register the workspace
 
 ```bash
-bin/rails 'workspace:register[<domain>,<Display Name>,<entity-slug>]'
+bin/rails 'workspace:register[<domain>,<Display Name>,<entity-slug>,<folder user email>]'
 ```
+
+The **folder user** is the person who runs this Workspace for the client. Every
+Drive folder an agent creates through `Workspace::DriveClient` is shared with them
+as Editor, with no email, so they can find it under **Shared with me**. Without a
+folder user, the folder is still created, but only `team@` can see it and the
+command warns. To set or change it on a registered Workspace, do not re-run
+`register`, which re-stamps the scopes. Run:
+
+```bash
+bin/rails 'workspace:folder_user[<domain>,<email>]'
+```
+
+This changes the database of the environment it runs in, so a bare run on a Mac
+changes only the local row. For production, run:
+
+```bash
+heroku run --app mcritchie-studio --no-tty --exit-code -- \
+  bin/rails 'workspace:folder_user[<domain>,<email>]'
+```
+
+`bin/rails workspace:accounts` shows each Workspace's folder user.
 
 The row lands as **`pending`** — registered is not authorized. The subject
 defaults to `team@<domain>` and is validated to belong to that row's own

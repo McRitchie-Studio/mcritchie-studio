@@ -42,6 +42,28 @@ class BooksIntakeAndCloseTest < ActiveSupport::TestCase
 
   def lender(month = "2026-12") = Books::LenderPackage.new(entity, month, drive: @drive, config: books_config).call(generated_by: "test")
 
+  test "a statement with a waiver-only row files whole, and the waiver lands in bank fees as money back" do
+    checking = <<~TXT
+      Huntington Business Checking 100                                       Account: -------5678
+      Statement Activity From:                   Beginning Balance                       $1,000.00
+      12/01/26 to 12/31/26                       Total Service Charges (-)                  100.00
+                                                 Ending Balance                            $900.00
+      Service Charge Detail                                                                 Account:-------5678
+      Date      Service Charge (-)     Waives and    Discounts (+)      Description
+      12/16               100.00                                        OTHER SERVICEFEES
+      12/16                20.00                                        MONTHLY SERVICEFEE
+      12/16                                              20.00          PROMOTIONAL WAIVE - MONTHLY SERVICEFEE
+    TXT
+    @drive = FakeDrive.new(inbox: [ { id: "inbox-3", name: "checking.pdf", bytes: checking } ])
+
+    assert_equal [ "filed" ], intake.map(&:status)
+    statement = BookStatement.find_by!(entity: "example", account_key: "checking")
+    assert statement.entries_reconcile?
+    assert_equal [ -10_000, -2_000, 2_000 ], statement.entries.order(:id).pluck(:amount_cents)
+    assert_equal [ "bank_fees" ], statement.entries.reorder(nil).distinct.pluck(:category)
+    assert_equal(-10_000, statement.entries.where(category: "bank_fees").sum(:amount_cents))
+  end
+
   test "the Inbox is filed once: statements, lines, rules applied, and a copy in Statements/<year>" do
     results = intake
 

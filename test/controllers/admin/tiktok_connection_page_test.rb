@@ -361,10 +361,10 @@ class Admin::TiktokConnectionPageTest < ActionDispatch::IntegrationTest
     Tiktok::OAuthClient.sign_in_stand_in = nil
   end
 
-  test "[integration] the admin links hub lists the standing page, not the sign-in redirect" do
+  test "[integration] the Basement lists the standing page, not the sign-in redirect" do
     log_in_as users(:alex)
 
-    get admin_links_path
+    get admin_basement_path
 
     assert_select "a[href='#{admin_tiktok_path}']", text: /TikTok connection/
     assert_select "a[href='#{admin_tiktok_connect_path}']", count: 0

@@ -74,24 +74,24 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "[component] an admin who owns up to two apps gets one /applications link, three or more get All apps too; a non-admin owner's comes only from their own links" do
+  test "[component] the Studio section is gone, so /applications is in the sidebar only as an owner's All apps, with three or more apps" do
     alex = users(:alex)
     alex.save!
     AppMembership.create!(app: apps(:turf_monster), user: alex)
     AppMembership.create!(app: @pawsome, user: alex)
     log_in_as(alex)
     get applications_path
-    assert_select "#studio-link-sidebar a[href='/applications']", { count: 1 }, "one Applications link, not two"
+    assert_select "#studio-link-sidebar a[href='/applications']", { count: 0 }, "up to two apps, each by name; the admin dashboard links /applications"
 
     AppMembership.create!(app: apps(:mcritchie_studio), user: alex)
     get applications_path
-    assert_select "#studio-link-sidebar a[href='/applications']", { count: 2 }, "All apps and Applications (Alex McRitchie, 2026-11-04: 3+ apps, no exception)"
+    assert_select "#studio-link-sidebar a[href='/applications']", { count: 1, text: /All apps/ }, "All apps (Alex McRitchie, 2026-11-04: 3+ apps, no exception)"
 
     owner = User.create!(email: "single@example.com", name: "Single Owner", role: "viewer")
     AppMembership.create!(app: @pawsome, user: owner)
     log_in_as(owner)
     get applications_path
     assert_response :success
-    assert_select "#studio-link-sidebar a[href='/applications']", { count: 0 }, "the registry entry is an admin's"
+    assert_select "#studio-link-sidebar a[href='/applications']", { count: 0 }, "a non-admin owner's comes only from their own links"
   end
 end

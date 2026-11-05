@@ -211,7 +211,9 @@ for: an agreement, a letter, a policy. Its home is the brand's `<Brand> Doc Mast
 folder, outside the kit, because a kit holds nothing confidential and a doc master
 may.
 
-1. Work out which brand the document serves.
+1. Work out which brand the document serves. That is the party that issues it:
+   a lease carries the landlord's format, not a tenant's. A party with no kit
+   uses the plain format of its own documents.
 2. Start from the kit's `<SHORT> Template — General` in `05 Templates`. Find it
    in Drive; a local search does not prove it is missing. Drop the template's
    parts that do not fit, such as a photo on a contract.
@@ -234,7 +236,8 @@ No command does this yet. Use `Workspace::DriveClient` with the kit's
    beside it. If several match, or Drive refuses a write into the match, stop and
    tell Alex McRitchie.
 2. If it does not exist, create it with `files_create`.
-3. Share it with `permissions_create`, by name. Ask Alex McRitchie first.
+3. `files_create` shares a new folder with the Workspace's folder user. Share it
+   with anyone else with `permissions_create`, by name. Ask Alex McRitchie first.
 4. Create the Doc with `files_create`, sending HTML built from the template's
    export, so the Doc is a native Google Doc.
 

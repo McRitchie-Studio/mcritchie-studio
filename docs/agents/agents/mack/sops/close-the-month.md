@@ -127,7 +127,7 @@ The categories are the keys under `categories:` in `config/books.yml`. Use
 `--category none` to undo an answer.
 
 **Alex McRitchie can answer on the page instead:** `/books` on the hub (admin
-only; Finance in the sidebar) lists each entity's waiting lines with a category,
+only; Books in the sidebar's Admin section) lists each entity's waiting lines with a category,
 purpose and note, and records his answer through the same code as `classify`,
 with his address as `by`. Recent answers show who and when, with an Undo. Bank
 text shows any account or card number by its last four digits only, however
@@ -228,6 +228,14 @@ not run through this.
 - **Inbox files stay in the Inbox.** The hub cannot move a file it did not
   create. Intake records each file's id and skips it next time. Alex may delete
   them once they are filed.
+- **A Service Charge Detail row with one amount is a charge or a waiver by its
+  column.** The parser reads the column from the "Waives and" header. A waiver
+  is money back: it files as a positive line in bank fees and nets the charge.
+- **A transfer to an own account with no books stays in transit.** Classify it
+  `internal_transfer`. The Balance Sheet carries it as an asset under "Transfers
+  in transit between own accounts" until the account joins `config/books.yml`
+  or the money comes back. Name the paying account from the statement, not from
+  memory.
 - **A Huntington "Transfer Credit" names no sender.** Industries' rules hold every
   one for an answer. Its first two (2026-09-02: $400,000 to the money market and
   $30,000 to checking, both from Studio) are member contributions, per Alex

@@ -35,14 +35,17 @@ class PublicNflLinksTest < ActionDispatch::IntegrationTest
     assert_all_links_public
   end
 
-  test "[component] an admin's /links keeps the Directory with Teams and People" do
+  # The Directory moved to the Basement (Alex McRitchie, 2026-11-04: "The rest in the basement").
+  test "[component] an admin's Basement holds Teams and People, and /links keeps NFL" do
     log_in_as users(:alex)
     get links_path
     assert_response :success
-
     assert_select "a[href=?]", nfl_hub_path
-    assert_select "a[href=?]", teams_path
-    assert_select "a[href=?]", people_path
+    assert_select "[data-link-hub] a[href=?]", teams_path, count: 0
+
+    get admin_basement_path
+    assert_select "[data-link-hub] a[href=?]", teams_path
+    assert_select "[data-link-hub] a[href=?]", people_path
   end
 
   private

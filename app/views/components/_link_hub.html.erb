@@ -1,5 +1,5 @@
 <%#
-  Shared link-hub renderer used by /links, /admin/links and /admin/basement. Locals:
+  Shared link-hub renderer used by /links and /admin/basement. Locals:
     title    - String, page heading
     subtitle - String, sub line (optional)
     sections - Array of { title:, links: [ { label:, href:, emoji:, desc:, featured:, target: } ] }
@@ -31,7 +31,7 @@
             <% box = link[:featured] ? "border-primary/40 bg-primary/5" : "border-subtle bg-surface-alt" %>
             <%= link_to link[:href], target: link[:target],
                   class: "group flex items-start gap-3 p-4 border #{box} rounded-xl hover:border-primary/60 transition" do %>
-              <span class="text-2xl leading-none flex-none"><%= link[:emoji] %></span>
+              <span class="text-2xl leading-none flex-none [&>img]:w-6 [&>img]:h-6"><%= link[:emoji] %></span>
               <span class="min-w-0">
                 <span class="flex items-center gap-2">
                   <span class="text-heading font-semibold group-hover:text-primary transition truncate"><%= link[:label] %></span>

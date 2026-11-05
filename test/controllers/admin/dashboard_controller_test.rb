@@ -33,7 +33,10 @@ class Admin::DashboardControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href=?]", history_builders_path, text: /Builder History/
     assert_select "a[href=?]", nfl_hub_path
     assert_match "NFL Hub", response.body
-    assert_select "a[href=?]", admin_links_path
+    # The tile, by its own subtitle: the sidebar also links the Basement.
+    assert_select "a[href=?]", admin_basement_path, text: /links kept off the sidebar/
+    assert_select "a[href=?]", admin_links_path, count: 0
+    assert_no_match "Admin Links", response.body
     assert_select "table#admin-users-table"
     assert_select "table#admin-users-table.sticky-data-table"
     assert_select "table#admin-users-table[data-sticky-table-header]"
