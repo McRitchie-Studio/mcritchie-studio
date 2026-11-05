@@ -1,17 +1,57 @@
 require "test_helper"
 
-# [component] /integrations: public, both groups, Coming soon tags on every
-# entry not delivered, prices on add-ons, and a booking CTA on every entry.
+# [component] /integrations: public, three groups of compact tiles, Coming soon
+# tags on every entry not delivered, prices on add-ons, and a booking CTA on
+# every entry; the detail waits behind each tile's Details toggle.
 class IntegrationsControllerTest < ActionDispatch::IntegrationTest
   def entry(key) = "[data-test='integration-entry'][data-entry='#{key}']"
 
-  test "[component] anyone sees both groups, without signing in" do
+  test "[component] anyone sees the three groups, without signing in" do
     get integrations_path
 
     assert_response :success
     assert_select "h1", text: "Build smarter. Your backend runs itself."
-    assert_equal %w[google_sign_in meeting_notes integrations add_ons custom], css_select("[data-test='integration-group']").map { |g| g["data-group"] }
+    assert_equal %w[connect add_ons custom], css_select("[data-test='integration-group']").map { |g| g["data-group"] }
+    assert_equal %w[Connect We\ run\ it Talk\ to\ us], css_select("[data-test='integration-group'] h2").map { _1.text.strip }
     assert_equal Integration.entries.map(&:key), css_select("[data-test='integration-entry']").map { |e| e["data-entry"] }
+  end
+
+  test "[component] the group chips jump to each group, pinned under the header, with each group's count" do
+    get integrations_path
+
+    nav = css_select("[data-test='group-nav']").first
+    assert_includes nav["class"].split, "sticky"
+    assert_includes nav["style"], "--pin-stack-bottom", "it pins under whatever chrome the engine pins above"
+    chips = css_select("[data-test='group-chip']")
+    assert_equal %w[#connect #add-ons #custom], chips.map { _1["href"] }
+    chips.each do |chip|
+      group = Integration.groups.find { _1.key == chip["data-group"] }
+      assert_select "section##{group.key.dasherize}[data-test='integration-group'][data-group='#{group.key}']", 1
+      assert_equal "#{group.title} #{group.entries.size}", chip.text.squish
+    end
+  end
+
+  test "[component] a tile shows one short line; the blurb, ways in, abilities and price note wait behind Details" do
+    get integrations_path
+
+    css_select("[data-test='integration-entry']").each do |card|
+      item = Integration.find(card["data-entry"])
+      assert_equal item.line, card.at_css("[data-test='entry-line']").text.strip, item.key
+      assert_operator item.line.length, :<=, 80, "#{item.key}: a tile's line stays one short line"
+      details = card.at_css("[data-test='entry-details']")
+      assert details, "#{item.key} has Details"
+      assert_equal "open", details["x-show"], item.key
+      assert details.key?("x-cloak"), "#{item.key}: Details starts closed"
+      toggle = card.at_css("[data-test='entry-details-toggle']")
+      assert_equal details["id"], toggle["aria-controls"], item.key
+      assert_equal "false", toggle["aria-expanded"], item.key
+      # Nothing about how it connects shows outside Details.
+      card.css("[data-test='entry-connections'], [data-test='entry-blurb'], [data-test='entry-price-note'], [data-test='entry-tier-note']").each do |hidden|
+        assert hidden.ancestors("[data-test='entry-details']").any?, "#{item.key}: #{hidden['data-test']} sits behind Details"
+      end
+    end
+    assert_select "#{entry('discord')} [data-test='entry-details'] [data-test='entry-blurb']", text: /Two-way/
+    assert_select "#{entry('extra_builds')} [data-test='entry-blurb']", 0, "no tagline: the line is the blurb, shown once"
   end
 
   test "[component] every entry not live reads Coming soon or On request, never Available" do
@@ -76,7 +116,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     get integrations_path
 
     assert_select "#{entry('extra_builds')} [data-test='entry-tier']", text: "From Builder"
-    assert_select "#{entry('extra_builds')} [data-test='entry-blurb']", text: "More changes than Builder's several a month, or a second app."
+    assert_select "#{entry('extra_builds')} [data-test='entry-line']", text: "More changes than Builder's several a month, or a second app."
     assert_select "#{entry('extra_builds')} [data-test='entry-price']", text: /Quote/
     assert_select "#{entry('extra_builds')} [data-test='entry-cta']", text: "Talk to us"
   end
@@ -229,11 +269,9 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
       assert_equal "custom", ctas.first["data-intent"]
     end
     assert_select "#{entry('stripe_connect')} [data-test='coming-soon']"
-    assert_select "[data-test='integration-group'][data-group='integrations'] #{entry('stripe_connect')}", 0, "Stripe is listed once"
-    assert_equal %w[google_calendar gmail google_drive],
-                 css_select("[data-test=\x27integration-group\x27][data-group=\x27google_sign_in\x27] [data-test=\x27integration-entry\x27]").map { |e| e["data-entry"] }
-    assert_equal %w[google_workspace_connect discord github_org slack],
-                 css_select("[data-test='integration-group'][data-group='integrations'] [data-test='integration-entry']").map { |e| e["data-entry"] }
+    assert_select "[data-test='integration-group'][data-group='connect'] #{entry('stripe_connect')}", 0, "Stripe is listed once"
+    assert_equal %w[google_calendar gmail google_drive fathom google_workspace_connect discord github_org slack],
+                 css_select("[data-test='integration-group'][data-group='connect'] [data-test='integration-entry']").map { |e| e["data-entry"] }
     assert_equal %w[google_workspace_managed payments extra_builds],
                  css_select("[data-test='integration-group'][data-group='add_ons'] [data-test='integration-entry']").map { |e| e["data-entry"] }
   end

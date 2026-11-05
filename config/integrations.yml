@@ -167,7 +167,7 @@ groups:
       - key: discord
         name: Discord
         icon: discord
-        tagline: "Our bot posts updates in your server and answers @‑mentions."
+        tagline: "Our bot will post updates in your server and answer @‑mentions."
         blurb: "Two-way, on request: our bot will post sign-ups, errors and your agents' updates in your server, and answer when you @‑mention it."
         status: on_request
         tier: vibe
@@ -179,6 +179,7 @@ groups:
       - key: github_org
         name: GitHub
         icon: github
+        tagline: "Your app's code in your own GitHub organization."
         blurb: Your app's code lives in your own GitHub organization, for white label and full ownership.
         status: on_request
         tier: enterprise
@@ -188,6 +189,7 @@ groups:
       - key: slack
         name: Slack
         icon: slack
+        tagline: "Notifications and your agent's updates in your Slack."
         blurb: The same notifications, and your agent's updates, in your Slack workspace.
         status: soon
         connects: [app_install]
