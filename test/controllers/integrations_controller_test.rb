@@ -21,7 +21,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
 
     nav = css_select("[data-test='group-nav']").first
     assert_includes nav["class"].split, "sticky"
-    assert_includes nav["style"], "--pin-stack-bottom", "it pins under whatever chrome the engine pins above"
+    assert_includes nav["class"].split, "top-[var(--pin-stack-bottom,0px)]", "it pins under whatever chrome the engine pins above"
     chips = css_select("[data-test='group-chip']")
     assert_equal %w[#connect #add-ons #custom], chips.map { _1["href"] }
     chips.each do |chip|
@@ -40,11 +40,9 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
       assert_operator item.line.length, :<=, 80, "#{item.key}: a tile's line stays one short line"
       details = card.at_css("[data-test='entry-details']")
       assert details, "#{item.key} has Details"
-      assert_equal "open", details["x-show"], item.key
-      assert details.key?("x-cloak"), "#{item.key}: Details starts closed"
-      toggle = card.at_css("[data-test='entry-details-toggle']")
-      assert_equal details["id"], toggle["aria-controls"], item.key
-      assert_equal "false", toggle["aria-expanded"], item.key
+      assert_equal "details", details.name, "#{item.key}: a native disclosure, no script"
+      assert_not details.key?("open"), "#{item.key}: Details starts closed"
+      assert_equal "summary", card.at_css("[data-test='entry-details-toggle']").name, item.key
       # Nothing about how it connects shows outside Details.
       card.css("[data-test='entry-connections'], [data-test='entry-blurb'], [data-test='entry-price-note'], [data-test='entry-tier-note']").each do |hidden|
         assert hidden.ancestors("[data-test='entry-details']").any?, "#{item.key}: #{hidden['data-test']} sits behind Details"

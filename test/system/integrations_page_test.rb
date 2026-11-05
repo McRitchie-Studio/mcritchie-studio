@@ -120,12 +120,11 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     assert_operator bottom, :<, 2000, "signed-out /integrations at 1440 ends its content at #{bottom}px"
 
     within("[data-test='integration-entry'][data-entry='discord']") do
-      assert_no_selector "[data-test='entry-details']" # the control: closed by default
+      assert_no_selector "[data-test='entry-details-panel']" # the control: closed by default
       assert_no_text "Your workspace · One install · No upkeep"
       find("[data-test='entry-details-toggle']").click
-      assert_selector "[data-test='entry-details']", visible: true
+      assert_selector "[data-test='entry-details'][open] [data-test='entry-details-panel']", visible: true
       assert_text "Your workspace · One install · No upkeep"
-      assert_selector "[data-test='entry-details-toggle'][aria-expanded='true']"
     end
 
     find("[data-test='group-chip'][data-group='custom']").click

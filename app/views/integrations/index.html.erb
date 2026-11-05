@@ -15,7 +15,7 @@
 
   <%# The group chips: one jump per group, pinned under the site header (the
       engine composes --pin-stack-bottom from whatever chrome is pinned above). %>
-  <nav class="sticky z-20 -mx-4 mb-2 bg-page/90 px-4 py-2 backdrop-blur" style="top: var(--pin-stack-bottom, 0px)"
+  <nav class="sticky top-[var(--pin-stack-bottom,0px)] z-20 -mx-4 mb-2 bg-page/90 px-4 py-2 backdrop-blur"
        aria-label="Jump to a group" data-test="group-nav">
     <ul class="flex gap-2 overflow-x-auto sm:justify-center">
       <% @groups.each do |group| %>
@@ -31,7 +31,7 @@
   </nav>
 
   <% @groups.each do |group| %>
-    <section id="<%= group.key.dasherize %>" class="mt-6" style="scroll-margin-top: calc(var(--pin-stack-bottom, 0px) + 3.5rem)"
+    <section id="<%= group.key.dasherize %>" class="mt-6 scroll-mt-[calc(var(--pin-stack-bottom,0px)+3.5rem)]"
              data-test="integration-group" data-group="<%= group.key %>" aria-labelledby="group-<%= group.key %>">
       <div class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-baseline sm:justify-between sm:gap-6">
         <div class="flex min-w-0 items-baseline gap-2">
@@ -57,8 +57,7 @@
           <% fathom_here = @fathom && entry.key == IntegrationsController::FATHOM_CARD %>
           <% shows_blurb = entry.line != entry.blurb %>
           <% details = shows_blurb || entry.tier_note.present? || entry.connection_methods.any? || entry.price_note.present? || entry.price_label %>
-          <article class="flex flex-col rounded-xl border border-subtle bg-surface p-4" x-data="{ open: false }"
-                   data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>">
+          <article class="flex flex-col rounded-xl border border-subtle bg-surface p-4" data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>">
             <div class="flex items-start gap-3">
               <% if entry.brand %>
                 <span data-test="entry-lead" data-lead="<%= entry.brand %>"><%= render "packages/brand", key: entry.brand, size: :lead %></span>
@@ -94,10 +93,11 @@
             <% end %>
 
             <%# The action row: a signed-in user's real Connect or Disconnect on a
-                Google tile (an admin's on the Fathom tile), else the tile's button,
-                with the Details toggle beside it. %>
-            <div class="mt-auto pt-3">
-              <div class="flex flex-wrap items-center justify-between gap-2" data-test="entry-action">
+                Google tile (an admin's on the Fathom tile), else the tile's button.
+                The Details toggle is a native <details> (no script) whose summary
+                sits at the row's right edge, so the panel opens in place below. %>
+            <div class="relative mt-auto pt-3">
+              <div class="flex min-h-7 flex-wrap items-center gap-2 <%= 'pr-16' if details %>" data-test="entry-action">
                 <% if google_ability %>
                   <div class="min-w-0 flex-1 text-xs"><%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable], own: @google[:own] %></div>
                 <% elsif fathom_here %>
@@ -115,18 +115,16 @@
                         class: "btn #{entry.intent == 'connect' ? 'btn-primary' : 'btn-neutral'} btn-sm shrink-0 justify-center",
                         data: { test: "entry-cta", intent: entry.intent } %>
                 <% end %>
-                <% if details %>
-                  <button type="button" class="ml-auto inline-flex shrink-0 items-center gap-1 text-xs font-medium text-muted hover:text-heading"
-                          data-test="entry-details-toggle" aria-controls="details-<%= entry.key %>" :aria-expanded="open.toString()" aria-expanded="false"
-                          @click="open = !open">
-                    Details
-                    <svg class="h-3 w-3 transition-transform" :class="open && 'rotate-180'" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z" clip-rule="evenodd"/></svg>
-                  </button>
-                <% end %>
               </div>
 
               <% if details %>
-                <div id="details-<%= entry.key %>" class="mt-3 space-y-3 border-t border-subtle pt-3 text-xs" x-show="open" x-cloak data-test="entry-details">
+                <details class="group/details" data-test="entry-details">
+                <summary class="absolute right-0 top-3 flex h-7 cursor-pointer list-none items-center gap-1 text-xs font-medium text-muted hover:text-heading [&::-webkit-details-marker]:hidden"
+                         data-test="entry-details-toggle">
+                  Details
+                  <svg class="h-3 w-3 transition-transform group-open/details:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z" clip-rule="evenodd"/></svg>
+                </summary>
+                <div class="mt-3 space-y-3 border-t border-subtle pt-3 text-xs" data-test="entry-details-panel">
                   <% if shows_blurb %>
                     <p class="text-sm text-body" data-test="entry-blurb"><%= entry.blurb %></p>
                   <% end %>
@@ -191,6 +189,7 @@
                     </div>
                   <% end %>
                 </div>
+                </details>
               <% end %>
             </div>
           </article>
