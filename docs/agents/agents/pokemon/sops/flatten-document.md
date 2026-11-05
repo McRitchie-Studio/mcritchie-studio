@@ -57,9 +57,10 @@ let a = CommandLine.arguments
 let doc = PDFDocument(url: URL(fileURLWithPath: a[1]))!; let s = CGFloat(300.0 / 72)
 for i in 0..<doc.pageCount {
   let p = doc.page(at: i)!; let r = p.bounds(for: .mediaBox)
-  let c = CGContext(data: nil, width: Int(r.width * s), height: Int(r.height * s), bitsPerComponent: 8, bytesPerRow: 0,
+  let q = p.rotation % 180 == 0; let w = q ? r.width : r.height; let h = q ? r.height : r.width
+  let c = CGContext(data: nil, width: Int(w * s), height: Int(h * s), bitsPerComponent: 8, bytesPerRow: 0,
                     space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
-  c.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: r.width * s, height: r.height * s))
+  c.setFillColor(CGColor(red: 1, green: 1, blue: 1, alpha: 1)); c.fill(CGRect(x: 0, y: 0, width: w * s, height: h * s))
   c.scaleBy(x: s, y: s); p.displaysAnnotations = true; p.draw(with: .mediaBox, to: c)
   let d = CGImageDestinationCreateWithURL(URL(fileURLWithPath: String(format: "%@-%03d.png", a[2], i + 1)) as CFURL, UTType.png.identifier as CFString, 1, nil)!
   CGImageDestinationAddImage(d, c.makeImage()!, nil); CGImageDestinationFinalize(d)
