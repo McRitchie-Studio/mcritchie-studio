@@ -27,9 +27,8 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
                    "Integrations" => "plug" }, rows.to_h { |link| link.values_at(:label, :icon) }.except(*apps.map { |link| link[:label] }))
     assert rows.all? { |link| link[:emoji].present? }, "the emoji stays the fallback"
     assert links.any? { |link| link[:label] == "Books" }, "control: this reads an admin's rows"
-    skip "the locked engine has no Studio::Icons yet" unless defined?(Studio::Icons)
-
-    assert_empty rows.pluck(:icon).reject { |name| Studio::Icons.known?(name) }, "the engine vendors every name"
+    # The locked engine may not hold the icon set yet; once it does, it holds every name.
+    assert_empty rows.pluck(:icon).reject { |name| Studio::Icons.known?(name) }, "the engine vendors every name" if defined?(Studio::Icons)
   end
 
   test "the sign-in row names a line icon too" do
