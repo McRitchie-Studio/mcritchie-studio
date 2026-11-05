@@ -257,6 +257,27 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
     assert_match(/not shared/, err)
   end
 
+  test "shortcut_create sends the shortcut type, the destination and the target, and shares nothing" do
+    service = ServiceDouble.new
+    sent = nil
+    original = service.method(:create_file)
+    service.define_singleton_method(:create_file) { |metadata, **kwargs| sent = metadata; original.call(metadata, **kwargs) }
+    house_client(service).shortcut_create(name: "Agreements", parent: "lender-folder", target_id: "master")
+
+    assert_equal "application/vnd.google-apps.shortcut", sent.mime_type
+    assert_equal [ "lender-folder" ], sent.parents
+    assert_equal "master", sent.shortcut_details.target_id
+    assert_empty shares(service)
+  end
+
+  test "a shortcut that may have landed is not retried" do
+    service = ServiceDouble.new(raises: [ Google::Apis::ServerError.new("backendError", status_code: 500) ])
+    assert_raises(Workspace::ApiRetry::Error, Google::Apis::ServerError) do
+      house_client(service).shortcut_create(name: "Agreements", parent: "lender-folder", target_id: "master")
+    end
+    assert_equal 1, service.calls.count { |call| call.first == :create_file }
+  end
+
   test "a file that is not a folder is not shared" do
     service = ServiceDouble.new
     house_client(service).files_create(name: "Doc", parents: "records", mime_type: "application/vnd.google-apps.document",

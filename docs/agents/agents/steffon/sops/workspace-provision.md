@@ -239,6 +239,15 @@ A document is marked `missing` only after a walk that COMPLETED. A failed walk
 records the error and infers nothing, so a network blip mid-tree never
 tombstones the half it did not reach.
 
+The walker records a shortcut and never follows it. A shortcut's target is indexed
+only when a source walks the folder that holds it, in the Workspace of the entity
+that signs it. To list each walked shortcut and whether a source indexes its target,
+run:
+
+```bash
+bin/rails workspace:shortcuts
+```
+
 ## 6. Record
 
 - Note the new workspace and its sources in the client's own private repo — not

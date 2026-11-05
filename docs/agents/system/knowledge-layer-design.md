@@ -19,8 +19,8 @@ session's context only when that session asks for it by id.
 | Google identity | One service-account key under domain-wide delegation serves every Workspace. The grant holds four scopes: `drive.readonly`, `drive.file`, `gmail.readonly`, `gmail.compose` | `app/services/workspace/credentials.rb#SCOPES`, `app/services/workspace/credentials.rb#ITEM` |
 | Who is impersonated | For Drive, only an `active` `WorkspaceAccount` subject, `team@<domain>` by default. Under the `mail` purpose an active `WorkspaceMailbox` in an active Workspace also passes. Any other address raises before a token is built | `app/services/workspace/credentials.rb#authorizer_for`, `app/models/workspace_account.rb#impersonatable?` |
 | Token reach | A token asks for its purpose's scopes. Two purposes exist: `workspace` (all four) and `mail` (the two Gmail scopes). The Drive client asks for `workspace`, so a Drive token also holds the Gmail scopes | `app/services/workspace/credentials.rb#SCOPES_BY_PURPOSE`, `app/services/workspace/drive_client.rb#service` |
-| Drive calls | List by query, get, download, export, copy, create, update, trash, list and create permissions. A new folder is shared with its Workspace's folder user. A listing with no query is refused | `app/services/workspace/drive_client.rb#files_list` |
-| The walker | Walks one folder tree depth-first and records metadata only. It downloads nothing, never follows a shortcut, and marks a document `missing` only after a complete walk | `app/services/workspace/drive_walker.rb#record`, `app/services/workspace/drive_walker.rb#mark_unseen_missing` |
+| Drive calls | List by query, get, download, export, copy, create, create a shortcut, update, trash, list and create permissions. A new folder is shared with its Workspace's folder user. A listing with no query is refused | `app/services/workspace/drive_client.rb#files_list` |
+| The walker | Walks one folder tree depth-first and records metadata only. It downloads nothing, never follows a shortcut, and marks a document `missing` only after a complete walk. A shortcut's target reaches the index only when a source walks it; `workspace:shortcuts` lists the ones no source indexes | `app/services/workspace/drive_walker.rb#record`, `app/services/workspace/drive_walker.rb#mark_unseen_missing`, `app/models/source_document.rb#shortcut_target_source` |
 | What runs the walker | The `workspace:walk` task in `lib/tasks/workspace.rake`, by hand. No job and no schedule calls it | `config/recurring.yml` |
 | The index | `KnowledgeSource` (kinds `google_drive`, `egnyte`, `transcripts`) and `SourceDocument`: Drive file id, version, title, owner, link, Drive's MD5 for binary files, a per-agent access map, and the version last indexed | `app/models/knowledge_source.rb#KINDS`, `app/models/source_document.rb#needs_indexing?` |
 | What the index lacks | A SHA-256, a summary, a category, any document text, and anything that calls `mark_indexed!` | `app/models/source_document.rb#mark_indexed!` |
@@ -98,6 +98,8 @@ root a source names and never follows a shortcut
 (`app/services/workspace/drive_walker.rb#walk`). This is held by registration,
 not by Google: a `drive_read` token can open both folders, and a source
 registered at the drive root would walk them. Piece 4 refuses that registration.
+A folder that holds doc masters, outside the shelf, may be registered as a further
+source, so a master in the signing entity's Workspace reaches the index.
 
 A category is a folder name under `originals/`; the indexer copies it onto the row.
 

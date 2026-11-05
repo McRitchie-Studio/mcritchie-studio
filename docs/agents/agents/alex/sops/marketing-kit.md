@@ -253,17 +253,12 @@ may not see the kit:
 
 A shortcut shows a master folder or file in another folder, and it opens the one
 master. To add one, the account needs Editor on the destination folder and must be
-able to see the target. `DriveClient#files_create` has no shortcut option, so call
-its `service` directly:
+able to see the target. Run this as the account that owns the destination or has
+Editor on it:
 
 ```ruby
-file = Google::Apis::DriveV3::File.new(
-  name: "Employment Agreements",
-  mime_type: "application/vnd.google-apps.shortcut",
-  parents: [destination_folder_id],
-  shortcut_details: Google::Apis::DriveV3::File::ShortcutDetails.new(target_id: master_id)
-)
-client.service.create_file(file, fields: "id", supports_all_drives: true)
+Workspace::DriveClient.new(subject: "team@<domain>")
+                      .shortcut_create(name: "Employment Agreements", parent: destination_folder_id, target_id: master_id)
 ```
 
 - **It is one master.** On 2026-11-04, across two Workspaces, an edit made by the
@@ -279,6 +274,13 @@ client.service.create_file(file, fields: "id", supports_all_drives: true)
   owner removes them by hand.
 - **View-only destination:** a person with edit access adds the shortcut by hand:
   right-click the master, then **Organize > Add shortcut**.
+- **The knowledge layer does not follow it.** The walker records a shortcut and its
+  target, and never reads the target. A master reaches the index when the folder that
+  holds it, such as `<Entity> Records`, is a source. Never register a drive root. Run
+  `workspace:add_source` with the signing entity's domain, which must be an active
+  Workspace, then `workspace:walk`. The task `workspace:shortcuts` lists each walked
+  shortcut and whether a source indexes its target. A new source starts with no
+  access for any agent.
 
 ## Done when
 
