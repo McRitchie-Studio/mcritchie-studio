@@ -85,6 +85,41 @@
    import above (studio-engine 0.13+ ships them as @utility, lifted verbatim
    from these MS definitions). Only MS-unique utilities remain in this file. */
 
+/* ── Glass board cards (Studio.surface_style = :glass, engine.css THE GLASS SURFACES) ─────
+   A board card spells its own surface (TaskCardComponent's tones), so the engine's rule does
+   not reach it. A plain card takes the engine's dense tier: no blur, since a board holds a
+   hundred. A tinted card (bg-danger/10, bg-warning/10) is translucent already and keeps its
+   tone. A glowing card's halo sits BEHIND its fill, so it holds a denser fill, or the stage
+   color would wash the small text. Summary and stat panels take the real blur: there are few. */
+@layer utilities {
+  html[data-surface-style="glass"] .kanban-card {
+    box-shadow: var(--surface-glass-highlight), var(--surface-glass-shadow);
+  }
+  html[data-surface-style="glass"] .kanban-card.bg-surface {
+    background-color: var(--surface-glass-fill);
+  }
+  html[data-surface-style="glass"] .kanban-card.bg-surface.border-subtle { border-color: var(--surface-glass-line); }
+  html[data-surface-style="glass"] .kanban-card.bg-surface:hover { background-color: var(--surface-glass-fill-hover); }
+  html[data-surface-style="glass"] .kanban-card.bg-surface.task-card-stage-glow,
+  html[data-surface-style="glass"] .kanban-card.bg-surface.studio-border-glow {
+    background-color: color-mix(in srgb, var(--color-surface) 90%, transparent);
+  }
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    html[data-surface-style="glass"] :is([data-test="stat-cards"] > .card, .bg-surface.rounded-xl.border:not(.absolute, .fixed, .sticky)) {
+      -webkit-backdrop-filter: var(--surface-glass-filter);
+      backdrop-filter: var(--surface-glass-filter);
+    }
+    html[data-surface-style="glass"] .bg-surface.rounded-xl.border:not(.absolute, .fixed, .sticky):is(:hover, :focus-within) { position: relative; z-index: 2; }
+    /* A lane's sticky header needs a background, or the cards show through it. A thin one
+       with a blur stops it reading as an opaque strip; there are few of them. */
+    html[data-surface-style="glass"] .sticky.bg-page.rounded-t-lg {
+      background-color: color-mix(in srgb, var(--color-page) 55%, transparent);
+      -webkit-backdrop-filter: blur(14px) saturate(140%);
+      backdrop-filter: blur(14px) saturate(140%);
+    }
+  }
+}
+
 /* ── Board card glow presets ────────────────────────────────────────────────
    UNLAYERED ON PURPOSE. These retune the ENGINE's .studio-border-glow through
    its knobs, and the engine ships that primitive from a plain @import — so its

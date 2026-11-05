@@ -62,6 +62,9 @@ Studio.configure do |config|
   # both settings.
   config.sidebar_style = :glass if config.respond_to?(:sidebar_style=)
   config.sidebar_geo_signpost = false if config.respond_to?(:sidebar_geo_signpost=)
+  # Liquid glass on the cards too (Alex McRitchie, 2026-11-04: "I would love to see all the
+  # cards in that stlye"). A separate switch, so the sidebar can ship without it.
+  config.surface_style = :glass if config.respond_to?(:surface_style=)
   config.nav_spinner_min_ms = 300
 
   # Passwordless: magic-link email + Google. No :password, and User has no

@@ -5,7 +5,9 @@
     anything paints. Every other page leaves the theme to the engine. %>
 <% page_theme = content_for(:html_theme).presence %>
 <%# lang="en" on every page: a screen reader picks its voice from it (axe html-has-lang). %>
-<html lang="en"<%= safe_join([" ", tag.attributes(class: ("dark" if page_theme == "dark"), data: { theme_context: page_theme })]) if page_theme %>>
+<%# The glass cards (engine.css, THE GLASS SURFACES). Guarded until the release relocks an engine with the setting. %>
+<% surface_style = (Studio.surface_style if Studio.respond_to?(:surface_style) && Studio.surface_style != :default) %>
+<html lang="en"<%= safe_join([" ", tag.attributes(class: ("dark" if page_theme == "dark"), data: { theme_context: page_theme, surface_style: surface_style })]) if page_theme || surface_style %>>
   <head>
     <title><%= content_for(:title) || "McRitchie Studio" %></title>
     <%= csrf_meta_tags %>
