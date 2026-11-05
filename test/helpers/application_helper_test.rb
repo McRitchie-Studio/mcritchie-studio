@@ -724,15 +724,15 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_not_includes plain, "<span"
   end
 
-  test "[unit] heartbeat_launchers maps the seven souls to prompt + atom-act launchers" do
+  test "[unit] heartbeat_launchers maps the eight souls to prompt + atom-act launchers" do
     launchers = heartbeat_launchers
 
-    assert_equal 7, launchers.size
-    assert_equal %w[carl avi steffon mason alex turf-monster pokemon], launchers.map { |l| l[:agent_slug] }
+    assert_equal 8, launchers.size
+    assert_equal %w[carl avi steffon mason alex mack turf-monster pokemon], launchers.map { |l| l[:agent_slug] }
     # Row 1 is the prompt-like soul heartbeat phrase; acts are the launcher atoms.
     # The general Pokémon owns no HEARTBEAT, so its row 1 is nil and it renders acts only.
     assert_equal ["Carl Heartbeat", "Avi Heartbeat", "Steffon Heartbeat", "Mason Heartbeat", "Alex Heartbeat",
-                  "Turf Monster Heartbeat", nil],
+                  "Mack Heartbeat", "Turf Monster Heartbeat", nil],
                  launchers.map { |l| l[:heartbeat] }
     # Acts read across the souls in pipeline order: review → assemble → ship.
     # deploy-with-task trails Avi's list — direct-invoke only, never composed.
@@ -750,14 +750,16 @@ class ApplicationHelperTest < ActionView::TestCase
     # McRitchie. His /build queue runs from the Alex Heartbeat row: `launch-build-queue`
     # (18 characters) clips the carousel's act chip on CI, as sleeper-auction-watch does.
     assert_equal ["focus-session"], launchers[4][:actions]
+    # Mack's one chip is the monthly close, which Alex McRitchie runs by name.
+    assert_equal ["close-the-month"], launchers[5][:actions]
     # Turf Monster gained the rehearsal launcher after the first watched QA run —
     # an operator asked to be able to kick the whole contest cycle off from the
     # card rather than remembering a command.
     # ...and post-to-x on 2026-10-06, so the operator can copy it and paste it into a
     # fresh session beside an MP4 path.
-    assert_equal ["live-score-watch", "contest-rehearsal", "post-to-x"], launchers[5][:actions]
+    assert_equal ["live-score-watch", "contest-rehearsal", "post-to-x"], launchers[6][:actions]
     # The general Pokémon carries the wrap-it-up takeover, a registered SOP.
-    assert_equal ["wrap-it-up"], launchers[6][:actions]
+    assert_equal ["wrap-it-up"], launchers[7][:actions]
 
     # archive-shipped is NOT a launcher act any more: production-deploy runs it as
     # its final step. It stays a registered SOP invocable by name — this asserts the
@@ -895,9 +897,9 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='heartbeat-launcher'][data-agent='pokemon'] [data-copy-row-index='1'] button[data-clip='wrap-it-up']"
     assert_select "[data-test='heartbeat-launcher'][data-agent='pokemon'] [data-copy-row-index='1'] [data-test='heartbeat-row-description']",
                   text: action_description("wrap-it-up")
-    # Each soul heartbeat row (row 1) carries a leading ❤️; Pokémon has none, so six.
-    assert_select "[data-test='heartbeat-heart']", count: 6
-    assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 6
+    # Each soul heartbeat row (row 1) carries a leading ❤️; Pokémon has none, so seven.
+    assert_select "[data-test='heartbeat-heart']", count: 7
+    assert_select "[data-test='heartbeat-launcher'] button[data-row='heartbeat'] [data-test='heartbeat-heart']", text: "❤️", count: 7
     # Every act carries a leading icon — a 1️⃣–3️⃣ keycap for the three ordered release
     # acts, a themed glyph for the rest.
     assert_select "button[data-row='action'][data-clip='pr-review'] [data-test='action-icon']", text: "1️⃣"
@@ -935,7 +937,7 @@ class ApplicationHelperTest < ActionView::TestCase
 
     card = css_select("[data-test='agents-summary-card']").first
     refute_nil card, "the summary variant renders the Workflows summary card"
-    assert_equal "turf-monster,pokemon,carl,avi,steffon,mason,alex", card["data-agents"],
+    assert_equal "turf-monster,pokemon,carl,avi,steffon,mason,alex,mack", card["data-agents"],
                  "the wheel starts on Turf Monster and walks the rest in canonical order, wrapping"
     assert_equal "turf-monster", card["data-active-agent"]
     assert_equal ApplicationHelper::AGENTS_CAROUSEL_ROTATE_MS.to_s, card["data-rotate-ms"]
@@ -943,8 +945,8 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_equal "agents", card["data-panel"], "a click opens the Workflows sidebar"
 
     slides = css_select("[data-test='soul-slide']")
-    assert_equal %w[turf-monster pokemon carl avi steffon mason alex], slides.map { |slide| slide["data-agent"] }
-    assert_equal %w[active waiting waiting waiting waiting waiting waiting], slides.map { |slide| slide["data-place"] }
+    assert_equal %w[turf-monster pokemon carl avi steffon mason alex mack], slides.map { |slide| slide["data-agent"] }
+    assert_equal %w[active waiting waiting waiting waiting waiting waiting waiting], slides.map { |slide| slide["data-place"] }
     assert_nil slides.first["inert"], "the soul in frame is interactive"
     slides.drop(1).each { |slide| refute_nil slide["inert"], "#{slide['data-agent']} is off-frame, so inert" }
     assert_select "[data-test='soul-slide'] [data-test='heartbeat-launcher'][data-layout='slide']", count: heartbeat_launchers.size
