@@ -64,8 +64,9 @@ test("a countdown's replace visit on /build/<token> never shows the loader", asy
     // Looked up on each tick: the overlay may come from the head template only once the visit starts.
     let seen = false;
     const timer = setInterval(() => {
-      const el = document.querySelector("[data-studio-loader-overlay]");
-      if (el && getComputedStyle(el).display !== "none" && !el.hidden) seen = true;
+      const shownNow = [...document.querySelectorAll("[data-studio-loader-overlay]")]
+        .some((el) => getComputedStyle(el).display !== "none" && !el.hidden);
+      if (shownNow) seen = true;
     }, 20);
     window.Turbo.visit(window.location.href, { action: "replace" });
     setTimeout(() => { clearInterval(timer); resolve(seen); }, 1200);
