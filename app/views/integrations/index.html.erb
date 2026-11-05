@@ -95,7 +95,8 @@
             <%# The action row: a signed-in user's real Connect or Disconnect on a
                 Google tile (an admin's on the Fathom tile), else the tile's button.
                 The Details toggle is a native <details> (no script) whose summary
-                sits at the row's right edge, so the panel opens in place below. %>
+                sits at the row's right edge; its panel drops over the tiles below,
+                so opening one never stretches the other tiles in its row. %>
             <div class="relative mt-auto pt-3">
               <div class="flex min-h-7 flex-wrap items-center gap-2 <%= 'pr-16' if details %>" data-test="entry-action">
                 <% if google_ability %>
@@ -124,7 +125,7 @@
                   Details
                   <svg class="h-3 w-3 transition-transform group-open/details:rotate-180" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M5.3 7.3a1 1 0 0 1 1.4 0L10 10.6l3.3-3.3a1 1 0 1 1 1.4 1.4l-4 4a1 1 0 0 1-1.4 0l-4-4a1 1 0 0 1 0-1.4Z" clip-rule="evenodd"/></svg>
                 </summary>
-                <div class="mt-3 space-y-3 border-t border-subtle pt-3 text-xs" data-test="entry-details-panel">
+                <div class="absolute -inset-x-4 top-full z-10 mt-3 space-y-3 rounded-xl border border-subtle bg-surface p-4 text-xs shadow-lg" data-test="entry-details-panel">
                   <% if shows_blurb %>
                     <p class="text-sm text-body" data-test="entry-blurb"><%= entry.blurb %></p>
                   <% end %>
