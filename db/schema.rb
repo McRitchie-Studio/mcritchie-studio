@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_04_230000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_05_233000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -386,7 +386,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_04_230000) do
     t.index ["person_id"], name: "index_agent_proposals_on_person_id"
     t.index ["source_message_id"], name: "index_agent_proposals_on_source_message_id"
     t.index ["thread_key", "status"], name: "index_agent_proposals_on_thread_and_status"
-    t.check_constraint "kind::text = ANY (ARRAY['ask'::character varying::text, 'operate'::character varying::text, 'change'::character varying::text])", name: "agent_proposals_kind_known"
+    t.check_constraint "kind::text = ANY (ARRAY['ask'::character varying, 'operate'::character varying, 'change'::character varying, 'upgrade'::character varying]::text[])", name: "agent_proposals_kind_known"
     t.check_constraint "status::text = ANY (ARRAY['proposed'::character varying::text, 'confirmed'::character varying::text, 'rejected'::character varying::text, 'expired'::character varying::text, 'executed'::character varying::text])", name: "agent_proposals_status_known"
   end
 

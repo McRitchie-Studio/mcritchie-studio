@@ -149,6 +149,7 @@
   <p class="mt-2 text-xs text-muted md:hidden">Swipe the table sideways to compare tiers.</p>
 
   <%= render "packages/talk_to_us", package: @talk_to_us if @talk_to_us %>
+  <%= render "packages/talk_to_alex" %>
 
   <% if (dns = features.find { |feature| feature.name == WorkspacePackage::CLOUDFLARE_DNS }) %>
     <%= render "packages/dns_flow", feature: dns %>

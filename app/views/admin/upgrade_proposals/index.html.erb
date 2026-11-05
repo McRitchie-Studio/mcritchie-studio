@@ -1,0 +1,85 @@
+<%# /admin/upgrade_proposals: Alex's upgrade proposals (AgentProposals::Upgrade). Open ones first, each with what Alex asked, who asked, and Approve or Decline; then the latest settled ones. Approve sets the tier only on an app the person owns; nothing here charges anyone. %>
+<% content_for(:title, "Upgrade proposals") %>
+<% stamp = ->(time) { time&.in_time_zone("America/Denver")&.strftime("%b %-d, %-l:%M %p") } %>
+<% who = lambda do |proposal|
+     user = AgentProposals::Upgrade.user_for(proposal)
+     user ? [ user.display_name.presence, user.email ].compact.join(" · ") : (proposal.person&.display_name.presence || "A visitor (signed out)")
+   end %>
+<section class="max-w-4xl mx-auto px-4 py-10 space-y-6" data-test="upgrade-proposals-page">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Upgrade proposals</h1>
+    <p class="text-secondary mt-2">
+      Alex files one when a person in his chat asks to move to a package tier. Approve sets the tier on an app the person owns.
+      If they named no app of theirs, it records your yes so you can follow up. Nothing here charges anyone.
+    </p>
+  </div>
+
+  <% if @open.empty? %>
+    <div class="card p-6 text-body" data-test="upgrade-proposals-empty">No proposals are waiting.</div>
+  <% else %>
+    <div class="space-y-4" data-test="upgrade-proposals-open">
+      <% @open.each do |proposal| %>
+        <% params = proposal.params.to_h %>
+        <% app = AgentProposals::Upgrade.owned_app(proposal) %>
+        <article class="card p-5 space-y-3" data-test="upgrade-proposal" data-proposal-id="<%= proposal.id %>">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 class="text-lg font-semibold text-heading">
+              <%= AgentProposals::Upgrade.tier_name(params["tier"]) %> · <%= params["billing"].presence || "monthly" %>
+            </h2>
+            <span class="text-xs text-secondary">Filed <%= stamp.call(proposal.created_at) %> · open until <%= stamp.call(proposal.expires_at) %></span>
+          </div>
+          <p class="text-body break-words" data-test="upgrade-proposal-summary"><%= proposal.summary %></p>
+          <dl class="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+            <div><dt class="inline text-secondary">Who:</dt> <dd class="inline text-body break-words"><%= who.call(proposal) %></dd></div>
+            <div>
+              <dt class="inline text-secondary">App:</dt>
+              <dd class="inline text-body" data-test="upgrade-proposal-app">
+                <% if app %>
+                  <%= app.slug %> (now <%= AgentProposals::Upgrade.tier_name(app.package_tier) if app.package_tier.present? %><%= "no tier" if app.package_tier.blank? %>)
+                <% elsif params["app"].present? %>
+                  <%= params["app"] %>, not an app this person owns
+                <% else %>
+                  none named
+                <% end %>
+              </dd>
+            </div>
+          </dl>
+          <div class="flex flex-wrap items-center gap-2">
+            <%= button_to "Approve", approve_admin_upgrade_proposal_path(proposal), method: :post, class: "btn btn-primary btn-sm",
+                          form: { data: { turbo_confirm: (app ? "Set #{app.slug} to #{AgentProposals::Upgrade.tier_name(params['tier'])}?" : "Record your approval? No tier changes.") } },
+                          data: { test: "upgrade-proposal-approve" } %>
+            <%= button_to "Decline", decline_admin_upgrade_proposal_path(proposal), method: :post, class: "btn btn-secondary btn-sm",
+                          data: { test: "upgrade-proposal-decline" } %>
+            <% if proposal.source_message_id %>
+              <%= link_to "Open the chat message", admin_agent_message_path(proposal.source_message_id), class: "text-sm text-primary hover:underline ml-auto" %>
+            <% end %>
+          </div>
+        </article>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if @recent.any? %>
+    <div class="space-y-2">
+      <h2 class="text-lg font-semibold text-heading">Recent</h2>
+      <div class="card overflow-x-auto">
+        <table class="w-full text-sm" data-test="upgrade-proposals-recent">
+          <thead class="text-left text-secondary">
+            <tr><th class="p-3">Tier</th><th class="p-3">Who</th><th class="p-3">Status</th><th class="p-3">Settled</th></tr>
+          </thead>
+          <tbody>
+            <% @recent.each do |proposal| %>
+              <% status = proposal.status == "executed" ? (proposal.result["applied"] ? "approved, tier set" : "approved, follow up") : (proposal.expired? ? "expired" : (proposal.result["reason"] == "superseded" ? "superseded" : "declined")) %>
+              <tr class="border-t border-subtle">
+                <td class="p-3 text-body"><%= AgentProposals::Upgrade.tier_name(proposal.params["tier"]) %></td>
+                <td class="p-3 text-body break-words"><%= who.call(proposal) %></td>
+                <td class="p-3 text-body"><%= status %></td>
+                <td class="p-3 text-secondary"><%= stamp.call(proposal.settled_at) || "-" %></td>
+              </tr>
+            <% end %>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  <% end %>
+</section>

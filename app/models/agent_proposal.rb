@@ -23,7 +23,12 @@ require Rails.root.join("bin/lib/agent_proposal_block").to_s
 # told and nothing runs, never the newer offer in its place.
 class AgentProposal < ApplicationRecord
   STATUSES = %w[proposed confirmed rejected expired executed].freeze
-  KINDS = AgentMailbox::DomainRegistry::KINDS
+  # `upgrade` is Alex's ask to move a person to a package tier
+  # (AgentProposals::Upgrade). It is never in a catalog, never confirmed by a
+  # word in a thread, and never run by AgentProposalJob: the owner approves or
+  # declines it on /admin/upgrade_proposals.
+  UPGRADE = AgentProposals::Upgrade::KIND
+  KINDS = (AgentMailbox::DomainRegistry::KINDS + [ UPGRADE ]).freeze
   TTL = 24.hours
   # What the owner is told under an accepted proposal.
   CONFIRM_LINE = "Reply **go** to run this, **no** to drop it, or **change: …**".freeze
@@ -40,6 +45,8 @@ class AgentProposal < ApplicationRecord
   validates :kind, inclusion: { in: KINDS }
 
   scope :pending, -> { where(status: "proposed") }
+  # Every kind a `go`, `no` or `change: …` in a thread may settle: never an upgrade.
+  scope :word_settled, -> { where.not(kind: UPGRADE) }
 
   class << self
     # The registry, read once per process. Tests swap it with `registry=`.
@@ -97,7 +104,7 @@ class AgentProposal < ApplicationRecord
     # tells the owner when it is no longer open rather than running another.
     # Any other word is about the newest pending proposal in the thread.
     def for_word(thread_key:, channel:, guild_id:, channel_ref:, reference_id: nil)
-      scope = where(thread_key: thread_key, channel: channel, guild_id: guild_id, channel_ref: channel_ref)
+      scope = word_settled.where(thread_key: thread_key, channel: channel, guild_id: guild_id, channel_ref: channel_ref)
       if reference_id.present?
         named = scope.joins(:source_message)
                      .where("agent_messages.reply_external_id = :ref OR agent_messages.external_id = :ref",
@@ -111,7 +118,7 @@ class AgentProposal < ApplicationRecord
     # The newest still-pending proposal in a thread, or nil (expired ones included:
     # the caller expires them, so a late `go` is told).
     def latest_pending(thread_key:, channel:, guild_id:, channel_ref:)
-      where(thread_key: thread_key, channel: channel, guild_id: guild_id, channel_ref: channel_ref)
+      word_settled.where(thread_key: thread_key, channel: channel, guild_id: guild_id, channel_ref: channel_ref)
         .pending.order(id: :desc).first
     end
   end
