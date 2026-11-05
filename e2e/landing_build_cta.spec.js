@@ -1,6 +1,8 @@
 // [e2e] The landing hero's Launch Your Website (task landing-build-ctas).
 //
-// The hero CTA wears the cta-glow primitive's rainbow preset. On a 375px phone the
+// The hero CTA wears the cta-glow primitive's rainbow preset, until the app runs an engine with
+// the glass surfaces (Studio.surface_style): there the button is lit in its own color and the
+// rainbow is off (cta_glow.css). This reads whichever the locked engine gives. On a 375px phone the
 // glow never scrolls the page sideways at any point of its motion; under reduced
 // motion the glow holds still; in light mode it takes deeper stops than in dark
 // (task preview-domain-mcritchie-app); and the CTA goes to /build.
@@ -12,13 +14,14 @@ test.use({ storageState: VISITOR });
 
 const glowSelector = "[data-test='hero-build-glow']";
 
-test("on a phone the rainbow Launch Your Website never scrolls the page sideways, in either theme", async ({ page }) => {
+test("on a phone the hero Launch Your Website never scrolls the page sideways, in either theme", async ({ page }) => {
   test.setTimeout(45_000);
   await blockThirdPartyRequests(page);
   const { pageErrors, report } = watchPageErrors(page);
   await page.setViewportSize({ width: 375, height: 760 });
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const rings = {};
+  let glass = false;
   for (const scheme of ["light", "dark"]) {
     // The site theme is localStorage.theme (studio-engine's pre-paint script:
     // anything but "light" is dark), not prefers-color-scheme, so emulateMedia
@@ -37,9 +40,15 @@ test("on a phone the rainbow Launch Your Website never scrolls the page sideways
       return { animation: after.animationName, background: before.backgroundImage, filter: before.filter };
     });
     rings[scheme] = layer;
+    glass = await page.evaluate(() => document.documentElement.dataset.surfaceStyle === "glass");
+    if (glass) {
+      expect(await glow.evaluate((el) => getComputedStyle(el, "::before").content), "no rainbow under glass").toBe("none");
+      expect(await cta.evaluate((el) => getComputedStyle(el).backgroundImage), "lit in its own color").toContain("linear-gradient");
+    } else {
     expect(layer.animation, "the glow is moving").toBe("cta-glow-trade");
     expect(layer.background, "the glow is the rainbow's seven stops, not the three-colour default").toMatch(/conic-gradient/);
     expect((layer.background.match(/rgb\(/g) || []).length, "rainbow stops").toBeGreaterThanOrEqual(7);
+    }
     // Sample across one whole cycle of the motion (3s each way).
     let worst = 0;
     for (let i = 0; i < 14; i += 1) {
@@ -48,6 +57,7 @@ test("on a phone the rainbow Launch Your Website never scrolls the page sideways
     }
     expect(worst, `${scheme}: the page never scrolls sideways`).toBeLessThanOrEqual(0);
   }
+  if (!glass) {
   // Light mode is louder (task preview-domain-mcritchie-app): over the pale hero
   // the ring takes its own stops and a tighter blur. The 500-weight yellow
   // (#eab308) that muddied on white is replaced by #facc15 and the green deepens
@@ -59,6 +69,7 @@ test("on a phone the rainbow Launch Your Website never scrolls the page sideways
   expect(rings.dark.background, "dark ring unchanged").toContain("rgb(234, 179, 8)");
   expect(rings.light.filter).toBe("blur(8px)");
   expect(rings.dark.filter).toBe("blur(16px)");
+  }
   await expect(page.locator("[data-test='hero-meet-alex']"), "Meet Alex was dropped (drop-hero-meet-alex)").toHaveCount(0);
   expect(pageErrors, report()).toHaveLength(0);
 });

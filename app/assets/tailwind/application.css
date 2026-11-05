@@ -92,13 +92,15 @@
    tone. A glowing card's halo sits BEHIND its fill, so it holds a denser fill, or the stage
    color would wash the small text. Summary and stat panels take the real blur: there are few. */
 @layer utilities {
+  /* The ring variables are named here, on the element: the live-patch highlight and the failed
+     move's red ring are ring-2 on the card, and a shadow list without them erases both. */
   html[data-surface-style="glass"] .kanban-card {
-    box-shadow: var(--surface-glass-highlight), var(--surface-glass-shadow);
+    box-shadow: var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000),
+      var(--surface-glass-highlight), var(--surface-glass-shadow);
   }
   html[data-surface-style="glass"] .kanban-card.bg-surface {
     background-color: var(--surface-glass-fill);
   }
-  html[data-surface-style="glass"] .kanban-card.bg-surface.border-subtle { border-color: var(--surface-glass-line); }
   html[data-surface-style="glass"] .kanban-card.bg-surface:hover { background-color: var(--surface-glass-fill-hover); }
   html[data-surface-style="glass"] .kanban-card.task-card-stage-glow.bg-surface {
     background-color: color-mix(in srgb, color-mix(in srgb, var(--color-surface) 72%, var(--color-page)) 93%, transparent);
