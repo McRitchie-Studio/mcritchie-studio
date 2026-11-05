@@ -131,14 +131,10 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # /admin/schema is held by its address and by the wall only. The engine's view
-  # (studio-engine 0.125.0, schema/index line 68) calls join on index columns, which
-  # Rails returns as a String for an expression index, so the page raises today, on
-  # any database holding one. That predates the Basement and is the engine's to fix.
   test "every moved page keeps its route and still answers an admin" do
     log_in_as users(:alex)
 
-    [ admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
+    [ admin_schema_path, admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
       broadcasts_path, contacts_path, broadcast_analytics_path, logos_path, build_requests_path, books_path,
       activities_agents_path, error_logs_path, admin_tiktok_path, admin_google_path, admin_fathom_path, admin_agent_messages_path,
       admin_report_destinations_path, admin_csp_reports_path ].each do |href|
