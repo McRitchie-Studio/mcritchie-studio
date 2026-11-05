@@ -5,7 +5,7 @@
 
 The Pokémon's `flatten-document` SOP. It turns a marked-up file into page images,
 so a box drawn over a number really hides the number. Run it when Alex McRitchie
-asks to flatten, redact or mask a file, or before you send a marked-up file outside.
+asks to flatten, redact or mask a file, or before a marked-up file goes outside.
 
 A drawn box hides nothing. The text stays in the file under it: anyone can select
 it, copy it, or read it with `pdftotext`. Flattening removes that text. The output
@@ -18,11 +18,12 @@ Poppler (`pdftoppm`, `pdftotext`, `pdffonts`, `pdfimages`, `pdfinfo`), ImageMagi
 `pdftoppm -v` and `magick -version`. Measured on 2026-11-04, on ImageMagick 7.1.2 and
 Poppler 26.09.0.
 
-## 1. Check that a marked copy is what the reader wants
+## 1. Check that a marked copy is what the recipient wants
 
-Read the request the file answers, in the mailbox, before you flatten. A bank or a
-court can ask for full or unmarked copies, and a masked copy then fails. If the
-request says that, or says nothing, ask the reader whether a mask is acceptable.
+Read the request the file answers before you flatten (`bin/mail thread '<gmail query>'`).
+A bank or a court can ask for full or unmarked copies, and a masked copy then fails.
+If the request says that, or says nothing, stop and ask Alex McRitchie whether a mask
+is acceptable. Do not contact the recipient yourself: he asks, or he names who does.
 
 ## 2. Look at the source
 
