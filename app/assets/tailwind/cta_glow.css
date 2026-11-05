@@ -180,3 +180,10 @@
   .cta-glow::after { animation: none; }
   .cta-glow-ring::before { animation: none; }
 }
+
+/* Under the glass surfaces a primary button is lit in its own color (engine.css, LIT FROM ABOVE),
+   and a rainbow round it fights that glow. Other .cta-glow uses, such as the stage pills, keep theirs. */
+html[data-surface-style="glass"] .cta-glow-rainbow:has(> .btn-primary)::before,
+html[data-surface-style="glass"] .cta-glow-rainbow:has(> .btn-primary)::after {
+  content: none;
+}
