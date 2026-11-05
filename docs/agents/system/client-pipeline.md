@@ -9,7 +9,7 @@ build at once. Plan: Phase 8 of `.agents/epics/domain-agents.md` (Alex McRitchie
 
 `/applications/:slug/pipeline` (`ApplicationsController#pipeline`,
 `ClientPipeline`). Read-only. It is linked from the app page's **Pipeline** card
-which an owner reaches from the sidebar's **Your apps** section.
+which an owner reaches from the sidebar's **My Apps** section.
 
 - **Who:** the app's owner or an admin (`AppOwnership.manage_app?`). Anyone else
   gets 404, never 403; a visitor is sent to sign in. An unannounced app

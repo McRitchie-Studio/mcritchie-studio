@@ -14,7 +14,9 @@ class Navigation
   # signed_in: a page AdminWall::SIGNED_IN lets any signed-in user open (its
   # controller decides who sees what), whose NAV entry is still an admin's.
   AUDIENCES = %w[public admin signed_in].freeze
-  # basement: sections that fill /admin/basement and never reach the sidebar.
+  # admin: the sidebar's admin sections. general: the public sections, on /links and
+  # /admin/basement. basement: admin sections that fill /admin/basement. Neither of
+  # the last two reaches the sidebar.
   GROUPS = %w[admin general basement].freeze
   STYLES = %w[links buttons chips].freeze
 
@@ -28,7 +30,7 @@ class Navigation
     def path(view) = view.send(:"#{key}_path", *args)
   end
 
-  Section = Struct.new(:title, :group, :pages, keyword_init: true)
+  Section = Struct.new(:title, :group, :pages, :header, keyword_init: true)
 
   Item = Struct.new(:page, :label, :icon, :back, :only, :except, :hide_when_current, :narrow_only_on,
                     :badges, :count, :test_id, keyword_init: true) do
@@ -138,7 +140,7 @@ class Navigation
     Array(raw).map do |attrs|
       raise Invalid, "sidebar section #{attrs['title'].inspect}: group must be one of #{GROUPS.join(', ')}" unless GROUPS.include?(attrs["group"])
 
-      Section.new(title: attrs["title"].to_s, group: attrs["group"],
+      Section.new(title: attrs["title"].to_s, group: attrs["group"], header: attrs["header"] == true,
                   pages: Array(attrs["pages"]).map { |entry| placed_page(entry) }.freeze).freeze
     end.freeze
   end

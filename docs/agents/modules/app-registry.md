@@ -13,7 +13,8 @@ What derives from the catalog:
 
 - `ApplicationHelper::APP_EMOJIS`, the board's app glyphs
 - `ReleaseNotes::Formatter::APP_GROUPS`, the release-notes groups
-- the `App` rows `db/seeds/00_apps.rb` upserts (`bin/rails apps:seed`), which tint
+- the `App` rows `db/seeds/00_apps.rb` upserts (`bin/rails apps:seed`, only when a
+  task declares it as `post_deploy_cmd`), which tint
   the status line
 - the app tier and status on `/stack` and `/stack/matrix`
 - the badge-glyph check in `bin/register-app`
@@ -37,8 +38,11 @@ record but no `config/satellites.yml` row.
    and fix what it names: usually a `config/satellites.yml` row for the port block
    (`bin/register-satellite`) and a `config/release_repos.yml` entry
    (`bin/register-app`).
-3. The board glyph, the release-notes group and the `App` row follow from the
-   record; `bin/rails apps:seed` writes the row on deploy.
+3. The board glyph and the release-notes group follow from the record. The `App`
+   row does not: the release phase runs `db:migrate` only, and `bin/dor-check` asks
+   for no hook on a `config/apps.yml` diff. So declare it yourself:
+   `bin/task update <task> --post-deploy-cmd 'bin/rails apps:seed'`. Voicebox went
+   without one on 2026-10-27 and had no production row until 2026-11-04.
 
 ## Tiers and statuses
 

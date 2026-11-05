@@ -15,8 +15,9 @@
 # (`turf_monster` → `turf-monster`, config/souls.yml).
 #
 # THE SIDEBAR RULE counts the user's OWN memberships, admins included: at most two
-# apps, each by name with its CTO's portrait, and with three or more an All apps
-# link third (Alex McRitchie, 2026-11-04). Each app's page links its own pipeline
+# apps, each by name with its CTO's portrait, and with three or more an "All N Apps"
+# link third (Alex McRitchie, 2026-11-04). N is what /applications lists for that
+# viewer (visible_apps, the page's own scope), so an admin's N is every app. Each app's page links its own pipeline
 # (docs/agents/system/client-pipeline.md) and CTO. A user who owns nothing gets no
 # links, admin or not; an admin reaches every app at /applications anyway.
 #
@@ -65,7 +66,7 @@ module AppOwnership
   def visible_apps(user)
     return App.none if user.nil?
 
-    scope = admin?(user) ? App.all : App.where(slug: owned_app_slugs(user))
+    scope = admin?(user) ? App.all : App.where(slug: AppMembership.owners.where(user_slug: user.slug).select(:app_slug))
     scope.order(:position, :name)
   end
 
@@ -121,7 +122,9 @@ module AppOwnership
       Link.new(label: app.name, href: routes.application_path(app.slug), emoji: app.emoji.presence || "📱", kind: "app",
                cto: cto_for_app(app.slug, ctos: configured, client_ctos: clients))
     end
-    links << Link.new(label: "All apps", href: routes.applications_path, emoji: "📱", kind: "apps") if apps.size > SIDEBAR_APPS
+    if apps.size > SIDEBAR_APPS
+      links << Link.new(label: "All #{visible_apps(user).count} Apps", href: routes.applications_path, emoji: "📱", kind: "apps")
+    end
     links
   end
 

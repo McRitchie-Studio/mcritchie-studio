@@ -15,13 +15,18 @@ foreign keys that cascade on a rename and a delete. Ownership is this row, never
 | App | Owner |
 |-----|-------|
 | McRitchie Studio (`mcritchie-studio`) | `alex@mcritchie.studio` |
+| alex.build (`alex-build`) | `alex@mcritchie.studio` |
+| Voicebox (`voicebox`) | `alex@mcritchie.studio` |
 | Turf Monster (`turf-monster`) | `alex@turfmonster.media` |
 | Cyvasse (`cyvasse`) | `amcritchie@gmail.com` |
 
-The table's migration seeds these three where the app and the user exist, so the
-release phase sets production up. `AppMembership.seed_owners!` is the same step,
-idempotent, for `db/seeds/04_app_memberships.rb` and the task's
-`post_deploy_cmd`; it also gives a slugless user its slug. To add an owner:
+The table's migration seeds McRitchie Studio, Turf Monster and Cyvasse where the
+app and the user exist, so the release phase set production up for those three.
+`AppMembership.seed_owners!` writes the whole table, idempotent, for
+`db/seeds/04_app_memberships.rb` and `bin/rails apps:seed_owners`, the task's
+`post_deploy_cmd`; it also gives a slugless user its slug. That rake task exits
+non-zero when an app has no row, or when the hub's own owner has no user. Run
+`apps:seed` first. To add an owner:
 `AppMembership.create!(app: App.find_by!(slug: "…"), user: User.find_by!(email: "…"))`.
 
 A client app built through `/build` gets its owner row from **Build my app**
@@ -55,12 +60,14 @@ and nowhere else ("Confirm by reply" in the same page; Alex McRitchie, 2026-10-1
 
 ## The sidebar
 
-Owners get a **Your apps** section at the top of the link sidebar
+Owners get a **My Apps** section at the top of the link sidebar
 (`LinkTreeHelper#owner_link_sections`, `AppOwnership.sidebar_links`). It counts the
 viewer's OWN memberships, admins included (Alex McRitchie, 2026-11-04):
 
 - at most two apps, each by name, with its CTO's portrait, and a rocket on hover;
-- with three or more, **All apps** is the third row, for an admin too;
+- with three or more, **All N Apps** is the third row, for an admin too. N is the
+  number of apps `/applications` lists for that viewer (`AppOwnership.visible_apps`),
+  so an admin's N counts every app, libraries and archived ones included;
 - each app's page links its own pipeline and its CTO;
 - a user who owns nothing gets no section, admin or not. An admin still reaches
   every app at `/applications`, linked from the admin dashboard.

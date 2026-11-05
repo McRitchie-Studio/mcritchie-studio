@@ -175,6 +175,14 @@ class NavigationTest < ActiveSupport::TestCase
     assert_not_includes Navigation.sidebar(:basement).map(&:title), "Studio", "Studio names the public section LinkTreeHelper draws"
   end
 
+  # The link sidebar draws these sections' titles (Alex McRitchie, 2026-11-04).
+  test "[unit] Admin asks for a header, and no NFL or Basement section does" do
+    assert_equal [ true ], Navigation.sidebar(:admin).map(&:header)
+    assert_equal [ false ], Navigation.sidebar(:general).map(&:header)
+    assert Navigation.sidebar(:basement).any?, "control: the Basement has sections"
+    assert Navigation.sidebar(:basement).none?(&:header)
+  end
+
   test "[unit] a section entry can override a page's label there, and only there" do
     registry = Navigation.new(minimal(sidebar: [
       { "title" => "Admin", "group" => "admin", "pages" => [ { "page" => "tasks", "label" => "Board" }, "root" ] },

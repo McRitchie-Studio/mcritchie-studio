@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [unit] AppOwnership: who may see which app and CTO, the CTO map read from
-# config/cto_reports.yml, the owner's sidebar rule (up to two apps, All apps third),
+# config/cto_reports.yml, the owner's sidebar rule (up to two apps, All N Apps third),
 # and the report channels a CTO's picker offers (docs/agents/system/app-owners.md).
 class AppOwnershipTest < ActiveSupport::TestCase
   setup do
@@ -56,16 +56,16 @@ class AppOwnershipTest < ActiveSupport::TestCase
     own!(@owner, @cyvasse)
     two = AppOwnership.sidebar_links(@owner)
     assert_equal 2, two.size
-    assert_not_includes two.map(&:label), "All apps"
+    assert_not_includes two.map(&:label).join, "All "
   end
 
-  test "[unit] three or more apps show the first two, then All apps third, admin or not" do
+  test "[unit] three or more apps show the first two, then All N Apps third, admin or not" do
     own!(@owner, apps(:turf_monster))
     own!(@owner, @cyvasse)
     own!(@owner, apps(:mcritchie_studio))
     links = AppOwnership.sidebar_links(@owner)
     assert_equal 3, links.size
-    assert_equal [ "All apps", "/applications" ], [ links.last.label, links.last.href ]
+    assert_equal [ "All 3 Apps", "/applications" ], [ links.last.label, links.last.href ]
     assert_nil links.last.cto
 
     alex = users(:alex)
@@ -73,7 +73,7 @@ class AppOwnershipTest < ActiveSupport::TestCase
     own!(alex, apps(:turf_monster))
     own!(alex, @cyvasse)
     own!(alex, apps(:mcritchie_studio))
-    assert_equal "All apps", AppOwnership.sidebar_links(alex).last.label
+    assert_equal "All #{App.count} Apps", AppOwnership.sidebar_links(alex).last.label
   end
 
   test "[unit] report channels: the CTO's own bot's postable set when its token is set, else the shared bot's" do

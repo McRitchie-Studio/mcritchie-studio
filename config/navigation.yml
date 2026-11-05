@@ -176,7 +176,10 @@ sidebar:
   # own: the sub-navs still say Admin dashboard and Deployments. Branding Kits is the
   # /logos page's own label, since no sub-nav reads it. App Requests is what the funnel
   # brought in. Books is Mack's seat (CFO): the books and what they report.
-  - { title: Admin,   group: admin, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, { page: build_requests, label: App Requests }, books, activities_agents, admin_basement] }
+  # `header: true` asks the link sidebar to draw the section's title (Alex McRitchie,
+  # 2026-11-04); the basement page draws its own.
+  - { title: Admin,   group: admin, header: true, pages: [{ page: admin_dashboard, label: Dashboard }, { page: deployments, label: DevOps }, { page: admin_style, label: Design }, logos, { page: build_requests, label: App Requests }, books, activities_agents, admin_basement] }
+  # On /links and in the Basement; no longer in the sidebar (Alex McRitchie, 2026-11-04).
   - { title: NFL,       group: general, pages: [nfl_hub, games_season] }
   # The Basement: links worth keeping that the sidebar does not need to carry.
   - { title: Site,      group: basement, pages: [admin_schema, admin_emails, admin_link_preview, asset_browser] }

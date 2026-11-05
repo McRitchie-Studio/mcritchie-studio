@@ -46,6 +46,12 @@ class PublicNflLinksTest < ActionDispatch::IntegrationTest
     get admin_basement_path
     assert_select "[data-link-hub] a[href=?]", teams_path
     assert_select "[data-link-hub] a[href=?]", people_path
+    # The sidebar's NFL rows, the apps and Geo moved there too (2026-11-04).
+    assert_select "[data-link-hub] a[href=?]", nfl_hub_path
+    assert_select "[data-link-hub] a[href=?]", games_season_path(2026)
+    assert_select "[data-link-hub] a[target=_blank]", text: /Turf Monster/
+    assert_select "[data-test=basement-geo]", text: /Geo/
+    assert_select "#studio-link-sidebar a[href=?]", nfl_hub_path, count: 0
   end
 
   private

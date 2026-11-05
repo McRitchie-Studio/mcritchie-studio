@@ -74,7 +74,48 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
     assert_response :not_found
   end
 
-  test "[component] the Studio section is gone, so /applications is in the sidebar only as an owner's All apps, with three or more apps" do
+  # Alex McRitchie, 2026-11-04: "Lets have All X Apps to dispaly the full number". The
+  # row links this page, so its number is the page's rows, the collapsed ones included.
+  test "[integration] the All N Apps number is the rows /applications lists, for an admin and for an owner" do
+    capture_io { load Rails.root.join("db/seeds/00_apps.rb") }
+    owner = User.create!(email: "three-apps@example.com", name: "Three Apps", role: "viewer")
+    alex = users(:alex)
+    alex.save!
+    [ owner, alex ].each do |user|
+      [ apps(:turf_monster), @pawsome, apps(:mcritchie_studio) ].each { |app| AppMembership.create!(app: app, user: user) }
+    end
+
+    { owner => 3, alex => App.count }.each do |user, expected|
+      log_in_as(user)
+      get applications_path
+      assert_response :success
+      assert_select "[data-test='application-row']", count: expected
+      assert_select "#studio-link-sidebar a[href='/applications']", { text: /All #{expected} Apps/ }
+    end
+    assert_operator App.count, :>, 3, "control: an admin's number is not the owner's"
+    assert App.exists?(slug: "studio-engine"), "control: the page and the number include the libraries"
+  end
+
+  # The row costs one COUNT, however many times the layout asks for the sections.
+  test "[integration] a sidebar render with All N Apps runs one count over apps" do
+    alex = users(:alex)
+    alex.save!
+    [ apps(:turf_monster), @pawsome, apps(:mcritchie_studio) ].each { |app| AppMembership.create!(app: app, user: alex) }
+    log_in_as(alex)
+
+    counts = []
+    subscriber = ActiveSupport::Notifications.subscribe("sql.active_record") do |*, payload|
+      counts << payload[:sql] if payload[:sql].match?(/COUNT\(\*\) FROM "apps"/)
+    end
+    get links_path
+    ActiveSupport::Notifications.unsubscribe(subscriber)
+
+    assert_response :success
+    assert_select "#studio-link-sidebar a[href='/applications']", text: /All \d+ Apps/
+    assert_equal 1, counts.size, counts.join("\n")
+  end
+
+  test "[component] the Studio section is gone, so /applications is in the sidebar only as an owner's All N Apps, with three or more apps" do
     alex = users(:alex)
     alex.save!
     AppMembership.create!(app: apps(:turf_monster), user: alex)
@@ -85,7 +126,7 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
 
     AppMembership.create!(app: apps(:mcritchie_studio), user: alex)
     get applications_path
-    assert_select "#studio-link-sidebar a[href='/applications']", { count: 1, text: /All apps/ }, "All apps (Alex McRitchie, 2026-11-04: 3+ apps, no exception)"
+    assert_select "#studio-link-sidebar a[href='/applications']", { count: 1, text: /All #{App.count} Apps/ }, "All N Apps (Alex McRitchie, 2026-11-04: 3+ apps, no exception)"
 
     owner = User.create!(email: "single@example.com", name: "Single Owner", role: "viewer")
     AppMembership.create!(app: @pawsome, user: owner)
