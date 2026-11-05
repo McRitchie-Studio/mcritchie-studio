@@ -105,11 +105,11 @@
     background-color: color-mix(in srgb, color-mix(in srgb, var(--color-surface) 72%, var(--color-page)) 93%, transparent);
   }
   @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-    html[data-surface-style="glass"] :is([data-test="stat-cards"] > .card, .bg-surface.rounded-xl.border:not(.absolute, .fixed, .sticky)) {
+    html[data-surface-style="glass"] :is([data-test="stat-cards"] > .card, .bg-surface.rounded-xl.border:not(.absolute, .fixed, .sticky, .shadow-2xl, .fixed *, [role="dialog"] *)) {
       -webkit-backdrop-filter: var(--surface-glass-filter);
       backdrop-filter: var(--surface-glass-filter);
     }
-    html[data-surface-style="glass"] .bg-surface.rounded-xl.border:not(.absolute, .fixed, .sticky):is(:hover, :focus-within) { position: relative; z-index: 2; }
+    html[data-surface-style="glass"] .bg-surface.rounded-xl.border:not(.absolute, .fixed, .sticky, .shadow-2xl, .fixed *, [role="dialog"] *):is(:hover, :focus-within) { position: relative; z-index: 2; }
     /* A lane's sticky header needs a background, or the cards show through it. A thin one
        with a blur stops it reading as an opaque strip; there are few of them. */
     html[data-surface-style="glass"] .sticky.bg-page.rounded-t-lg {
