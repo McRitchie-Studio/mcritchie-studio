@@ -32,7 +32,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     # A row's icon proves the visitor sections rendered (Portfolio is one link to /websites):
     # an emoji swap on the locked engine, a line icon under the glass style.
-    assert_select "#studio-link-sidebar :is(.studio-emoji-swap, [data-sidebar-row-icon])"
+    assert_select "#studio-link-sidebar .studio-emoji-swap, #studio-link-sidebar [data-sidebar-row-icon]"
     # Studio is behind the session wall
     assert_select "#studio-link-sidebar a[href=?]", dashboard_path, count: 0
   end
@@ -217,7 +217,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "button[data-link-sidebar-trigger][aria-controls=?]", "studio-link-sidebar studio-link-sidebar-mobile"
     assert_select "[data-nav-account][data-profile-image-toggle][aria-controls=?] [data-nav-name]",
                   "studio-link-sidebar studio-link-sidebar-mobile", text: Studio.navbar_user_name_for(users(:alex))
-    assert_select "#studio-link-sidebar :is(.studio-emoji-swap-hover, [data-sidebar-row-icon])"
+    assert_select "#studio-link-sidebar .studio-emoji-swap-hover, #studio-link-sidebar [data-sidebar-row-icon]"
   end
 
   # Alex McRitchie, 2026-11-04: "I think 3 is my favorite nav". Skips until the release
