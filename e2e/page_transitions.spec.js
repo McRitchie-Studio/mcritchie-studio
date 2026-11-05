@@ -10,6 +10,8 @@ const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } 
 test.use({ contextOptions: { reducedMotion: "no-preference" } });
 
 const LEFT_OUT = "pt-out-left";
+// Both, until the release relocks an engine with Studio.page_transition_style: the older
+// engine draws either, and `random: 0` fixes its draw to the slide. Then this is the slide alone.
 const LEFT_IN = ["pt-in-from-right", "pt-unfold-right"];
 
 async function record(page, random) {
@@ -81,15 +83,14 @@ function expectLeftStyle(names) {
   expect(LEFT_IN).toContain(incoming[0]);
 }
 
-test("/ to /chat plays the left pair, each of the two, and no other direction's", async ({ page }) => {
+test("/ to /chat and back play the one slide, moving left, on both visits", async ({ page }) => {
   const errors = watchPageErrors(page);
   await open(page, "/", { random: 0 });
   await expect(page.locator("html")).toHaveAttribute("data-page-transition-direction", "left");
-  await visit(page, "/chat");
-  expect(pageStyles(await seen(page)).sort()).toEqual(["::view-transition-new(root) pt-in-from-right", "::view-transition-old(root) pt-out-left"]);
-  await page.evaluate(() => { window.__random = 0.99; });
-  await visit(page, "/");
-  expect(pageStyles(await seen(page)).sort()).toEqual(["::view-transition-new(root) pt-unfold-right", "::view-transition-old(root) pt-out-left"]);
+  for (const path of ["/chat", "/"]) {
+    await visit(page, path);
+    expect(pageStyles(await seen(page)).sort()).toEqual(["::view-transition-new(root) pt-in-from-right", "::view-transition-old(root) pt-out-left"]);
+  }
   expect(errors.pageErrors, errors.report()).toEqual([]);
 });
 

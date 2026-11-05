@@ -19,8 +19,8 @@ since studio-engine 0.24 (the former app-local copy is deleted):
   `.vt-pinned-header` per page** — a duplicate `view-transition-name` makes the
   browser silently skip the whole transition.
 - **The hub's own direction.** `config.page_transition_direction = :left`: every page
-  change leaves to the left, in a 700ms `fade-left` or `unfold-right`, Back included
-  (studio-engine `docs/PAGE_TRANSITIONS.md`). The direction turns smooth-load on by itself.
+  change leaves to the left. `config.page_transition_style = :slide` makes it the one 700ms
+  slide, on every visit, Back included (studio-engine `docs/PAGE_TRANSITIONS.md`). The direction turns smooth-load on by itself.
 - **An inline `view-transition-name` needs `data-vt-morph="<the name>"`**, or the
   element floats still over the moving page. Two pages that share a marked name play
   the engine's fade and the morph, as /build, /build/:token and the app chat do.
