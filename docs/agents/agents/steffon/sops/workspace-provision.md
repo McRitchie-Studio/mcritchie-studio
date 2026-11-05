@@ -103,6 +103,14 @@ command warns. To set or change it on a registered Workspace, do not re-run
 bin/rails 'workspace:folder_user[<domain>,<email>]'
 ```
 
+This changes the database of the environment it runs in, so a bare run on a Mac
+changes only the local row. For production, run:
+
+```bash
+heroku run --app mcritchie-studio --no-tty --exit-code -- \
+  bin/rails 'workspace:folder_user[<domain>,<email>]'
+```
+
 `bin/rails workspace:accounts` shows each Workspace's folder user.
 
 The row lands as **`pending`** — registered is not authorized. The subject

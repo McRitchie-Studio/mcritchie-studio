@@ -30,6 +30,10 @@ module Workspace
 
     FOLDER_MIME = "application/vnd.google-apps.folder".freeze
 
+    # A role that lets the folder user edit. A reader who inherits access still
+    # needs the Editor share.
+    EDIT_ROLES = %w[owner organizer fileOrganizer writer].freeze
+
     def initialize(subject: nil, credentials: Credentials, sleeper: method(:sleep), service: nil)
       @subject = subject
       @credentials = credentials
@@ -164,8 +168,9 @@ module Workspace
 
     # Editor for the Workspace's folder user, unless access is already inherited
     # from the parent, by name or by domain. A client built with no subject has no
-    # Workspace to ask. A share that fails warns and returns the folder: the folder
-    # has landed, and raising would only make a retry find it and never share it.
+    # Workspace to ask. A share that fails for any reason warns, logs the error and
+    # returns the folder: the folder has landed, and raising would only make a retry
+    # find it and never share it.
     def share_with_folder_user(folder)
       return if @subject.blank?
 
@@ -176,18 +181,27 @@ module Workspace
       end
 
       permissions_create(folder.id, email: email) unless access_inherited?(folder.id, email)
-    rescue ::Google::Apis::Error, ApiRetry::Error => e
+    rescue StandardError => e
       warn "drive: folder #{folder.name.inspect} (#{folder.id}) was created but not shared with #{email}: #{e.message}"
+      log_share_failure(e, folder)
+    end
+
+    def log_share_failure(error, folder)
+      ErrorLog.capture!(error).update(target_name: "drive folder share #{folder.id}")
+    rescue StandardError => e
+      warn "drive: could not record the failed share of #{folder.id}: #{e.class}"
     end
 
     def access_inherited?(id, email)
       domain = email.split("@").last
       Array(permissions_list(id).permissions).any? do |p|
-        p.email_address&.downcase == email || (p.type == "domain" && p.domain&.downcase == domain)
+        EDIT_ROLES.include?(p.role) &&
+          (p.email_address&.downcase == email || (p.type == "domain" && p.domain&.downcase == domain))
       end
     end
     private :access_inherited?
     private :share_with_folder_user
+    private :log_share_failure
 
     # Walks every page and concatenates `files`. Google signals the last page by
     # OMITTING next_page_token; an empty string would loop forever, so .presence

@@ -199,7 +199,7 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
   end
 
   test "a folder that inherits the user's access is not shared again" do
-    inherited = Struct.new(:email_address, :type, :domain, keyword_init: true).new(email_address: "Owner@mason.test", type: "user")
+    inherited = Struct.new(:email_address, :type, :domain, :role, keyword_init: true).new(email_address: "Owner@mason.test", type: "user", role: "writer")
     service = ServiceDouble.new(permissions: [ inherited ])
     house_client(service).files_create(name: "Sub", parents: "records", mime_type: FOLDER)
 
@@ -207,11 +207,34 @@ class WorkspaceDriveClientTest < ActiveSupport::TestCase
   end
 
   test "a folder that inherits access through the user's domain is not shared again" do
-    inherited = Struct.new(:email_address, :type, :domain, keyword_init: true).new(type: "domain", domain: "mason.test")
+    inherited = Struct.new(:email_address, :type, :domain, :role, keyword_init: true).new(type: "domain", domain: "mason.test", role: "writer")
     service = ServiceDouble.new(permissions: [ inherited ])
     house_client(service).files_create(name: "Sub", parents: "kit", mime_type: FOLDER)
 
     assert_empty shares(service)
+  end
+
+  test "a folder the user can only read is still shared as Editor" do
+    inherited = Struct.new(:email_address, :type, :domain, :role, keyword_init: true).new(email_address: "owner@mason.test", type: "user", role: "reader")
+    service = ServiceDouble.new(permissions: [ inherited ])
+    house_client(service).files_create(name: "Sub", parents: "records", mime_type: FOLDER)
+
+    assert_equal "writer", shares(service).first.last[:role]
+  end
+
+  test "a share that fails for a reason Google did not raise logs it and still returns the folder" do
+    service = ServiceDouble.new
+    client = house_client(service)
+    service.define_singleton_method(:create_permission) { |*, **| raise "token refused" }
+    folder = nil
+    err = nil
+    assert_difference -> { ErrorLog.count }, 1 do
+      _out, err = capture_io { folder = client.files_create(name: "Records", parents: "root", mime_type: FOLDER) }
+    end
+
+    assert_equal "Records", folder.name
+    assert_match(/created but not shared/, err)
+    assert_match(/drive folder share/, ErrorLog.order(:id).last.target_name)
   end
 
   test "a share that fails warns and still returns the folder that landed" do
