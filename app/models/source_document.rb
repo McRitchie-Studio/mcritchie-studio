@@ -25,6 +25,22 @@ class SourceDocument < ApplicationRecord
 
   scope :active,  -> { where(status: "active") }
   scope :missing, -> { where(status: "missing") }
+  scope :shortcuts, -> { where(mime_type: Workspace::DriveWalker::SHORTCUT_MIME) }
+
+  # The source that indexes what this shortcut opens, or nil. The walker never
+  # follows a shortcut, so a master reaches the index only when a source walks it:
+  # as a source's own root, as a document, or as the parent of a document. A source
+  # that is off or was never walked has indexed nothing.
+  def shortcut_target_source
+    target = metadata["shortcut_target_id"]
+    return if target.blank?
+
+    walked = KnowledgeSource.enabled.where.not(last_walked_at: nil)
+    walked.find_by(kind: "google_drive", external_root_id: target) ||
+      walked.joins(:source_documents).merge(SourceDocument.active)
+            .where("source_documents.external_id = :id OR source_documents.parents @> :parent",
+                   id: target, parent: [ target ].to_json).order(:id).first
+  end
 
   # THE FRESHNESS RULE. Never indexed, or the layer's version has moved.
   #

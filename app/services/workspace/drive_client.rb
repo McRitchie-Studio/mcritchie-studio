@@ -7,10 +7,12 @@ module Workspace
   # with its Workspace's folder user (#files_create).
   #
   # WRITE SURFACE, stated plainly because it matters more than the read surface:
-  # #files_create, #files_copy, #files_update, #files_trash, #permissions_create
-  # and #permissions_create_domain are the only methods here that change anything, and under this credential's scopes
-  # they can only reach files the app itself created (see Credentials::SCOPES on
-  # why `drive.file` means that under domain-wide delegation). The ownership CHECK that decides whether to
+  # #files_create, #shortcut_create, #files_copy, #files_update, #files_trash,
+  # #permissions_create and #permissions_create_domain are the only methods here that
+  # change anything, and under this credential's scopes they edit only files the app
+  # itself created (see Credentials::SCOPES on why `drive.file` means that under
+  # domain-wide delegation). One measured exception: with Editor on a folder a person
+  # made, a shortcut landed in it (marketing-kit SOP). The ownership CHECK that decides whether to
   # copy before editing is a caller's job and lands with the binding task; this
   # class deliberately does not pretend to make that decision.
   class DriveClient
@@ -29,6 +31,7 @@ module Workspace
     LIST_FIELDS = "nextPageToken,files(#{FILE_FIELDS})".freeze
 
     FOLDER_MIME = "application/vnd.google-apps.folder".freeze
+    SHORTCUT_MIME = "application/vnd.google-apps.shortcut".freeze
 
     # A role that lets the folder user edit. A reader who inherits access still
     # needs the Editor share.
@@ -116,6 +119,19 @@ module Workspace
       end
       share_with_folder_user(created) if mime_type == FOLDER_MIME
       created
+    end
+
+    # A shortcut in `parent` that opens `target_id`: the one master shows in another
+    # folder without a copy. It grants no access to the target, so it is not shared.
+    # Like a create, one that may have landed is not retried.
+    def shortcut_create(name:, parent:, target_id:)
+      metadata = ::Google::Apis::DriveV3::File.new(
+        name: name, mime_type: SHORTCUT_MIME, parents: [ parent ],
+        shortcut_details: ::Google::Apis::DriveV3::File::ShortcutDetails.new(target_id: target_id)
+      )
+      with_retries("files.create(shortcut)", sleeper: @sleeper, idempotent: false) do
+        service.create_file(metadata, fields: FILE_FIELDS, supports_all_drives: true)
+      end
     end
 
     def files_update(id, name: nil, body: nil, content_type: nil)

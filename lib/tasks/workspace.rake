@@ -255,4 +255,15 @@ namespace :workspace do
     end
     puts "(no knowledge sources registered)" if KnowledgeSource.none?
   end
+
+  desc "List walked shortcuts and whether a source indexes what each one opens"
+  task shortcuts: :environment do
+    shortcuts = SourceDocument.active.shortcuts.includes(:knowledge_source).order(:knowledge_source_id, :id)
+    shortcuts.each do |doc|
+      home = doc.shortcut_target_source
+      reach = home ? "indexed by ##{home.id} #{home.name}" : "NOT INDEXED: register the folder that holds it with workspace:add_source, then walk it"
+      puts "##{doc.knowledge_source_id} #{doc.knowledge_source.name}: #{doc.title} -> #{doc.metadata["shortcut_target_id"]} — #{reach}"
+    end
+    puts "(no shortcuts walked)" if shortcuts.none?
+  end
 end

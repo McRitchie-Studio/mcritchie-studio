@@ -272,6 +272,42 @@ class DriveWalkerTest < ActionDispatch::IntegrationTest
            "following a shortcut could walk out of the folder the operator chose")
   end
 
+  test "a shortcut to a file is recorded with its target and the target is never read" do
+    shortcut = file("sc-2", "Shortcut to a master", version: 1,
+                    mime: Workspace::DriveWalker::SHORTCUT_MIME,
+                    shortcut_details: Drive::File::ShortcutDetails.new(target_id: "master-doc", target_mime_type: "application/pdf"))
+    client = TreeClient.new({ "root" => [ shortcut ] })
+    Workspace::DriveWalker.new(client: client).call(@source)
+
+    assert_equal "master-doc", @source.source_documents.find_by!(external_id: "sc-2").metadata["shortcut_target_id"]
+    refute(@source.source_documents.exists?(external_id: "master-doc"), "the target belongs to the source that walks it")
+  end
+
+  test "a master reaches the index when its entity's root is registered and walked" do
+    sc = ->(id, target, mime) {
+      file(id, id, version: 1, mime: Workspace::DriveWalker::SHORTCUT_MIME,
+           shortcut_details: Drive::File::ShortcutDetails.new(target_id: target, target_mime_type: mime))
+    }
+    entity = KnowledgeSource.create!(kind: "google_drive", name: "Signing entity records", external_root_id: "entity-root",
+                                     entity: "signer", workspace_account: @account)
+    tree = { "root" => [ sc.call("to-folder", "agreements", Workspace::DriveWalker::FOLDER_MIME), sc.call("to-file", "agreement-1", "application/pdf") ],
+             "entity-root" => [ folder("agreements", "Agreements") ],
+             "agreements" => [ file("agreement-1", "Agreement", version: 1, parents: [ "agreements" ]) ] }
+    walker = -> { Workspace::DriveWalker.new(client: TreeClient.new(tree)) }
+
+    walker.call.call(@source)
+    to_folder = @source.source_documents.find_by!(external_id: "to-folder")
+    to_file = @source.source_documents.find_by!(external_id: "to-file")
+    assert_nil to_folder.shortcut_target_source, "nothing has walked the master yet"
+
+    walker.call.call(entity)
+    assert_equal entity, to_folder.shortcut_target_source
+    assert_equal entity, to_file.shortcut_target_source
+
+    entity.update!(enabled: false)
+    assert_nil to_file.shortcut_target_source, "a source that is off indexes nothing new"
+  end
+
   test "the walker only lists — it has no way to download a document" do
     # The no-duplication rule, enforced by what the walker can call: its client
     # implements `paged` and nothing else, and the walk still succeeds.
