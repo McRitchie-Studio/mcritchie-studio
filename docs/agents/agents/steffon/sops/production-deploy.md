@@ -249,7 +249,10 @@ prints `lane: unavailable (<error class>)` under the current release and the
 command carries on; it never fails `status` or `prepare`, which make the same read.
 
 - **The hub deploys through GitHub Actions** (`gh workflow run prod-deploy.yml -f
-  sha=<frozen>`), which pushes to Heroku and hard-gates a `/up` smoke.
+  sha=<frozen>`), which pushes to Heroku and hard-gates a `/up` smoke. The dispatch,
+  the watch and its polls ride the deployer token, re-minted as it ages, so a watch
+  that outlives the token resumes on a fresh one. A dispatch refused on credentials is
+  sent again only once GitHub shows no run carrying its correlation id.
 - **A GEM-ONLY release ships too**: under the default flow `prepare` already published
   the final and tagged it `v<x.y.z>`, so the ship finds it live and fast-forwards the
   gem repos; the RubyGems publish IS the deploy (a **GEM-ONLY** badge). Under the
