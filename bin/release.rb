@@ -965,8 +965,9 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
              Release::ShipSequence.unreadable_run_list_abort(workflow, inputs))
   end
 
-  # A WATCH CAN OUTLIVE ITS TOKEN (about an hour). gh_sh re-mints an aging token
-  # before the watch starts; a token that dies mid-watch makes the watch exit
+  # A WATCH CAN OUTLIVE ITS TOKEN (about an hour). gh_sh re-mints an aging HELD
+  # token before the watch starts (the token a lane starts with is not held, so it is
+  # replaced only on a refusal); a token that dies mid-watch makes the watch exit
   # non-zero, and the poll below resumes on a fresh token (gh_sh_refreshing).
   _, watched = gh_sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
   return true if watched
@@ -1141,7 +1142,9 @@ end
 
 # The env for a `gh` call that may run long after the lane's token was minted:
 # CiStatus's held token is re-minted first when it is aging (50 minutes), then
-# gh_write_env picks held, lane or ambient. A token minted here is minted under
+# gh_write_env picks held, lane or ambient. CiStatus holds a token only after a mint
+# in this process (a refusal's, or the dispatch snapshot's), so the token the lane
+# STARTS with is never re-minted by age: its first credential refusal replaces it. A token minted here is minted under
 # GhIdentity.resolve (GH_APP_ITEM), the lane bin/release-cycle's step_env set, so a
 # ship re-mints the deployer and a prepare the agent. Never print the Hash.
 def gh_fresh_env
