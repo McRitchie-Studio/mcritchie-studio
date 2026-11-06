@@ -128,7 +128,8 @@ class QaDispatchRemedyWiringTest < ActionDispatch::IntegrationTest
     assert body, "bin/release.rb defines dispatch_and_watch"
 
     assert_includes body, "Release::GhReadRetry.call", "the snapshot retries by CAUSE, not by clock"
-    assert_includes body, "GhAuthRetry.mint", "a credential refusal re-mints rather than sleeping"
+    assert_includes body, "minter: -> { mint_held_gh_token }",
+      "a credential refusal re-mints CiStatus's held token rather than sleeping"
     assert_includes body, "$gh_lane_token = snapshot.token",
       "the recovered credential is carried to the dispatch and the watch"
     assert_includes body, "Release::GhFailure.failure_message", "the refusal quotes gh"
@@ -148,12 +149,12 @@ class QaDispatchRemedyWiringTest < ActionDispatch::IntegrationTest
     body = RELEASE_SRC.read
 
     %w[watch view].each do |verb|
-      assert_match(/gh_sh\("gh", "run", "#{verb}"/, body,
+      assert_match(/gh_sh(?:_refreshing)?\("gh", "run", "#{verb}"/, body,
         "`gh run #{verb}` must ride the lane credential, not the ambient one")
       assert_no_match(/\bsh\("gh", "run", "#{verb}"/, body,
         "no bare sh() gh call may remain in the dispatch lane")
     end
-    assert_includes body, "dispatch_out, dispatched = gh_sh(*args, chdir: chdir, capture: true)",
-      "the dispatch itself rides the recovered credential"
+    assert_includes body, "gh_write_once(*args, chdir: chdir, state: -> { dispatch_state(",
+      "the dispatch itself rides the refreshed credential and checks state before a retry"
   end
 end

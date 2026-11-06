@@ -842,9 +842,10 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   dispatch_out, dispatched, dispatch_outcome =
     gh_write_once(*args, chdir: chdir, state: -> { dispatch_state(workflow, cid, before_id, chdir: chdir) })
   say(dispatch_out.strip) unless dispatch_out.to_s.strip.empty?
-  if !dispatched && %i[unknown unmintable].include?(dispatch_outcome)
-    say("  ⚠ #{workflow}: `gh workflow run` was refused on credentials and its effect could not be " \
-        "checked, so it is NOT KNOWN whether a run was created. Look for a #{workflow} run titled " \
+  # :unmintable keeps the old reading below: with no fresh token, gh's refusal stands.
+  if !dispatched && dispatch_outcome == :unknown
+    say("  ⚠ #{workflow}: `gh workflow run` was refused on credentials and GitHub could not be read " \
+        "afterwards, so it is NOT KNOWN whether a run was created. Look for a #{workflow} run titled " \
         "`[#{cid}]` on the Actions tab before you dispatch again.")
     return false
   end
@@ -2725,6 +2726,16 @@ def pr_state(pr_url)
   status.success? && !out.strip.empty? ? out.strip : nil
 end
 
+# The batch PR's `gh pr merge`, pinned to `merge_head` when one is known: [out, ok].
+# NOT SAFE TO REPEAT BLIND, so gh_write_once: a credential refusal re-mints and reads
+# the PR's state (pr_merge_state) before any retry.
+def merge_batch_pr(pr_url, merge_head)
+  out, ok, = gh_write_once("gh", "pr", "merge", pr_url, "--merge",
+                           *(merge_head.to_s.empty? ? [] : ["--match-head-commit", merge_head]),
+                           state: -> { pr_merge_state(pr_url) })
+  [out, ok]
+end
+
 # gh_write_once's `state` for the batch-PR merge: MERGED is done, OPEN is absent
 # (retry, still pinned by --match-head-commit), anything else is unknown.
 def pr_merge_state(pr_url)
@@ -2895,12 +2906,7 @@ def promote_accepted_to_release!(repos, label: nil)
     # automated conductor that is the correct posture: a `gh` that would have
     # stopped to ask now fails with a message we print, instead of hanging a
     # release on a prompt nobody is watching.
-    #
-    # NOT SAFE TO REPEAT BLIND, so gh_write_once: a credential refusal re-mints and
-    # reads the PR's state before any retry (pr_merge_state).
-    merge_out, ok, = gh_write_once("gh", "pr", "merge", pr_url, "--merge",
-                                   *(merge_head.empty? ? [] : ["--match-head-commit", merge_head]),
-                                   state: -> { pr_merge_state(pr_url) })
+    merge_out, ok = merge_batch_pr(pr_url, merge_head)
     # The echo of gh's words is decided AFTER the recovery, never before it. It
     # used to sit above this branch gated on `ok` — still false while the fallback
     # was deciding — so the interrupted-run path printed NOTHING, and that is the
