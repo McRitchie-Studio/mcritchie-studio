@@ -48,7 +48,7 @@
             <%= button_to "Approve", admin_approve_upgrade_proposal_path(proposal), method: :post, class: "btn btn-primary btn-sm",
                           form: { data: { turbo_confirm: (app ? "Set #{app.slug} to #{AgentProposals::Upgrade.tier_name(params['tier'])}?" : "Record your approval? No tier changes.") } },
                           data: { test: "upgrade-proposal-approve" } %>
-            <%= button_to "Decline", admin_decline_upgrade_proposal_path(proposal), method: :post, class: "btn btn-secondary btn-sm",
+            <%= button_to "Decline", admin_decline_upgrade_proposal_path(proposal), method: :post, class: "btn btn-neutral btn-sm",
                           data: { test: "upgrade-proposal-decline" } %>
             <% if proposal.source_message_id %>
               <%= link_to "Open the chat message", admin_agent_message_path(proposal.source_message_id), class: "text-sm text-primary hover:underline ml-auto" %>
