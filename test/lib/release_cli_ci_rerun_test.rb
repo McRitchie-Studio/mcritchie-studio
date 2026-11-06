@@ -172,6 +172,43 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, "RERUNS=[]", out
   end
 
+  # [unit] AGING, BEFORE THE CALL: the reads' held token (CiStatus) is past its 50
+  # minutes when the re-run comes. The write re-mints FIRST and rides the new token,
+  # so it is never refused at all. The broker numbers its tokens; gh accepts only #2.
+  def test_an_aging_held_token_is_re_minted_before_the_rerun
+    Dir.mktmpdir do |dir|
+      broker = File.join(dir, "gh-token")
+      File.write(broker, "#!/bin/sh\nn=$(( $(cat #{dir}/n 2>/dev/null || echo 0) + 1 ))\necho $n > #{dir}/n\necho ghs_stub_$n\n")
+      File.chmod(0o755, broker)
+      setup = poll_stub(verdicts: [{ state: :red, failing: ["test"] }, { state: :pending }, { state: :green }]) + <<~RUBY
+        ENV["GH_AUTH_TOKEN_BIN"] = #{broker.inspect}
+        $sim = 0
+        CiStatus.reset_gh_auth!
+        CiStatus.clock = -> { $sim }
+        CiStatus.mint_gh_token!          # the reads' token, minted at t=0
+        $sim = 3_300                     # 55 minutes later: aging
+        $rerun_tokens = []
+        def sh(*a, env: nil, **_k)
+          return ["", true] unless a[0] == "gh" && a[1] == "run" && a[2] == "rerun"
+
+          token = (env || {})["GH_TOKEN"].to_s
+          $rerun_tokens << "mint#" + token.delete_prefix("ghs_stub_")
+          return [#{EXPIRED.inspect}, false] unless token == "ghs_stub_2"
+
+          $reruns << a[3]
+          ["", true]
+        end
+        at_exit { puts "TOKENS=\#{$rerun_tokens.inspect}" }
+      RUBY
+      out = poll(setup)
+
+      assert_includes out, 'TOKENS=["mint#2"]', "one try, on the token re-minted before the call: #{out}"
+      assert_includes out, 'RERUNS=["11"]', out
+      refute_includes out, "was refused", out
+      refute_includes out, "ghs_stub", "the token must never be printed"
+    end
+  end
+
   # [unit] A refusal that is not about credentials mints nothing and retries nothing.
   def test_a_non_credential_refusal_mints_no_token
     setup = poll_stub(verdicts: [{ state: :red }]) + <<~RUBY

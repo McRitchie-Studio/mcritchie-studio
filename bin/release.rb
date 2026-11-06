@@ -1100,30 +1100,38 @@ def gh_sh(*cmd, capture: false, chdir: nil)
   sh(*cmd, capture: capture, chdir: chdir, env: gh_token_env($gh_lane_token))
 end
 
-# A `gh` WRITE that outlives one App token: gh_sh, and on a credential refusal one
-# fresh token (GhAuthRetry.mint, the session's own lane) and one retry. The fresh
-# token becomes $gh_lane_token, so the later calls of the sweep carry it too.
+# A `gh` WRITE that outlives one App token. It rides CiStatus's held token, the one
+# the CI reads keep fresh (re-minted at 50 minutes and after a 401), so the write and
+# the reads around it share ONE credential: re-minted first when it is aging, and on
+# a credential refusal minted once more and retried once. With no held token it
+# falls back to the lane's ($gh_lane_token) or the ambient one, as gh_sh does.
 #
-# Why: CI reads re-mint their own token (CiStatus.gh_read_status), but a write rode
-# the ambient GH_TOKEN, which lasts about an hour. rel-20261105-9199b4's prepare ran
-# longer, and its one automatic `gh run rerun` was refused ("Try authenticating
-# with: gh auth login") while every read around it worked. A refused write did
-# nothing, so the retry cannot double the action. The token is never printed.
+# Why: rel-20261105-9199b4's prepare outlived its ambient GH_TOKEN (about an hour).
+# Every CI read re-minted and passed, but the one automatic `gh run rerun` rode
+# the dead ambient token and was refused ("Try authenticating with: gh auth login").
+# A refused write did nothing, so the retry cannot double the action. The token is
+# never printed.
 def gh_sh_refreshing(*cmd, chdir: nil)
-  out, ok = gh_sh(*cmd, capture: true, chdir: chdir)
+  CiStatus.mint_gh_token! if CiStatus.gh_token_aging?
+  out, ok = sh(*cmd, capture: true, chdir: chdir, env: gh_write_env)
   return [out, ok] if ok || !CiStatus.gh_auth_refusal?(out)
 
-  token = GhAuthRetry.mint
-  unless token
+  label = cmd.first(3).join(" ")
+  unless CiStatus.mint_gh_token!
     reason = GhAuthRetry.last_error.strip
-    say("  ⚠ `#{cmd.first(3).join(' ')}` was refused on credentials and no fresh token could be minted" \
+    say("  ⚠ `#{label}` was refused on credentials and no fresh token could be minted" \
         "#{reason.empty? ? '' : " (#{reason.lines.last.to_s.strip})"}")
     return [out, ok]
   end
 
-  $gh_lane_token = token
-  say("  ↻ `#{cmd.first(3).join(' ')}`: the GitHub credential had expired — minted a fresh one and retried.")
-  gh_sh(*cmd, capture: true, chdir: chdir)
+  say("  ↻ `#{label}`: the GitHub credential had expired — minted a fresh one and retried.")
+  sh(*cmd, capture: true, chdir: chdir, env: gh_write_env)
+end
+
+# CiStatus's held token, else the lane's recovered one, else {} (the ambient login).
+def gh_write_env
+  held = CiStatus.gh_token_env
+  held.empty? ? gh_token_env($gh_lane_token) : held
 end
 
 # The SHELL-SAFE `rails runner` payload for a conductor snippet. The snippet is
