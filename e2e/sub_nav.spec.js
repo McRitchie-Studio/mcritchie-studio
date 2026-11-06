@@ -23,6 +23,10 @@ const PAGES = [
   { path: "/mason/heartbeat/activities", navs: ["heartbeat"], current: "/mason/heartbeat/activities" },
   { path: "/mason/pipeline", navs: ["heartbeat"], current: null },
 ];
+// board_sections is the engine page header's links line now (studio/_page_header
+// `links:`): a nav named by its label, which scrolls sideways inside the row.
+const NAV = (nav) => (nav === "board_sections" ? "nav.page-header-links[aria-label='Board sections']" : `nav[data-sub-nav='${nav}']`);
+const ANY_NAV = "nav[data-sub-nav], nav.page-header-links";
 const WIDTHS = [
   { name: "phone", width: 390, height: 844 },
   { name: "desktop", width: 1440, height: 900 },
@@ -89,10 +93,10 @@ test("an admin gets each sub-nav, marked, legible and inside the viewport in bot
       expect(new URL(page.url()).pathname, `${target} answers an admin`).toBe(target);
 
       for (const nav of navs) {
-        await expect(page.locator(`nav[data-sub-nav='${nav}']`), `${target} draws ${nav}`).toHaveCount(1);
+        await expect(page.locator(NAV(nav)), `${target} draws ${nav}`).toHaveCount(1);
       }
 
-      const marked = page.locator("nav[data-sub-nav] a[aria-current='page']");
+      const marked = page.locator(ANY_NAV.split(", ").map((nav) => `${nav} a[aria-current='page']`).join(", "));
       if (current) {
         await expect(marked, `${target} marks its own link`).toHaveCount(1);
         await expect(marked).toHaveAttribute("href", current);
@@ -102,11 +106,14 @@ test("an admin gets each sub-nav, marked, legible and inside the viewport in bot
 
       // Every link the viewer can see sits inside the viewport: a row that ran
       // off the right edge would scroll the page sideways.
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${target} at ${size.name} scrolls sideways`).toBeLessThanOrEqual(0);
+      // A link on the header's links line counts by its scroller's box: the line
+      // scrolls inside the row, so the page does not.
       const boxes = await page.evaluate(() =>
-        [...document.querySelectorAll("nav[data-sub-nav] a")]
+        [...document.querySelectorAll("nav[data-sub-nav] a, nav.page-header-links a")]
           .filter((link) => link.offsetParent !== null)
           .map((link) => {
-            const rect = link.getBoundingClientRect();
+            const rect = (link.closest(".page-header-links") || link).getBoundingClientRect();
             return { text: link.textContent.trim(), left: rect.left, right: rect.right, width: rect.width };
           })
       );
@@ -124,7 +131,7 @@ test("an admin gets each sub-nav, marked, legible and inside the viewport in bot
         await expect
           .poll(
             async () => {
-              const ratios = await page.evaluate(CONTRAST, "nav[data-sub-nav] a");
+              const ratios = await page.evaluate(CONTRAST, "nav[data-sub-nav] a, nav.page-header-links a");
               return Math.min(...ratios.map(({ ratio }) => ratio));
             },
             { message: `the faintest sub-nav link on ${target} in ${theme} at ${size.name}`, timeout: 5_000 }
