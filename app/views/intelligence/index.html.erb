@@ -25,17 +25,13 @@
 %>
 
 <section data-test="intelligence-dashboard" class="space-y-8">
-  <header class="space-y-1">
-    <nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Sections">
-      <%= link_to "← Dashboard", dashboard_path, class: "text-muted hover:text-heading transition" %>
-      <%= link_to "Deployments", deployments_path, class: "text-muted hover:text-heading transition" %>
-    </nav>
-    <h1 class="text-2xl md:text-3xl font-bold text-heading">Task Intelligence</h1>
-    <p class="text-muted text-sm max-w-2xl">
-      How work flows through the pipeline — stage speed, cycle time, token and dollar
-      spend, and how our sealed-bid estimates hold up against what shipping actually took.
-    </p>
-  </header>
+  <%# The crumbs lead to Deployments; the studio dashboard stays on the links line. %>
+  <%= render "studio/page_header", title: "Task Intelligence", crumbs: studio_crumbs(:intelligence),
+        links: [{ label: "Studio dashboard", href: dashboard_path }], links_label: "Sections" %>
+  <p class="text-muted text-sm max-w-2xl -mt-6">
+    How work flows through the pipeline — stage speed, cycle time, token and dollar
+    spend, and how our sealed-bid estimates hold up against what shipping actually took.
+  </p>
 
   <%# ── Headline tiles ─────────────────────────────────────────────────────── %>
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3" data-test="summary-tiles">
