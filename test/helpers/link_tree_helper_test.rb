@@ -70,6 +70,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
               [ "Error logs", "/error_logs" ], [ "TikTok connection", "/admin/tiktok" ], [ "Google connection", "/admin/google" ],
               [ "Fathom connection", "/admin/fathom" ], [ "Agent inbox", "/admin/agent_messages" ],
               [ "Report destinations", "/admin/report_destinations" ], [ "CSP reports", "/admin/csp_reports" ],
+              [ "Upgrade proposals", "/admin/upgrade_proposals" ],
               [ "Teams", "/teams" ], [ "People", "/people" ], [ "Builders", "/builders" ], [ "Docs", "/docs" ],
               [ "AI Builder Multiple", "/admin/ai_builder_multiple" ], [ "News workflow", "/news/workflow" ],
               [ "Merge people", "/people/merge" ], [ "Duplicates", "/people/duplicates" ],
@@ -431,6 +432,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_agent_messages_path = "/admin/agent_messages"
   def admin_report_destinations_path = "/admin/report_destinations"
   def admin_csp_reports_path = "/admin/csp_reports"
+  def admin_upgrade_proposals_path = "/admin/upgrade_proposals"
   # The engine's _link_sidebar draws the header (link-sidebar-section-headers, its own
   # task, default off). Until it ships the key changes nothing, so these read the hash.
   test "[component] My Apps, Admin and Studio carry header: true, and Account does not" do
