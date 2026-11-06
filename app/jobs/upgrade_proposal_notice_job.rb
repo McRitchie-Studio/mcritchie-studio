@@ -5,7 +5,7 @@
 # as AppRequestDiscordJob does for a /build request.
 #
 # Best effort: an outage or a missing webhook never costs the proposal, which
-# waits on /admin/upgrade_proposals either way. The nonce lets Discord drop a
+# waits on /admin/upgrade_proposals either way. A failed post is an ErrorLog row. The nonce lets Discord drop a
 # retried post. The embed names the tier, billing, the app the person named and
 # the review page; never the person's email or the chat's words.
 class UpgradeProposalNoticeJob < ApplicationJob
@@ -27,7 +27,12 @@ class UpgradeProposalNoticeJob < ApplicationJob
 
     Media.post(home, embeds: [ self.class.embed(proposal) ], nonce: "upgrade-proposal-#{proposal.id}")
   rescue Media::Error => e
-    Rails.logger.warn("[upgrade_proposal_notice] post for proposal #{proposal_id} failed (#{e.class})")
+    # An ErrorLog row (the board's error triage, and Sentry), not only the Rails
+    # log; never re-raised, so the job is not retried into a duplicate ping.
+    log = ErrorLog.capture!(e)
+    log.target = proposal if proposal
+    log.target_name = "upgrade proposal #{proposal_id} Discord notice"
+    log.save!
   end
 
   # The message, built separately so it can be tested without a network.

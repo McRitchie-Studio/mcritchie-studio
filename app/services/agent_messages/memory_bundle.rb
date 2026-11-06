@@ -174,14 +174,17 @@ module AgentMessages
     # THE PACKAGES (PackagesBrief): the tiers, prices and inclusions /packages
     # renders, on every answer the soul `alex` gives, and whether this thread may
     # carry an upgrade proposal (AgentProposals::Upgrade: Alex's chat threads
-    # only), with the tiers it may name. No key at all for any other soul.
+    # only), with the tiers it may name and the thread's newest upgrade proposal
+    # (`open`, AgentProposals::Upgrade.open_json). No key at all for any other soul.
     def packages_json
       return {} unless @message.soul_slug.to_s == PackagesBrief::SOUL
 
       text = PackagesBrief.text
       return {} if text.blank?
 
-      upgrade = AgentChat.thread?(@message.thread_key) ? { "tiers" => PackagesBrief.upgrade_tiers } : nil
+      upgrade = if AgentChat.thread?(@message.thread_key)
+                  { "tiers" => PackagesBrief.upgrade_tiers, "open" => AgentProposals::Upgrade.open_json(@message) }.compact
+                end
       { "packages" => { "text" => text, "upgrade" => upgrade }.compact }
     end
 

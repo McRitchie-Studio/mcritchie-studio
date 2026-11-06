@@ -190,6 +190,28 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='talk-to-agent'][data-talk-to-agent-soul='alex']", shipped ? 1 : 0
   end
 
+  # Meaningful before the hub's engine ships the partial: a stand-in partial
+  # (test/support/views/talk_modal_stub) takes the engine's path, so the page's
+  # gate (PackagesHelper#package_talk_modal?) and the locals it passes are
+  # exercised now. Once the engine ships it the stand-in still shadows it here,
+  # and the test above checks the real one. CONTROL: render the modal with
+  # BuildController::AGENT_ROLE again and the role assert fails.
+  test "[integration] with the engine's partial, /packages renders the talk modal once, Alex as Sales & Marketing" do
+    stub = Rails.root.join("test/support/views/talk_modal_stub").to_s
+    PackagesController.prepend_view_path(stub)
+    begin
+      [ packages_path, packages_stack_path ].each do |path|
+        get path
+        assert_response :success
+        assert_select "[data-test='talk-to-agent'][data-talk-to-agent-soul='alex'][data-talk-to-agent-name='Alex']", 1, path
+        assert_select "[data-test='talk-modal-role']", { text: "Sales & Marketing" }, path
+        assert_select "[data-test='talk-to-agent'] img[src*='alex']", 1, "#{path}: Alex's portrait"
+      end
+    ensure
+      PackagesController.view_paths = PackagesController.view_paths.reject { |path| path.to_s == stub }
+    end
+  end
+
   test "Enterprise Book a call falls back to the studio's booking popup while no URL is configured" do
     get packages_path
 

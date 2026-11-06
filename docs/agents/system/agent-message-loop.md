@@ -2127,7 +2127,8 @@ modal (its `docs/AGENT_CHAT.md`, "Talk to an agent in a modal") with Alex, the t
 topic, and an opener the modal sends as it opens, so Alex is already answering. The thread is
 the person's `chat:alex:` thread, the same one `/chat` shows, answered at the public audience
 under the caps above (Satellite chat). Without the engine partial, or for a modified click,
-the buttons open `/chat`.
+the buttons open `/chat`. The modal names Alex by his seat, "Sales & Marketing"
+(`PackagesHelper::TALK_ROLE`); `/build` and `/chat` still say "AI Builder".
 
 | Piece | Where |
 |-------|-------|
@@ -2135,7 +2136,9 @@ the buttons open `/chat`.
 | What Alex knows | `AgentMessages::PackagesBrief`: every tier's name, monthly and annual price, tagline, included and coming-soon lanes, and Enterprise's adds, read from `WorkspacePackage` (what the page renders), never a copied list. `MemoryBundle#packages_json` puts it on every answer the soul `alex` gives; `ContextBuilder#packages_block` prints it in code, outside the fence, with "quote only these prices". No cost basis, client names, token caps or lane caps |
 | The proposal | On Alex's chat threads only, the bundle's `packages.upgrade` lists the tiers he may name, and the prompt teaches a `PROPOSAL` block of kind `upgrade` (`tier`, `billing` monthly or annual, optional `app`). `AgentMessage#complete!` hands it to `AgentProposals::Upgrade`, which checks it in code (Alex, a `chat:alex:` thread, a tier other than the free one, known params only) and stores an `agent_proposals` row, kind `upgrade`, for 14 days; a newer one supersedes it. Refused, it is a `proposal_refused` event and is never shown. The visitor reads "Sent to Alex McRitchie: a request to move you to <tier> (<billing>). Nothing changes and nobody is charged until he approves it." |
 | The owner's word | `/admin/upgrade_proposals` (admin only): Approve sets `apps.package_tier` on the app named, ONLY when the thread's signed-in user owns it (`AppMembership`); otherwise it records the yes for a follow-up by hand. Decline drops it. No word in a thread settles an upgrade (`AgentProposal.word_settled`), and `AgentProposalJob` never runs one |
-| The ping | `UpgradeProposalNoticeJob` posts the tier, billing, the app named and the review link to the `upgrade_proposals` home in `config/agent_media.yml` (Discord `#internal`), never the person's email or words. Unset, the proposal still waits on the page |
+| The visitor hears it | Settled either way, `AgentProposals::Upgrade.post_outcome!` puts one code-written line from Alex in the proposal's thread: approved, the next steps (he follows up on setup and billing; the tier is named as set when it was); declined, that nothing changed and an offer to talk or book a call at `/schedule`. The row is stored answered and `run_meta.code_written`, so `AgentChat::Turns` shows only the agent turn and `AgentChat::Caps` counts it against no visitor cap. One row per proposal and outcome; a failure is an `ErrorLog` row and the decision stands |
+| What Alex reads next | The bundle's `packages.upgrade.open` (`AgentProposals::Upgrade.open_json`): the thread's newest upgrade proposal's tier, billing, app and state (waiting, approved, declined, expired). `ContextBuilder#upgrade_open_line` prints it from fixed words, after checking each value, so Alex neither files it twice nor forgets the answer |
+| The ping | `UpgradeProposalNoticeJob` posts the tier, billing, the app named and the review link to the `upgrade_proposals` home in `config/agent_media.yml` (Discord `#internal`), never the person's email or words. Unset, the proposal still waits on the page; a failed post is an `ErrorLog` row |
 
 Nothing here charges anyone: billing stays outside the hub, and a tier change is Alex
 McRitchie's click.

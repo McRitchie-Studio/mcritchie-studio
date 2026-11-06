@@ -39,6 +39,9 @@ module PackagesHelper
   # Written here rather than with the engine's studio_talk_to_agent_link so the
   # page renders the same link on an engine that predates the modal.
   TALK_SOUL = "alex".freeze
+  # Alex's line under his name in the talk modal: his seat on the accountability
+  # chart (config/accountability_chart.yml), not /build's "AI Builder".
+  TALK_ROLE = "Sales & Marketing".freeze
 
   def package_talk_data(package)
     { studio_talk_to_agent: true, talk_soul: TALK_SOUL, talk_topic: package.name,

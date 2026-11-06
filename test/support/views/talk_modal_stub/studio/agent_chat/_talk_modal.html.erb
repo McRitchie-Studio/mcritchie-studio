@@ -1,0 +1,5 @@
+<%# A stand-in for studio-engine's studio/agent_chat/_talk_modal (engine 0.131+), so test/controllers/packages_controller_test.rb proves /packages renders the modal, and with which locals, before the hub's engine ships the partial. It prints the locals packages/_talk_to_alex passes. %>
+<div data-test="talk-to-agent" data-talk-to-agent-soul="<%= soul %>" data-talk-to-agent-name="<%= name %>" data-talk-modal-stub>
+  <p data-test="talk-modal-role"><%= role %></p>
+  <%= portrait %>
+</div>

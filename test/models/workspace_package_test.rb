@@ -106,6 +106,9 @@ class WorkspacePackageTest < ActiveSupport::TestCase
   test "each package carries a tagline, a known CTA and its lines: card lines on a card, highlights on the Talk to us line" do
     WorkspacePackage.all.each do |package|
       assert package.tagline.present?, "#{package.key} has no tagline"
+      # The agreed tagline limit, as for an integration tile's line
+      # (test/controllers/integrations_controller_test.rb): 64 characters.
+      assert_operator package.tagline.length, :<=, 64, "#{package.key}: a tagline stays one short line"
       if package.card?
         assert package.card_lines.any?, "#{package.key} lists no card lines"
         assert_empty package.highlights, "#{package.key}: a card lists its lines, not highlights"

@@ -66,4 +66,14 @@ class Admin::UpgradeProposalsControllerTest < ActionDispatch::IntegrationTest
     assert_equal "rejected", @proposal.reload.status
     assert_equal "builder", @client_app.reload.package_tier
   end
+
+  test "settling it puts Alex's word in the visitor's chat thread, as the thread's newest agent turn" do
+    log_in_as(admin)
+    post admin_approve_upgrade_proposal_path(@proposal)
+    turns = AgentChat::Turns.for(AgentChat.rows(@proposal.thread_key))
+    last = turns.last
+    assert_equal "agent", last[:role]
+    assert_match(/\AGood news: Alex McRitchie approved your move to Pro \(monthly\), and review-test-app is on Pro now\./, last[:text])
+    assert_equal 1, turns.count { |t| t[:role] == "user" }, "only the visitor's own message has a bubble"
+  end
 end

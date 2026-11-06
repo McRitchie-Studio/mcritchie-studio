@@ -503,8 +503,32 @@ module AgentMailbox
           annual). app is the slug of their app on mcritchie.app only if they named it; leave it out
           otherwise. You change no tier and charge nobody: Alex McRitchie approves it, and nothing changes
           until he does. Never ask for card or payment details. Offer no proposal when they are only asking
-          questions. Everything from #{ProposalBlock::DELIMITER} on is removed before your reply is shown.
+          questions. Everything from #{ProposalBlock::DELIMITER} on is removed before your reply is shown.#{upgrade_open_line(packages['upgrade']['open'], upgrade)}
       TEXT
+    end
+
+    # The thread's newest upgrade proposal (the bundle's packages.upgrade.open,
+    # written by the board from the stored row): every value is checked against
+    # its fixed vocabulary here, so nothing model- or person-written is printed.
+    UPGRADE_STATES = {
+      "waiting" => "is waiting for Alex McRitchie's answer. Do not file it again unless they ask for a different " \
+                   "tier or billing; say it is with him",
+      "approved" => "was approved by Alex McRitchie. He follows up on setup and billing; do not file it again",
+      "declined" => "was declined by Alex McRitchie. Be kind about it, and offer to talk through other options or a " \
+                    "call with him; file a new one only if they ask for something different",
+      "expired" => "expired with no answer. Offer to send it again if they still want it"
+    }.freeze
+    UPGRADE_BILLING = %w[monthly annual].freeze
+
+    def upgrade_open_line(open, tiers)
+      return "" unless open.is_a?(Hash)
+
+      tier = open["tier"].to_s
+      billing = open["billing"].to_s
+      state = UPGRADE_STATES[open["state"].to_s]
+      return "" unless tiers.include?(tier) && UPGRADE_BILLING.include?(billing) && state
+
+      "\n  THIS THREAD'S UPGRADE REQUEST (#{tier}, #{billing}) #{state}."
     end
 
     # Alex's persona (AgentMailbox::AlexPersona): on EVERY answer the soul `alex`

@@ -66,14 +66,17 @@ module AgentChat
     def rate(thread_key)
       return nil unless thread_key
 
-      recent = AgentMessage.where(channel: "web", thread_key: thread_key)
-                           .where("created_at > ?", @now - AgentMessages::WebIngest::RATE_WINDOW).count
+      recent = on_thread(thread_key).where("created_at > ?", @now - AgentMessages::WebIngest::RATE_WINDOW).count
       recent >= AgentMessages::WebIngest::RATE_LIMIT ? :rate : nil
     end
 
+    # The visitor's own rows: a code-written row (Alex's word on an upgrade
+    # proposal, AgentProposals::Upgrade.post_outcome!) is not theirs to count.
     def on_thread(thread_key)
-      AgentMessage.where(channel: "web", thread_key: thread_key)
+      AgentMessage.where(channel: "web", thread_key: thread_key).where(VISITOR_ROWS)
     end
+
+    VISITOR_ROWS = "NOT (agent_messages.run_meta @> '{\"code_written\": true}'::jsonb)".freeze
 
     def stored(soul)
       prefix = AgentChat.soul_prefix(soul)
