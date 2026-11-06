@@ -1120,6 +1120,10 @@ end
 # and then dispatching with the ambient credential would recover the read and fail
 # the very next call on the credential we had just proven dead — a partial
 # correction that leaves the operator with a stranger failure than the one it fixed.
+#
+# NOW A FALLBACK. The snapshot mints through CiStatus (mint_held_gh_token), so the
+# recovered token is CiStatus's held one, which ages and re-mints; gh_write_env
+# prefers it. This copy is read only when nothing is held.
 $gh_lane_token = nil
 
 # The env overlay that hands `gh` a specific credential, or {} for the ambient one.
