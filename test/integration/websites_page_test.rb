@@ -22,6 +22,7 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     carousel = "section[data-test='websites-carousel'][aria-roledescription='carousel'][aria-label='Live apps']"
     assert_select carousel, count: 1
     assert_select "#{carousel}[data-studio-controller='carousel']", count: 1
+    assert_select "#{carousel}.carousel-spotlight", count: 1 # the spotlight style: the centred app full size
     assert_select "#{carousel} .carousel-slide[role='group']", count: BuildGallery.examples.size
     BuildGallery.examples.each do |example|
       assert_select "#{carousel} .carousel-slide[aria-label=?] [data-test='build-example']", example.name, count: 1

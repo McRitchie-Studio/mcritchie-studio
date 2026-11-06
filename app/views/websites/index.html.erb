@@ -8,11 +8,11 @@
 </section>
 
 <%# The apps ride the engine's carousel (studio/_carousel), the apps' standard for a
-    set too long to grid: three to a wide row, one on a phone, each with a sliver of
-    the next. Each slide is the same card /build's gallery shows. %>
+    set too long to grid, in its spotlight style: the centred app full size and colour,
+    its neighbours smaller and grey. Each slide is the same card /build's gallery shows. %>
 <div class="max-w-5xl mx-auto px-4" style="padding-bottom: 4rem;">
   <%= render layout: "studio/carousel",
-        locals: { label: "Live apps", items: @examples, per_view: 3, id: "websites-apps",
+        locals: { label: "Live apps", items: @examples, per_view: 3, id: "websites-apps", style: :spotlight,
                   slide_label: ->(example) { example.name }, data: { test: "websites-carousel" } } do |example| %>
     <%= render "build/gallery_card", example: example %>
   <% end %>
