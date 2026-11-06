@@ -1,13 +1,5 @@
 <div class="max-w-7xl mx-auto px-4 py-6">
-  <div class="flex items-start justify-between gap-4 flex-wrap mb-6">
-    <div>
-      <div class="flex items-center gap-3 text-sm text-muted mb-2">
-        <%= link_to "Deployments", deployments_path, class: "hover:text-heading" %>
-        <span>/</span>
-        <span>All Deployments</span>
-      </div>
-      <h2 class="text-3xl font-extrabold text-heading tracking-tight">All Deployments</h2>
-    </div>
+  <% header_actions = capture do %>
     <div class="flex items-center gap-2">
       <%# Model-page protocol (studio-engine): admin-only jump to the newest release's model page. %>
       <% if admin? && @latest_release %>
@@ -15,7 +7,10 @@
       <% end %>
       <%= link_to "Back to Dashboard", deployments_path, class: "btn btn-neutral btn-sm" %>
     </div>
-  </div>
+  <% end %>
+  <%= render "studio/page_header", title: "All Deployments", crumbs: studio_crumbs(:all_deployments),
+        actions_html: header_actions %>
+  <div class="mb-6"></div>
 
   <% stage_averages = @deployment_dashboard["stages"] || {} %>
   <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">

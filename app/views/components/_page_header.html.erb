@@ -19,12 +19,13 @@
       class        classes for the description (optional) %>
 <% sub_nav = local_assigns[:sub_nav] %>
 <% page = local_assigns[:page] || sub_nav&.dig(:current) %>
-<% actions = yield %>
+<% block = yield %>
+<% actions = tag.div(block, class: "flex flex-wrap items-center justify-end gap-2") if block.present? %>
 <%= render "studio/page_header",
       title: title,
       crumbs: (page ? studio_crumbs(page) : []),
       meta: local_assigns[:eyebrow].presence,
-      actions_html: actions.presence,
+      actions_html: actions,
       links: (sub_nav ? sub_nav_links(sub_nav[:nav], current: sub_nav[:current]) : []),
       links_label: (Navigation.sub_nav(sub_nav[:nav]).label if sub_nav),
       data: { test: "page-header" } %>

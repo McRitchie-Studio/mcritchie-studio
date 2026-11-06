@@ -176,6 +176,7 @@ pages:
   intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence, parent: deployments }
   pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex, parent: deployments }
   recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks, parent: deployments }
+  all_deployments:          { page: "releases#index",           audience: admin, label: All Deployments, parent: deployments }
   mason_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat, parent: deployments }
   heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃", parent: mason_heartbeat }
   mason_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡", parent: deployments }
