@@ -937,7 +937,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
 
     assert_response :success
-    assert_select "h2", "Deployments"
+    assert_select "h1.page-header-title", "Deployments"
     # Upstream build lanes now lead the board (drag-and-drop; expanded later)…
     assert_select "#dropzone-designed"
     assert_select "#dropzone-building"

@@ -232,4 +232,43 @@ class NavigationTest < ActiveSupport::TestCase
     assert_includes Navigation.placed_keys, "asset_browser", "a Basement page is still placed, so the wall test walks it"
     assert_includes Navigation.placed_keys, "admin_basement"
   end
+
+  # ---- parent: the crumb trail's map (config/initializers/studio_crumbs.rb) ----
+
+  def with_parents(parents, crumbs = {})
+    data = minimal
+    parents.each { |key, parent| data["pages"][key]["parent"] = parent }
+    crumbs.each { |key, crumb| data["pages"][key]["crumb"] = crumb }
+    data
+  end
+
+  test "[unit] a parent that is not a page, or a loop of parents, does not load" do
+    assert_match "parent \"nowhere\" is not a page",
+                 assert_raises(Navigation::Invalid) { Navigation.new(with_parents("tasks" => "nowhere")) }.message
+    assert_match "parents loop",
+                 assert_raises(Navigation::Invalid) { Navigation.new(with_parents("tasks" => "root", "root" => "tasks")) }.message
+  end
+
+  test "[unit] the registry draws the crumb map: each page, its crumb label and its parent" do
+    registry = Navigation.new(with_parents({ "tasks" => "root" }, { "root" => "Start" }))
+    crumbs = registry.draw_crumbs(Studio::Crumbs.new)
+
+    assert_equal %i[root tasks], crumbs.chain(:tasks)
+    view = Object.new.tap { |v| v.define_singleton_method(:root_path) { "/" } }
+    assert_equal [ { label: "Start", href: "/" } ], crumbs.trail(view, :tasks)
+  end
+
+  test "[unit] the real registry gives every board page the trail Admin, Deployments" do
+    crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
+    %i[tasks stages epics triage intelligence pokedex recent_tasks mason_pipeline mason_insights].each do |key|
+      assert_equal %i[admin_dashboard deployments], crumbs.chain(key)[0...-1], key
+    end
+    assert_equal "Admin", Navigation.page(:admin_dashboard).crumb_label
+    assert_nil Navigation.page(:admin_dashboard).parent, "the admin dashboard is the root"
+  end
+
+  test "[unit] the app's own Studio.crumbs is drawn at boot" do
+    assert Studio.crumbs.key?(:deployments)
+    assert_equal :admin_dashboard, Studio.crumbs.fetch(:deployments).parent
+  end
 end
