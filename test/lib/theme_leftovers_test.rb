@@ -12,7 +12,7 @@ class ThemeLeftoversTest < ActiveSupport::TestCase
 
   def hub_files
     Dir.chdir(Rails.root) do
-      `git ls-files -- #{SOURCES.join(' ')}`.split("\n").reject { _1.match?(SKIP) }
+      `git ls-files -- #{SOURCES.join(" ")}`.split("\n").reject { _1.match?(SKIP) }
     end
   end
 
