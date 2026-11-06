@@ -26,7 +26,10 @@ remove.
   send, and a `:mail` token still asks for it because there is no draft-only
   Gmail scope. "Never sends" is held in code
   (`test/lib/no_gmail_send_test.rb`), not by the grant and not by the scope. Do
-  not widen to `gmail.send`, `gmail.modify`, or `mail.google.com`.
+  not widen to `gmail.send`, `gmail.modify`, or `mail.google.com`. The one
+  sanctioned send is a print order to the FedEx store, on Alex McRitchie's ask
+  in the current chat, from a scratchpad script: see the Pokémon's
+  `print-order` SOP.
 - **It never edits a file we do not own.** `drive.readonly` plus `drive.file`;
   never plain `drive`. A mail token holds neither.
 - **It never creates the 1Password item.** The agent service account is

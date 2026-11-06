@@ -126,6 +126,7 @@ its invocation exactly.
 | Pokemon `download-youtube` SOP (yt-dlp H.264 download of a YouTube video or section) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | Pokemon `email-image` SOP (make an email header with Alex McRitchie in a Claude Code session: show base assets, generate, iterate, approve on his word, export) | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | Pokemon `flatten-document` SOP (burn annotations and masks into a PDF or image so the content under them cannot be read, and prove it) | `mcritchie-studio/docs/agents/agents/pokemon/sops/flatten-document.md` |
+| Pokemon `print-order` SOP (send Google Docs to the FedEx Office store as print-ready PDFs from team@, on Alex McRitchie's ask) | `mcritchie-studio/docs/agents/agents/pokemon/sops/print-order.md` |
 | Pokemon `wrap-it-up` SOP (hand a stuck session to a fresh one, then clear its board) | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Steffon Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | Steffon `agent-dispatcher` SOP (the agent mailbox's always-on worker on Alex McRitchie's Mac: install, verify, alerts, unblock) | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |
