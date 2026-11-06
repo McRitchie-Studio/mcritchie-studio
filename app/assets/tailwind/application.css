@@ -738,3 +738,11 @@ footer[data-site-footer] .ftr-link[href^="mailto:"] { overflow-wrap: normal; }
   animation-duration: 320ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
+
+/* A PAGE WITH A PINNED HEADER KEEPS WHAT IT SCROLLS TO OUT FROM UNDER IT. The engine's
+   page header (studio/_page_header) pins under the navbar, and on a short window the
+   stack is a third of the view or more. scroll-padding makes scrollIntoView, a focus
+   scroll and an anchor jump stop below the whole pinned stack (--pin-stack-bottom,
+   written on the root once a scroll settles; studio/pinned_stack), so a control a
+   keyboard or a script brings into view is not left under the header. */
+html:has([data-pin="page"]) { scroll-padding-top: var(--pin-stack-bottom, var(--nav-bottom, 0px)); }
