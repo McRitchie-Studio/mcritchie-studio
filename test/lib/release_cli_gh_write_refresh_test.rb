@@ -52,7 +52,7 @@ class ReleaseCliGhWriteRefreshTest < ReleaseCliHarness
       verb = "gh run snapshot" if verb == "gh run list" && !cmd.include?("--event")
       case verb
       when "gh run snapshot" then gh_answer(verb, env) { ["100", true] }
-      when "gh run list" then gh_answer(verb, env) { [$registered ? "101" : "", true] }
+      when "gh run list" then ($on_list&.call; gh_answer(verb, env) { [$registered ? "101" : "", true] })
       when "gh workflow run" then gh_answer(verb, env) { $registered = true; ["", true] }
       when "gh run watch" then ($on_watch&.call; gh_answer(verb, env) { ["", !$watch_dies] })
       when "gh run view" then gh_answer(verb, env) { ["completed\tsuccess", true] }
@@ -182,6 +182,18 @@ class ReleaseCliGhWriteRefreshTest < ReleaseCliHarness
       assert_includes out, "RESULT=true", out
       refute_includes calls(out), "mint#1", out
       assert_includes calls(out), %("gh workflow run:mint#2"), out
+      assert_includes calls(out), %("gh run watch:mint#2"), out
+    end
+  end
+
+  # [unit] The snapshot's recovered token is HELD (CiStatus), so it ages: 55 minutes after the
+  # recovery the watch rides a re-mint, not the recovered token.
+  def test_the_snapshot_recovers_into_the_held_token_that_ages
+    with_broker do |gh, _args|
+      out = drive(gh + %($on_list = -> { $sim = 3_300; $on_list = nil }), DISPATCH)
+
+      assert_includes out, "RESULT=true", out
+      assert_includes calls(out), %("gh run snapshot:ambient", "gh run snapshot:mint#1"), out
       assert_includes calls(out), %("gh run watch:mint#2"), out
     end
   end
