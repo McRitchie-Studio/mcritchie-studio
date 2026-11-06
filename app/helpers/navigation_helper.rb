@@ -21,4 +21,17 @@ module NavigationHelper
         narrow_only: item.narrow_only_on&.include?(current) }
     end
   end
+
+  # A sub-nav as the engine page header's links line (studio/_page_header `links:`):
+  # the links a page keeps under its title. A back item is dropped, because the crumb
+  # trail above the title already leads there.
+  def sub_nav_links(nav, current:)
+    sub_nav_entries(nav, current: current).filter_map do |entry|
+      item = entry[:item]
+      next if item.back
+
+      label = item.icon && item.page.emoji ? "#{item.page.emoji} #{item.text}" : item.text
+      { label: label, href: entry[:href], current: (entry[:current] ? "page" : nil), data: { test: item.test_id }.compact }
+    end
+  end
 end

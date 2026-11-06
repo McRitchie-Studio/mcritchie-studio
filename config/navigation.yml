@@ -16,6 +16,11 @@
 #                       default-deny, and this file can only open what it names.
 #             args      positional arguments for the route helper.
 #             label, emoji, hover_emoji, desc   how a nav shows the page.
+#             parent    the page above this one, a page key. The crumb trail over a
+#                       page's title walks it up to a page with none
+#                       (config/initializers/studio_crumbs.rb, studio-engine's
+#                       docs/PAGE_HEADER.md). Each page names only its parent.
+#             crumb     a shorter label for the page in a crumb trail.
 #             icon      the link sidebar's line icon, a name from studio-engine's
 #                       Studio::Icons. It replaces the emoji and the hover swap under
 #                       Studio.sidebar_style = :glass; the emoji stays the fallback.
@@ -103,78 +108,78 @@ pages:
   # is the site's users and request logs. dashboard, applications and agents are in
   # no sidebar section (Alex McRitchie, 2026-11-04); the admin dashboard links the last
   # two, and tasks too. They stay here because the wall and the route check read this.
-  dashboard:      { page: "dashboard#index",      audience: admin, label: Studio dashboard, emoji: "📊", hover_emoji: "📈", desc: Overview + activity }
+  dashboard:      { page: "dashboard#index",      audience: admin, label: Studio dashboard, emoji: "📊", hover_emoji: "📈", desc: Overview + activity, parent: admin_dashboard }
   # Owners reach /applications too (AdminWall::SIGNED_IN); their own sidebar link
   # is AppOwnership.sidebar_links, so this entry shows to an admin only.
-  applications:   { page: "applications#index",   audience: signed_in, label: Applications, emoji: "📱", hover_emoji: "🚀", desc: Live apps + pending launch }
-  agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: "Agents and pending setups (Discord bots and the like)" }
-  builders:       { page: "builders#index",       audience: admin, label: Builders, emoji: "🏗️", hover_emoji: "🚀", desc: Builder roster + commit pace }
-  tasks:          { page: "tasks#index",          audience: admin, label: Tasks, emoji: "✅", hover_emoji: "🚦", desc: Task board }
-  news_index:     { page: "news#index",           audience: admin, label: News, emoji: "📰", hover_emoji: "🔎", desc: News pipeline }
-  contents:       { page: "contents#index",       audience: admin, label: Content, emoji: "🎬", hover_emoji: "✨", desc: Content pipeline }
-  model_pipeline: { page: "model_pipeline#index", audience: admin, label: Models, emoji: "🪪", hover_emoji: "🎭", desc: Character model pipeline }
-  body_archetypes: { page: "body_archetypes#index", audience: admin, label: Body archetypes, emoji: "🏈", hover_emoji: "💪", desc: Body builds a player sheet is drawn to }
-  videos:          { page: "videos#index",          audience: admin, label: Videos, emoji: "🎞️", hover_emoji: "🎬", desc: "Every digested video: cast, A/B/C frames, alt videos" }
+  applications:   { page: "applications#index",   audience: signed_in, label: Applications, emoji: "📱", hover_emoji: "🚀", desc: Live apps + pending launch, parent: admin_dashboard }
+  agents:         { page: "agents#index",         audience: admin, label: Agents, emoji: "🦞", hover_emoji: "🤝", desc: "Agents and pending setups (Discord bots and the like)", parent: admin_dashboard }
+  builders:       { page: "builders#index",       audience: admin, label: Builders, emoji: "🏗️", hover_emoji: "🚀", desc: Builder roster + commit pace, parent: admin_basement }
+  tasks:          { page: "tasks#index",          audience: admin, label: Tasks, emoji: "✅", hover_emoji: "🚦", desc: Task board, parent: deployments }
+  news_index:     { page: "news#index",           audience: admin, label: News, emoji: "📰", hover_emoji: "🔎", desc: News pipeline, parent: admin_basement }
+  contents:       { page: "contents#index",       audience: admin, label: Content, emoji: "🎬", hover_emoji: "✨", desc: Content pipeline, parent: admin_basement }
+  model_pipeline: { page: "model_pipeline#index", audience: admin, label: Models, emoji: "🪪", hover_emoji: "🎭", desc: Character model pipeline, parent: admin_basement }
+  body_archetypes: { page: "body_archetypes#index", audience: admin, label: Body archetypes, emoji: "🏈", hover_emoji: "💪", desc: Body builds a player sheet is drawn to, parent: admin_basement }
+  videos:          { page: "videos#index",          audience: admin, label: Videos, emoji: "🎞️", hover_emoji: "🎬", desc: "Every digested video: cast, A/B/C frames, alt videos", parent: admin_basement }
 
   # ── Directory ────────────────────────────────────────────────────────────
-  teams:  { page: "teams#index",  audience: admin, label: Teams, emoji: "🛡️", hover_emoji: "📋", desc: All teams }
-  people: { page: "people#index", audience: admin, label: People, emoji: "👤", hover_emoji: "🪪", desc: Players + staff }
-  docs:   { page: "docs#index",   audience: admin, label: Docs, emoji: "📚", hover_emoji: "🔎", desc: Documentation }
+  teams:  { page: "teams#index",  audience: admin, label: Teams, emoji: "🛡️", hover_emoji: "📋", desc: All teams, parent: admin_basement }
+  people: { page: "people#index", audience: admin, label: People, emoji: "👤", hover_emoji: "🪪", desc: Players + staff, parent: admin_basement }
+  docs:   { page: "docs#index",   audience: admin, label: Docs, emoji: "📚", hover_emoji: "🔎", desc: Documentation, parent: admin_basement }
 
   # ── Site administration ──────────────────────────────────────────────────
-  admin_dashboard:    { page: "admin/dashboard#show",         audience: admin, label: Admin dashboard, emoji: "📊", hover_emoji: "🔬", desc: Users + request logs, icon: chart-column }
-  deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board, icon: rocket }
-  admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks, icon: palette }
-  admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser }
-  logos:              { page: "logos#index",                  audience: admin, label: Branding Kits, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built, icon: diamond }
-  admin_emails:       { page: "studio/emails#index",          audience: admin, label: Emails, emoji: "✉️", hover_emoji: "🖼️", desc: Transactional emails + their banners }
-  admin_link_preview: { page: "studio/site_identities#edit",  audience: admin, label: Link preview, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls" }
-  asset_browser:      { page: "assets#index",                 audience: admin, label: Assets, emoji: "🗄️", hover_emoji: "🎞️", desc: Object store as a folder tree }
-  admin_basement:     { page: "admin/links#basement",         audience: admin, label: Basement, emoji: "🪜", hover_emoji: "📦", desc: Links kept off the sidebar, icon: door-stairwell }
+  admin_dashboard:    { page: "admin/dashboard#show",         audience: admin, label: Admin dashboard, emoji: "📊", hover_emoji: "🔬", desc: Users + request logs, icon: chart-column, crumb: Admin }
+  deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board, icon: rocket, parent: admin_dashboard }
+  admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks, icon: palette, parent: admin_dashboard }
+  admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser, parent: admin_basement }
+  logos:              { page: "logos#index",                  audience: admin, label: Branding Kits, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built, icon: diamond, parent: admin_dashboard }
+  admin_emails:       { page: "studio/emails#index",          audience: admin, label: Emails, emoji: "✉️", hover_emoji: "🖼️", desc: Transactional emails + their banners, parent: admin_basement }
+  admin_link_preview: { page: "studio/site_identities#edit",  audience: admin, label: Link preview, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls", parent: admin_basement }
+  asset_browser:      { page: "assets#index",                 audience: admin, label: Assets, emoji: "🗄️", hover_emoji: "🎞️", desc: Object store as a folder tree, parent: admin_basement }
+  admin_basement:     { page: "admin/links#basement",         audience: admin, label: Basement, emoji: "🪜", hover_emoji: "📦", desc: Links kept off the sidebar, icon: door-stairwell, parent: admin_dashboard }
 
   # ── Clients ──────────────────────────────────────────────────────────────
-  build_requests: { page: "build#index",             audience: admin, label: App requests, emoji: "🧱", hover_emoji: "📥", desc: Every app requested through /build, icon: inbox }
-  stack:          { page: "stack#index",             audience: admin, label: Stack, emoji: "🥞", hover_emoji: "🧭", desc: Each client's tier and software }
-  credentials:    { page: "credential_vaults#index", audience: admin, label: Credentials, emoji: "🔐", hover_emoji: "🗝️", desc: "Software by entity, with vault icons" }
+  build_requests: { page: "build#index",             audience: admin, label: App requests, emoji: "🧱", hover_emoji: "📥", desc: Every app requested through /build, icon: inbox, parent: admin_dashboard }
+  stack:          { page: "stack#index",             audience: admin, label: Stack, emoji: "🥞", hover_emoji: "🧭", desc: Each client's tier and software, parent: admin_basement }
+  credentials:    { page: "credential_vaults#index", audience: admin, label: Credentials, emoji: "🔐", hover_emoji: "🗝️", desc: "Software by entity, with vault icons", parent: admin_basement }
 
   # ── Finance ──────────────────────────────────────────────────────────────
-  books: { page: "books#index", audience: admin, label: Books, emoji: "📒", hover_emoji: "🧾", desc: "Review and confirm bank lines, per entity", icon: book-open }
+  books: { page: "books#index", audience: admin, label: Books, emoji: "📒", hover_emoji: "🧾", desc: "Review and confirm bank lines, per entity", icon: book-open, parent: admin_dashboard }
 
   # ── Email ────────────────────────────────────────────────────────────────
-  broadcasts:          { page: "broadcasts#index",         audience: admin, label: Broadcasts, emoji: "📣", hover_emoji: "✉️", desc: "Compose, send and measure marketing email" }
-  contacts:            { page: "contacts#index",           audience: admin, label: Contacts, emoji: "📇", hover_emoji: "✅", desc: "The mailing list, verified and watched live" }
-  broadcast_analytics: { page: "broadcast_analytics#show", audience: admin, label: Email analytics, emoji: "📬", hover_emoji: "📈", desc: "Delivery, opens, clicks and list health" }
+  broadcasts:          { page: "broadcasts#index",         audience: admin, label: Broadcasts, emoji: "📣", hover_emoji: "✉️", desc: "Compose, send and measure marketing email", parent: admin_basement }
+  contacts:            { page: "contacts#index",           audience: admin, label: Contacts, emoji: "📇", hover_emoji: "✅", desc: "The mailing list, verified and watched live", parent: admin_basement }
+  broadcast_analytics: { page: "broadcast_analytics#show", audience: admin, label: Email analytics, emoji: "📬", hover_emoji: "📈", desc: "Delivery, opens, clicks and list health", parent: broadcasts }
 
   # ── Ops ──────────────────────────────────────────────────────────────────
-  error_logs:           { page: "error_logs#index",    audience: admin, label: Error logs, emoji: "🚨", hover_emoji: "🔍", desc: Captured errors }
-  admin_tiktok: { page: "admin/tiktok#show", audience: admin, label: TikTok connection, emoji: "🎵", hover_emoji: "🔐", desc: Connected account · sign in · disconnect }
-  admin_google: { page: "admin/google#show", audience: admin, label: Google connection, emoji: "🔗", hover_emoji: "🔐", desc: Calendar · Gmail · Drive · connect · disconnect }
-  admin_fathom: { page: "admin/fathom#show", audience: admin, label: Fathom connection, emoji: "🎙️", hover_emoji: "🔐", desc: Meeting notes · transcripts · connect · disconnect }
-  admin_agent_messages: { page: "admin/agent_messages#index", audience: admin, label: Agent inbox, emoji: "📬", hover_emoji: "💬", desc: Messages to agents · claims · replies }
-  admin_report_destinations: { page: "admin/report_destinations#index", audience: admin, label: Report destinations, emoji: "📰", hover_emoji: "📡", desc: Which Discord channel each report posts to }
-  admin_csp_reports: { page: "admin/csp_reports#index", audience: admin, label: CSP reports, emoji: "🛡️", hover_emoji: "🚨", desc: Content-Security-Policy violations · top offenders }
-  activities_agents:    { page: "agents#activities",   audience: admin, label: Activities, emoji: "🎭", hover_emoji: "🎬", desc: Cross-session agent activity feed, icon: activity }
+  error_logs:           { page: "error_logs#index",    audience: admin, label: Error logs, emoji: "🚨", hover_emoji: "🔍", desc: Captured errors, parent: admin_basement }
+  admin_tiktok: { page: "admin/tiktok#show", audience: admin, label: TikTok connection, emoji: "🎵", hover_emoji: "🔐", desc: Connected account · sign in · disconnect, parent: admin_basement }
+  admin_google: { page: "admin/google#show", audience: admin, label: Google connection, emoji: "🔗", hover_emoji: "🔐", desc: Calendar · Gmail · Drive · connect · disconnect, parent: admin_basement }
+  admin_fathom: { page: "admin/fathom#show", audience: admin, label: Fathom connection, emoji: "🎙️", hover_emoji: "🔐", desc: Meeting notes · transcripts · connect · disconnect, parent: admin_basement }
+  admin_agent_messages: { page: "admin/agent_messages#index", audience: admin, label: Agent inbox, emoji: "📬", hover_emoji: "💬", desc: Messages to agents · claims · replies, parent: admin_basement }
+  admin_report_destinations: { page: "admin/report_destinations#index", audience: admin, label: Report destinations, emoji: "📰", hover_emoji: "📡", desc: Which Discord channel each report posts to, parent: admin_basement }
+  admin_csp_reports: { page: "admin/csp_reports#index", audience: admin, label: CSP reports, emoji: "🛡️", hover_emoji: "🚨", desc: Content-Security-Policy violations · top offenders, parent: admin_basement }
+  activities_agents:    { page: "agents#activities",   audience: admin, label: Activities, emoji: "🎭", hover_emoji: "🎬", desc: Cross-session agent activity feed, icon: activity, parent: admin_dashboard }
 
   # ── Data ─────────────────────────────────────────────────────────────────
-  admin_ai_builder_multiple: { page: "admin/ai_builder_multiple#index", audience: admin, label: AI Builder Multiple, emoji: "📈", hover_emoji: "🤖", desc: GitHub public commit pace backtest }
-  workflow_news_index:       { page: "news#workflow",                   audience: admin, label: News workflow, emoji: "🛠️", hover_emoji: "🧭", desc: Intake → conclude board }
-  merge_people:              { page: "people#merge",                    audience: admin, label: Merge people, emoji: "🔀", hover_emoji: "✅", desc: Resolve duplicate people }
-  duplicates_people:         { page: "people#duplicates",               audience: admin, label: Duplicates, emoji: "👥", hover_emoji: "🧹", desc: Duplicate candidates }
+  admin_ai_builder_multiple: { page: "admin/ai_builder_multiple#index", audience: admin, label: AI Builder Multiple, emoji: "📈", hover_emoji: "🤖", desc: GitHub public commit pace backtest, parent: admin_basement }
+  workflow_news_index:       { page: "news#workflow",                   audience: admin, label: News workflow, emoji: "🛠️", hover_emoji: "🧭", desc: Intake → conclude board, parent: news_index }
+  merge_people:              { page: "people#merge",                    audience: admin, label: Merge people, emoji: "🔀", hover_emoji: "✅", desc: Resolve duplicate people, parent: people }
+  duplicates_people:         { page: "people#duplicates",               audience: admin, label: Duplicates, emoji: "👥", hover_emoji: "🧹", desc: Duplicate candidates, parent: people }
 
   # ── Video ────────────────────────────────────────────────────────────────
-  alt_videos: { page: "alt_videos#index", audience: admin, label: Alt videos, emoji: "🎬", hover_emoji: "🔁", desc: "Every recast version, with clip progress" }
+  alt_videos: { page: "alt_videos#index", audience: admin, label: Alt videos, emoji: "🎬", hover_emoji: "🔁", desc: "Every recast version, with clip progress", parent: videos }
 
   # ── The board family and the heartbeat (reached from the sub-navs) ───────
-  stages:                   { page: "tasks#stages",             audience: admin, label: Stages }
-  epics:                    { page: "epics#index",              audience: admin, label: Epics }
-  triage:                   { page: "triage#index",             audience: admin, label: Triage }
-  intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence }
-  pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex }
-  recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks }
-  mason_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat }
-  heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃" }
-  mason_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡" }
-  mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline }
+  stages:                   { page: "tasks#stages",             audience: admin, label: Stages, parent: deployments }
+  epics:                    { page: "epics#index",              audience: admin, label: Epics, parent: deployments }
+  triage:                   { page: "triage#index",             audience: admin, label: Triage, parent: deployments }
+  intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence, parent: deployments }
+  pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex, parent: deployments }
+  recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks, parent: deployments }
+  mason_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat, parent: deployments }
+  heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃", parent: mason_heartbeat }
+  mason_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡", parent: deployments }
+  mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline, parent: deployments }
 
 sidebar:
   # The main areas (Alex McRitchie, 2026-11-04). The short words are this section's
