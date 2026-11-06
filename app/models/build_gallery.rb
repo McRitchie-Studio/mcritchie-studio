@@ -21,13 +21,24 @@ module BuildGallery
 
   IMAGE_DIR = "build_gallery".freeze
 
+  # The /websites portfolio card (websites/_portfolio_card) lays its text on a
+  # shade of the app's dark panel at this opacity. The still under it is never
+  # known, so a palette's name and text must read at AA on the shade laid over
+  # pure white, the worst case (test/models/build_gallery_test.rb measures it).
+  PORTFOLIO_SHADE_ALPHA = 0.92
+  # The shade without a palette (the Studio theme): near-black, white text.
+  PORTFOLIO_SHADE = { "panel" => "#0b0b10", "primary" => "#a5a8ff", "name" => "#ffffff", "text" => "#d4d4d8" }.freeze
+
   module_function
 
   # Every app, the `lead` apps from the config first and in its order; the rest
-  # keep their place (sort_by alone is not stable, hence the index).
+  # keep their place (sort_by alone is not stable, hence the index). An app the
+  # config lists and a live showcase request also holds shows once, as listed.
   def examples
     lead = YAML.safe_load_file(CONFIG).fetch("lead", [])
-    (configured + showcased).each_with_index
+    listed = configured
+    taken = listed.map { |example| subdomain(example.url) }
+    (listed + showcased.reject { |example| taken.include?(subdomain(example.url)) }).each_with_index
       .sort_by { |example, i| [ lead.index(subdomain(example.url)) || lead.size, i ] }
       .map(&:first)
   end
