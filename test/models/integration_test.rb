@@ -14,7 +14,7 @@ class IntegrationTest < ActiveSupport::TestCase
 
   test "[unit] every connect entry reads Free; a tile's line is its tagline, else its blurb" do
     Integration.groups.find { _1.key == "connect" }.entries.each { assert_equal "Free", _1.price_label, _1.key }
-    assert_equal "Your agents answer from the Drive files you pick.", Integration.find(:google_drive).line
+    assert_equal "Your agents answer from the Drive files you pick. Read only.", Integration.find(:google_drive).line
     assert_match(/Read only/, Integration.find(:google_drive).blurb, "the blurb keeps the full sentence")
     builds = Integration.find(:extra_builds)
     assert_nil builds.tagline

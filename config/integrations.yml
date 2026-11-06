@@ -110,7 +110,7 @@ groups:
       - key: google_calendar
         name: Google Calendar
         icon: "📅"
-        tagline: "Your agents read your calendar to prepare you for meetings."
+        tagline: "Your agents read your calendar before your meetings. Read only."
         blurb: Sign in with Google and your agents read your calendar to prepare you for meetings. Read only, so they cannot add, change or delete an event.
         status: live
         tier: pro
@@ -120,7 +120,7 @@ groups:
       - key: gmail
         name: Gmail
         icon: "✉️"
-        tagline: "Your agents read your inbox to see what needs an answer."
+        tagline: "Your agents read your inbox for what needs an answer. Read only."
         blurb: Sign in with Google and your agents read your inbox to see what needs an answer. Read only, so they cannot send, change or delete mail.
         status: live
         tier: pro
@@ -130,7 +130,7 @@ groups:
       - key: google_drive
         name: Google Drive
         icon: "📁"
-        tagline: "Your agents answer from the Drive files you pick."
+        tagline: "Your agents answer from the Drive files you pick. Read only."
         blurb: Sign in with Google, then pick the Drive files your agents may read; they answer from those files and no others. Read only, so they cannot change, share or delete a file.
         status: live
         tier: pro
@@ -144,7 +144,7 @@ groups:
       - key: fathom
         name: Fathom
         icon: "🎙️"
-        tagline: "Your agents read your meeting notes and transcripts."
+        tagline: "Your agents read your meeting notes and transcripts. Read only."
         blurb: Sign in with Fathom and your agents read your meeting notes and transcripts to remember what was said. Read only, so they cannot change or delete a recording.
         status: live
         tier: pro
@@ -240,7 +240,7 @@ groups:
       - key: crypto
         name: Crypto and wallets
         icon: solana
-        tagline: "Wallet sign-in, on-chain vaults and stablecoin payouts."
+        tagline: "Solana wallets and stablecoin payouts in your app."
         blurb: Wallet sign-in, on-chain vaults and stablecoin payouts on Solana.
         status: live
       - key: extra_storage

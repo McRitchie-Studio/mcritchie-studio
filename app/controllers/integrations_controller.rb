@@ -19,8 +19,6 @@ class IntegrationsController < ApplicationController
   # (Admin::FathomController), in its action row, the same way.
   FATHOM_CARD = "fathom".freeze
 
-  helper_method :connection_card?
-
   def index
     @groups = Integration.groups
     return unless logged_in?
@@ -37,12 +35,6 @@ class IntegrationsController < ApplicationController
   end
 
   private
-
-  # Does a signed-in user's card carry the real Connect or Disconnect, so its
-  # contact-form Connect drops?
-  def connection_card?(key)
-    (@google && GOOGLE_CARDS.key?(key)) || (@fathom && key == FATHOM_CARD)
-  end
 
   # { connectable:, own:, calendar: connection|nil, gmail: ..., drive: ... }:
   # one query, then each ability's most recent readable connection. An

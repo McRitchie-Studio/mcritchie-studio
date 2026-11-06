@@ -52,6 +52,40 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "#{entry('extra_builds')} [data-test='entry-blurb']", 0, "no tagline: the line is the blurb, shown once"
   end
 
+  test "[component] the read-only tiles say Read only on the tile line, and crypto's line is not its blurb again" do
+    get integrations_path
+
+    %w[google_calendar gmail google_drive fathom].each do |key|
+      line = css_select("#{entry(key)} [data-test='entry-line']").first.text.strip
+      assert_match(/Read only\.\z/, line, "#{key}: read only shows on the tile, not only in Details")
+      assert_operator line.length, :<=, 80, key
+    end
+    crypto = Integration.find(:crypto)
+    assert_equal "Solana wallets and stablecoin payouts in your app.", crypto.line
+    assert_not crypto.blurb.start_with?(crypto.line.delete_suffix(".")), "crypto: the tile line is not the blurb with a word cut"
+  end
+
+  test "[component] the Details toggle shows a visible focus ring for a keyboard user" do
+    get integrations_path
+
+    toggles = css_select("[data-test='entry-details-toggle']")
+    assert toggles.any?
+    toggles.each do |summary|
+      classes = summary["class"].split
+      %w[rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary].each do |cls|
+        assert_includes classes, cls, "the summary carries #{cls}"
+      end
+    end
+  end
+
+  test "[unit] the controller carries no connection_card? helper, and the Google partial names the action row" do
+    assert_not IntegrationsController.private_method_defined?(:connection_card?), "dead helper removed"
+    assert_not IntegrationsController.method_defined?(:connection_card?)
+    partial = Rails.root.join("app/views/integrations/_google_connection.html.erb").read
+    assert_includes partial, "action row"
+    assert_not_includes partial, "Sign in row"
+  end
+
   test "[component] every entry not live reads Coming soon or On request, never Available" do
     get integrations_path
 

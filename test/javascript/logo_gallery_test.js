@@ -4,7 +4,7 @@
 import { test, mock } from "node:test";
 import assert from "node:assert/strict";
 
-import { contextShown, choice, setTheme, fetchSvg, copySvg, wireSwatch } from "../../app/javascript/logo_gallery.js";
+import { contextShown, choice, setTheme, themeIsDark, fetchSvg, copySvg, wireSwatch } from "../../app/javascript/logo_gallery.js";
 
 function root(dark) {
   const classes = new Set(dark ? ["dark"] : []);
@@ -40,13 +40,28 @@ test("leaving a watermark page loads it plain, light flipping the theme and dark
   assert.deepEqual(choice("dark", { watermarkPage: true, dark: true }), { toggle: false, load: "plain" });
 });
 
-test("setTheme uses the Alpine store's toggle, the moon icon's switch, when there is one", () => {
-  let toggled = 0;
+test("setTheme goes through the engine theme store's set(), the one theme state, when there is one", () => {
+  const calls = [];
   const r = root(false);
-  setTheme(true, { root: r, storage: storage(), store: { toggle: () => { toggled += 1; r.classList.toggle("dark", true); } } });
-  assert.equal(toggled, 1);
-  setTheme(true, { root: r, storage: storage(), store: { toggle: () => { toggled += 1; } } });
-  assert.equal(toggled, 1, "no flip when the theme already matches");
+  const s = storage();
+  setTheme(true, { root: r, storage: s, store: { set: (v) => calls.push(v), toggle: () => calls.push("toggle") } });
+  setTheme(false, { root: r, storage: s, store: { set: (v) => calls.push(v), toggle: () => calls.push("toggle") } });
+  assert.deepEqual(calls, ["dark", "light"], "set() with the wanted value, never toggle()");
+  assert.equal(r.classes.has("dark"), false, "the page does not write the class past the store");
+  assert.deepEqual(s.items, {}, "nor storage");
+});
+
+test("setTheme asks the store even when the class already matches: set() is idempotent, a crossfade may be pending", () => {
+  const calls = [];
+  setTheme(true, { root: root(true), storage: storage(), store: { set: (v) => calls.push(v) } });
+  assert.deepEqual(calls, ["dark"]);
+});
+
+test("themeIsDark reads the store's value when there is one, else the root's class", () => {
+  assert.equal(themeIsDark({ root: root(false), store: { isDark: true } }), true);
+  assert.equal(themeIsDark({ root: root(true), store: { isDark: false } }), false);
+  assert.equal(themeIsDark({ root: root(true), store: undefined }), true);
+  assert.equal(themeIsDark({ root: root(false), store: undefined }), false);
 });
 
 test("setTheme without a store sets the root's class and stores the theme, as the engine's head reads it", () => {
