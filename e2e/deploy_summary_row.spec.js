@@ -64,7 +64,7 @@ test("a sidebar dismisses on Escape, its close button, an outside click, or a se
   await expect(sidebar).toBeHidden();
 
   await openDeploySidebar(page, "releases");
-  await page.locator("h2", { hasText: "Deployments" }).click();
+  await page.locator("h1.page-header-title", { hasText: "Deployments" }).click();
   await expect(sidebar).toBeHidden();
 
   // The card is a toggle: a second click on its surface closes what the first opened.

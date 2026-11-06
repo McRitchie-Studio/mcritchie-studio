@@ -77,7 +77,9 @@ The public list has two sources. Pages come from the navigation registry,
 `config/navigation.yml`: each page declares `audience: public` or `admin`, and
 the same entries build the link sidebar, `/links`, `/admin/basement`
 and the section sub-navs (`components/_sub_nav`), so a link and the page behind it cannot
-disagree. Public actions that are not site pages (form posts, probes, tracking
+disagree. Each page may name its `parent`, and `config/initializers/studio_crumbs.rb` draws
+studio-engine's `Studio.crumbs` from those parents, so the crumb trail over each admin
+page's title (the engine's `studio/_page_header`) comes from the same file. Public actions that are not site pages (form posts, probes, tracking
 pixels, the auth, unsubscribe and local-development doors) stay an explicit list,
 `AdminWall::PUBLIC_ACTIONS`. `test/integration/admin_wall_public_set_test.rb`
 pins the whole public set, so opening a page means editing the registry and that

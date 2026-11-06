@@ -46,13 +46,16 @@ async function headerClearance(page) {
   });
 }
 
-// Where the visible lane headers sit against the PINNED NAVBAR (.vt-pinned-header, the
-// engine's one site header): how many there are, and the worst distance between a
+// Where the visible lane headers sit against the PINNED LINE: the page header's row
+// when the page has one, else the navbar (.vt-pinned-header, the engine's one site header): how many there are, and the worst distance between a
 // header's top and the navbar's bottom. No visible header reads as Infinity, so an empty
 // board can never pass for a pinned one.
 async function pinReading(page) {
   return page.evaluate(() => {
-    const nav = document.querySelector(".vt-pinned-header").getBoundingClientRect().bottom;
+    // The pinned line: the page header's row (studio/_page_header, data-pin="page") when
+    // the page has one, under the navbar; else the navbar.
+    const line = document.querySelector("[data-pin='page']") || document.querySelector(".vt-pinned-header");
+    const nav = line.getBoundingClientRect().bottom;
     const tops = [...document.querySelectorAll("[data-test='stage-header']")]
       .filter((h) => h.getBoundingClientRect().width > 0)
       .map((h) => Math.abs(h.getBoundingClientRect().top - nav));

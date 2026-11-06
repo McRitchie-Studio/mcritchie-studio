@@ -232,4 +232,62 @@ class NavigationTest < ActiveSupport::TestCase
     assert_includes Navigation.placed_keys, "asset_browser", "a Basement page is still placed, so the wall test walks it"
     assert_includes Navigation.placed_keys, "admin_basement"
   end
+
+  # ---- parent: the crumb trail's map (config/initializers/studio_crumbs.rb) ----
+
+  def with_parents(parents, crumbs = {})
+    data = minimal
+    parents.each { |key, parent| data["pages"][key]["parent"] = parent }
+    crumbs.each { |key, crumb| data["pages"][key]["crumb"] = crumb }
+    data
+  end
+
+  test "[unit] a parent that is not a page, or a loop of parents, does not load" do
+    assert_match "parent \"nowhere\" is not a page",
+                 assert_raises(Navigation::Invalid) { Navigation.new(with_parents("tasks" => "nowhere")) }.message
+    assert_match "parents loop",
+                 assert_raises(Navigation::Invalid) { Navigation.new(with_parents("tasks" => "root", "root" => "tasks")) }.message
+  end
+
+  test "[unit] the registry draws the crumb map: each page, its crumb label and its parent" do
+    registry = Navigation.new(with_parents({ "tasks" => "root" }, { "root" => "Start" }))
+    crumbs = registry.draw_crumbs(Studio::Crumbs.new)
+
+    assert_equal %i[root tasks], crumbs.chain(:tasks)
+    view = Object.new.tap { |v| v.define_singleton_method(:root_path) { "/" } }
+    assert_equal [ { label: "Start", href: "/" } ], crumbs.trail(view, :tasks)
+  end
+
+  test "[unit] the real registry gives every board page the trail Admin, Deployments" do
+    crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
+    %i[tasks stages epics triage intelligence pokedex recent_tasks mason_pipeline mason_insights].each do |key|
+      assert_equal %i[admin_dashboard deployments], crumbs.chain(key)[0...-1], key
+    end
+    assert_equal "Admin", Navigation.page(:admin_dashboard).crumb_label
+    assert_nil Navigation.page(:admin_dashboard).parent, "the admin dashboard is the root"
+  end
+
+  # An unknown key raises in test and draws no trail in production, so every key a view
+  # hands the crumb trail must be a page in config/navigation.yml.
+  CRUMB_KEY_PATTERNS = [
+    /studio_crumbs\((?:parent:\s*)?:(\w+)/,
+    /current_page:\s*["':](\w+)/,
+    /sub_nav:\s*\{\s*nav:\s*:\w+,\s*current:\s*:(\w+)/,
+    /page:\s*:(\w+)\s*\}/
+  ].freeze
+
+  test "[unit] every crumb key a view names is a page in the registry" do
+    keys = Dir[Rails.root.join("app/views/**/*.erb")].flat_map do |file|
+      source = File.read(file)
+      CRUMB_KEY_PATTERNS.flat_map { |pattern| source.scan(pattern).flatten.map { |key| [ key, file ] } }
+    end
+    assert_operator keys.map(&:first).uniq.size, :>=, 10, "the scan found too few keys to mean anything"
+    missing = keys.reject { |key, _| Studio.crumbs.key?(key) }
+    assert_empty missing.map { |key, file| "#{key} (#{file.delete_prefix("#{Rails.root}/")})" }
+  end
+
+  test "[unit] the app's own Studio.crumbs is drawn at boot" do
+    assert Studio.crumbs.key?(:deployments)
+    assert_equal :admin_dashboard, Studio.crumbs.fetch(:deployments).parent
+  end
 end

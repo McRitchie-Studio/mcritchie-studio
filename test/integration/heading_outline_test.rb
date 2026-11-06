@@ -15,7 +15,7 @@ class HeadingOutlineTest < ActionDispatch::IntegrationTest
   test "each board and guide page has one h1" do
     log_in_as users(:alex)
 
-    { tasks_path => BRAND, epics_path => "Epics", stages_path => "Stages", triage_path => "Triage" }.each do |path, title|
+    { tasks_path => "Tasks", epics_path => "Epics", stages_path => "Stages", triage_path => "Triage" }.each do |path, title|
       get path
       assert_response :success, path
       assert_equal [ title ], h1_texts, "#{path}: one h1"
@@ -35,7 +35,9 @@ class HeadingOutlineTest < ActionDispatch::IntegrationTest
   test "the brand is the h1 where the page has none, and a div where it has one" do
     log_in_as users(:alex)
 
-    get tasks_path
+    # The Studio dashboard draws no heading of its own. The board pages wear the crumb
+    # header (studio/_page_header), whose title is their h1.
+    get "/dashboard"
     assert_select NavbarBrand.selector("h1"), 1
     assert_select NavbarBrand.selector("div"), 0
 

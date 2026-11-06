@@ -47,7 +47,8 @@ test("the lane headers pin under the site header while cards scroll beneath", as
     .poll(
       async () =>
         page.evaluate(() => {
-          const nav = document.querySelector(".vt-pinned-header");
+          // The bottom of the pinned stack: the page header's row sits under the navbar.
+          const nav = document.querySelector("[data-pin='page']") || document.querySelector(".vt-pinned-header");
           const navBottom = Math.round(nav.getBoundingClientRect().bottom);
           const tops = Array.from(document.querySelectorAll("[data-test='stage-header']"))
             .filter((el) => el.getBoundingClientRect().width > 0)
@@ -55,7 +56,7 @@ test("the lane headers pin under the site header while cards scroll beneath", as
           // An empty list would pass `every`; no visible header is no pin.
           return tops.length > 0 && tops.every((t) => Math.abs(t - navBottom) <= 2);
         }),
-      { message: "every lane header settles on the site header's bottom edge" }
+      { message: "every lane header settles on the pinned stack's bottom edge" }
     )
     .toBe(true);
 

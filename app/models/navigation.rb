@@ -22,8 +22,9 @@ class Navigation
 
   # `key` is the page's route name, so `tasks` links tasks_path.
   Page = Struct.new(:key, :controller, :action, :audience, :args, :label, :emoji, :hover_emoji, :desc, :icon,
-                    keyword_init: true) do
+                    :parent, :crumb, keyword_init: true) do
     def public? = audience == "public"
+    def crumb_label = crumb || label
     def action_id = "#{controller}##{action}"
 
     # The page's path, from the route helpers of `view` (a view or helper context).
@@ -102,6 +103,17 @@ class Navigation
     (@sections.flat_map(&:pages) + @sub_navs.values.flat_map { |nav| nav.items.map(&:page) }).map(&:key).uniq
   end
 
+  # Draws Studio.crumbs, the engine's parent map behind the page header's crumb trail
+  # (studio-engine docs/PAGE_HEADER.md), from each page's `parent`. Every page goes in,
+  # so a view names its own key: studio_crumbs(:deployments).
+  def draw_crumbs(crumbs)
+    crumbs.clear
+    @pages.each_value do |page|
+      crumbs.page(page.key, page.crumb_label, -> { page.path(self) }, parent: page.parent)
+    end
+    crumbs
+  end
+
   # Pages whose declared controller#action is not what their route serves, as
   # messages. `named_routes` is Rails.application.routes.named_routes.
   def route_mismatches(named_routes)
@@ -128,12 +140,31 @@ class Navigation
 
       [key.to_s, Page.new(key: key.to_s, controller: controller, action: action, audience: attrs["audience"],
                           args: Array(attrs["args"]).freeze, label: attrs["label"].to_s, emoji: attrs["emoji"],
-                          hover_emoji: attrs["hover_emoji"], desc: attrs["desc"], icon: attrs["icon"]).freeze]
+                          hover_emoji: attrs["hover_emoji"], desc: attrs["desc"], icon: attrs["icon"],
+                          parent: attrs["parent"]&.to_s, crumb: attrs["crumb"]&.to_s).freeze]
     end
     twice = pages.values.group_by(&:action_id).select { |_, list| list.size > 1 }
     raise Invalid, "declared twice: #{twice.keys.join(', ')}" if twice.any?
 
+    check_parents(pages)
+
     pages.freeze
+  end
+
+  # A parent must be a page here, and the chain must reach a root: the crumb trail
+  # (config/initializers/studio_crumbs.rb) walks it up to the top.
+  def check_parents(pages)
+    pages.each_value do |page|
+      seen = [page.key]
+      parent = page.parent
+      while parent
+        raise Invalid, "#{seen.last}: parent #{parent.inspect} is not a page" unless pages.key?(parent)
+        raise Invalid, "#{page.key}: parents loop at #{parent}" if seen.include?(parent)
+
+        seen << parent
+        parent = pages[parent].parent
+      end
+    end
   end
 
   def build_sections(raw)

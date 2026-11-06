@@ -22,7 +22,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "index renders tasks page" do
     get tasks_path
     assert_response :success
-    assert_select "h2", "Tasks"
+    assert_select "h1.page-header-title", "Tasks"
   end
 
   test "[component] task cards use shared JSON routes and distinct exit animations" do
@@ -428,7 +428,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select %(nav[aria-label="Board sections"] a[href="#{heartbeat_all_activities_path}"]), count: 0
   end
 
-  test "[component] the board sections nav wraps at phone width on every board surface" do
+  test "[component] the board sections nav wraps or scrolls in its row at phone width on every board surface" do
     # At 390px the admin nav overflowed /epics and /stages sideways; it wraps instead.
     [tasks_path, deployments_path, stages_path, epics_path].each do |path|
       get path
@@ -436,6 +436,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
       nav = css_select(%(nav[aria-label="Board sections"])).first
       assert nav, "expected the board sections nav on #{path}"
       classes = nav["class"].split
+      # On the engine page header's links line the row scrolls sideways inside the
+      # header instead (studio-engine .page-header-links), so the page still does not.
+      next if classes.include?("page-header-links")
+
       assert_includes classes, "flex-wrap", "the nav on #{path} must wrap"
       assert_includes classes, "gap-y-1", "wrapped rows on #{path} need a row gap"
     end
@@ -914,7 +918,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get tasks_path
 
     assert_response :success
-    assert_select "h2", "Tasks"
+    assert_select "h1.page-header-title", "Tasks"
     # Feature-agent lane; submitted is the seam. Neither of the two terminal-ish
     # side columns is a lane: blocked tasks ride Building, and archived tasks are
     # off the board entirely (reachable at ?stage=archived).
@@ -937,7 +941,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get deployments_path
 
     assert_response :success
-    assert_select "h2", "Deployments"
+    assert_select "h1.page-header-title", "Deployments"
     # Upstream build lanes now lead the board (drag-and-drop; expanded later)…
     assert_select "#dropzone-designed"
     assert_select "#dropzone-building"

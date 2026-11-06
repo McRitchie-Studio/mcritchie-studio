@@ -30,12 +30,9 @@
   agents_by_slug = Agent.where(slug: (reviewer_slugs + ["avi"]).uniq).index_by(&:slug)
 %>
 <section data-test="recent-tasks" class="space-y-6">
-  <header class="space-y-1">
-    <nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Boards">
-      <%= link_to "← Tasks board", tasks_path, class: "text-muted hover:text-heading transition" %>
-      <%= link_to "Deployments", deployments_path, class: "text-muted hover:text-heading transition" %>
-    </nav>
-    <h1 class="text-2xl md:text-3xl font-bold text-heading">Recent Tasks</h1>
+  <%= render "studio/page_header", title: "Recent Tasks", crumbs: studio_crumbs(:recent_tasks),
+        links: [{ label: "Tasks board", href: tasks_path }], links_label: "Boards" %>
+  <div class="space-y-1 -mt-4">
     <p class="text-muted text-sm max-w-2xl">
       Every task by last update, with how long it spent in each testing phase —
       Build → Local Certification → CI → Review — and the latest verdict on
@@ -44,7 +41,7 @@
     <p class="text-2xs text-muted uppercase tracking-wide">
       <%= @tasks.size %> most recently updated · archived excluded
     </p>
-  </header>
+  </div>
 
   <% if @tasks.any? %>
     <ol class="space-y-3">

@@ -122,28 +122,43 @@ class SubNavTest < ActionView::TestCase
     assert_kind_of Navigation::Invalid, error.cause
   end
 
-  test "[component] the page header draws the sub-nav, one standard h1, the eyebrow and the description" do
+  # components/_page_header is the engine row (studio/_page_header) with the hub's
+  # registry wired in: crumbs from the pages' parents, the sub-nav as the links line.
+  test "[component] the page header draws the crumbs, one h1, the links line, the eyebrow and the description" do
     view.define_singleton_method(:admin?) { true }
     render layout: "components/page_header",
            locals: { title: "Triage", eyebrow: "Findings Inbox", description: "Promote what deserves one.",
-                     sub_nav: { nav: :board_sections, current: :epics } } do
+                     sub_nav: { nav: :board_sections, current: :triage } } do
       "<span id='beside-title'>controls</span>".html_safe
     end
 
-    assert_select "header[data-test=page-header]", 1
-    assert_select "header h1", 1
-    assert_select "header h1.text-2xl.font-bold.text-heading", text: "Triage"
-    assert_select "header p", text: "Findings Inbox"
-    assert_select "header p", text: "Promote what deserves one."
-    assert_select "header nav[aria-label='Board sections'] a[aria-current=page]", 1
-    assert_select "header #beside-title", text: "controls"
+    row = "[data-test=page-header].page-header"
+    assert_select "header", 0, "the row is never a <header>: the pinned stack takes the first one as the navbar"
+    assert_select "h1", 1
+    assert_select "#{row} h1.page-header-title", text: "Triage"
+    assert_select "#{row} .page-header-crumbs li", 3
+    assert_equal [ admin_dashboard_path, deployments_path ], css_select("#{row} .page-header-crumbs a").map { |a| a["href"] }
+    assert_select "#{row} .page-header-crumbs a[data-page-transition-back]", 2
+    assert_select "#{row} .page-header-crumb-current[aria-current=page]", text: "Triage"
+    assert_select "#{row} .page-header-meta", text: "Findings Inbox"
+    assert_select "#{row} .page-header-actions #beside-title", text: "controls"
+    assert_select "#{row} nav.page-header-links[aria-label='Board sections'] a", text: "Epics"
+    assert_select "#{row} nav.page-header-links a", text: /Admin dashboard/, count: 0
+    assert_select "p[data-test=page-header-description]", text: "Promote what deserves one."
   end
 
   test "[component] the page header needs only a title" do
     render partial: "components/page_header", locals: { title: "Epics" }
 
-    assert_select "header h1", text: "Epics"
-    assert_select "header nav", 0
-    assert_select "header p", 0
+    assert_select ".page-header h1", text: "Epics"
+    assert_select ".page-header-crumbs", 0
+    assert_select ".page-header-links", 0
+    assert_select "p[data-test=page-header-description]", 0
+  end
+
+  test "[component] a named page gets its trail without a sub-nav" do
+    render partial: "components/page_header", locals: { title: "Epics", page: :epics }
+
+    assert_equal %w[Admin Deployments Epics], css_select(".page-header-crumbs li").map { |li| li.text.strip }
   end
 end

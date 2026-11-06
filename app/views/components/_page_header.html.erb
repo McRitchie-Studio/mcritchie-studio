@@ -1,30 +1,34 @@
-<%# The standard page header: the section sub-nav, then the page's one h1
-    (NavigationHelper#page_title), an optional eyebrow above it and an optional
-    description below. A block renders beside the title, for the page's own
-    controls. Render it as a layout to pass one:
+<%# The hub's page header: studio-engine's studio/_page_header (its docs/PAGE_HEADER.md)
+    with the hub's registry wired in. The crumb trail comes from the page's parents in
+    config/navigation.yml, a section sub-nav becomes the links line under the title, and
+    a block renders on the right, for the page's own controls. Render it as a layout to
+    pass one:
 
-      render layout: "components/page_header", locals: { title: "Stages" } do ... end
+      render layout: "components/page_header", locals: { title: "Stages", page: :stages } do ... end
+
+    Call it from the page's long container: the row is sticky, and a sticky row travels
+    only as far as its parent.
 
     Locals:
-      title        the page title
-      eyebrow      a short kicker above the title (optional)
-      description  the lead paragraph, text or captured markup (optional)
-      sub_nav      { nav:, current: } for components/_sub_nav (optional)
-      class        classes for the header element (optional) %>
-<header class="<%= local_assigns[:class] %>" data-test="page-header">
-  <% if local_assigns[:sub_nav] %>
-    <%= render "components/sub_nav", **local_assigns[:sub_nav] %>
-  <% end %>
-  <div class="flex items-center gap-x-4 gap-y-2 flex-wrap">
-    <div class="min-w-0">
-      <% if local_assigns[:eyebrow].present? %>
-        <p class="text-sm font-semibold text-primary uppercase tracking-wider"><%= eyebrow %></p>
-      <% end %>
-      <%= page_title title %>
-    </div>
-    <%= yield %>
-  </div>
-  <% if local_assigns[:description].present? %>
-    <p class="text-muted text-sm max-w-3xl mt-2"><%= description %></p>
-  <% end %>
-</header>
+      title        the page title, the page's one h1
+      page         the page's key in config/navigation.yml, for the crumb trail
+                   (optional; the sub-nav's current page by default)
+      eyebrow      a short kicker beside the title (optional)
+      description  the lead paragraph, text or captured markup, under the row (optional)
+      sub_nav      { nav:, current: } for the links line (optional)
+      class        classes for the description (optional) %>
+<% sub_nav = local_assigns[:sub_nav] %>
+<% page = local_assigns[:page] || sub_nav&.dig(:current) %>
+<% block = yield %>
+<% actions = tag.div(block, class: "flex flex-wrap items-center justify-end gap-2") if block.present? %>
+<%= render "studio/page_header",
+      title: title,
+      crumbs: (page ? studio_crumbs(page) : []),
+      meta: local_assigns[:eyebrow].presence,
+      actions_html: actions,
+      links: (sub_nav ? sub_nav_links(sub_nav[:nav], current: sub_nav[:current]) : []),
+      links_label: (Navigation.sub_nav(sub_nav[:nav]).label if sub_nav),
+      data: { test: "page-header" } %>
+<% if local_assigns[:description].present? %>
+  <p class="text-muted text-sm max-w-3xl mt-2 <%= local_assigns[:class] %>" data-test="page-header-description"><%= description %></p>
+<% end %>
