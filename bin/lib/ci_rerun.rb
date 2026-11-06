@@ -37,6 +37,12 @@
 # SHA per process, says so loudly, and reads the re-run to a conclusion. A second
 # red is real and fails the gate exactly as the first would have.
 #
+# THE RE-RUN RIDES A FRESH TOKEN. A prepare can outlive the ambient GH_TOKEN (about an
+# hour); on rel-20261105-9199b4 the reads re-minted and passed while the re-run was
+# refused on the dead token. bin/release.rb#gh_sh_refreshing gives the write CiStatus's
+# held token, re-mints it when aging, and on a credential refusal mints once and
+# retries once.
+#
 # THE RUN MUST FINISH FIRST. A check-run goes red the moment one job fails, while
 # the rest of its workflow run is still going, and GitHub cannot re-run a run that
 # is in progress. On 2026-10-27 the ship's gate read that early red, found no

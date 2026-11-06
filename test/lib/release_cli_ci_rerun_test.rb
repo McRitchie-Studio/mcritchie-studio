@@ -122,6 +122,112 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, "STATE=red"
   end
 
+  # gh's real refusal on an expired App token (rel-20261105-9199b4's log line).
+  EXPIRED = "HTTP 401: Bad credentials (https://api.github.com/repos/McRitchie-Studio/rantly/actions/runs/11/rerun)\n" \
+            "Try authenticating with:  gh auth login"
+
+  # The rerun stub refuses the ambient credential and accepts only the token the
+  # harness broker (GH_AUTH_TOKEN_BIN, ReleaseCliStubs.token_broker) mints. $mints
+  # counts the broker calls through GhAuthRetry.mint, which stays REAL.
+  def expired_token_stub(**opts)
+    poll_stub(**opts) + <<~RUBY
+      $rerun_tokens = []
+      def sh(*a, env: nil, **_k)
+        return ["", true] unless a[0] == "gh" && a[1] == "run" && a[2] == "rerun"
+
+        token = (env || {})["GH_TOKEN"]
+        $rerun_tokens << (token ? "fresh" : "ambient")
+        return [#{EXPIRED.inspect}, false] unless token == "stub-deployer-token"
+
+        $reruns << a[3]
+        ["", true]
+      end
+    RUBY
+  end
+
+  # [unit] THE 2026-11-05 REFUSAL: the ambient token expired during a long prepare.
+  # The re-run is refused on credentials, a fresh token is minted, the re-run is
+  # retried with it and goes through, and the token never reaches the output.
+  def test_an_expired_token_is_refreshed_and_the_rerun_retried
+    out = poll(expired_token_stub(verdicts: [{ state: :red, failing: ["test"] }, { state: :pending }, { state: :green }]) +
+               %(\nat_exit { puts "TOKENS=\#{$rerun_tokens.inspect}" }\n))
+
+    assert_includes out, 'TOKENS=["ambient", "fresh"]', "one refused try on the ambient token, one retry on the fresh one: #{out}"
+    assert_includes out, 'RERUNS=["11"]', out
+    assert_includes out, "STATE=green", out
+    assert_includes out, "minted a fresh one and retried", out
+    refute_includes out, "was refused", out
+    refute_includes out, "stub-deployer-token", "the token must never be printed"
+  end
+
+  # [unit] THE CONTROL: with no token to mint, the refusal stands as before and
+  # says why, so the refresh test above is not green by accident.
+  def test_an_expired_token_with_no_mint_reads_the_red_as_it_stands
+    setup = expired_token_stub(verdicts: [{ state: :red }]) + %(\nENV["GH_AUTH_TOKEN_BIN"] = "/nonexistent/gh-token"\n)
+    out = poll(setup)
+
+    assert_includes out, "no fresh token could be minted", out
+    assert_includes out, "was refused", out
+    assert_includes out, "STATE=red", out
+    assert_includes out, "RERUNS=[]", out
+  end
+
+  # [unit] AGING, BEFORE THE CALL: the reads' held token (CiStatus) is past its 50
+  # minutes when the re-run comes. The write re-mints FIRST and rides the new token,
+  # so it is never refused at all. The broker numbers its tokens; gh accepts only #2.
+  def test_an_aging_held_token_is_re_minted_before_the_rerun
+    Dir.mktmpdir do |dir|
+      broker = File.join(dir, "gh-token")
+      File.write(broker, "#!/bin/sh\nn=$(( $(cat #{dir}/n 2>/dev/null || echo 0) + 1 ))\necho $n > #{dir}/n\necho ghs_stub_$n\n")
+      File.chmod(0o755, broker)
+      setup = poll_stub(verdicts: [{ state: :red, failing: ["test"] }, { state: :pending }, { state: :green }]) + <<~RUBY
+        ENV["GH_AUTH_TOKEN_BIN"] = #{broker.inspect}
+        $sim = 0
+        CiStatus.reset_gh_auth!
+        CiStatus.clock = -> { $sim }
+        CiStatus.mint_gh_token!          # the reads' token, minted at t=0
+        $sim = 3_300                     # 55 minutes later: aging
+        $rerun_tokens = []
+        def sh(*a, env: nil, **_k)
+          return ["", true] unless a[0] == "gh" && a[1] == "run" && a[2] == "rerun"
+
+          token = (env || {})["GH_TOKEN"].to_s
+          $rerun_tokens << "mint#" + token.delete_prefix("ghs_stub_")
+          return [#{EXPIRED.inspect}, false] unless token == "ghs_stub_2"
+
+          $reruns << a[3]
+          ["", true]
+        end
+        at_exit { puts "TOKENS=\#{$rerun_tokens.inspect}" }
+      RUBY
+      out = poll(setup)
+
+      assert_includes out, 'TOKENS=["mint#2"]', "one try, on the token re-minted before the call: #{out}"
+      assert_includes out, 'RERUNS=["11"]', out
+      refute_includes out, "was refused", out
+      refute_includes out, "ghs_stub", "the token must never be printed"
+    end
+  end
+
+  # [unit] A refusal that is not about credentials mints nothing and retries nothing.
+  def test_a_non_credential_refusal_mints_no_token
+    setup = poll_stub(verdicts: [{ state: :red }]) + <<~RUBY
+      $tries = 0
+      def sh(*a, **_k)
+        return ["", true] unless a[0] == "gh" && a[1] == "run" && a[2] == "rerun"
+
+        $tries += 1
+        ["run 11 cannot be rerun; its workflow file may be broken", false]
+      end
+      at_exit { puts "TRIES=\#{$tries}" }
+    RUBY
+    out = poll(setup)
+
+    assert_includes out, "TRIES=1", out
+    refute_includes out, "minted a fresh one", out
+    assert_includes out, "was refused", out
+  end
+
   def test_the_rerun_is_disarmed_by_env_and_by_the_injected_verdict_seam
     off = poll(poll_stub(verdicts: [{ state: :red }]) + %(\nENV["RELEASE_CI_RERUN"] = "off"\n))
     assert_includes off, "RERUNS=[]"

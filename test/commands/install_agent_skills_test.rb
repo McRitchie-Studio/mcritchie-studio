@@ -771,6 +771,22 @@ class InstallAgentSkillsTest < Minitest::Test
       "without the fixed path, the snapshot line survives and no hub path is written"
   end
 
+  # Regression for the rel-20261105-9199b4 QA flake (["", "", helper] at the repoint
+  # test below). The script runs under `set -euo pipefail`; a reader that exits early
+  # (`grep -q`, `head`) leaves bash's line-buffered printf writing into a closed pipe,
+  # SIGPIPE fails the pipeline, and the condition reads false at random under load.
+  # Measured before the fix: 15 of 60,000 `printf | grep -qx ''` pipelines failed
+  # on a loaded laptop. An early-exit reader must never sit at the end of a pipe here.
+  def test_unit_no_early_exit_reader_at_the_end_of_a_pipe_under_pipefail
+    source = File.read(SCRIPT)
+    assert_match(/^set -euo pipefail$/, source, "the hazard only exists under pipefail; re-check this guard if that changes")
+    offenders = source.lines.each_with_index.select do |line, _|
+      !line.lstrip.start_with?("#") && line.match?(/\|\s*(grep\s+(-\w*q|--quiet)|head\b)/)
+    end
+    assert_empty offenders.map { |line, index| "#{index + 1}: #{line.strip}" },
+      "an early-exit reader in a pipe races printf's SIGPIPE under pipefail; match in the shell (case) or read a here-string"
+  end
+
   # ── integration: the global git credential helper for github.com ────────────
 
   # The real ~/.gitconfig holds TWO values under [credential "https://github.com"]: an

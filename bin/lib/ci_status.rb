@@ -773,6 +773,14 @@ module CiStatus
     }
   end
 
+  # The env overlay that hands a `gh` child the held token, or {} when none is held.
+  # For a caller outside this file that writes (bin/release's automatic CI re-run),
+  # so its write rides the same refreshed token as the reads around it. A Hash for
+  # a child's environment: never print it.
+  def self.gh_token_env
+    @gh_token ? { "GH_TOKEN" => @gh_token } : {}
+  end
+
   def self.gh_auth_refusal?(body)
     GhAuthRetry.auth_failure?(body) || HTTP_401.match?(body.to_s)
   end
