@@ -43,6 +43,45 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='websites-grid']", count: 0
   end
 
+  # Alex McRitchie, 2026-11-06: the whole card is the app's still, with its name, host and
+  # blurb on a shade over the lower part. /build keeps its own card.
+  test "each slide is a full-bleed portfolio card: the still fills it and the text sits on the shade" do
+    get websites_path
+
+    examples = BuildGallery.examples
+    assert_operator examples.size, :>=, 4, "Cyvasse, Turf Monster, Prisoner's Dilemma and Rantly at least"
+    card = "[data-test='websites-carousel'] a.portfolio-card[data-test='build-example'][target='_blank'][rel='noopener']"
+    assert_select card, count: examples.size
+    assert_select "[data-test='websites-carousel'] .build-gallery-card", { count: 0 }, "not /build's card"
+    examples.each do |example|
+      assert_select "#{card}[href=?]", example.url, count: 1 do
+        assert_select "img.absolute.inset-0.object-cover[data-test='build-example-image'][alt=?]", "#{example.name}, as it looks live", count: 1
+        assert_select "[data-test='portfolio-card-body'].absolute.bottom-0", count: 1 do
+          assert_select "[data-test='build-example-name']", text: example.name, count: 1
+          assert_select "[data-test='build-example-host'].font-mono", text: URI.parse(example.url).host, count: 1
+          assert_select "[data-test='build-example-blurb'].line-clamp-2", text: example.blurb, count: 1
+        end
+      end
+      assert_select "#{card}[href=?][style*=?]", example.url, "--pc-shade: rgb(", count: 1
+    end
+    [ "Prisoner's Dilemma", "Rantly" ].each { |name| assert_select "#{card} [data-test='build-example-name']", text: name, count: 1 }
+  end
+
+  test "the carousel asks for autoplay and loop only as the installed engine declares them" do
+    get websites_path
+
+    template = ActionController::Base.new.lookup_context.find_template("studio/carousel", [], true)
+    declares = template.source[WebsitesHelper::STRICT_LOCALS, 1].to_s
+    # Until the engine has them (task carousel-autoplay-and-loop) the page still renders: an
+    # undeclared local would raise. Once it has them, the row carries what the engine makes of them.
+    assert_response :success
+    if declares.match?(/\bautoplay:/)
+      assert_match(/autoplay/i, css_select("[data-test='websites-carousel']").first.to_html, "the engine's autoplay reaches the row")
+    else
+      assert_no_match(/autoplay/i, css_select("[data-test='websites-carousel']").first.attributes.values.map(&:value).join(" "))
+    end
+  end
+
   test "the logged-out sidebar is one line per link, with Sign In, Chat and one Apps link" do
     get websites_path
 
