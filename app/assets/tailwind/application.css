@@ -471,31 +471,6 @@
   }
 }
 
-@utility theme-transition {
-  /* Theme transition (applied during toggle) */
-  & * {
-    transition:
-      background-color 200ms ease,
-      color 200ms ease,
-      border-color 200ms ease,
-      box-shadow 200ms ease !important;
-  }
-  & *::before {
-    transition:
-      background-color 200ms ease,
-      color 200ms ease,
-      border-color 200ms ease,
-      box-shadow 200ms ease !important;
-  }
-  & *::after {
-    transition:
-      background-color 200ms ease,
-      color 200ms ease,
-      border-color 200ms ease,
-      box-shadow 200ms ease !important;
-  }
-}
-
 @layer utilities {
   /* === THIS APP'S NAVBAR COLLAPSE BAND ==================================
      The engine ships the mechanism (--nav-p, navCollapse) and a DEFAULT band
