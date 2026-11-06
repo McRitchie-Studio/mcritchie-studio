@@ -91,17 +91,11 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     })(arguments[0])
   JS
 
-  # Put the element where the driver is about to click it. See click_when_settled for
-  # why this has to happen BEFORE the geometry is certified rather than as part of the
-  # click. `inline: 'nearest'` so a control inside a horizontally scrolling lane is not
-  # yanked sideways as well.
-  #
-  # A pinned stack (the navbar, the engine's sticky page header) covers the top of the
-  # view, and on a short window it reaches past the middle, so centring alone can leave
-  # the element under it. The second step centres it in the part of the view below the
-  # stack, measured from the pinned boxes in the top half after the first scroll (a sticky box reports
-  # its stuck place only once the page has scrolled). An element inside the stack is
-  # left where the first step put it.
+  # Put the element where the driver is about to click it, BEFORE the geometry is
+  # certified (see click_when_settled). `inline: 'nearest'` keeps a lane control from
+  # being yanked sideways. A pinned stack (navbar, sticky page header) can reach past the
+  # middle of a short window, so the second step centres the element below the pinned
+  # boxes, measured after the first scroll, when a sticky box reports its stuck place.
   SCROLL_INTO_VIEW_JS = <<~JS.freeze
     (function (el) {
       el.scrollIntoView({ block: 'center', inline: 'nearest' });
