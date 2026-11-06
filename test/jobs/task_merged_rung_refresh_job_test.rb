@@ -191,6 +191,20 @@ class TaskMergedRungRefreshJobTest < ActiveJob::TestCase
     assert_equal %w[reviewed accepted], [t.reload.stage, t.merged]
   end
 
+  test "[unit] only a merge onto accepted moves it: a stacked-parent merge or another rung holds" do
+    stacked = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+    other = PR_URL.sub("777", "779")
+    past = task(stage: "submitted", devops: { "pr_url" => other })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => nil, other => "release" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event(url: other))
+    end
+
+    assert_equal "submitted", stacked.reload.stage, "merged into a parent branch: on no rung yet"
+    assert_equal "submitted", past.reload.stage, "not the accepted rung the review path lands on"
+  end
+
   test "[unit] an unreadable GitHub moves nothing" do
     t = task(stage: "submitted", devops: { "pr_url" => PR_URL })
 
@@ -282,6 +296,14 @@ class GithubPullRequestWebhookTest < ActionDispatch::IntegrationTest
     after = SeamReconcile.classify({ "slug" => t.slug, "stage" => t.stage },
                                    pr_state: :merged, merged_state: :set, merged_value: t.merged)
     assert_nil after, "no pr-review seam anomaly after a fresh merge"
+
+    # The race with pr-review: its own `bin/task move reviewed` lands after the
+    # webhook. A same-stage move is a confirming no-op, never a refusal.
+    auth = { "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)}" }
+    patch "/api/v1/tasks/#{t.slug}", params: { stage: "reviewed", event: { source: "cli", actor: "avi" } },
+                                     headers: auth, as: :json
+    assert_response :ok
+    assert_equal 1, t.task_events.transitions.where(from_stage: "submitted", to_stage: "reviewed").count
   end
 end
 

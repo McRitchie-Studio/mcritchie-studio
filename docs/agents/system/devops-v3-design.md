@@ -411,7 +411,11 @@ Every stamp and guard stays until 4b.
 **4c-i as built.** Nobody hand-stamps the three facts any more; the columns are a
 cache the board refreshes itself. `TaskMergedRungRefreshJob` writes the derived
 rung when a task lands on `reviewed` and when GitHub delivers a merged
-`pull_request` event (the webhook subscription must include that event);
+`pull_request` event (the webhook subscription must include that event). On that
+event a task still `submitted` whose own PRs GitHub all places on `accepted` also
+moves to `reviewed` (`Task#follow_pull_request_merge!`, source `github`), so the
+stage cannot strand behind a merge; `devops-reconcile`'s `stamp_lost` heal stays
+as the backstop for a lost delivery;
 `Release#add` and `Conductor.record_merged!` keep their own write and then refresh
 advance-only, so a lagging read never pulls the column down. Review drops its
 `bin/task merged` line, and the command now prints "no longer needed" and still

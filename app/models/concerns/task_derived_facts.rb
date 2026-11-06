@@ -104,7 +104,7 @@ module TaskDerivedFacts
 
   # THE STAGE FOLLOWS THE MERGE (stage-follows-github). GitHub just reported
   # `pr_url` merged. When that PR is one of THIS task's own PRs, the task is still
-  # `submitted`, and GitHub places every one of its PRs on a rung, the task moves
+  # `submitted`, and GitHub places every one of its PRs on `accepted`, the task moves
   # to `reviewed`: the same end state as `bin/task merged <slug> accepted && bin/task
   # move <slug> reviewed`, which `devops-reconcile --seam pr-review --heal` used to
   # apply hours later for the `stamp_lost` class.
@@ -130,8 +130,11 @@ module TaskDerivedFacts
     own = derived_release_pr_urls(derivation: derivation).values.map { |u| Github::TaskDerivation.normalize_url(u) }
     return false unless own.include?(url)
 
+    # `accepted` only: `reviewed` means code-on-accepted. A merge into a stacked
+    # parent places on no rung (nil), and a PR GitHub places past `accepted` did
+    # not take the review path this move stands in for.
     rung = derived_merged_rung(derivation: derivation)
-    return false unless Task::MERGED_STATES.include?(rung.to_s)
+    return false unless rung == Task::MERGED_ACCEPTED
 
     with_lock do
       next false unless stage == "submitted"
