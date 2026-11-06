@@ -4,6 +4,9 @@ require "test_helper"
 # tags on every entry not delivered, prices on add-ons, and a booking CTA on
 # every entry; the detail waits behind each tile's Details toggle.
 class IntegrationsControllerTest < ActionDispatch::IntegrationTest
+  # The agreed limit for a tile's one line (tagline, else blurb): 64 characters.
+  # Today's longest is 64 (gmail), so a longer line fails here, not on a phone.
+  TILE_LINE_LIMIT = 64
   def entry(key) = "[data-test='integration-entry'][data-entry='#{key}']"
 
   test "[component] anyone sees the three groups, without signing in" do
@@ -37,7 +40,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     css_select("[data-test='integration-entry']").each do |card|
       item = Integration.find(card["data-entry"])
       assert_equal item.line, card.at_css("[data-test='entry-line']").text.strip, item.key
-      assert_operator item.line.length, :<=, 80, "#{item.key}: a tile's line stays one short line"
+      assert_operator item.line.length, :<=, TILE_LINE_LIMIT, "#{item.key}: a tile's line stays one short line"
       details = card.at_css("[data-test='entry-details']")
       assert details, "#{item.key} has Details"
       assert_equal "details", details.name, "#{item.key}: a native disclosure, no script"
@@ -58,7 +61,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     %w[google_calendar gmail google_drive fathom].each do |key|
       line = css_select("#{entry(key)} [data-test='entry-line']").first.text.strip
       assert_match(/Read only\.\z/, line, "#{key}: read only shows on the tile, not only in Details")
-      assert_operator line.length, :<=, 80, key
+      assert_operator line.length, :<=, TILE_LINE_LIMIT, key
     end
     crypto = Integration.find(:crypto)
     assert_equal "Solana wallets and stablecoin payouts in your app.", crypto.line

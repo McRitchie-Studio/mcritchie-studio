@@ -20,9 +20,11 @@ module AgentProposals
   # only to an app the thread's signed-in user OWNS (an AppMembership row);
   # otherwise it records the owner's yes and he follows up by hand.
   #
-  # The proposal is an AgentProposal row (kind `upgrade`, capability `tier`), so
-  # the thread's newest offer and its status reach Alex's next answer as every
-  # proposal's do (MemoryBundle#proposals_json). It lives TTL (14 days), and a
+  # The proposal is an AgentProposal row (kind `upgrade`, capability `tier`). The
+  # thread's newest one reaches Alex's next answer from code as the bundle's
+  # packages.upgrade.open (open_json: tier, billing, app, and waiting, approved,
+  # declined or expired), since Alex's chat has no proposal catalog to carry it.
+  # When the owner settles it, Alex says so in the thread (post_outcome!). It lives TTL (14 days), and a
   # newer one in the thread supersedes it. No word in a thread settles it
   # (AgentProposal.word_settled), and AgentProposalJob never runs it.
   module Upgrade
@@ -35,9 +37,23 @@ module AgentProposals
     APP_SLUG = /\A[a-z0-9][a-z0-9-]{0,59}\z/
     SUMMARY_LIMIT = 200
     USER_THREAD = /\Achat:alex:(\d{1,18})\z/
-    # What the visitor reads under Alex's answer once the proposal is stored.
-    SENT_LINE = "> Sent to Alex McRitchie: a request to move you to %<tier>s (%<billing>s). " \
+    # What the visitor reads under Alex's answer once the proposal is stored. Plain
+    # text: the chat shows it as written, so no Markdown marker leads it.
+    SENT_LINE = "Sent to Alex McRitchie: a request to move you to %<tier>s (%<billing>s). " \
                 "Nothing changes and nobody is charged until he approves it.".freeze
+
+    # What Alex says in the thread once the owner settles it (post_outcome!).
+    # Code-written, from the stored tier and billing: never the model's words.
+    APPROVED_APPLIED_LINE = "Good news: Alex McRitchie approved your move to %<tier>s (%<billing>s), and " \
+                            "%<app>s is on %<tier>s now. He'll be in touch about getting set up and billing. " \
+                            "Ask me anything in the meantime.".freeze
+    APPROVED_LINE = "Good news: Alex McRitchie approved your request to move to %<tier>s (%<billing>s). " \
+                    "He'll be in touch to set it up with you; nothing changes and nobody is charged until then. " \
+                    "Ask me anything in the meantime.".freeze
+    DECLINED_LINE = "Alex McRitchie looked at your request to move to %<tier>s and isn't approving it right now. " \
+                    "Nothing has changed on your account. I'm happy to talk through the options with you here, " \
+                    "or you can book a call with him: %<schedule>s".freeze
+    OUTCOME_ACTOR = "upgrade-proposals".freeze
 
     Verdict = Struct.new(:ok?, :reason, :params, :summary, keyword_init: true)
 
@@ -137,6 +153,7 @@ module AgentProposals
         proposal.source_message&.record!("proposal_executed", actor: by.to_s[0, 100],
                                                               detail: { "proposal_id" => proposal.id, "kind" => KIND, "applied" => result["applied"] })
       end
+      post_outcome!(proposal, now: now)
       proposal
     end
 
@@ -147,7 +164,82 @@ module AgentProposals
 
         proposal.settle!("rejected", by: by, now: now, result: { "declined_by" => by.to_s[0, 100] })
       end
+      post_outcome!(proposal, now: now)
       proposal
+    end
+
+    # Alex tells the visitor, in the thread the proposal came from, what the owner
+    # decided: one code-written web row, stored already answered (no dispatcher
+    # claims it) and marked code_written, so the chat shows it as an agent turn
+    # only (AgentChat::Turns) and it counts toward no visitor cap
+    # (AgentChat::Caps). Idempotent per proposal (external_id). Best effort, after
+    # the decision committed: a failure is an ErrorLog row and the decision
+    # stands. Returns the row, or nil.
+    def post_outcome!(proposal, now: Time.current)
+      return nil unless proposal.channel == "web" && AgentChat.thread?(proposal.thread_key)
+
+      external = "upgrade-proposal:#{proposal.id}:#{proposal.status}"
+      existing = AgentMessage.find_by(channel: "web", external_id: external)
+      return existing if existing
+
+      source = proposal.source_message
+      AgentMessage.transaction do
+        message = AgentMessage.create!(
+          channel: "web", external_id: external, channel_ref: proposal.channel_ref, thread_key: proposal.thread_key,
+          guild_id: proposal.guild_id, author_ref: source&.author_ref, author_name: source&.author_name,
+          person: proposal.person, content: "[upgrade proposal: #{outcome_word(proposal)}]", mentions: {}, sent_at: now,
+          soul_slug: proposal.soul_slug, routed_by: "chat", status: "completed", completed_at: now,
+          hold_released_at: now, hold_released_by: OUTCOME_ACTOR, action_summary: "upgrade proposal #{outcome_word(proposal)}",
+          response_text: outcome_text(proposal), reply_posted_at: now, reply_status: "posted",
+          envelope: { "via" => OUTCOME_ACTOR, "proposal_id" => proposal.id }, run_meta: { "code_written" => true }
+        )
+        message.update!(reply_nonce: "agentmsg-#{message.id}", reply_external_id: "web:#{message.id}")
+        message.record!("completed", actor: OUTCOME_ACTOR, detail: { "proposal_id" => proposal.id, "outcome" => outcome_word(proposal) })
+        message
+      end
+    rescue StandardError => e
+      log = ErrorLog.capture!(e)
+      log.target = proposal
+      log.target_name = "upgrade proposal #{proposal.id} outcome message"
+      log.save!
+      nil
+    end
+
+    def outcome_word(proposal) = proposal.status == "executed" ? "approved" : "declined"
+
+    def outcome_text(proposal)
+      params = proposal.params.to_h
+      tier = tier_name(params["tier"])
+      billing = params["billing"].presence || "monthly"
+      if proposal.status == "executed"
+        applied = proposal.result.to_h
+        return format(APPROVED_APPLIED_LINE, tier: tier, billing: billing, app: applied["app"]) if applied["applied"] && applied["app"].present?
+
+        format(APPROVED_LINE, tier: tier, billing: billing)
+      else
+        format(DECLINED_LINE, tier: tier, schedule: "https://#{ENV.fetch('APP_HOST', 'mcritchie.studio')}/schedule")
+      end
+    end
+
+    # The thread's newest upgrade proposal as the next answer reads it, from code:
+    # {"tier", "billing", "app", "state"} with state waiting, approved, declined or
+    # expired; nil with none. A proposal a newer one superseded is never the newest.
+    def open_json(message)
+      proposal = AgentProposal.in_thread(message).where(kind: KIND)
+                              .where("agent_proposals.created_at <= ?", message.created_at).order(id: :desc).first
+      return nil unless proposal
+
+      params = proposal.params.to_h
+      { "tier" => params["tier"].to_s, "billing" => params["billing"].presence || "monthly", "app" => params["app"].presence,
+        "state" => state_of(proposal, message.created_at) }.compact
+    end
+
+    def state_of(proposal, now)
+      return "approved" if proposal.status == "executed"
+      return "expired" if proposal.expired?(now)
+      return "waiting" if proposal.status == "proposed"
+
+      "declined"
     end
 
     def open?(proposal, now) = proposal.kind == KIND && proposal.status == "proposed" && !proposal.expired?(now)
