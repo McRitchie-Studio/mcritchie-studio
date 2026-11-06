@@ -22,7 +22,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   test "index renders tasks page" do
     get tasks_path
     assert_response :success
-    assert_select "h2", "Tasks"
+    assert_select "h1.page-header-title", "Tasks"
   end
 
   test "[component] task cards use shared JSON routes and distinct exit animations" do
@@ -918,7 +918,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get tasks_path
 
     assert_response :success
-    assert_select "h2", "Tasks"
+    assert_select "h1.page-header-title", "Tasks"
     # Feature-agent lane; submitted is the seam. Neither of the two terminal-ish
     # side columns is a lane: blocked tasks ride Building, and archived tasks are
     # off the board entirely (reachable at ?stage=archived).
