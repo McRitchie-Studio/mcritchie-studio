@@ -7,7 +7,7 @@ name: Reusable CI
 # INPUTS, AND EVERY DEFAULT IS THE HUB'S OWN SUITE. The hub's ci.yml calls this file
 # with no `with:`, so it runs every lane below exactly as written in the defaults. An
 # app in another repo calls it with the inputs its own tree needs, and the jobs check
-# out the CALLER's repo: every script a lane runs (`.github/scripts/apt-retry`,
+# out the CALLER's repo: every script a lane runs (`.github/scripts/await-gem-propagation.sh`,
 # `bin/brakeman`, `bin/rubocop`, `bin/test-js`) is the caller's.
 #
 # A lane input switches a whole lane off for an app that has no such lane; its jobs
@@ -52,6 +52,10 @@ on:
         description: Run .github/scripts/await-gem-propagation.sh before bundling.
         type: boolean
         default: true
+      lane-image:
+        description: The image the apt-needing lanes (island_animator, playwright, rails, system) run inside, with every package pre-installed (.github/ci-image/Dockerfile, built by mirror-ci-images.yml). No lane runs apt.
+        type: string
+        default: ghcr.io/mcritchie-studio/ci-rails:24.04
       postgres-image:
         description: The Postgres service image, pinned to production's major. A ghcr.io name is pulled with the run's token; any other registry anonymously.
         type: string
@@ -67,7 +71,7 @@ on:
         default: bin/importmap-audit-ci
       # ---- the system lane ----
       system-packages:
-        description: The apt packages the system lane installs.
+        description: The packages the system lane needs; the lane checks the lane image carries each one (it installs nothing).
         type: string
         default: curl libvips postgresql-client imagemagick librsvg2-bin
       system-setup-command:
@@ -209,50 +213,26 @@ jobs:
     if: ${{ inputs.island-animator }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
+    # package step was the top red-then-green cause (refactor-review-2026-11-06,
+    # lane-health 2f); the image carries every package, so the job runs no apt at all.
+    # Guard: test/lib/ci_lane_image_test.rb.
+    container:
+      image: ${{ inputs.lane-image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v7
-        with:
-          python-version: "3.12"
-
+      # Python 3.12 is the lane image's own python3 (Ubuntu 24.04), the version
+      # tools/island-background-animator/pyproject.toml requires.
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
           cache-dependency-glob: tools/island-background-animator/uv.lock
-
-      # The .debs come from cache first; .github/scripts/apt-retry points apt at
-      # ~/apt-archives, so a warm run fetches only the package index from a mirror
-      # that stalls (2026-10-26). Keyed on the runner image + this package list; a
-      # new image week restores the last entry and fetches only what changed.
-      - name: Read runner image
-        id: runner-image
-        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore apt package cache
-        uses: actions/cache@v4
-        with:
-          path: ~/apt-archives
-          key: apt-${{ steps.runner-image.outputs.id }}-ffmpeg
-          restore-keys: |
-            apt-${{ steps.runner-image.outputs.id }}-
-            apt-ubuntu24-
-
-      - name: Install FFmpeg
-        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
-        # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: the step stays one literal, readable
-        # invocation, and the budgets live in one tested place).
-        #
-        # This bound is the backstop, not the mechanism: the script's own escalating
-        # budgets total ~22 minutes, and 25 sits above that and well below the
-        # 45-minute job bound, so a step that blows through its retries still fails
-        # long before it can take the whole job down with it.
-        timeout-minutes: 25
-        run: .github/scripts/apt-retry ffmpeg
 
       - name: Check Island Background Animator
         run: tools/island-background-animator/bin/check
@@ -296,6 +276,15 @@ jobs:
     if: ${{ inputs.playwright }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
+    # package step was the top red-then-green cause (refactor-review-2026-11-06,
+    # lane-health 2f); the image carries every package, so the job runs no apt at all.
+    # Guard: test/lib/ci_lane_image_test.rb.
+    container:
+      image: ${{ inputs.lane-image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
 
     strategy:
       fail-fast: false
@@ -328,41 +317,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
-
-      # The .debs come from cache first; .github/scripts/apt-retry points apt at
-      # ~/apt-archives, so a warm run fetches only the package index from a mirror
-      # that stalls (2026-10-26). Keyed on the runner image + this package list; a
-      # new image week restores the last entry and fetches only what changed.
-      - name: Read runner image
-        id: runner-image
-        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore apt package cache
-        uses: actions/cache@v4
-        with:
-          path: ~/apt-archives
-          key: apt-${{ steps.runner-image.outputs.id }}-curl-imagemagick-libjemalloc2-libvips-postgresql-client
-          restore-keys: |
-            apt-${{ steps.runner-image.outputs.id }}-
-            apt-ubuntu24-
-
-      - name: Install packages
-        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
-        # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: the step stays one literal, readable
-        # invocation, and the budgets live in one tested place).
-        #
-        # This bound is the backstop, not the mechanism: the script's own escalating
-        # budgets total ~22 minutes, and 25 sits above that and well below the
-        # 45-minute job bound, so a step that blows through its retries still fails
-        # long before it can take the whole job down with it.
-        #
-        # `imagemagick` is for e2e/email_images.spec.js: the fake image round still
-        # crops its placeholder through EmailImages::Crop (MiniMagick), exactly as a
-        # real round does on the dyno (ImageMagick 7 there, measured 2026-10-06).
-        # Without it the round fails server-side and no candidate ever renders.
-        timeout-minutes: 25
-        run: .github/scripts/apt-retry curl libjemalloc2 libvips postgresql-client imagemagick
 
       - name: Await RubyGems propagation for locked gems
         if: ${{ inputs.await-gem-propagation }}
@@ -407,9 +361,8 @@ jobs:
       # and GitHub only shares a cache with runs on the same branch or the DEFAULT branch.
       # So the saving appears once this reaches `main`, not on the PR that adds it.
       #
-      # `--with-deps` still runs on a hit, deliberately: the cache holds the browser, not
-      # the apt libraries headless Chromium needs to launch, and a restored browser that
-      # cannot start reads as a mysterious lane failure rather than a missing package.
+      # The apt libraries headless Chromium needs to launch are in the lane image, so
+      # a restored browser starts without an install step.
       - name: Cache the Playwright browser
         uses: actions/cache@v4
         with:
@@ -418,17 +371,11 @@ jobs:
           restore-keys: |
             playwright-${{ runner.os }}-
 
-      # `--with-deps` runs its OWN apt-get update/install, outside
-      # .github/scripts/apt-retry, so apt's timeouts are set machine-wide for it: a
-      # silent socket drops in 30s and the file is re-fetched instead of hanging
-      # until the job bound (the 2026-10-26 mirror stall; guard:
-      # test/lib/ci_apt_step_timeout_test.rb).
-      - name: Harden apt fetches
-        run: printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' | sudo tee /etc/apt/apt.conf.d/80-retries
-
+      # The browser only, from Playwright's CDN: its shared libraries are in the lane
+      # image, so there is no `--with-deps` and no apt.
       - name: Install Playwright browser
         timeout-minutes: 15
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
 
       # Playwright's own webServer (playwright.config.js) boots the test server for this
       # shard: db:test:prepare, seed, then `rails server -e test` with CABLE_ADAPTER=async
@@ -478,9 +425,9 @@ jobs:
       - name: Run Playwright e2e suite
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432
           # The receipt this shard will be judged on. `list` keeps the human-readable log.
-          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/e2e-report-shard-${{ matrix.shard }}.json
+          PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report-shard-${{ matrix.shard }}.json
         run: npx playwright test --grep-invert @quarantine --shard=${{ matrix.shard }}/${{ strategy.job-total }} --reporter=list,json
 
       # ALWAYS, not `if: failure()`. A FAILING spec still ran — the executed-set gate must see
@@ -491,7 +438,7 @@ jobs:
         if: always()
         with:
           name: e2e-report-shard-${{ matrix.shard }}
-          path: ${{ github.workspace }}/e2e-report-shard-${{ matrix.shard }}.json
+          path: e2e-report-shard-${{ matrix.shard }}.json
           if-no-files-found: error
 
       - name: Keep the Playwright report from a failed shard
@@ -499,7 +446,7 @@ jobs:
         if: failure()
         with:
           name: playwright-report-shard-${{ matrix.shard }}
-          path: ${{ github.workspace }}/playwright-report
+          path: playwright-report
           if-no-files-found: ignore
 
   # THE EXECUTED-SET GATE. The `playwright` job above can prove its specs PASSED; it cannot
@@ -606,6 +553,15 @@ jobs:
     if: ${{ inputs.rails-shards }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
+    # package step was the top red-then-green cause (refactor-review-2026-11-06,
+    # lane-health 2f); the image carries every package, so the job runs no apt at all.
+    # Guard: test/lib/ci_lane_image_test.rb.
+    container:
+      image: ${{ inputs.lane-image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
 
     strategy:
       fail-fast: false
@@ -658,51 +614,6 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
-      # The .debs come from cache first; .github/scripts/apt-retry points apt at
-      # ~/apt-archives, so a warm run fetches only the package index from a mirror
-      # that stalls (2026-10-26). Keyed on the runner image + this package list; a
-      # new image week restores the last entry and fetches only what changed.
-      - name: Read runner image
-        id: runner-image
-        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore apt package cache
-        uses: actions/cache@v4
-        with:
-          path: ~/apt-archives
-          key: apt-${{ steps.runner-image.outputs.id }}-curl-ffmpeg-imagemagick-librsvg2-bin-libvips-postgresql-client
-          restore-keys: |
-            apt-${{ steps.runner-image.outputs.id }}-
-            apt-ubuntu24-
-
-      - name: Install packages
-        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
-        # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: the step stays one literal, readable
-        # invocation, and the budgets live in one tested place).
-        #
-        # This bound is the backstop, not the mechanism: the script's own escalating
-        # budgets total ~22 minutes, and 25 sits above that and well below the
-        # 45-minute job bound, so a step that blows through its retries still fails
-        # long before it can take the whole job down with it.
-        #
-        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
-        # carry it: it is a production memory allocator, and nothing on the test path
-        # loads it. `curl`,
-        # `postgresql-client` and `libvips` all stay — measured, not assumed:
-        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
-        # and bin/agent-worktree shells `psql` to do it, and libvips is required
-        # outright by image_processing + Active Storage's boot-time
-        # Vips.block_untrusted call. `imagemagick` and `librsvg2-bin` are for
-        # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
-        # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
-        # ImageMagick 6 reads SVG only through rsvg-convert. `ffmpeg` is for
-        # test/lib/videos/stitcher_test.rb, which stitches real takes with the
-        # final stitch's own arguments and reads the frames back; it too fails (not
-        # skips) without ffmpeg and ffprobe.
-        timeout-minutes: 25
-        run: .github/scripts/apt-retry curl libvips postgresql-client imagemagick librsvg2-bin ffmpeg
-
       - name: Await RubyGems propagation for locked gems
         if: ${{ inputs.await-gem-propagation }}
         run: .github/scripts/await-gem-propagation.sh
@@ -726,8 +637,8 @@ jobs:
       - name: Run this shard of the Rails suite
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
-          CI_RECEIPT_OUT: ${{ github.workspace }}/rails-report-shard-${{ matrix.shard }}.json
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432
+          CI_RECEIPT_OUT: rails-report-shard-${{ matrix.shard }}.json
         run: bin/ci-shard --shard=${{ matrix.shard }}/${{ strategy.job-total }}
 
       # ALWAYS, not `if: failure()`. A FAILING test still RAN — the executed-set gate must
@@ -738,7 +649,7 @@ jobs:
         if: always()
         with:
           name: rails-report-shard-${{ matrix.shard }}
-          path: ${{ github.workspace }}/rails-report-shard-${{ matrix.shard }}.json
+          path: rails-report-shard-${{ matrix.shard }}.json
           if-no-files-found: error
 
   # THE EXECUTED-SET GATE. The `rails` shards above can prove their tests PASSED; they
@@ -798,6 +709,15 @@ jobs:
     if: ${{ inputs.system }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
+    # package step was the top red-then-green cause (refactor-review-2026-11-06,
+    # lane-health 2f); the image carries every package, so the job runs no apt at all.
+    # Guard: test/lib/ci_lane_image_test.rb.
+    container:
+      image: ${{ inputs.lane-image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
 
     services:
       postgres:
@@ -823,9 +743,6 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-      # CHECKOUT FIRST — .github/scripts/apt-retry is a file in THIS repo, so the apt
-      # step below cannot run before the tree exists. Ordering, not preference.
-      #
       # `fetch-depth: 0` here is INHERITED, not required, and saying so beats leaving the
       # next reader to guess. The `rails` shards need full history because
       # test/lib/e2e_quarantine_ratchet_test.rb reads its baseline from `origin/release`
@@ -841,47 +758,15 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The .debs come from cache first; .github/scripts/apt-retry points apt at
-      # ~/apt-archives, so a warm run fetches only the package index from a mirror
-      # that stalls (2026-10-26). Keyed on the runner image + this package list; a
-      # new image week restores the last entry and fetches only what changed.
-      - name: Read runner image
-        id: runner-image
-        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore apt package cache
-        uses: actions/cache@v4
-        with:
-          path: ~/apt-archives
-          key: apt-${{ steps.runner-image.outputs.id }}-${{ inputs.system-packages }}
-          restore-keys: |
-            apt-${{ steps.runner-image.outputs.id }}-
-            apt-ubuntu24-
-
-      - name: Install packages
-        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
-        # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: the step stays one literal, readable
-        # invocation, and the budgets live in one tested place).
-        #
-        # This bound is the backstop, not the mechanism: the script's own escalating
-        # budgets total ~22 minutes, and 25 sits above that and well below the
-        # 45-minute job bound, so a step that blows through its retries still fails
-        # long before it can take the whole job down with it.
-        #
-        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
-        # carry it: it is a production memory allocator, and nothing on the test path
-        # loads it. `curl`,
-        # `postgresql-client` and `libvips` all stay — measured, not assumed:
-        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
-        # and bin/agent-worktree shells `psql` to do it, and libvips is required
-        # outright by image_processing + Active Storage's boot-time
-        # Vips.block_untrusted call. `imagemagick` and `librsvg2-bin` are for
-        # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
-        # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
-        # ImageMagick 6 reads SVG only through rsvg-convert.
-        timeout-minutes: 25
-        run: .github/scripts/apt-retry ${{ inputs.system-packages }}
+      # The lane installs nothing: it checks that the lane image carries every package
+      # this caller names, offline, and names any that are missing. `libjemalloc2` is
+      # deliberately absent from the default: it is a production memory allocator, and
+      # nothing on the test path loads it. `postgresql-client` and `libvips` stay —
+      # test/commands/agent_worktree_test.rb shells `psql`, and libvips is required by
+      # Active Storage's boot. `imagemagick` and `librsvg2-bin` are for
+      # test/lib/workspace_icon_render_test.rb (ImageMagick 6 reads SVG through rsvg-convert).
+      - name: Check the lane image carries the system packages
+        run: dpkg-query -W ${{ inputs.system-packages }}
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
@@ -907,12 +792,13 @@ jobs:
         with:
           chrome-version: stable
           install-chromedriver: false
-          install-dependencies: true
+          # Chrome's libraries are in the lane image; `true` would run apt.
+          install-dependencies: false
 
       - name: Evict any chromedriver on PATH so Selenium Manager fetches a matched one
         run: |
-          for bin in $(which -a chromedriver 2>/dev/null); do sudo rm -f "$bin"; done
-          sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
+          for bin in $(which -a chromedriver 2>/dev/null); do rm -f "$bin"; done
+          rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
       - name: Await RubyGems propagation for locked gems
@@ -939,13 +825,13 @@ jobs:
         if: ${{ inputs.system-setup-command != '' }}
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432
         run: ${{ inputs.system-setup-command }}
 
       - name: Run system tests
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432
         run: ${{ inputs.system-command }}
 
       - name: Keep screenshots from failed system tests
@@ -953,5 +839,5 @@ jobs:
         if: failure()
         with:
           name: screenshots
-          path: ${{ github.workspace }}/tmp/screenshots
+          path: tmp/screenshots
           if-no-files-found: ignore

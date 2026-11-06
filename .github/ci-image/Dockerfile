@@ -1,4 +1,4 @@
-# The CI lane image: ghcr.io/mcritchie-studio/ci-rails:noble.
+# The CI lane image: ghcr.io/mcritchie-studio/ci-rails:24.04.
 #
 # WHY. The largest single cause of a red-then-green CI run was the Ubuntu apt mirror
 # stalling in the lanes' "Install system packages" step (hub 12 jobs, engine 35
@@ -51,9 +51,13 @@ RUN curl -fsSL --retry 5 https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x6
       npx -y "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
  && rm -rf /tmp/node-v22.11.0-linux-x64 /root/.npm /var/lib/apt/lists/*
 
-# The check the weekly build runs on itself: every binary a lane calls is present.
-RUN for bin in convert ffmpeg ffprobe git pg_dump psql rsvg-convert vips python3 redis-cli; do \
+# The check the weekly build runs on itself: every binary a lane calls, and the
+# libraries ruby-vips and the pg gem load, are present.
+RUN for bin in convert ffmpeg ffprobe git pg_dump psql rsvg-convert python3 redis-cli; do \
       command -v "$bin" >/dev/null || { echo "missing: $bin" >&2; exit 1; }; \
+    done \
+ && for lib in libvips.so.42 libpq.so.5 libjemalloc.so.2; do \
+      ldconfig -p | grep -q "$lib" || { echo "missing: $lib" >&2; exit 1; }; \
     done
 
 LABEL org.opencontainers.image.source="https://github.com/mcritchie-studio/mcritchie-studio" \

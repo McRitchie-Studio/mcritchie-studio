@@ -92,7 +92,7 @@ jobs:
           done
           exit "$failed"
 
-  # THE LANE IMAGE: ghcr.io/mcritchie-studio/ci-rails:noble, built from
+  # THE LANE IMAGE: ghcr.io/mcritchie-studio/ci-rails:24.04, built from
   # .github/ci-image/Dockerfile on the mirrored ubuntu:24.04. Every lane that used to
   # run apt (reusable-ci.yml's playwright, rails, system and island_animator; the
   # engine's Consumer CI and browser lane) runs inside it, so no PR waits on an apt
@@ -108,7 +108,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
-      IMAGE: ghcr.io/mcritchie-studio/ci-rails:noble
+      IMAGE: ghcr.io/mcritchie-studio/ci-rails:24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
