@@ -134,4 +134,98 @@ class AgentProposalsUpgradeTest < ActiveSupport::TestCase
     assert(embed[:fields].any? { |f| f[:value].end_with?("/admin/upgrade_proposals") })
     refute_includes embed.to_s, @user.email
   end
+
+  # ---- the visitor hears the owner's answer (Carl's review of #2422) -------------
+
+  def outcome_rows(proposal) = AgentMessage.where(channel: "web", thread_key: proposal.thread_key, external_id: "upgrade-proposal:#{proposal.id}:#{proposal.status}")
+
+  # CONTROL: drop post_outcome! from approve! and the first assert fails: the
+  # visitor's thread never hears the owner said yes.
+  test "[unit] an approval posts Alex's word in the thread: an agent turn only, counted against no cap, once" do
+    chat_message!.complete!(worker: "w1", response_text: "Sure.", proposal: block)
+    proposal = AgentProposal.sole
+    AgentProposals::Upgrade.approve!(proposal, by: "user:owner")
+
+    row = outcome_rows(proposal.reload).sole
+    assert_equal [ "completed", "alex", proposal.person_id, true ], [ row.status, row.soul_slug, row.person_id, row.run_meta["code_written"] ]
+    assert_includes row.response_text, "Good news: Alex McRitchie approved your move to Pro (annual), and #{@app.slug} is on Pro now."
+    turns = AgentChat::Turns.for([ row ])
+    assert_equal [ [ "agent", "answered" ] ], turns.map { |t| [ t[:role], t[:status] ] }, "no visitor bubble for words nobody typed"
+    assert_equal row.response_text, turns.first[:text]
+    refute AgentChat::Turns.pending?(proposal.thread_key), "no dispatcher answer is coming for it"
+
+    assert_equal row, AgentProposals::Upgrade.post_outcome!(proposal), "idempotent: one row per proposal and outcome"
+    assert_equal 1, outcome_rows(proposal).count
+    visitor_rows = AgentChat::Caps.new(policy: nil).send(:on_thread, proposal.thread_key)
+    refute_includes visitor_rows, row, "Alex's word is not the visitor's turn"
+  end
+
+  test "[unit] a visitor's approval and a decline each get their own words" do
+    chat_message!(thread_key: AgentChat.anon_thread_key("alex", "e" * 32)).complete!(worker: "w1", response_text: "Sure.", proposal: block)
+    visitor = AgentProposal.sole
+    AgentProposals::Upgrade.approve!(visitor, by: "user:owner")
+    assert_includes outcome_rows(visitor.reload).sole.response_text,
+                    "approved your request to move to Pro (annual). He'll be in touch to set it up with you; nothing changes"
+
+    chat_message!.complete!(worker: "w1", response_text: "Sure.", proposal: block({ "tier" => "team" }))
+    declined = AgentProposal.order(:id).last
+    AgentProposals::Upgrade.decline!(declined, by: "user:owner")
+    text = outcome_rows(declined.reload).sole.response_text
+    assert_includes text, "isn't approving it right now. Nothing has changed on your account."
+    assert_match %r{I'm happy to talk through the options with you here, or you can book a call with him: https://\S+/schedule\z}, text
+    refute_match(/\A>|\*\*/, text, "plain text, no Markdown")
+  end
+
+  test "[unit] a failed word is an ErrorLog row, and the decision stands" do
+    chat_message!.complete!(worker: "w1", response_text: "Sure.", proposal: block)
+    proposal = AgentProposal.sole
+    AgentMessage.stub(:create!, ->(*) { raise ActiveRecord::RecordInvalid }) do
+      assert_difference -> { ErrorLog.count }, 1 do
+        AgentProposals::Upgrade.approve!(proposal, by: "user:owner")
+      end
+    end
+    assert_equal "executed", proposal.reload.status
+    assert_equal "pro", @app.reload.package_tier
+    assert_match(/upgrade proposal #{proposal.id} outcome/, ErrorLog.order(:id).last.target_name)
+  end
+
+  # CONTROL: return nil from open_json and every assert but the last fails.
+  test "[unit] open_json gives the next answer the thread's newest proposal and where it stands" do
+    first = chat_message!
+    first.complete!(worker: "w1", response_text: "Sure.", proposal: block)
+    proposal = AgentProposal.sole
+    later = -> { chat_message!.tap { |m| m.update_columns(created_at: 1.second.from_now) } }
+
+    assert_equal({ "tier" => "pro", "billing" => "annual", "app" => @app.slug, "state" => "waiting" }, AgentProposals::Upgrade.open_json(later.call))
+    assert_equal "expired", AgentProposals::Upgrade.open_json(later.call.tap { |m| m.update_columns(created_at: 15.days.from_now) })["state"]
+    AgentProposals::Upgrade.decline!(proposal, by: "user:owner")
+    assert_equal "declined", AgentProposals::Upgrade.open_json(later.call)["state"]
+    proposal.update_columns(status: "executed")
+    assert_equal "approved", AgentProposals::Upgrade.open_json(later.call)["state"]
+    assert_nil AgentProposals::Upgrade.open_json(chat_message!(thread_key: AgentChat.anon_thread_key("alex", "f" * 32)))
+  end
+
+  test "[integration] the bundle carries it as packages.upgrade.open on Alex's chat" do
+    chat_message!.complete!(worker: "w1", response_text: "Sure.", proposal: block)
+    message = chat_message!
+    message.update_columns(created_at: 1.second.from_now)
+    assert_equal "waiting", AgentMessages::MemoryBundle.new(message).bundle.dig("packages", "upgrade", "open", "state")
+  end
+
+  # CONTROL: restore the Rails.logger.warn rescue and the ErrorLog count does not move.
+  test "[unit] a failed Discord ping is an ErrorLog row, not only a log line" do
+    chat_message!.complete!(worker: "w1", response_text: "Sure.", proposal: block)
+    proposal = AgentProposal.sole
+    home = Struct.new(:medium, :webhook_url, :label) { def channel? = true }.new("discord", "https://discord.example/hook", "test home")
+    UpgradeProposalNoticeJob.stub(:home, home) do
+      Media.stub(:post, ->(*, **) { raise Media::Error, "discord said 500" }) do
+        assert_difference -> { ErrorLog.count }, 1 do
+          UpgradeProposalNoticeJob.perform_now(proposal.id)
+        end
+      end
+    end
+    log = ErrorLog.order(:id).last
+    assert_equal "discord said 500", log.message
+    assert_equal "upgrade proposal #{proposal.id} Discord notice", log.target_name
+  end
 end
