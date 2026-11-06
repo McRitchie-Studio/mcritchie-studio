@@ -39,7 +39,7 @@
 #
 # THE RE-RUN RIDES A FRESH TOKEN. A prepare can outlive the ambient GH_TOKEN (about an
 # hour); on rel-20261105-9199b4 the reads re-minted and passed while the re-run was
-# refused on the dead token. bin/release#gh_sh_refreshing gives the write CiStatus's
+# refused on the dead token. bin/release.rb#gh_sh_refreshing gives the write CiStatus's
 # held token, re-mints it when aging, and on a credential refusal mints once and
 # retries once.
 #
