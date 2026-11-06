@@ -27,8 +27,12 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     BuildGallery.examples.each do |example|
       assert_select "#{carousel} .carousel-slide[aria-label=?] [data-test='build-example']", example.name, count: 1
     end
+    # studio-engine 0.131.0's arrows: plural labels, and the row starts at the first slide.
+    assert_select "#{carousel} button[aria-label='Previous slides'][aria-controls='websites-apps'][aria-disabled='true']", count: 1
     assert_select "#{carousel} button[aria-label='Next slides'][aria-controls='websites-apps']", count: 1
     assert_select "#{carousel} button.carousel-dot", count: BuildGallery.examples.size
+    assert_select "#{carousel} button.carousel-dot[aria-current='true']", count: 1
+    assert_select "#{carousel} button.carousel-dot[aria-current='true'][aria-label='Go to slide 1']", count: 1
     assert_select "[data-test='websites-grid']", count: 0
   end
 
