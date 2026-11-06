@@ -1,0 +1,5 @@
+<%# The talk-to-agent modal for this page's "talk" calls to action (PackagesHelper#package_cta_link): the engine's studio/agent_chat/_talk_modal with Alex, rendered once, under his seat's name (PackagesHelper::TALK_ROLE). Each tier's button opens it with the tier as the topic, and Alex answers its opener at once from the packages he knows (AgentMessages::PackagesBrief). On an engine without the partial nothing renders here and the buttons open /chat. %>
+<% if package_talk_modal? %>
+  <%= render "studio/agent_chat/talk_modal", soul: PackagesHelper::TALK_SOUL, name: "Alex", role: PackagesHelper::TALK_ROLE,
+             portrait: safe_image_tag("/agents/alex.webp", alt: "", class: "w-10 h-10 rounded-full object-cover") %>
+<% end %>

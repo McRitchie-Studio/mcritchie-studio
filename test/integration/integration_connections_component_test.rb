@@ -2,13 +2,14 @@ require "test_helper"
 require "support/google_connect_fakes"
 require "support/fathom_connect_fakes"
 
-# [component] /integrations: each card with connections says how it connects
-# (who each way covers, its setup and its upkeep) and what it can do, and
-# names the ways behind an ability only when there is more than one. The
-# Google Calendar, Gmail and Drive cards carry a connection for any signed-in
-# user: Connect, or the account and Disconnect (an admin's the household's, a
-# non-admin's their own); a visitor sees neither. The
-# Fathom card, in its own Meeting notes section, does the same.
+# [component] /integrations: each card with connections says, behind its
+# Details toggle, how it connects (who each way covers, its setup and its
+# upkeep) and what it can do, and names the ways behind an ability only when
+# there is more than one. The Google Calendar, Gmail and Drive cards carry a
+# connection for any signed-in user in their action row, never behind
+# Details: Connect, or the account and Disconnect (an admin's the household's,
+# a non-admin's their own); a visitor sees neither. The Fathom card, in the
+# same Connect group, does the same for an admin.
 class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
   include FathomConnectFakes
@@ -21,7 +22,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   CARDS = { "google_calendar" => "calendar", "gmail" => "gmail", "google_drive" => "drive" }.freeze
 
   def card(key) = css_select("[data-test='integration-entry'][data-entry='#{key}']").first
-  def slot(key) = card(key).at_css("[data-test='entry-method'][data-method='sign_in'] [data-test='google-connection']")
+  def slot(key) = card(key).at_css("[data-test='entry-action'] [data-test='google-connection']")
 
   test "[component] Google Workspace is the admin grant alone; Calendar, Gmail and Drive each sign in for one live read" do
     get integrations_path
@@ -49,7 +50,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
   test "[component] an entry with two ways names the ways behind each ability" do
     groups = Integration.groups
-    entry = groups.find { _1.key == "integrations" }.entries.find { _1.key == "google_workspace_connect" }
+    entry = groups.find { _1.key == "connect" }.entries.find { _1.key == "google_workspace_connect" }
     entry.connects = %w[admin_grant sign_in]
     entry.connection_methods = entry.connects.map { Integration.connection_method(_1) }
     entry.abilities += [ Integration::Ability.new(key: "read_calendar", name: "Read your calendar", via: %w[sign_in], status: "live") ]
@@ -87,6 +88,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
       CARDS.each do |key, ability|
         assert_equal "none", slot(key)["data-state"], key
+        assert_empty slot(key).ancestors("[data-test='entry-details']"), "#{key}: the real Connect is on the tile, not behind Details"
         assert_equal ability, slot(key)["data-ability"]
         link = slot(key).at_css("[data-test='google-connect']")
         assert_equal "Connect #{GoogleConnection::ABILITY_NAMES.fetch(ability.to_sym)}", link.text.strip
@@ -194,9 +196,9 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     with_connect_env do
       get integrations_path
 
-      section = css_select("[data-test='integration-group'][data-group='google_sign_in']").first
+      section = css_select("[data-test='integration-group'][data-group='connect']").first
       assert_equal 1, css_select("[data-test='google-connect-all']").size, "one Connect Google on the page"
-      assert section.at_css("[data-test='google-connect-all']"), "in the Google section"
+      assert section.at_css("[data-test='google-connect-all']"), "in the Connect group"
       assert_nil connect_all.at_css("[data-test='integration-entry']")
       assert_nil connect_all.ancestors(".grid").first, "not a cell of the card grid"
       assert_equal "none", connect_all["data-state"]
@@ -325,14 +327,14 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     end
   end
 
-  def fathom_slot = card("fathom").at_css("[data-test='entry-method'][data-method='sign_in'] [data-test='fathom-connection']")
+  def fathom_slot = card("fathom").at_css("[data-test='entry-action'] [data-test='fathom-connection']")
 
   test "[component] Fathom card shows Connect for admin only" do
     with_fathom_env do
       get integrations_path
-      section = css_select("[data-test='integration-group'][data-group='meeting_notes']").first
-      assert section.at_css("[data-test='integration-entry'][data-entry='fathom']"), "the card sits in Meeting notes"
-      assert_equal "Sign in", section.at_css("[data-test='group-kicker']").text.strip
+      section = css_select("[data-test='integration-group'][data-group='connect']").first
+      assert section.at_css("[data-test='integration-entry'][data-entry='fathom']"), "the card sits in Connect, with the Google cards"
+      assert_equal "Free", section.at_css("[data-test='group-kicker']").text.strip
       assert_equal %w[sign_in], card("fathom").css("[data-test='entry-method']").map { _1["data-method"] }
       assert_equal %w[read_meeting_notes], card("fathom").css("[data-test='entry-ability']").map { _1["data-ability"] }
       assert_equal "emoji", card("fathom").at_css("[data-test='entry-lead']")["data-lead"]

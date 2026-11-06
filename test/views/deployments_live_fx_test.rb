@@ -59,8 +59,8 @@ class DeploymentsLiveFxTest < ActionView::TestCase
 
     # The engine's 4px/10px defaults are drawn for a card and swamp an 18px bar. The
     # bloom is kept: a ring-only cut was built and compared on screen.
-    assert_includes rendered, "--studio-team-glow-thickness: 2px"
-    assert_includes rendered, "--studio-team-glow-bloom: 4px"
+    assert_includes rendered, "--edge-rotate-glow-thickness: 2px"
+    assert_includes rendered, "--edge-rotate-glow-bloom: 4px"
     assert_not_includes rendered, ".release-meter-glow::after { content: none; }"
   end
 end

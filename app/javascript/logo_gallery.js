@@ -1,8 +1,9 @@
 // The logo gallery's behaviour (/logos and /logos/:brand, task brand-gallery-palette-and-theme).
 //
-// 1. THE CONTEXT CONTROL drives the hub's own theme, the switch the moon icon uses
-//    ($store.theme.toggle() from studio-engine studio/alpine_stores: the root's `dark`
-//    class and localStorage 'theme'). Light and Dark set the theme and the page's logos
+// 1. THE CONTEXT CONTROL drives the hub's own theme through the engine's one theme state
+//    ($store.theme from studio-engine studio/alpine_stores: set() writes the root's `dark`
+//    class, the store and localStorage 'theme' together, under the engine's crossfade).
+//    Light and Dark set the theme and the page's logos
 //    follow it by CSS alone (html.dark), with no request. Watermark sets the theme to
 //    dark and submits the form, which loads ?context=watermark. On a watermark page,
 //    choosing Light or Dark, or the theme turning light, loads the page without it.
@@ -47,17 +48,22 @@ export function choice(value, { watermarkPage, dark }) {
   };
 }
 
-// Sets the theme the way the moon icon does: through the Alpine store when it is there,
-// else the root's class and localStorage directly.
+// Sets the theme through the engine's theme store, the one theme state the moon icon also
+// uses: store.set() is idempotent and keeps the root class, the store and storage in step.
+// Before Alpine has started there is no store yet, so the root's class and localStorage are
+// written directly; the store starts from that class when Alpine registers it.
 export function setTheme(dark, { root, storage, store }) {
-  const isDark = () => root.classList.contains("dark");
-  if (isDark() === dark) return;
-  if (store && typeof store.toggle === "function") {
-    store.toggle();
-  } else {
-    root.classList.toggle("dark", dark);
-    try { storage.setItem("theme", dark ? "dark" : "light"); } catch (_) { /* private mode */ }
-  }
+  const value = dark ? "dark" : "light";
+  if (store && typeof store.set === "function") return store.set(value);
+  if (root.classList.contains("dark") === dark) return;
+  root.classList.toggle("dark", dark);
+  try { storage.setItem("theme", value); } catch (_) { /* private mode */ }
+}
+
+// Whether the hub is dark: the store's value when the store is there, else the root's class.
+export function themeIsDark({ root, store }) {
+  if (store && typeof store.isDark === "boolean") return store.isDark;
+  return root.classList.contains("dark");
 }
 
 function env() {
@@ -65,7 +71,7 @@ function env() {
   return { root: document.documentElement, storage: window.localStorage, store };
 }
 
-const isDark = () => document.documentElement.classList.contains("dark");
+const isDark = () => themeIsDark(env());
 
 // Loads the page from the context form: with the watermark, or without it ("plain": the select is left out, and the
 // hidden fields keep every other setting).
@@ -93,7 +99,7 @@ function wireContext(select) {
   select.addEventListener("change", () => {
     const { toggle, load: how } = choice(select.value, { watermarkPage, dark: isDark() });
     if (how) leave(how);
-    if (toggle) setTheme(!isDark(), env());
+    if (toggle) setTheme(select.value !== "light", env());
   });
 }
 

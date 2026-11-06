@@ -136,7 +136,7 @@ module AgentMessages
     RECENT_RUN = 1.hour
 
     def recently_run(scope)
-      newest = AgentProposal.where(scope).order(id: :desc).first
+      newest = AgentProposal.word_settled.where(scope).order(id: :desc).first
       return nil unless newest && %w[confirmed executed].include?(newest.status)
 
       newest.updated_at > RECENT_RUN.ago ? newest : nil

@@ -231,13 +231,14 @@ SOP's "stale unmerged desks" protocol.
 
 ---
 
-## Parked — the `.studio-team-glow` specimen demos a card effect at chip scale
+## Parked — the `.edge-rotate-glow` specimen demos a card effect at chip scale
 
 Parked by Alex McRitchie on 2026-08-08, found while building
 [`glow-changed-release-meter`](https://mcritchie.studio/tasks/glow-changed-release-meter).
 **Repo: `studio-engine`** (`app/views/style/_tricks.html.erb`), shape `library`.
 
-**Not a CSS bug — a teaching bug.** `.studio-team-glow` computes exactly what
+**Not a CSS bug — a teaching bug.** `.edge-rotate-glow` (named `.studio-team-glow`
+until engine 0.130.0, which keeps the old name as an alias) computes exactly what
 `engine-motion.css` §9b declares; measured live on `/admin/style`:
 
 | | Measured |
@@ -257,7 +258,7 @@ work at.
 **The knobs cannot fully solve the small-host case, and that is the thing worth
 writing down:** `::after` is pinned at `inset: -(thickness + 4px)` in the engine,
 so the bloom always reaches ≥4px past the ring no matter how small
-`--studio-team-glow-bloom` goes. A small host wants the ring alone
+`--edge-rotate-glow-bloom` goes. A small host wants the ring alone
 (`::after { content: none }`) or a host large enough to carry the halo.
 
 **Resurrect as:** a `studio-engine` task that makes the specimen teach BOTH

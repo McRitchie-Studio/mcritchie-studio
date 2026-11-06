@@ -164,7 +164,8 @@ skipped with its own step note. turf-monster no longer does: it registers CI's
 deploys passes its declared `prod_deploy.ci_verified_arg` to `bin/deploy`, which then
 skips re-running that suite. A red read earns one automatic re-run when the rule in
 [`production-deploy`](../../agents/steffon/sops/production-deploy.md#the-frozen-sha-test-gate-is-a-read)
-allows it. **Do not blank `test_cmd` to get past a red
+allows it; the re-run rides the CI reads' refreshed GitHub token, so a sweep
+that outlived its ambient token still spends it. **Do not blank `test_cmd` to get past a red
 gate** — a blank reads as "self-gates" and skips the READ, which silently disarms
 the last gate before production; the supported override is
 [`--skip-test-gate`](#overriding-a-ship-gate-you-believe-is-a-false-negative).

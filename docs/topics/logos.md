@@ -705,8 +705,9 @@ font-sizing reel Alex McRitchie sent on 2026-10-28
 There are **no plates**: every logo on `/logos` and `/logos/:brand` sits on the
 page's own background. The **Context** control (`logos/_context_form`, its
 behaviour in `app/javascript/logo_gallery.js`) drives the hub's own theme, the
-switch the moon icon uses (`$store.theme.toggle()`, which sets the root's `dark`
-class and `localStorage` `theme`):
+engine's one theme state, which the moon icon also uses (`$store.theme.set()`, which
+sets the root's `dark` class, the store and `localStorage` `theme` together, under
+the engine's crossfade):
 
 - **Light** and **Dark** set the hub theme. Both pages render each logo's light
   and dark versions and CSS on `html.dark` shows the one that matches

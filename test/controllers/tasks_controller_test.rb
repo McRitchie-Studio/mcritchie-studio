@@ -642,7 +642,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     submitted_card = css_select("#card-#{submitted.slug}").first
     assert_nil submitted_card["data-stage-glow"]
     assert_not_includes submitted_card["class"], "studio-border-glow"
-    assert_not_includes submitted_card["class"], "studio-team-glow"
+    assert_not_includes submitted_card["class"], "edge-rotate-glow"
 
     reviewed_card = css_select("#dropzone-reviewed #card-#{reviewed.slug}").first
     assert_equal "reviewed", reviewed_card["data-stage-glow"]
@@ -693,14 +693,14 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
 
     claimed_card = css_select("#card-#{claimed.slug}").first
     assert_equal "review", claimed_card["data-stage-glow"]
-    assert_includes claimed_card["class"], "studio-team-glow"
+    assert_includes claimed_card["class"], "edge-rotate-glow"
     assert_includes claimed_card["class"], "task-card-review-glow"
-    assert_includes claimed_card["style"], "--studio-team-glow-color:"
-    assert_includes claimed_card["style"], "--studio-team-glow-color-b:"
+    assert_includes claimed_card["style"], "--edge-rotate-glow-color:"
+    assert_includes claimed_card["style"], "--edge-rotate-glow-color-b:"
 
     queued_card = css_select("#card-#{queued.slug}").first
     assert_nil queued_card["data-stage-glow"]
-    assert_not_includes queued_card["class"], "studio-team-glow"
+    assert_not_includes queued_card["class"], "edge-rotate-glow"
   end
 
   test "deployments shows a Last Release section + Current empty state when nothing is active" do

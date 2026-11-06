@@ -381,7 +381,7 @@ async function replayCurrentRelease(page, mutate) {
         const el = record.target;
         if (!el.matches) continue;
         if (el.id === "current-release" && el.classList.contains("lbfx-glow")) seen.card += 1;
-        if (el.matches("[data-test='release-phase-glow-host'].studio-team-glow")) {
+        if (el.matches("[data-test='release-phase-glow-host'].edge-rotate-glow")) {
           const meter = el.closest("[data-test='release-phase-meter']");
           if (meter) seen.meters.push(meter.dataset.phase);
         }
@@ -451,7 +451,7 @@ test("a Next Release card whose own signature moved still flashes", async ({ pag
 // a computed colour back in the colour space it was authored in, so a modern-syntax
 // transparent tone — `oklch(... / 0)`, or Tailwind v4's `color-mix(... 0%, transparent)` —
 // never looks like `rgba(..., 0)`. It sails through, a fully transparent colour is written
-// to --studio-team-glow-color, and the ring runs its full 2s painting NOTHING: no error, no
+// to --edge-rotate-glow-color, and the ring runs its full 2s painting NOTHING: no error, no
 // red test, no visible glow.
 //
 // Only a browser can answer it, so this is the lowest tier that can hold the property. The
@@ -489,12 +489,12 @@ async function ringKnobForFill(page, fillColor) {
 
     const rung = Array.from(
       document.getElementById("current-release")
-        .querySelectorAll("[data-test='release-phase-glow-host'].studio-team-glow")
+        .querySelectorAll("[data-test='release-phase-glow-host'].edge-rotate-glow")
     );
     return {
       computed,
       rung: rung.length,
-      knob: rung.length ? rung[0].style.getPropertyValue("--studio-team-glow-color").trim() : "",
+      knob: rung.length ? rung[0].style.getPropertyValue("--edge-rotate-glow-color").trim() : "",
     };
   }, fillColor);
 }

@@ -2,6 +2,13 @@
 # link, so a card can never render a dead button:
 #
 #   build               /build, the App Builder
+#   talk                a chat with Alex about this tier: the engine's
+#                       talk-to-agent modal (studio/agent_chat/_talk_modal, which
+#                       packages/_talk_to_alex renders once per page) opens on a
+#                       plain click and Alex answers the opener at once. The href
+#                       is /chat, the same chat on its own page: a modified click,
+#                       an engine without the modal, or a viewer the chat refuses
+#                       lands there.
 #   schedule            /schedule, opened as the booking popup (the studio's
 #                       Google Calendar appointment page in a dialog; the href is
 #                       the no-script fallback). Written with the engine's
@@ -19,9 +26,32 @@ module PackagesHelper
       link_to label, url, **options, target: "_blank", rel: "noopener", data: data.merge(cta_target: "enterprise-booking")
     elsif action == "build"
       link_to label, build_path, **options, data: data.merge(cta_target: "build")
+    elsif action == "talk"
+      link_to label, chat_index_path, **options, aria: { haspopup: "dialog" },
+              data: data.merge(cta_target: "talk", **package_talk_data(package))
     else
       studio_booking_link label, schedule_index_path, **options, data: data.merge(cta_target: "schedule")
     end
+  end
+
+  # The talk-to-agent marks (studio-engine docs/AGENT_CHAT.md, "Talk to an agent
+  # in a modal"): Alex, the tier as the topic, and the visitor's first message.
+  # Written here rather than with the engine's studio_talk_to_agent_link so the
+  # page renders the same link on an engine that predates the modal.
+  TALK_SOUL = "alex".freeze
+  # Alex's line under his name in the talk modal: his seat on the accountability
+  # chart (config/accountability_chart.yml), not /build's "AI Builder".
+  TALK_ROLE = "Sales & Marketing".freeze
+
+  def package_talk_data(package)
+    { studio_talk_to_agent: true, talk_soul: TALK_SOUL, talk_topic: package.name,
+      talk_opener: "I'm looking at the #{package.name} plan. Can you tell me about it?" }
+  end
+
+  # Whether this page can open the talk-to-agent modal: the engine ships the
+  # partial and the app chats with Alex.
+  def package_talk_modal?
+    lookup_context.exists?("talk_modal", [ "studio/agent_chat" ], true) && Studio.agent_chat_soul_list.include?(TALK_SOUL)
   end
 
   HOSTNAME = /\A[a-z0-9-]+(\.[a-z0-9-]+)+\z/i

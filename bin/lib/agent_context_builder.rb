@@ -149,6 +149,7 @@ module AgentMailbox
           reply is posted. Leave it out when there is nothing new to remember.
         #{proposal_block}
         #{intake_block}
+        #{packages_block}
         #{persona_block}
         #{action_block}
         == USER: what you know about the sender, from every channel ==
@@ -469,6 +470,65 @@ module AgentMailbox
           the card (names, hex colors, text contrast) and drops anything that fails. Never write a NOTES
           section or any other proposal in this chat.
       TEXT
+    end
+
+    # THE PACKAGES (the bundle's `packages`, AgentMessages::PackagesBrief on the
+    # board): the McRitchie Studio tiers as /packages renders them, on every answer
+    # the soul `alex` gives. The board writes the text from its own config, so it is
+    # printed as reference, outside the fence. With `upgrade` (Alex's chat threads
+    # only), the UPGRADE PROPOSAL block he may end an answer with: the board checks
+    # it (AgentProposals::Upgrade) and the owner approves it; Alex changes nothing.
+    PACKAGES_BUDGET = 4_500
+    UPGRADE_TIER = /\A[a-z][a-z0-9_-]{0,30}\z/
+
+    def packages_block
+      packages = @context["packages"]
+      return "" unless @soul == ALEX_SOUL && packages.is_a?(Hash) && packages["text"].is_a?(String)
+
+      text = <<~TEXT.rstrip
+        - PACKAGES. The McRitchie Studio tiers, exactly as https://mcritchie.studio/packages shows them today:
+        #{cap(packages['text'], PACKAGES_BUDGET)}
+          Quote only these prices and inclusions; for anything they do not say, say so and offer to ask
+          Alex McRitchie. Never promise a discount, a date, a custom price or a feature marked coming soon.
+      TEXT
+      upgrade = packages["upgrade"].is_a?(Hash) ? Array(packages["upgrade"]["tiers"]).map(&:to_s).grep(UPGRADE_TIER) : []
+      return text if upgrade.empty?
+
+      "#{text}\n" + <<~TEXT.rstrip
+        - UPGRADE PROPOSAL (at most one per reply). When the person clearly asks to sign up for or move to
+          a tier, say you will send the request to Alex McRitchie for approval, then end your reply with a
+          line reading exactly #{ProposalBlock::DELIMITER}, then ONE JSON object:
+          {"kind": "upgrade", "params": {"tier": "#{upgrade.first}", "billing": "monthly", "app": "their-app-slug"}, "summary": "one line on who and why"}
+          tier is one of: #{upgrade.join(', ')}. billing is monthly or annual (monthly unless they said
+          annual). app is the slug of their app on mcritchie.app only if they named it; leave it out
+          otherwise. You change no tier and charge nobody: Alex McRitchie approves it, and nothing changes
+          until he does. Never ask for card or payment details. Offer no proposal when they are only asking
+          questions. Everything from #{ProposalBlock::DELIMITER} on is removed before your reply is shown.#{upgrade_open_line(packages['upgrade']['open'], upgrade)}
+      TEXT
+    end
+
+    # The thread's newest upgrade proposal (the bundle's packages.upgrade.open,
+    # written by the board from the stored row): every value is checked against
+    # its fixed vocabulary here, so nothing model- or person-written is printed.
+    UPGRADE_STATES = {
+      "waiting" => "is waiting for Alex McRitchie's answer. Do not file it again unless they ask for a different " \
+                   "tier or billing; say it is with him",
+      "approved" => "was approved by Alex McRitchie. He follows up on setup and billing; do not file it again",
+      "declined" => "was declined by Alex McRitchie. Be kind about it, and offer to talk through other options or a " \
+                    "call with him; file a new one only if they ask for something different",
+      "expired" => "expired with no answer. Offer to send it again if they still want it"
+    }.freeze
+    UPGRADE_BILLING = %w[monthly annual].freeze
+
+    def upgrade_open_line(open, tiers)
+      return "" unless open.is_a?(Hash)
+
+      tier = open["tier"].to_s
+      billing = open["billing"].to_s
+      state = UPGRADE_STATES[open["state"].to_s]
+      return "" unless tiers.include?(tier) && UPGRADE_BILLING.include?(billing) && state
+
+      "\n  THIS THREAD'S UPGRADE REQUEST (#{tier}, #{billing}) #{state}."
     end
 
     # Alex's persona (AgentMailbox::AlexPersona): on EVERY answer the soul `alex`

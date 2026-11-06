@@ -2,7 +2,7 @@
 # add-on services we run on top, rendered from config/integrations.yml.
 class IntegrationsController < ApplicationController
   # The Google Calendar, Gmail and Drive cards carry a Google connection for
-  # any signed-in user, each on its "Sign in" row: Connect, or the account and
+  # any signed-in user, each in its action row: Connect, or the account and
   # Disconnect, under one Connect Google for all three (GOOGLE_GROUP). An admin
   # sees the household's (admin-owned) connections through /admin/google;
   # anyone else sees and manages only their own, through /integrations/google
@@ -11,15 +11,13 @@ class IntegrationsController < ApplicationController
   # opens the sign-in modal, every other card's the contact form.
   GOOGLE_CARDS = { "google_calendar" => :calendar, "gmail" => :gmail, "google_drive" => :drive }.freeze
   GOOGLE_METHOD = "sign_in".freeze
-  # The section whose top carries Connect Google (all three at once) for an
-  # admin; an admin's Google cards drop the contact-form Connect, since the
+  # The group whose top carries Connect Google (all three at once) for a
+  # signed-in user; their Google cards drop the contact-form Connect, since the
   # real Connect and Disconnect sit on them.
-  GOOGLE_GROUP = "google_sign_in".freeze
+  GOOGLE_GROUP = "connect".freeze
   # The Fathom card carries the hub's own Fathom connection for an admin
-  # (Admin::FathomController), on its "Sign in" row, the same way.
+  # (Admin::FathomController), in its action row, the same way.
   FATHOM_CARD = "fathom".freeze
-
-  helper_method :connection_card?
 
   def index
     @groups = Integration.groups
@@ -37,12 +35,6 @@ class IntegrationsController < ApplicationController
   end
 
   private
-
-  # Does a signed-in user's card carry the real Connect or Disconnect, so its
-  # contact-form Connect drops?
-  def connection_card?(key)
-    (@google && GOOGLE_CARDS.key?(key)) || (@fathom && key == FATHOM_CARD)
-  end
 
   # { connectable:, own:, calendar: connection|nil, gmail: ..., drive: ... }:
   # one query, then each ability's most recent readable connection. An

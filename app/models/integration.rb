@@ -34,9 +34,13 @@ class Integration
     def custom? = key == "custom"
   end
 
-  Entry = Struct.new(:key, :group, :name, :icon, :blurb, :status, :tier, :tier_note, :price, :price_note, :guide,
+  Entry = Struct.new(:key, :group, :name, :icon, :tagline, :blurb, :status, :tier, :tier_note, :price, :price_note, :guide,
                      :connects, :abilities, :connection_methods, keyword_init: true) do
     def live? = status == "live"
+
+    # The one short line a tile shows: the tagline, or the blurb when the
+    # entry has none. The tile's Details shows the blurb when they differ.
+    def line = tagline.presence || blurb
 
     # Is every ability this method unlocks still Coming soon? Then the way is
     # offered but not delivered, and the card says so. A method no ability
@@ -91,7 +95,7 @@ class Integration
     # entry shows no price line at all (nil).
     def price_label
       case group
-      when "integrations", "google_sign_in", "meeting_notes" then "Free"
+      when "connect" then "Free"
       when "add_ons" then price.presence || "Quote"
       end
     end

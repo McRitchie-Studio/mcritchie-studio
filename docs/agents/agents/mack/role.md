@@ -17,6 +17,7 @@ pulls. That work moved to the [Pokémon](../pokemon/role.md) legion in Operation
 ## Responsibilities
 - **Books and the month close** — Keep the books and close each month: [`close-the-month`](sops/close-the-month.md), run by his [heartbeat](HEARTBEAT.md) from the 5th, after `BooksReminderJob` posts
 - **Monitor the financials** — Cash, P&L and equity from the closes; agent spend against budget
+- **Pay against market** — Keep the Industries pay page's market data current and flag anyone below their role's target: [`pay-benchmark-refresh`](sops/pay-benchmark-refresh.md), yearly in April or May
 - **Build the reports** — The lender package (`bin/books lender <entity> <YYYY-MM>`: P&L, balance sheet, sources and uses), and what Alex McRitchie asks for
 - **The financial watchdog** — The weekly watch in his [heartbeat](HEARTBEAT.md): flag what does not add up (a statement gap, a refused statement, a line waiting too long, a cash drop) to Alex McRitchie
 - **Entity records** — Entity facts and filings in `business-data/FACTS.md`

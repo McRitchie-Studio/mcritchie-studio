@@ -5,11 +5,20 @@ require "test_helper"
 # live or on request, Get notified for a Coming soon one, Talk to us for an
 # add-on or a custom need. Never Connect on a Coming soon entry.
 class IntegrationTest < ActiveSupport::TestCase
-  test "[unit] the config loads five groups: Google sign-in, meeting notes, integrations, add-ons, then custom" do
+  test "[unit] the config loads three groups: connect, add-ons, then custom" do
     groups = Integration.groups
 
-    assert_equal %w[google_sign_in meeting_notes integrations add_ons custom], groups.map(&:key)
+    assert_equal %w[connect add_ons custom], groups.map(&:key)
     groups.each { |group| assert group.entries.any?, "#{group.key} has entries" }
+  end
+
+  test "[unit] every connect entry reads Free; a tile's line is its tagline, else its blurb" do
+    Integration.groups.find { _1.key == "connect" }.entries.each { assert_equal "Free", _1.price_label, _1.key }
+    assert_equal "Your agents answer from the Drive files you pick. Read only.", Integration.find(:google_drive).line
+    assert_match(/Read only/, Integration.find(:google_drive).blurb, "the blurb keeps the full sentence")
+    builds = Integration.find(:extra_builds)
+    assert_nil builds.tagline
+    assert_equal builds.blurb, builds.line
   end
 
   test "[unit] every entry has a known status and, when gated, a real tier" do
