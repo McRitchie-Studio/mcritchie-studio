@@ -55,7 +55,7 @@
 <%# data-signature is the live-fx diff (ApplicationHelper#release_meter_signature): the Next
     Release card is REPLACED wholesale on every CI upsert, so LiveBoardFx compares these
     strings across the swap and glows only the meter that moved. It is the GLOW HOST too —
-    .studio-team-glow rides this wrapper, which is why the ring is not clipped (the bar
+    .edge-rotate-glow rides this wrapper, which is why the ring is not clipped (the bar
     below is overflow-hidden; its own ::before would be eaten). %>
 <div class="min-w-0" data-test="release-phase-meter" data-phase="<%= phase[:key] %>" data-state="<%= phase[:state] %>"
      data-signature="<%= release_meter_signature(phase) %>">
@@ -81,7 +81,7 @@
            data-test="release-phase-bar">
         <% unless na %>
           <%# data-test doubles as the live-fx handle: the glow reads this element's COMPUTED
-              background-color for --studio-team-glow-color, so the ring is always the meter's
+              background-color for --edge-rotate-glow-color, so the ring is always the meter's
               own tone (mint done / amber running / red failed) with no second colour table to
               drift from release_meter_tone. %>
           <div class="absolute inset-y-0 left-0 <%= tone[:fill] %> <%= phase[:coarse] && live ? "release-meter-indeterminate opacity-60" : "opacity-15 dark:opacity-30" %>"

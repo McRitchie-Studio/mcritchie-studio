@@ -204,7 +204,7 @@ class TaskCardComponent < ViewComponent::Base
 
   # A review wears the engine's two-wedge ring; every other glow the border glow.
   def glow_classes
-    return "studio-team-glow task-card-review-glow" if glow_kind == "review"
+    return "edge-rotate-glow task-card-review-glow" if glow_kind == "review"
     return nil unless glow_kind
 
     ["task-card-stage-glow", "task-card-stage-glow-#{glow_kind}",
@@ -301,7 +301,7 @@ class TaskCardComponent < ViewComponent::Base
     return nil unless glow_kind
 
     if glow_kind == "review"
-      return "--studio-team-glow-color: #{glow_colour_a}; --studio-team-glow-color-b: #{glow_colour_b};"
+      return "--edge-rotate-glow-color: #{glow_colour_a}; --edge-rotate-glow-color-b: #{glow_colour_b};"
     end
 
     "#{glow_motion_style}" \

@@ -94,7 +94,7 @@ class TaskCardTest < ActionView::TestCase
     assert_nil card["data-stage-glow"]
     assert_equal "#6390F0", card["data-glow"], "the mascot tint still feeds the live-board flash"
     assert_not_includes card["class"], "studio-border-glow"
-    assert_not_includes card["class"], "studio-team-glow"
+    assert_not_includes card["class"], "edge-rotate-glow"
     assert_not_includes card["class"], "task-card-stage-glow"
     assert_not_includes card["style"].to_s, "--task-card-glow-color"
   end
@@ -115,11 +115,11 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "review", card["data-stage-glow"]
-    assert_includes card["class"], "studio-team-glow", "the ring is the engine primitive"
+    assert_includes card["class"], "edge-rotate-glow", "the ring is the engine primitive"
     assert_includes card["class"], "task-card-review-glow", "sized down to board scale"
     assert_not_includes card["class"], "studio-border-glow", "the rainbow border is NOT the review signal"
-    assert_includes card["style"], "--studio-team-glow-color: #F08030"
-    assert_includes card["style"], "--studio-team-glow-color-b: #6890F0"
+    assert_includes card["style"], "--edge-rotate-glow-color: #F08030"
+    assert_includes card["style"], "--edge-rotate-glow-color-b: #6890F0"
     # The ring says it on its own — no second halo behind it.
     assert_not_includes card["style"].to_s, "box-shadow"
     assert_not_includes card["style"].to_s, "border-color"
@@ -139,8 +139,8 @@ class TaskCardTest < ActionView::TestCase
 
     card = css_select("#card-#{task.slug}").first
     assert_equal "review", card["data-stage-glow"]
-    assert_includes card["style"], "--studio-team-glow-color: #F95587"
-    assert_includes card["style"], "--studio-team-glow-color-b: #A98FF3"
+    assert_includes card["style"], "--edge-rotate-glow-color: #F95587"
+    assert_includes card["style"], "--edge-rotate-glow-color-b: #A98FF3"
   end
 
   test "[component] waiting approval card pulses and links the whole bar to the mint-on-click magic-link endpoint" do
@@ -737,7 +737,7 @@ class TaskCardTest < ActionView::TestCase
     assert_includes card["class"], "bg-surface"
     assert_nil card["data-stage-glow"]
     assert_not_includes card["class"], "studio-border-glow"
-    assert_not_includes card["class"], "studio-team-glow"
+    assert_not_includes card["class"], "edge-rotate-glow"
     assert_select "[data-test='cleared-feedback']", count: 0
   end
 
