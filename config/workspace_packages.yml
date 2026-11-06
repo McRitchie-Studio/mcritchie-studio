@@ -50,9 +50,11 @@
 #                   (the default) | missing | soon }. A lane in a shown group that
 #                   is not listed is missing. Keep the stack rows below consistent.
 #   highlights      the Talk to us line's inclusions (Enterprise has no card)
-#   cta             label + action: `build` (/build), `schedule` (the studio's
-#                   booking calendar) or `enterprise_booking` (enterprise_booking_url
-#                   below, else the studio's booking calendar)
+#   cta             label + action: `build` (/build), `talk` (a chat with Alex
+#                   about this tier, in the talk-to-agent modal; /chat without it),
+#                   `schedule` (the studio's booking calendar) or
+#                   `enterprise_booking` (enterprise_booking_url below, else the
+#                   studio's booking calendar)
 #   featured        true on the one card the page highlights
 #   talk_to_us      true on the tier drawn as the "Talk to us" line under the cards
 #                   instead of as a card (Enterprise). It keeps its key, its column
@@ -207,7 +209,7 @@ packages:
       app: { sub: several changes a month }
       host_storage: { sub: "always on, 11 GB" }
       domain: { sub: www.your-app.com }
-    cta: { label: Talk to us about Builder, action: schedule }
+    cta: { label: Become a Builder, action: talk }
   - key: pro
     name: Pro
     tagline: "Your fractional CTO: we build, run and secure your product."
@@ -225,7 +227,7 @@ packages:
       vault: { sub: "logins in 1Password, rotated" }
       cto: { sub: 24-hour access & daily summaries }
       social: { sub: posts you approve, status: soon }
-    cta: { label: Talk to us about Pro, action: schedule }
+    cta: { label: Talk to us about Pro, action: talk }
   - key: team
     name: Team
     tagline: "Your founding team: a CTO and a CMO."
@@ -250,7 +252,7 @@ packages:
       warmup: { sub: new domains ramped safely }
       funnels: { status: soon }
       social: { title: CMO-Managed Social, sub: strategy & posting, status: soon }
-    cta: { label: Talk to us about Team, action: schedule }
+    cta: { label: Talk to us about Team, action: talk }
   - key: enterprise
     name: Enterprise
     talk_to_us: true

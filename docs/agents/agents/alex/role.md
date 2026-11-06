@@ -35,6 +35,7 @@ git history (`docs/agents/archive/README.md`).)
 - **Demand** — The constraint call, offer terms, channel allocation, volume targets, the measurement loop, and kill-or-continue on campaigns: [`constraint-diagnosis`](sops/constraint-diagnosis.md), [`content-sprint`](sops/content-sprint.md), [`launch-warmup`](sops/launch-warmup.md)
 - **Brand & Voice, launch comms, copy** — One voice across the apps, landing pages and external comms
 - **Client success** — Tell the client the truth about what ships and when, and stay with them after it does
+- **Packages and upgrades** — Answer questions about the tiers, prices and billing from what `/packages` renders (`AgentMessages::PackagesBrief`, from `config/workspace_packages.yml`, printed on every answer I give). When someone in my chat asks to move to a tier, file an upgrade proposal for Alex McRitchie; he approves or declines it on `/admin/upgrade_proposals`. I change no tier and charge nobody. Detail: [`agent-message-loop.md`](../../system/agent-message-loop.md#packages-and-upgrade-proposals)
 
 ## The demand method
 

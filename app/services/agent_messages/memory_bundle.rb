@@ -138,7 +138,7 @@ module AgentMessages
         "persona" => persona_json,
         "google_context" => google_context_json,
         "ledger" => { "turns" => person_turns, "summary" => summary, "pin" => thread_turns.last }
-      }.merge(intake_json).merge(attachments_json)
+      }.merge(intake_json).merge(attachments_json).merge(packages_json)
     end
 
     # The audience this message is answered as ({"role", "client_domain"}). See
@@ -169,6 +169,20 @@ module AgentMessages
 
       intake = BuildIntake::Context.for(@message)
       intake ? { "intake" => intake } : {}
+    end
+
+    # THE PACKAGES (PackagesBrief): the tiers, prices and inclusions /packages
+    # renders, on every answer the soul `alex` gives, and whether this thread may
+    # carry an upgrade proposal (AgentProposals::Upgrade: Alex's chat threads
+    # only), with the tiers it may name. No key at all for any other soul.
+    def packages_json
+      return {} unless @message.soul_slug.to_s == PackagesBrief::SOUL
+
+      text = PackagesBrief.text
+      return {} if text.blank?
+
+      upgrade = AgentChat.thread?(@message.thread_key) ? { "tiers" => PackagesBrief.upgrade_tiers } : nil
+      { "packages" => { "text" => text, "upgrade" => upgrade }.compact }
     end
 
     # THE FILES the message carries (web chat: images and PDFs), each with a URL

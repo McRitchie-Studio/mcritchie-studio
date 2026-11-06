@@ -431,6 +431,10 @@ Rails.application.routes.draw do
     # (docs/agents/system/report-destinations.md).
     # The hub's CSP violation reports, top offenders first (CspReport).
     get "csp_reports", to: "csp_reports#index", as: :csp_reports
+    # Alex's upgrade proposals, waiting for the owner (AgentProposals::Upgrade).
+    get "upgrade_proposals", to: "upgrade_proposals#index", as: :upgrade_proposals
+    post "upgrade_proposals/:id/approve", to: "upgrade_proposals#approve", as: :approve_upgrade_proposal
+    post "upgrade_proposals/:id/decline", to: "upgrade_proposals#decline", as: :decline_upgrade_proposal
     get "report_destinations", to: "report_destinations#index", as: :report_destinations
     post "report_destinations/refresh", to: "report_destinations#refresh", as: :refresh_report_destinations
     patch "report_destinations/:report_key", to: "report_destinations#update", as: :report_destination

@@ -418,6 +418,12 @@ class AgentMessage < ApplicationRecord
       # stored on this row for the chat to render, never an AgentProposal.
       if BuildIntake.thread?(thread_key)
         BuildIntake::Card.record_from!(self, proposal)
+      # Alex's upgrade proposal (AgentProposals::Upgrade): checked and stored for
+      # the owner's approval, never a catalog item and never confirmed in the thread.
+      elsif AgentProposals::Upgrade.proposal?(proposal)
+        if (offered = AgentProposals::Upgrade.record_from!(self, proposal, now: now))
+          update!(response_text: "#{self.response_text}\n\n#{AgentProposals::Upgrade.sent_line(offered)}")
+        end
       elsif (offered = AgentProposal.record_from!(self, proposal, now: now))
         update!(response_text: "#{self.response_text}\n\n#{offered.confirm_text}")
       end
