@@ -17,23 +17,23 @@
     /build (app/javascript/gallery_motion.js, the same data hooks). %>
 <% host = (URI.parse(example.url).host rescue nil) || example.url %>
 <%= link_to example.url, target: "_blank", rel: "noopener",
-      class: "portfolio-card group relative block aspect-[5/4] overflow-hidden rounded-2xl bg-surface-alt focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
+      class: "portfolio-card group relative block aspect-[4/3] overflow-hidden rounded-2xl bg-surface-alt focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
       style: portfolio_card_style(example),
       data: { test: "build-example", portfolio_card: true, gallery_motion: (true if example.motion) } do %>
   <% if example.image %>
     <%= image_tag example.image, alt: "#{example.name}, as it looks live", loading: "lazy",
-          class: "absolute inset-0 h-full w-full object-cover object-top transition-transform duration-500 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
+          class: "absolute inset-0 h-full w-full object-cover object-left-top transition-transform duration-500 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
           data: { test: "build-example-image" } %>
     <% if example.motion %>
       <video src="<%= asset_path(example.motion) %>"
              muted loop playsinline preload="none" aria-hidden="true" tabindex="-1"
-             class="pointer-events-none absolute inset-0 h-full w-full object-cover object-top opacity-0 data-[playing]:opacity-100 transition-opacity duration-300 motion-reduce:hidden"
+             class="pointer-events-none absolute inset-0 h-full w-full object-cover object-left-top opacity-0 data-[playing]:opacity-100 transition-opacity duration-300 motion-reduce:hidden"
              data-gallery-motion-video data-test="build-example-motion"></video>
     <% end %>
   <% else %>
     <span class="absolute inset-0 flex items-start justify-center pt-10 text-6xl" aria-hidden="true"><%= example.emoji %></span>
   <% end %>
-  <span class="portfolio-card-body absolute inset-x-0 bottom-0 block px-5 pb-4 pt-1 text-left" data-test="portfolio-card-body">
+  <span class="portfolio-card-body absolute inset-x-0 bottom-0 block px-4 pb-3 pt-0.5 text-left" data-test="portfolio-card-body">
     <span class="portfolio-card-name block text-base font-bold leading-6 truncate" data-test="build-example-name"><%= example.name %></span>
     <span class="portfolio-card-text block font-mono text-xs leading-5 truncate" data-test="build-example-host"><%= host %></span>
     <span class="portfolio-card-text mt-1 text-xs leading-4 line-clamp-2" title="<%= example.blurb %>"

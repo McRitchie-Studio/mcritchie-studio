@@ -166,7 +166,7 @@
   position: absolute;
   inset-inline: 0;
   bottom: 100%;
-  height: 4.5rem;
+  height: 3rem;
   background: linear-gradient(to bottom, transparent, var(--pc-shade));
   pointer-events: none;
 }
