@@ -7,6 +7,9 @@
 # own conclusion, and treats a second red as real.
 #
 #   ruby -Itest test/lib/release_cli_ci_rerun_test.rb
+#
+# History: the re-run refused on an expired token (rel-20261105-9199b4), task
+# release-reliability-papercuts.
 
 require_relative "release_cli_harness"
 

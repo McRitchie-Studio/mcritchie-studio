@@ -4310,6 +4310,8 @@ end
 # fails CLOSED into "no re-run", so the gate's verdict is never softer than before.
 # Disarmed by RELEASE_CI_RERUN=off, and inert under an injected RELEASE_CI_STATUS
 # (the meta-tests' verdict seam reaches no GitHub run to re-run).
+# The re-run and its log read ride the reads' refreshed token (gh_sh_refreshing),
+# so a sweep that outlived its ambient GitHub token still spends the re-run.
 def ci_rerun_disarmed?
   ENV["RELEASE_CI_RERUN"].to_s.strip.downcase == "off" || !ENV["RELEASE_CI_STATUS"].to_s.empty?
 end

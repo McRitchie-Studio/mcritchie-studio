@@ -7,7 +7,8 @@
 # file. Forbidden names absent; system names and the desk's values present.
 # THE CONTROL: with ChildEnv.desk_server replaced by the parent's whole ENV, the stub must get
 # the credentials, or "saw no secret" and "never planted one" are the same.
-# History: task secrets-never-on-argv-or-desk-env.
+# History: task secrets-never-on-argv-or-desk-env; the half-read dump race, task
+# release-reliability-papercuts.
 require "minitest/autorun"
 require "open3"
 require "tmpdir"

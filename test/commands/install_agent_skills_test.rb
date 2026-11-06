@@ -12,6 +12,9 @@
 # Tier split (backend shape → unit + integration):
 #   test_unit_*        — isolated source/CLI-contract assertions (no install round trip)
 #   test_integration_* — the install↔check round trip across the filesystem boundary
+#
+# History: the doubled credential reset, a pipefail SIGPIPE race in the installer
+# (rel-20261105-9199b4 QA flake), task release-reliability-papercuts.
 
 require "minitest/autorun"
 require "open3"
