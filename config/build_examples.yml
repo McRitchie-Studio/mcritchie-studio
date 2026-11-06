@@ -42,6 +42,11 @@ names:
 # falls short, `name` takes the app's own lighter primary. Values are #rrggbb
 # only; an app without an entry keeps the Studio theme. Each entry names its
 # source.
+# The /websites portfolio card (Alex McRitchie, 2026-11-06) lays the name and
+# text on a shade of the same `panel` over the app's still, at
+# BuildGallery::PORTFOLIO_SHADE_ALPHA; there each `name` and `text` must also
+# read at AA on that shade laid over pure white, the worst case
+# (test/models/build_gallery_test.rb; e2e/websites_portfolio.spec.js).
 palettes:
   # Engine app: theme_primary #C08A2E (cyvasse config/initializers/studio.rb);
   # dark --color-page and --color-text-muted as https://cyvasse.xyz serves them.
@@ -73,3 +78,18 @@ examples:
     blurb: Pick six NFL teams and stack their points; a smart underdog beats the favorite.
     image: build_gallery/turf-monster.webp
     motion: build_gallery/turf-monster.mp4
+  # Showcase rebuilds also come in as live showcase requests in production; they
+  # are listed here too so every environment (development, QA, a desk) shows
+  # them, and BuildGallery.examples drops the showcase copy of a listed app.
+  - name: Prisoner's Dilemma
+    url: https://prisoners-dilemma.mcritchie.studio
+    emoji: "🎲"
+    blurb: An iterated prisoner's dilemma tournament; pick or write a strategy and pit it against Tit for Tat.
+    image: build_gallery/prisoners-dilemma.webp
+    motion: build_gallery/prisoners-dilemma.mp4
+  - name: Rantly
+    url: https://rantly.mcritchie.studio
+    emoji: "📣"
+    blurb: The social network with a 140-character minimum, for people who need more room to rant.
+    image: build_gallery/rantly.webp
+    motion: build_gallery/rantly.mp4
