@@ -38,7 +38,7 @@ class BuildGalleryTest < ActiveSupport::TestCase
       assert_equal "build_gallery/#{slug}.mp4", app.motion, "#{name} has its hover loop"
       assert app.blurb.present?, "#{name} says what it is"
       catalog = AppCatalog.apps.find { |entry| entry.slug == slug }
-      assert_equal catalog.production_url, app.url, "#{name} links to its config/apps.yml production_url"
+      assert_equal catalog.production_url, app.url, "#{name} links to its AppCatalog production_url"
       assert_equal "showcase", catalog.status, "#{name} is Alex McRitchie's own showcase app, never a customer's"
     end
   end
