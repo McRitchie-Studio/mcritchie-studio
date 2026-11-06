@@ -27,12 +27,19 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     BuildGallery.examples.each do |example|
       assert_select "#{carousel} .carousel-slide[aria-label=?] [data-test='build-example']", example.name, count: 1
     end
-    # studio-engine 0.131.0's arrows: plural labels, and the row starts at the first slide.
-    assert_select "#{carousel} button[aria-label='Previous slides'][aria-controls='websites-apps'][aria-disabled='true']", count: 1
-    assert_select "#{carousel} button[aria-label='Next slides'][aria-controls='websites-apps']", count: 1
+    # The spotlight opens on the middle app (studio/_carousel start: :middle by default), so
+    # both arrows are live and both halves of the row hold an app at load. Its arrows move one slide.
+    middle = BuildGallery.examples.size / 2
+    assert_select "#{carousel} .carousel-slide[data-current]", count: 1
+    assert_select "#{carousel} .carousel-slide[data-current][aria-label=?]", BuildGallery.examples[middle].name, count: 1
+    assert_operator middle, :>, 0, "one app has no middle to open on, so this measures nothing"
+    assert_select "#{carousel} button[aria-label='Previous slide'][aria-controls='websites-apps'][aria-disabled='false']", count: 1
+    assert_select "#{carousel} button[aria-label='Next slide'][aria-controls='websites-apps']", count: 1
+    # Next is dead at load only when the middle is also the last app (two apps).
+    assert_select "#{carousel} button[aria-label='Next slide'][aria-disabled='true']", count: middle == BuildGallery.examples.size - 1 ? 1 : 0
     assert_select "#{carousel} button.carousel-dot", count: BuildGallery.examples.size
     assert_select "#{carousel} button.carousel-dot[aria-current='true']", count: 1
-    assert_select "#{carousel} button.carousel-dot[aria-current='true'][aria-label='Go to slide 1']", count: 1
+    assert_select "#{carousel} button.carousel-dot[aria-current='true'][aria-label=?]", "Go to slide #{middle + 1}", count: 1
     assert_select "[data-test='websites-grid']", count: 0
   end
 
