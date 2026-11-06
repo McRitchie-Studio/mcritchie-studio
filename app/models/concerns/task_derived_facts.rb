@@ -102,6 +102,51 @@ module TaskDerivedFacts
     rung
   end
 
+  # THE STAGE FOLLOWS THE MERGE (stage-follows-github). GitHub just reported
+  # `pr_url` merged. When that PR is one of THIS task's own PRs, the task is still
+  # `submitted`, and GitHub places every one of its PRs on a rung, the task moves
+  # to `reviewed`: the same end state as `bin/task merged <slug> accepted && bin/task
+  # move <slug> reviewed`, which `devops-reconcile --seam pr-review --heal` used to
+  # apply hours later for the `stamp_lost` class.
+  #
+  # Fail-closed, like SeamReconcile's safety rule: an unreadable GitHub, a PR that
+  # is not the task's own, or a multi-repo task with a repo still open moves
+  # nothing (#derived_merged_rung is nil unless EVERY repo merged). Idempotent: a
+  # re-delivery finds the task past `submitted` and does nothing. The check of the
+  # stage runs again under the row lock, so a reviewer's own move that lands first
+  # wins and this one steps aside.
+  #
+  # The move goes through the ordinary stage save, so the TaskEvent spine, the
+  # reviewed_at stamp, the mascot evolution and the reviewer pair all land exactly
+  # as on a CLI move. Attribution: source `github`; the actor is the reviewer whose
+  # open `→ reviewed` intent the merge completes, else the system placeholder.
+  # Returns true when it moved the task.
+  def follow_pull_request_merge!(pr_url, derivation: github_derivation)
+    return false unless stage == "submitted" && derivation
+
+    url = Github::TaskDerivation.normalize_url(pr_url)
+    return false if url.blank?
+
+    own = derived_release_pr_urls(derivation: derivation).values.map { |u| Github::TaskDerivation.normalize_url(u) }
+    return false unless own.include?(url)
+
+    rung = derived_merged_rung(derivation: derivation)
+    return false unless Task::MERGED_STATES.include?(rung.to_s)
+
+    with_lock do
+      next false unless stage == "submitted"
+
+      actor = TaskEvent.named_actor(open_intent_for("reviewed")&.actor)
+      Current.set(task_event_source: TaskEvent::GITHUB_SOURCE, task_event_actor: actor) do
+        update!(stage: "reviewed", merged: merged.presence || rung)
+      end
+      true
+    end
+  rescue Github::TaskDerivation::Unreadable => e
+    Rails.logger.warn("[task-derivation] #{slug}: merge not followed, GitHub unreadable: #{e.message}")
+    false
+  end
+
   # True when `rung` sits above `than` on accepted → release → main. Anything
   # beats a blank column.
   def self.higher_rung?(rung, than)

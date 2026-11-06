@@ -1,5 +1,6 @@
 # Refreshes one task's `merged` column from GitHub (Task#refresh_merged_rung!), so
-# no agent has to stamp it (devops-v3 piece 4c-i). Enqueued when a task lands on
+# no agent has to stamp it (devops-v3 piece 4c-i), and moves a `submitted` task
+# whose own PR merged on to `reviewed` (stage-follows-github). Enqueued when a task lands on
 # `reviewed` and when GitHub delivers a merged `pull_request` event.
 #
 # A FRESH derivation every run, never Github::TaskDerivation.shared: the shared one
@@ -10,11 +11,17 @@
 # to it, so a failed refresh is logged and swallowed rather than retried into a
 # storm. The next trigger (or the release sweep) heals it.
 class TaskMergedRungRefreshJob < ApplicationJob
-  def perform(slug, derivation: nil)
+  #
+  # `pr_url:` is the PR a merged `pull_request` webhook named. With it, the job also
+  # lets the stage follow the merge (Task#follow_pull_request_merge!): a task still
+  # `submitted` whose own PR merged moves to `reviewed`, from the same fresh read.
+  def perform(slug, derivation: nil, pr_url: nil)
     task = Task.find_by(slug: slug.to_s)
     return unless task
 
-    task.refresh_merged_rung!(derivation: derivation || Github::TaskDerivation.new)
+    derivation ||= Github::TaskDerivation.new
+    task.refresh_merged_rung!(derivation: derivation)
+    task.follow_pull_request_merge!(pr_url, derivation: derivation) if pr_url.present?
   rescue StandardError => e
     log = ErrorLog.capture!(e)
     log.target = task if task
