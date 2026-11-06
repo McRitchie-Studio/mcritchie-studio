@@ -79,7 +79,8 @@ rate into a repo, a doc, a task, a memory or a chat summary that leaves the sess
 
    He decides raises. You never change an employee's pay row unless he asks for
    that change in the session.
-8. **Close the activity.**
+8. **Close the activity.** Keep names and rates out of the activity outcome and
+   any handoff: give the count below target there, and the names only in chat.
 
 ## Adding a market or role
 

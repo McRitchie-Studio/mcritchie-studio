@@ -84,4 +84,5 @@ End every Mack heartbeat with a short report:
 - the Sheet and PDF links, net income, cash and equity
 - the lines waiting on Alex McRitchie, as one batch
 - anything the watch raised, with a task slug when one was filed
-- after a pay refresh: the survey year now live and who is below target
+- after a pay refresh: the survey year now live and how many are below target
+  (no names or rates; those go to Alex McRitchie in chat)
