@@ -1,7 +1,9 @@
 // [e2e] The hub's page transition on real pages (config.page_transition_direction = :left,
 // studio-engine docs/PAGE_TRANSITIONS.md; the engine's own spec drives a lab page). A recorder
 // keeps what each view-transition pseudo ran, as only a browser shows it. NOT @qa-readonly in
-// spirit: it needs the seeded admin and the cyvasse chat.
+// spirit: it needs the seeded admin and the cyvasse chat. Forward leaves to the left; Back plays
+// the same slide reversed, leaving to the right (engine 0.131.0, "Back"). Do not restore a left
+// assertion on a Back.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 
@@ -124,6 +126,17 @@ test("Forward after a Back plays the hub's own left slide", async ({ page }) => 
   await forward(page);
   expect(new URL(page.url()).pathname).toBe("/chat");
   expectLeftStyle(await seen(page));
+});
+
+// Playwright turns the back/forward cache off, so this Back is a fresh load: the engine reads
+// the pageswap activation, a traverse to an earlier entry, and plays the move reversed.
+test("Back by a full load plays the slide reversed too", async ({ page }) => {
+  await open(page, "/");
+  await Promise.all([page.waitForURL("**/chat"), page.evaluate(() => window.location.assign("/chat"))]);
+  await expect.poll(async () => pageStyles(await seen(page)).sort(), "the forward full load").toEqual(["::view-transition-new(root) pt-in-from-right", "::view-transition-old(root) pt-out-left"]);
+  await page.goBack({ waitUntil: "load" });
+  expect(new URL(page.url()).pathname).toBe("/");
+  await expect.poll(async () => pageStyles(await seen(page)).sort(), "the full-load Back").toEqual(BACK_STYLES);
 });
 
 test("the navbar and the banner hold still while the page moves", async ({ page }) => {
