@@ -88,7 +88,7 @@ rate into a repo, a doc, a task, a memory or a chat summary that leaves the sess
   `0800000` for Colorado) or N (national, `0000000`). Industry is a 6-digit NAICS
   code, or `000000` for all industries. Then run step 3.
 - **A new role or variant:** `/admin/pay` → *Add role*. Variants of one job (Shop,
-  Pipeline, Rig welder) share the role name and differ by variant, market and SOC.
+  Pipeline, Rig) share the family (Welder) and differ by variant, market and SOC.
 
 ## Limits
 
