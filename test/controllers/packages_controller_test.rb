@@ -200,15 +200,16 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     stub = Rails.root.join("test/support/views/talk_modal_stub").to_s
     PackagesController.prepend_view_path(stub)
     begin
-      get packages_path
+      [ packages_path, packages_stack_path ].each do |path|
+        get path
+        assert_response :success
+        assert_select "[data-test='talk-to-agent'][data-talk-to-agent-soul='alex'][data-talk-to-agent-name='Alex']", 1, path
+        assert_select "[data-test='talk-modal-role']", { text: "Sales & Marketing" }, path
+        assert_select "[data-test='talk-to-agent'] img[src*='alex']", 1, "#{path}: Alex's portrait"
+      end
     ensure
       PackagesController.view_paths = PackagesController.view_paths.reject { |path| path.to_s == stub }
     end
-
-    assert_response :success
-    assert_select "[data-test='talk-to-agent'][data-talk-to-agent-soul='alex'][data-talk-to-agent-name='Alex']", 1
-    assert_select "[data-test='talk-modal-role']", text: "Sales & Marketing"
-    assert_select "[data-test='talk-to-agent'] img[src*='alex']", 1, "Alex's portrait"
   end
 
   test "Enterprise Book a call falls back to the studio's booking popup while no URL is configured" do

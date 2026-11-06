@@ -46,6 +46,8 @@ class AgentProposalsUpgradeTest < ActiveSupport::TestCase
     assert posted.start_with?("I'll send that to Alex McRitchie.")
     refute_includes posted, "PROPOSAL"
     assert_includes posted, "Sent to Alex McRitchie: a request to move you to Pro (annual). Nothing changes and nobody is charged until he approves it."
+    assert_match(/^Sent to Alex McRitchie/, posted, "the line starts its own line, with no > marker the chat would show raw")
+    refute_match(/^> /, posted)
     refute_includes posted, AgentProposal::CONFIRM_LINE, "the visitor is never told to reply go"
     assert_equal "builder", @app.reload.package_tier, "filing changes nothing"
   end
