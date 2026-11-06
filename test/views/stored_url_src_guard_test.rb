@@ -48,6 +48,7 @@ class StoredUrlSrcGuardTest < ActiveSupport::TestCase
     },
     "app/views/packages/_brand.html.erb" => { "mark" => "a static asset name for the brand mark" },
     "app/views/build/_gallery_card.html.erb" => { "example.image" => "config/build_gallery: a static asset name" },
+    "app/views/websites/_portfolio_card.html.erb" => { "example.image" => "config/build_gallery: a static asset name" },
     "app/views/applications/_cto_avatar.html.erb" => { "src" => "assigned from image_path(row.portrait_asset), a static asset" },
     "app/views/shared/_auth_card.html.erb" => { "\"/brand/icon-light.svg\"" => "a literal" }
   }.freeze

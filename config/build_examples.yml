@@ -42,6 +42,11 @@ names:
 # falls short, `name` takes the app's own lighter primary. Values are #rrggbb
 # only; an app without an entry keeps the Studio theme. Each entry names its
 # source.
+# The /websites portfolio card (Alex McRitchie, 2026-11-06) lays the name and
+# text on a shade of the same `panel` over the app's still, at
+# BuildGallery::PORTFOLIO_SHADE_ALPHA; there each `name` and `text` must also
+# read at AA on that shade laid over pure white, the worst case
+# (test/models/build_gallery_test.rb; e2e/websites_portfolio.spec.js).
 palettes:
   # Engine app: theme_primary #C08A2E (cyvasse config/initializers/studio.rb);
   # dark --color-page and --color-text-muted as https://cyvasse.xyz serves them.
