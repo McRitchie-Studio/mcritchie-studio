@@ -748,6 +748,8 @@ module CiStatus
     @gh_token = nil
     @gh_token_minted_at = nil
     @gh_mint_attempted_at = nil
+    @gh_mint_result = nil
+    @gh_mint_attempt_ok = nil
     @gh_refreshes = 0
   end
 
@@ -796,16 +798,32 @@ module CiStatus
   # the read that follows reports GitHub's own answer either way.
   def self.mint_gh_token!
     now = now_s
-    return false if @gh_mint_attempted_at && (now - @gh_mint_attempted_at) < MINT_RETRY_FLOOR_S
+    if @gh_mint_attempted_at && (now - @gh_mint_attempted_at) < MINT_RETRY_FLOOR_S
+      @gh_mint_result = :floored
+      return false
+    end
 
     @gh_mint_attempted_at = now
     token = GhAuthRetry.mint
+    @gh_mint_attempt_ok = !token.nil?
+    @gh_mint_result = token ? :minted : :failed
     return false unless token
 
     @gh_refreshes = @gh_refreshes.to_i + 1 if @gh_token
     @gh_token = token
     @gh_token_minted_at = now
     true
+  end
+
+  # What the last mint_gh_token! call did, so a caller can say WHY no fresh token
+  # came: result :minted, :failed (the broker could not mint) or :floored (skipped,
+  # an attempt ran inside MINT_RETRY_FLOOR_S); attempt_ok and attempt_age_s describe
+  # the last real attempt. Never the token. nil before any call.
+  def self.last_mint
+    return nil unless @gh_mint_result
+
+    { result: @gh_mint_result, attempt_ok: @gh_mint_attempt_ok,
+      attempt_age_s: @gh_mint_attempted_at ? (now_s - @gh_mint_attempted_at).floor : nil }
   end
 
   # The authenticated read, WITH ITS OUTCOME: [body, ok].

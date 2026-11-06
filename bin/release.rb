@@ -786,7 +786,9 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # it, App installation tokens live ~1h BY DESIGN, and a sweep outlives one. A
   # credential-class refusal now re-mints and retries AT ONCE; everything else
   # keeps the bounded sleep-retry, which is the class a sleep can clear.
-  snapshot = Release::GhReadRetry.call(sleeper: ->(s) { sleep s }, minter: -> { GhAuthRetry.mint }) do |token|
+  # The minter is CiStatus's (mint_held_gh_token), not a bare GhAuthRetry.mint, so
+  # the token it recovers is held, aged and re-minted for the dispatch and the watch.
+  snapshot = Release::GhReadRetry.call(sleeper: ->(s) { sleep s }, minter: -> { mint_held_gh_token }) do |token|
     run_list_read(workflow, chdir: chdir, token: token)
   end
   # Carry the recovered credential to the REST of the lane — the dispatch and the
@@ -834,8 +836,19 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
   # second belt in new_run_id. It never selects a run on its own.
   cid = dispatch_correlation_id
   args = Release::ShipSequence.dispatch_argv(workflow, (inputs || {}).merge(Release::ShipSequence::CORRELATION_INPUT => cid))
-  dispatch_out, dispatched = gh_sh(*args, chdir: chdir, capture: true)
+  # NOT SAFE TO REPEAT BLIND: a second dispatch is a second deploy. On a credential
+  # refusal, gh_write_once re-mints and asks GitHub (dispatch_state) whether a run
+  # carrying our correlation id exists before it dispatches again.
+  dispatch_out, dispatched, dispatch_outcome =
+    gh_write_once(*args, chdir: chdir, state: -> { dispatch_state(workflow, cid, before_id, chdir: chdir) })
   say(dispatch_out.strip) unless dispatch_out.to_s.strip.empty?
+  # :unmintable keeps the old reading below: with no fresh token, gh's refusal stands.
+  if !dispatched && dispatch_outcome == :unknown
+    say("  ⚠ #{workflow}: `gh workflow run` was refused on credentials and GitHub could not be read " \
+        "afterwards, so it is NOT KNOWN whether a run was created. Look for a #{workflow} run titled " \
+        "`[#{cid}]` on the Actions tab before you dispatch again.")
+    return false
+  end
   if !dispatched && Release::ShipSequence.correlation_input_rejected?(dispatch_out)
     # NO CORRELATION, NO DISPATCH. A workflow without the input cannot stamp the id
     # into its run name, so its run could not be told from another dispatcher's. A
@@ -952,6 +965,10 @@ def dispatch_and_watch(workflow, inputs = {}, chdir: nil)
              Release::ShipSequence.unreadable_run_list_abort(workflow, inputs))
   end
 
+  # A WATCH CAN OUTLIVE ITS TOKEN (about an hour). gh_sh re-mints an aging HELD
+  # token before the watch starts (the token a lane starts with is not held, so it is
+  # replaced only on a refusal); a token that dies mid-watch makes the watch exit
+  # non-zero, and the poll below resumes on a fresh token (gh_sh_refreshing).
   _, watched = gh_sh("gh", "run", "watch", run_id.to_s, "--exit-status", chdir: chdir)
   return true if watched
 
@@ -1010,8 +1027,10 @@ def poll_until_concluded(run_id, chdir:, poll:, unreadable_limit:)
   unreadable = 0
   last_status = nil
   loop do
-    out, ok = gh_sh("gh", "run", "view", run_id.to_s, "--json", "status,conclusion",
-                    "--jq", "[.status, .conclusion] | @tsv", chdir: chdir, capture: true)
+    # gh_sh_refreshing: this poll is where a watch that outlived its token resumes,
+    # so a read re-mints when aging and once more on a credential refusal.
+    out, ok = gh_sh_refreshing("gh", "run", "view", run_id.to_s, "--json", "status,conclusion",
+                               "--jq", "[.status, .conclusion] | @tsv", chdir: chdir)
     status, conclusion = ok ? out.strip.split("\t", 2) : [nil, nil]
 
     # A read we could not make (gh errored) OR that returned no status is an
@@ -1055,12 +1074,27 @@ end
 # matches, which `to_i` maps to the genuine 0. `--limit 20` is the window a
 # concurrent dispatch could push ours down.
 def correlated_run_id(workflow, cid, chdir: nil)
-  out, ok = sh("gh", "run", "list", "--workflow", workflow, "--event", "workflow_dispatch", "--limit", "20",
-               "--json", "databaseId,displayTitle", "--jq", Release::ShipSequence.correlated_run_jq(cid),
-               chdir: chdir, capture: true, env: gh_token_env($gh_lane_token))
+  out, ok = gh_sh_refreshing("gh", "run", "list", "--workflow", workflow, "--event", "workflow_dispatch",
+                              "--limit", "20", "--json", "databaseId,displayTitle",
+                              "--jq", Release::ShipSequence.correlated_run_jq(cid), chdir: chdir)
   return nil unless ok
 
   out.strip.to_i
+end
+
+# Did a refused dispatch create its run anyway? gh_write_once's `state` for the
+# dispatch. Reads the correlated run up to DISPATCH_STATE_READS times, 3s apart, the
+# window the poll below grants registration: [:done, ""] on our run, [:absent, ""]
+# when the LAST read answered with none, [:unknown, ""] when it failed.
+DISPATCH_STATE_READS = 20
+def dispatch_state(workflow, cid, before_id, chdir: nil)
+  latest = nil
+  DISPATCH_STATE_READS.times do |i|
+    sleep 3 if i.positive?
+    latest = correlated_run_id(workflow, cid, chdir: chdir)
+    return [:done, ""] if Release::ShipSequence.new_run_id(before_id, latest)
+  end
+  [latest.nil? ? :unknown : :absent, ""]
 end
 
 # A fresh correlation id per dispatch. A method of its own so a test can pin it.
@@ -1068,11 +1102,12 @@ def dispatch_correlation_id = Release::ShipSequence.correlation_id
 
 # The raw `[out, ok]` of the newest-run-id read, WITHOUT the nil-folding above.
 # dispatch_and_watch's pre-dispatch snapshot needs gh's words to classify the
-# failure and to print them.
+# failure and to print them. With no `token` it rides gh_fresh_env (the lane's held
+# token, re-minted when aging), not the ambient one.
 def run_list_read(workflow, chdir: nil, token: nil)
   sh("gh", "run", "list", "--workflow", workflow, "--limit", "1",
      "--json", "databaseId", "--jq", ".[0].databaseId // empty",
-     chdir: chdir, capture: true, env: gh_token_env(token))
+     chdir: chdir, capture: true, env: token ? gh_token_env(token) : gh_fresh_env)
 end
 
 # THE LANE'S RECOVERED CREDENTIAL, or nil. Set only when a `gh` call in the
@@ -1086,6 +1121,10 @@ end
 # and then dispatching with the ambient credential would recover the read and fail
 # the very next call on the credential we had just proven dead — a partial
 # correction that leaves the operator with a stranger failure than the one it fixed.
+#
+# NOW A FALLBACK. The snapshot mints through CiStatus (mint_held_gh_token), so the
+# recovered token is CiStatus's held one, which ages and re-mints; gh_write_env
+# prefers it. This copy is read only when nothing is held.
 $gh_lane_token = nil
 
 # The env overlay that hands `gh` a specific credential, or {} for the ambient one.
@@ -1095,9 +1134,52 @@ def gh_token_env(token)
 end
 
 # A `gh` call in the workflow-dispatch lane: identical to `sh`, except it carries
-# whatever credential the lane recovered.
+# the lane's freshest credential (gh_fresh_env). It does NOT retry: the watch streams
+# and is backed by a refreshing poll, and the dispatch goes through gh_write_once.
 def gh_sh(*cmd, capture: false, chdir: nil)
-  sh(*cmd, capture: capture, chdir: chdir, env: gh_token_env($gh_lane_token))
+  sh(*cmd, capture: capture, chdir: chdir, env: gh_fresh_env)
+end
+
+# The env for a `gh` call that may run long after the lane's token was minted:
+# CiStatus's held token is re-minted first when it is aging (50 minutes), then
+# gh_write_env picks held, lane or ambient. CiStatus holds a token only after a mint
+# in this process (a refusal's, or the dispatch snapshot's), so the token the lane
+# STARTS with is never re-minted by age: its first credential refusal replaces it. A token minted here is minted under
+# GhIdentity.resolve (GH_APP_ITEM), the lane bin/release-cycle's step_env set, so a
+# ship re-mints the deployer and a prepare the agent. Never print the Hash.
+def gh_fresh_env
+  CiStatus.mint_gh_token! if CiStatus.gh_token_aging?
+  gh_write_env
+end
+
+# Mint CiStatus's held token now and hand it back, or nil: the dispatch snapshot's
+# minter, so the token it recovers is the one the rest of the lane ages and re-mints.
+def mint_held_gh_token
+  CiStatus.mint_gh_token! ? CiStatus.gh_token_env["GH_TOKEN"] : nil
+end
+
+# After a credential refusal: mint once and return true, or say WHY no fresh token
+# came and return false. Three causes, three messages. A mint inside the 60s floor
+# that SUCCEEDED means the refused call already rode a token minted seconds ago, so
+# the refusal is not an expiry, and GhAuthRetry.last_error (an older failure) is not
+# quoted as its reason.
+def remint_after_refusal(label)
+  return true if CiStatus.mint_gh_token!
+
+  mint = CiStatus.last_mint || {}
+  reason = GhAuthRetry.last_error.strip.lines.last.to_s.strip
+  if mint[:result] == :floored && mint[:attempt_ok]
+    say("  ⚠ `#{label}` was refused on credentials on a token minted #{mint[:attempt_age_s]}s ago, so this " \
+        "is not an expired token; not minting again inside #{CiStatus::MINT_RETRY_FLOOR_S}s. Check the " \
+        "GitHub App's access to this repo.")
+  elsif mint[:result] == :floored
+    say("  ⚠ `#{label}` was refused on credentials, and the last mint, #{mint[:attempt_age_s]}s ago, failed" \
+        "#{reason.empty? ? '' : " (#{reason})"}; not minting again inside #{CiStatus::MINT_RETRY_FLOOR_S}s")
+  else
+    say("  ⚠ `#{label}` was refused on credentials and no fresh token could be minted" \
+        "#{reason.empty? ? '' : " (#{reason})"}")
+  end
+  false
 end
 
 # A `gh` WRITE that outlives one App token. It rides CiStatus's held token, the one
@@ -1111,21 +1193,49 @@ end
 # the dead ambient token and was refused ("Try authenticating with: gh auth login").
 # A refused write did nothing, so the retry cannot double the action. The token is
 # never printed.
+#
+# FOR READS AND FOR WRITES SAFE TO REPEAT (a re-run of a failed run). A write that is
+# not (a merge, a PR create, a workflow dispatch) goes through gh_write_once instead.
 def gh_sh_refreshing(*cmd, chdir: nil)
-  CiStatus.mint_gh_token! if CiStatus.gh_token_aging?
-  out, ok = sh(*cmd, capture: true, chdir: chdir, env: gh_write_env)
+  out, ok = sh(*cmd, capture: true, chdir: chdir, env: gh_fresh_env)
   return [out, ok] if ok || !CiStatus.gh_auth_refusal?(out)
 
   label = cmd.first(3).join(" ")
-  unless CiStatus.mint_gh_token!
-    reason = GhAuthRetry.last_error.strip
-    say("  ⚠ `#{label}` was refused on credentials and no fresh token could be minted" \
-        "#{reason.empty? ? '' : " (#{reason.lines.last.to_s.strip})"}")
-    return [out, ok]
-  end
+  return [out, ok] unless remint_after_refusal(label)
 
   say("  ↻ `#{label}`: the GitHub credential had expired — minted a fresh one and retried.")
   sh(*cmd, capture: true, chdir: chdir, env: gh_write_env)
+end
+
+# A `gh` WRITE that must not run twice: [out, ok, outcome]. It rides gh_fresh_env.
+# A non-credential failure returns as is, never retried. A credential refusal mints
+# once, then asks `state` (a lambda) what GitHub holds, because gh's 401 cannot say
+# WHICH of its requests was refused. `state` answers [:done, out] (the write took
+# effect: not repeated, ok), [:absent, _] (nothing happened: retried once) or
+# [:unknown, _] (unreadable: not repeated, failed). Outcome: :ran, :unmintable,
+# :done, :retried or :unknown. The token is never printed.
+def gh_write_once(*cmd, state:, chdir: nil)
+  out, ok = sh(*cmd, capture: true, chdir: chdir, env: gh_fresh_env)
+  return [out, ok, :ran] if ok || !CiStatus.gh_auth_refusal?(out)
+
+  label = cmd.first(3).join(" ")
+  return [out, false, :unmintable] unless remint_after_refusal(label)
+
+  found, done_out = state.call
+  case found
+  when :done
+    say("  ↷ `#{label}` was refused on credentials, but GitHub shows it took effect — not repeating it.")
+    [done_out.to_s, true, :done]
+  when :absent
+    say("  ↻ `#{label}`: refused on credentials and GitHub shows it did not happen — minted a fresh " \
+        "token and retried once.")
+    retried_out, retried_ok = sh(*cmd, capture: true, chdir: chdir, env: gh_write_env)
+    [retried_out, retried_ok, :retried]
+  else
+    say("  ⚠ `#{label}` was refused on credentials and GitHub's state could not be read, so it is NOT " \
+        "repeated: a blind retry could do it twice. Check GitHub, then re-run.")
+    [out, false, :unknown]
+  end
 end
 
 # CiStatus's held token, else the lane's recovered one, else {} (the ambient login).
@@ -2609,8 +2719,38 @@ end
 # merged, carry on" from a genuine merge failure. Read-only; goes straight to
 # Open3 (runs even in --dry-run).
 def pr_merged?(pr_url)
-  out, status = bounded_capture2e("gh", "pr", "view", pr_url, "--json", "state", "-q", ".state")
-  status.success? && out.strip == "MERGED"
+  pr_state(pr_url) == "MERGED"
+end
+
+# The PR's GitHub state ("OPEN", "MERGED", "CLOSED"), or nil when gh cannot answer.
+# Rides gh_fresh_env, and re-mints once on a credential refusal (a read).
+def pr_state(pr_url)
+  argv = ["gh", "pr", "view", pr_url, "--json", "state", "-q", ".state"]
+  out, status = bounded_capture2e(*argv, env: gh_fresh_env)
+  if !status.success? && CiStatus.gh_auth_refusal?(out) && remint_after_refusal("gh pr view")
+    out, status = bounded_capture2e(*argv, env: gh_write_env)
+  end
+  status.success? && !out.strip.empty? ? out.strip : nil
+end
+
+# The batch PR's `gh pr merge`, pinned to `merge_head` when one is known: [out, ok].
+# NOT SAFE TO REPEAT BLIND, so gh_write_once: a credential refusal re-mints and reads
+# the PR's state (pr_merge_state) before any retry.
+def merge_batch_pr(pr_url, merge_head)
+  out, ok, = gh_write_once("gh", "pr", "merge", pr_url, "--merge",
+                           *(merge_head.to_s.empty? ? [] : ["--match-head-commit", merge_head]),
+                           state: -> { pr_merge_state(pr_url) })
+  [out, ok]
+end
+
+# gh_write_once's `state` for the batch-PR merge: MERGED is done, OPEN is absent
+# (retry, still pinned by --match-head-commit), anything else is unknown.
+def pr_merge_state(pr_url)
+  case pr_state(pr_url)
+  when "MERGED" then [:done, ""]
+  when "OPEN" then [:absent, ""]
+  else [:unknown, ""]
+  end
 end
 
 # Review-gate guard for the sweep (`bin/release merge` + `prepare`). The
@@ -2773,8 +2913,7 @@ def promote_accepted_to_release!(repos, label: nil)
     # automated conductor that is the correct posture: a `gh` that would have
     # stopped to ask now fails with a message we print, instead of hanging a
     # release on a prompt nobody is watching.
-    merge_out, ok = sh("gh", "pr", "merge", pr_url, "--merge",
-                       *(merge_head.empty? ? [] : ["--match-head-commit", merge_head]), capture: true)
+    merge_out, ok = merge_batch_pr(pr_url, merge_head)
     # The echo of gh's words is decided AFTER the recovery, never before it. It
     # used to sit above this branch gated on `ok` — still false while the fallback
     # was deciding — so the interrupted-run path printed NOTHING, and that is the
@@ -3000,16 +3139,18 @@ def accepted_release_pr_url(repo, label: nil)
   nwo = repo_name_with_owner(repo)
   repo_args = nwo.empty? ? [] : ["--repo", nwo]
 
-  existing, ok = sh("gh", "pr", "list", *repo_args, "--base", RELEASE_BRANCH, "--head", ACCEPTED_BRANCH,
-                    "--state", "open", "--json", "url", "-q", ".[0].url", capture: true)
+  existing, ok = open_batch_pr_read(repo_args)
   return existing.strip if ok && !existing.strip.empty?
 
   title = label.to_s.empty? ? "Promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH}" \
                             : "Promote #{ACCEPTED_BRANCH} → #{RELEASE_BRANCH} (#{label})"
   body = "Batch promotion of the accepted-ladder: lands every reviewed change already merged onto " \
          "`#{ACCEPTED_BRANCH}` onto `#{RELEASE_BRANCH}` for QA. Opened by `bin/release prepare`."
-  out, created = sh("gh", "pr", "create", *repo_args, "--base", RELEASE_BRANCH, "--head", ACCEPTED_BRANCH,
-                    "--title", title, "--body", body, capture: true)
+  # NOT SAFE TO REPEAT BLIND (a second create is refused or duplicates): on a
+  # credential refusal gh_write_once re-mints and re-reads the open batch PR first.
+  out, created, = gh_write_once("gh", "pr", "create", *repo_args, "--base", RELEASE_BRANCH,
+                                "--head", ACCEPTED_BRANCH, "--title", title, "--body", body,
+                                state: -> { batch_pr_create_state(repo_args) })
   # `out` already carries gh's stderr (sh → Open3.capture2e), so the reason this
   # failed is in hand — QUOTE IT rather than replacing it with a guess. See
   # Release::GhFailure for the recovery this cost during rel-20260812-3f1f9b.
@@ -3023,6 +3164,21 @@ def accepted_release_pr_url(repo, label: nil)
            ))
   end
   out.strip
+end
+
+# The OPEN accepted→release PR's URL read: [out, ok], a read on a refreshed token.
+def open_batch_pr_read(repo_args)
+  gh_sh_refreshing("gh", "pr", "list", *repo_args, "--base", RELEASE_BRANCH, "--head", ACCEPTED_BRANCH,
+                   "--state", "open", "--json", "url", "-q", ".[0].url")
+end
+
+# gh_write_once's `state` for the batch-PR create: an open PR is done (its URL is the
+# create's output), none is absent, an unreadable list is unknown.
+def batch_pr_create_state(repo_args)
+  out, ok = open_batch_pr_read(repo_args)
+  return [:unknown, ""] unless ok
+
+  out.strip.empty? ? [:absent, ""] : [:done, out.strip]
 end
 
 # THE CHANGELOG MISFILE GUARD (/tasks/rolled-changelog-merge-misfiles) — a merge
