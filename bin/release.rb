@@ -1100,6 +1100,32 @@ def gh_sh(*cmd, capture: false, chdir: nil)
   sh(*cmd, capture: capture, chdir: chdir, env: gh_token_env($gh_lane_token))
 end
 
+# A `gh` WRITE that outlives one App token: gh_sh, and on a credential refusal one
+# fresh token (GhAuthRetry.mint, the session's own lane) and one retry. The fresh
+# token becomes $gh_lane_token, so the later calls of the sweep carry it too.
+#
+# Why: CI reads re-mint their own token (CiStatus.gh_read_status), but a write rode
+# the ambient GH_TOKEN, which lasts about an hour. rel-20261105-9199b4's prepare ran
+# longer, and its one automatic `gh run rerun` was refused ("Try authenticating
+# with: gh auth login") while every read around it worked. A refused write did
+# nothing, so the retry cannot double the action. The token is never printed.
+def gh_sh_refreshing(*cmd, chdir: nil)
+  out, ok = gh_sh(*cmd, capture: true, chdir: chdir)
+  return [out, ok] if ok || !CiStatus.gh_auth_refusal?(out)
+
+  token = GhAuthRetry.mint
+  unless token
+    reason = GhAuthRetry.last_error.strip
+    say("  ⚠ `#{cmd.first(3).join(' ')}` was refused on credentials and no fresh token could be minted" \
+        "#{reason.empty? ? '' : " (#{reason.lines.last.to_s.strip})"}")
+    return [out, ok]
+  end
+
+  $gh_lane_token = token
+  say("  ↻ `#{cmd.first(3).join(' ')}`: the GitHub credential had expired — minted a fresh one and retried.")
+  gh_sh(*cmd, capture: true, chdir: chdir)
+end
+
 # The SHELL-SAFE `rails runner` payload for a conductor snippet. The snippet is
 # wrapped (`require 'json'`), Base64-encoded, and shipped as
 # `eval(Base64.urlsafe_decode64("<blob>"))` — so the command line carries ONLY a
@@ -4310,7 +4336,7 @@ def ci_rerun_once!(repo, sha)
       "Re-running every job of run#{plan[:run_ids].size == 1 ? '' : 's'} #{plan[:run_ids].join(', ')} " \
       "(`gh run rerun`, all jobs, so the executed-set guards re-read fresh receipts); a second red is real.")
   plan[:run_ids].each do |id|
-    out, ok = gh_sh("gh", "run", "rerun", id.to_s, "-R", nwo, capture: true)
+    out, ok = gh_sh_refreshing("gh", "run", "rerun", id.to_s, "-R", nwo)
     next if ok
 
     say("  ✗ #{repo}: `gh run rerun #{id}` was refused (#{out.to_s.strip.lines.last.to_s.strip}) — " \
@@ -4372,7 +4398,7 @@ end
 
 # A run's failed-step log, "" on any failed read (so the resolution check says no).
 def ci_failed_log(nwo, run_id)
-  out, ok = gh_sh("gh", "run", "view", run_id.to_s, "--log-failed", "-R", nwo, capture: true)
+  out, ok = gh_sh_refreshing("gh", "run", "view", run_id.to_s, "--log-failed", "-R", nwo)
   ok ? out.to_s : ""
 end
 
