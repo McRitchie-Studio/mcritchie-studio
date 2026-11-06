@@ -144,6 +144,11 @@ purposes:
   app_requests:
     medium: discord
     channel: external
+  # Alex's upgrade proposals (UpgradeProposalNoticeJob): the owner's ping. The
+  # proposal itself waits on /admin/upgrade_proposals whether or not this posts.
+  upgrade_proposals:
+    medium: discord
+    channel: internal
   # A report with no destination row: rows chosen at /admin/report_destinations
   # (or an owner's /agents/:slug/settings) always win. No channel, so such a
   # report stays `not_configured`, as before.

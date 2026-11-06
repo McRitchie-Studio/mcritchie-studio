@@ -161,10 +161,12 @@ class ReleaseChangelogPromoteTest < Minitest::Test
     body = SOURCE[start...(SOURCE.index(/^def /, start + 1) || SOURCE.length)]
 
     guard_at = body.index("refuse_misfiled_changelog!(targets)")
-    merge_at = body.index('sh("gh", "pr", "merge"')
+    merge_at = body.index("merge_batch_pr(pr_url, merge_head)")
     assert guard_at, "promote_accepted_to_release! must call the misfile guard"
-    assert merge_at, "and still merge with gh"
+    assert merge_at, "and still merge through merge_batch_pr"
     assert_operator guard_at, :<, merge_at, "the guard must run BEFORE the merge"
-    assert_includes body[merge_at, 200], "--match-head-commit", "the merge must be pinned to the checked head"
+    seam = SOURCE[SOURCE.index(/^def merge_batch_pr\(/), 400]
+    assert_includes seam, '"gh", "pr", "merge"', "merge_batch_pr merges with gh"
+    assert_includes seam, "--match-head-commit", "the merge must be pinned to the checked head"
   end
 end

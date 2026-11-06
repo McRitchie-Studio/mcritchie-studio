@@ -178,7 +178,7 @@
     );
 }
 
-/* A card someone is REVIEWING right now wears the engine's .studio-team-glow —
+/* A card someone is REVIEWING right now wears the engine's .edge-rotate-glow —
    two wedges travelling its edge in the reviewer's Pokémon's type colors (both
    set inline by TaskCardComponent) — not the rainbow border the stage glows use. A card
    merely sitting in `submitted` wears nothing at all: the ring means a reviewer
@@ -188,9 +188,9 @@
    specimen: board cards sit 8px apart, so 4px of ring plus a 10px bloom reads as
    a lit blob that bleeds into its neighbours. Measured on the board at 2px/6px. */
 .task-card-review-glow {
-  --studio-team-glow-thickness: 2px;   /* engine default 4px */
-  --studio-team-glow-bloom: 6px;       /* engine default 10px */
-  --studio-team-glow-speed: 5s;        /* engine default 4s — calmer than a spinner */
+  --edge-rotate-glow-thickness: 2px;   /* engine default 4px */
+  --edge-rotate-glow-bloom: 6px;       /* engine default 10px */
+  --edge-rotate-glow-speed: 5s;        /* engine default 4s — calmer than a spinner */
 }
 
 .task-card-stage-glow-approval {
@@ -468,31 +468,6 @@
   .dark .dex-art-unseen {
     filter: brightness(0) invert(1);
     opacity: 0.18;
-  }
-}
-
-@utility theme-transition {
-  /* Theme transition (applied during toggle) */
-  & * {
-    transition:
-      background-color 200ms ease,
-      color 200ms ease,
-      border-color 200ms ease,
-      box-shadow 200ms ease !important;
-  }
-  & *::before {
-    transition:
-      background-color 200ms ease,
-      color 200ms ease,
-      border-color 200ms ease,
-      box-shadow 200ms ease !important;
-  }
-  & *::after {
-    transition:
-      background-color 200ms ease,
-      color 200ms ease,
-      border-color 200ms ease,
-      box-shadow 200ms ease !important;
   }
 }
 

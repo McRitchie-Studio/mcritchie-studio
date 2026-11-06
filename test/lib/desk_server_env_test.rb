@@ -41,16 +41,29 @@ class DeskServerEnvTest < Minitest::Test
     "HEROKU_API_KEY" => "fake-heroku-key-from-stack"
   }.freeze
 
-  def launch(prelude: "")
+  # The end marker the stub writes after `env`. A dump without it was read mid-write.
+  DUMP_DONE = "DESK_ENV_DUMP_DONE"
+
+  # Race (the follow-up of atomic-env-dump-in-spawn-tests): spawn_desk_server detaches
+  # its child, and the old stub wrote `env > dump` in place, so File.size? went true on
+  # the first write and the test could read a half-written dump. The stub now writes in
+  # two parts (env, a pause, the marker) to a temp name and renames it when done: the
+  # dump appears whole or not at all, and the pause makes an in-place write fail every
+  # run, not one run in a thousand.
+  def stub_command(dump)
+    "{ env; sleep 0.2; echo #{DUMP_DONE}=1; } > #{dump}.tmp && mv #{dump}.tmp #{dump}"
+  end
+
+  def launch(prelude: "", stub: method(:stub_command))
     Dir.mktmpdir("desk-server-env") do |dir|
       dump = File.join(dir, "env.out")
       log = File.join(dir, "server.log")
       script = <<~RUBY
         load #{BIN.inspect}
         #{prelude}
-        pid = spawn_desk_server(#{DESK_VALUES.inspect}, ["/bin/sh", "-c", "env > #{dump}"],
+        pid = spawn_desk_server(#{DESK_VALUES.inspect}, ["/bin/sh", "-c", #{stub.call(dump).inspect}],
                                 chdir: #{dir.inspect}, logfile: #{log.inspect})
-        60.times { break if File.size?(#{dump.inspect}); sleep 0.1 }
+        300.times { break if File.size?(#{dump.inspect}); sleep 0.1 }
         puts pid
       RUBY
       env = SessionEnv.neutralized(PLANTED.merge("LANG" => "en_US.UTF-8", "BINDING" => "0.0.0.0",
@@ -58,8 +71,18 @@ class DeskServerEnvTest < Minitest::Test
       out, err, status = Open3.capture3(env, "ruby", "-e", script)
       assert status.success?, "the launcher subprocess failed:\n#{out}\n#{err}"
       assert File.size?(dump), "the stub server never wrote its environment (#{err})"
-      File.readlines(dump, chomp: true).to_h { |line| line.split("=", 2) }
+      seen = File.readlines(dump, chomp: true).to_h { |line| line.split("=", 2) }
+      assert_equal "1", seen.delete(DUMP_DONE), "the dump was read before the stub finished writing it"
+      seen
     end
+  end
+
+  # THE CONTROL for the race: the same two-part stub written in place, as the old stub
+  # was. The reader must catch it half-written, or the end-marker check proves nothing.
+  def test_control_an_in_place_dump_is_read_half_written
+    in_place = ->(dump) { "{ env; sleep 0.5; echo #{DUMP_DONE}=1; } > #{dump}" }
+    error = assert_raises(Minitest::Assertion) { launch(stub: in_place) }
+    assert_match(/read before the stub finished writing/, error.message)
   end
 
   def test_the_desk_server_sees_no_credential_and_keeps_what_it_needs

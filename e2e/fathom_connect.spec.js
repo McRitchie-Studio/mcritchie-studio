@@ -1,5 +1,5 @@
 // [e2e] The Fathom connection, as an admin meets it: on /integrations the
-// Fathom card (Meeting notes) carries Connect Fathom; connecting comes back to
+// Fathom card (in the Connect group) carries Connect Fathom; connecting comes back to
 // /integrations connected as the account Fathom names, and /admin/fathom proves
 // the read: the first page of meetings, the newest meeting's title, its
 // transcript's lines and speakers and its summary. Loading the page twice
@@ -19,8 +19,8 @@ test("admin connects Fathom with the stand-in and sees the newest meeting", asyn
   page.on("dialog", (dialog) => dialog.accept());
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/integrations");
-  const card = page.locator("[data-test='integration-group'][data-group='meeting_notes'] [data-test='integration-entry'][data-entry='fathom']");
-  const slot = card.locator("[data-test='entry-method'][data-method='sign_in'] [data-test='fathom-connection']");
+  const card = page.locator("[data-test='integration-group'][data-group='connect'] [data-test='integration-entry'][data-entry='fathom']");
+  const slot = card.locator("[data-test='entry-action'] [data-test='fathom-connection']");
   await expect(slot).toHaveAttribute("data-state", "none");
   await expect(card.locator("[data-test='entry-cta']")).toHaveCount(0);
 

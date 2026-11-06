@@ -112,7 +112,7 @@ export function exceedsBeat(beatMs) {
 export const RELEASE_FX = { "current-release": "glow", "last-release": "router" };
 
 export const METER_GLOW_MS = 2000;
-export const METER_FADE_MS = 400;   // the .studio-team-glow opacity transition (engine-motion.css)
+export const METER_FADE_MS = 400;   // the .edge-rotate-glow opacity transition (engine-motion.css)
 
 // What one incoming deployments stream means for the effects, from its action and
 // target alone (plus, for a remove, the card ids the following streams carry).

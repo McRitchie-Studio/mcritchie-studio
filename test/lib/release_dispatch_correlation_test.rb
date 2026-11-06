@@ -132,6 +132,7 @@ class ReleaseDispatchCorrelationTest < Minitest::Test
     source = File.read(BIN)
 
     refute source.include?("def newest_run_id"), "the newest-run read has no caller left to select a run"
-    assert_equal 1, source.scan("correlated_run_id(workflow, cid, chdir: chdir)").size
+    # Two correlated reads: the poll, and dispatch_state (a refused dispatch's check).
+    assert_equal 2, source.scan("correlated_run_id(workflow, cid, chdir: chdir)").size
   end
 end

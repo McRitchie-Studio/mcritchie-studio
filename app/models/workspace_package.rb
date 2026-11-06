@@ -13,7 +13,7 @@ class WorkspacePackage
   # live: an SOP delivers it today. builtin: part of the app template or the
   # service, nothing to provision. planned: not delivered yet ("Coming soon").
   STATUSES = %w[live builtin planned].freeze
-  CTA_ACTIONS = %w[build schedule enterprise_booking].freeze
+  CTA_ACTIONS = %w[build talk schedule enterprise_booking].freeze
   # The feature row /stack holds each client's live DNS host to: the Cloudflare
   # move Pro sells (it was the "Cloudflare DNS" row until 2026-10-12, then
   # "Fast, protected domain" until 2026-10-14). Its cells read "Premium Domain"

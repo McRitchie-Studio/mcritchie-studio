@@ -180,6 +180,7 @@ runs inside `pr-review`. Retired names resolve only in git history (`docs/agents
 | `pr-review` | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
 | `Mack Heartbeat` | Mack | `mcritchie-studio/docs/agents/agents/mack/HEARTBEAT.md` |
 | `close-the-month` | Mack | `mcritchie-studio/docs/agents/agents/mack/sops/close-the-month.md` |
+| `pay-benchmark-refresh` | Mack | `mcritchie-studio/docs/agents/agents/mack/sops/pay-benchmark-refresh.md` |
 | `Mason Heartbeat` | Mason | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
 | `clean-up` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |
 | `dream-swap` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/dream-swap.md` |
@@ -193,6 +194,7 @@ runs inside `pr-review`. Retired names resolve only in git history (`docs/agents
 | `download-youtube` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-youtube.md` |
 | `email-image` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/email-image.md` |
 | `flatten-document` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/flatten-document.md` |
+| `print-order` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/print-order.md` |
 | `wrap-it-up` | Pokemon | `mcritchie-studio/docs/agents/agents/pokemon/sops/wrap-it-up.md` |
 | `Steffon Heartbeat` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/HEARTBEAT.md` |
 | `agent-dispatcher` | Steffon | `mcritchie-studio/docs/agents/agents/steffon/sops/agent-dispatcher.md` |

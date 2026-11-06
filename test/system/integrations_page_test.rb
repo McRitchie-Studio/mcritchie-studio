@@ -3,7 +3,7 @@ require "support/google_connect_fakes"
 require "support/fathom_connect_fakes"
 
 # [e2e] /integrations at phone, tablet and desktop width, light and dark: the page
-# renders both groups and never scrolls sideways. Every system test signs in as
+# renders its three groups and never scrolls sideways. Every system test signs in as
 # the admin, so the Google section carries Connect Google (the OAuth client set
 # here) and its three cards carry no contact-form Connect, nor does the Fathom
 # card (its OAuth app set here too), which carries Connect Fathom instead.
@@ -32,7 +32,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         page.execute_script("localStorage.setItem('theme', '#{theme}')")
         visit integrations_path
 
-        assert_selector "[data-test='integration-group']", count: 5
+        assert_selector "[data-test='integration-group']", count: 3
         assert_equal width, page.evaluate_script("window.innerWidth"), "viewport is #{width}px"
         assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')"), "#{theme} at #{width}"
         overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
@@ -83,10 +83,10 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     assert_current_path integrations_path
   end
 
-  test "[e2e] at 1280 Integrations is one row of four and every section's cards in a row end level" do
+  test "[e2e] at 1280 Connect is two rows of four and every group's tiles in a row end level" do
     page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 1280, height: 1000, deviceScaleFactor: 1, mobile: false)
     with_connect_env { visit integrations_path }
-    assert_selector "[data-test='integration-group'][data-group='google_sign_in'] [data-test='google-connect-all']", count: 1 # the control: the row is there
+    assert_selector "[data-test='integration-group'][data-group='connect'] [data-test='google-connect-all']", count: 1 # the control: the row is there
 
     rows = page.evaluate_script(<<~JS)
       [...document.querySelectorAll("[data-test='integration-group']")].map(group => {
@@ -102,8 +102,43 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       heights.each { |row| assert_equal 1, row.uniq.size, "#{group}: cards in a row differ in height #{row}" }
       assert_operator heights.first.size, :<=, 4, group
     end
-    assert_equal [ [ 4 ] ], [ rows.to_h.fetch("integrations").map(&:size) ], "Integrations is exactly one row of four"
-    assert_equal [ 3 ], rows.to_h.fetch("google_sign_in").map(&:size), "Connect Google sits above the Google cards, not in their row"
+    assert_equal [ 4, 4 ], rows.to_h.fetch("connect").map(&:size), "Connect is two full rows of four, no lonely tile"
+    assert_equal [ 3 ], rows.to_h.fetch("add_ons").map(&:size)
+  end
+
+  # The owner's ask (task simplify-integrations-page-layout): less scrolling.
+  # Production measured 4,935px at 1440 before the change, the page's content
+  # ending near 3,900px; the engine's site footer below it (about 1,000px) is
+  # the same on every page and not this page's to cut, so the budget is the
+  # content's bottom edge.
+  test "[e2e] signed out at 1440 the content ends above 2,000px; Details opens in place and a chip jumps to its group under the pinned chips" do
+    visit logout_path
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 1440, height: 900, deviceScaleFactor: 1, mobile: false)
+    visit integrations_path
+
+    bottom = page.evaluate_script("document.querySelector(\"[data-test='integrations-page']\").getBoundingClientRect().bottom + window.scrollY")
+    assert_operator bottom, :<, 2000, "signed-out /integrations at 1440 ends its content at #{bottom}px"
+
+    within("[data-test='integration-entry'][data-entry='discord']") do
+      assert_no_selector "[data-test='entry-details-panel']" # the control: closed by default
+      assert_no_text "Your workspace · One install · No upkeep"
+      find("[data-test='entry-details-toggle']").click
+      assert_selector "[data-test='entry-details'][open] [data-test='entry-details-panel']", visible: true
+      assert_text "Your workspace · One install · No upkeep"
+    end
+
+    find("[data-test='group-chip'][data-group='custom']").click
+    assert_selector "#custom h2", text: "Talk to us"
+    page.document.synchronize do
+      geometry = page.evaluate_script(<<~JS)
+        (() => { const nav = document.querySelector("[data-test='group-nav']").getBoundingClientRect(),
+                 heading = document.querySelector("#custom h2").getBoundingClientRect();
+                 return { navBottom: nav.bottom, navTop: nav.top, headingTop: heading.top, scrolled: window.scrollY }; })()
+      JS
+      raise Capybara::ExpectationNotMet, "not scrolled yet #{geometry}" unless geometry["scrolled"].positive?
+      assert_operator geometry["headingTop"], :>=, geometry["navBottom"] - 0.5, "the group heading clears the pinned chips: #{geometry}"
+      assert_operator geometry["navTop"], :>=, 0, "the chips stay on screen: #{geometry}"
+    end
   end
 
   test "[e2e] Discord's Connect opens its guide, whose request opens the contact form prefilled" do
@@ -171,7 +206,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     sign_in_through_magic_link(users(:viewer))
   end
 
-  def google_slot(card) = "[data-test='integration-entry'][data-entry='#{card}'] [data-test='entry-method'][data-method='sign_in'] [data-test='google-connection']"
+  def google_slot(card) = "[data-test='integration-entry'][data-entry='#{card}'] [data-test='entry-action'] [data-test='google-connection']"
 
   test "[e2e] a viewer sees Connect on each Google card, connects Calendar, sees the account, then disconnects it" do
     sign_in_as_viewer

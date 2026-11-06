@@ -1202,7 +1202,11 @@ install_git_credential_helper() {
       echo "  $gitconfig ($key kept: no fast-lane tooling to point it at)"
       return 0
     fi
-    printf '%s\n' "$values" | grep -qx '' && has_reset=yes
+    # A bare reset is an empty line in `values`. Matched in the shell, never as
+    # `printf | grep -q`: under pipefail, grep -q exits on the first (empty) line,
+    # bash's line-buffered printf then takes SIGPIPE on its second write, the
+    # pipeline reads as failed, and a SECOND reset was added (a CI flake).
+    case $'\n'"$values"$'\n' in *$'\n\n'*) has_reset=yes ;; esac
   fi
 
   mkdir -p "$(dirname "$gitconfig")"

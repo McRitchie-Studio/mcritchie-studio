@@ -26,7 +26,7 @@ const SCOPES = {
 const standInCode = (scopes) => "stand-in-code." + Buffer.from(scopes.join(" ")).toString("base64url");
 
 const slot = (page, entry) =>
-  page.locator(`[data-test='integration-entry'][data-entry='${entry}'] [data-test='entry-method'][data-method='sign_in'] [data-test='google-connection']`);
+  page.locator(`[data-test='integration-entry'][data-entry='${entry}'] [data-test='entry-action'] [data-test='google-connection']`);
 
 test("an admin connects Calendar then Drive from the integrations cards, sees each read, then disconnects them", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");

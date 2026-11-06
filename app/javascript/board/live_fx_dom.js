@@ -81,7 +81,7 @@ function install() {
     return paintCtx || (paintCtx = document.createElement("canvas").getContext("2d", { willReadFrequently: true }));
   }
 
-  // A 2s ring around one meter's BAR: the engine's .studio-team-glow on the meter's
+  // A 2s ring around one meter's BAR: the engine's .edge-rotate-glow on the meter's
   // glow host (the wrapper sized to the bar), tinted with the meter's OWN tone read
   // from its fill's computed background colour, so the ring never disagrees with the
   // bar it traces. A transparent or absent fill leaves the knob unset and the
@@ -95,13 +95,13 @@ function install() {
     const host = meter.querySelector(GLOW_HOST_SELECTOR) || meter;
     const fill = meter.querySelector(FILL_SELECTOR);
     const color = paintableColor(fill ? getComputedStyle(fill).backgroundColor : "", canvasCtx());
-    if (color) host.style.setProperty("--studio-team-glow-color", color);
-    host.classList.add("studio-team-glow", "release-meter-glow");
-    setTimeout(() => host.style.setProperty("--studio-team-glow-opacity", "0"), METER_GLOW_MS - METER_FADE_MS);
+    if (color) host.style.setProperty("--edge-rotate-glow-color", color);
+    host.classList.add("edge-rotate-glow", "release-meter-glow");
+    setTimeout(() => host.style.setProperty("--edge-rotate-glow-opacity", "0"), METER_GLOW_MS - METER_FADE_MS);
     setTimeout(() => {
-      host.classList.remove("studio-team-glow", "release-meter-glow");
-      host.style.removeProperty("--studio-team-glow-color");
-      host.style.removeProperty("--studio-team-glow-opacity");
+      host.classList.remove("edge-rotate-glow", "release-meter-glow");
+      host.style.removeProperty("--edge-rotate-glow-color");
+      host.style.removeProperty("--edge-rotate-glow-opacity");
       if (!host.getAttribute("style")) host.removeAttribute("style");
     }, METER_GLOW_MS);
   }
