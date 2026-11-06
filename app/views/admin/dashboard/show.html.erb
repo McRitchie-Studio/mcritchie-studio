@@ -1,10 +1,9 @@
 <% content_for(:title, "Dashboard — Admin") %>
 
 <div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
-  <header>
-    <h1 class="text-heading text-2xl font-bold mb-1">Admin Dashboard</h1>
-    <p class="text-muted text-sm">Users, request logs, and operator shortcuts.</p>
-  </header>
+  <%# The root of the admin crumb trail (config/navigation.yml): a title and no trail. %>
+  <%= render "studio/page_header", title: "Admin Dashboard" %>
+  <p class="text-muted text-sm -mt-4">Users, request logs, and operator shortcuts.</p>
 
   <% users = @stats.users %>
   <% sessions = @stats.sessions %>
