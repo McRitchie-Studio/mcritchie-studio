@@ -5,10 +5,13 @@
 #
 # The core product is the agent-powered backend the tiers on /packages sell
 # (config/workspace_packages.yml). This page is what plugs into it, in three
-# sections (Mr. McRitchie, 2026-10-13):
+# groups (Mr. McRitchie, 2026-10-13; folded from five to three on 2026-11-05,
+# task simplify-integrations-page-layout, so the page scrolls less):
 #
-#   integrations  free connections to accounts the CLIENT owns. We do no ongoing
-#                 work and the client pays the vendor directly.
+#   connect       free connections to accounts the CLIENT owns: everything they
+#                 sign in to or install (the Google sign-ins, Fathom, Workspace,
+#                 Discord, GitHub, Slack). We do no ongoing work and the client
+#                 pays the vendor directly.
 #   add_ons       the standard, repeatable services we set up and run, priced
 #                 (or quoted) on top of a plan.
 #   custom        rarer needs scoped one client at a time: no price line, one
@@ -20,7 +23,10 @@
 #   icon      a software key (config/workspace_icons.yml) when the entry is about
 #             ONE brand's product: the entry leads with that brand's logo.
 #             Otherwise an emoji, the neutral lead of an entry no brand owns.
-#   blurb     one customer-facing sentence: what they get, not how
+#   tagline   optional: the one short line the tile shows (about 60 characters).
+#             Blank: the tile shows the blurb.
+#   blurb     one customer-facing sentence: what they get, not how. The tile's
+#             Details disclosure shows it when a tagline stands in for it.
 #   status    live        delivered today
 #             soon        not delivered today: renders "Coming soon". Keep this
 #                         honest, the same rule as a `planned` row on /packages.
@@ -49,10 +55,10 @@
 # The button is not configured: it follows from the group and the status, so a
 # Coming soon entry can never offer to connect. Every button opens the /contact
 # form prefilled, carrying {page, item, intent} into the submission's `source`,
-# except a signed-out visitor's on a google_sign_in card, which opens the
+# except a signed-out visitor's on a Google sign-in card, which opens the
 # sign-in modal (IntegrationsController::GOOGLE_CARDS).
-#   integrations, live or on_request  "Connect"       intent connect
-#   integrations, soon                "Get notified"  intent notify
+#   connect, live or on_request       "Connect"       intent connect
+#   connect, soon                     "Get notified"  intent notify
 #   add_ons                           "Talk to us"    intent add_on
 #   custom                            "Talk to us"    intent custom
 # The ways an account can be connected (Mr. McRitchie, 2026-10-13): one
@@ -87,10 +93,10 @@ connection_methods:
     upkeep: We handle it
 
 groups:
-  - key: google_sign_in
-    title: Connect your Google
-    kicker: Sign in
-    summary: One click each. Sign in with Google and choose what your agents may read; nothing they can change, and you can disconnect any time.
+  - key: connect
+    title: Connect
+    kicker: Free
+    summary: Sign in or install once. Pay the vendor directly; disconnect any time.
     entries:
       # One person's own Google sign-in, one read each (GoogleConnection::ABILITIES).
       # Any signed-in user sees each card's Connect or Disconnect for their own
@@ -104,6 +110,7 @@ groups:
       - key: google_calendar
         name: Google Calendar
         icon: "📅"
+        tagline: "Your agents read your calendar to prepare you for meetings."
         blurb: Sign in with Google and your agents read your calendar to prepare you for meetings. Read only, so they cannot add, change or delete an event.
         status: live
         tier: pro
@@ -113,6 +120,7 @@ groups:
       - key: gmail
         name: Gmail
         icon: "✉️"
+        tagline: "Your agents read your inbox to see what needs an answer."
         blurb: Sign in with Google and your agents read your inbox to see what needs an answer. Read only, so they cannot send, change or delete mail.
         status: live
         tier: pro
@@ -122,6 +130,7 @@ groups:
       - key: google_drive
         name: Google Drive
         icon: "📁"
+        tagline: "Your agents answer from the Drive files you pick."
         blurb: Sign in with Google, then pick the Drive files your agents may read; they answer from those files and no others. Read only, so they cannot change, share or delete a file.
         status: live
         tier: pro
@@ -129,17 +138,13 @@ groups:
         abilities:
           - { key: read_drive, name: Read the Drive files you pick to answer from them, via: [sign_in] }
 
-  - key: meeting_notes
-    title: Connect your meeting notes
-    kicker: Sign in
-    summary: One click. Sign in with your notetaker and your agents read your meetings to remember what was said; nothing they can change, and you can disconnect any time.
-    entries:
       # One person's own Fathom sign-in (FathomConnection). Live on our own hub
       # (/admin/fathom); an admin sees the card's Connect or Disconnect
       # (IntegrationsController::FATHOM_CARD).
       - key: fathom
         name: Fathom
         icon: "🎙️"
+        tagline: "Your agents read your meeting notes and transcripts."
         blurb: Sign in with Fathom and your agents read your meeting notes and transcripts to remember what was said. Read only, so they cannot change or delete a recording.
         status: live
         tier: pro
@@ -147,14 +152,10 @@ groups:
         abilities:
           - { key: read_meeting_notes, name: Read your meeting notes and transcripts, via: [sign_in] }
 
-  - key: integrations
-    title: Integrations
-    kicker: Free
-    summary: Connect accounts you already own. You pay the vendor directly; we wire it in and do no ongoing work.
-    entries:
       - key: google_workspace_connect
         name: Google Workspace
         icon: google
+        tagline: "Email drafting and a knowledge base from your Drive."
         blurb: Connect your own Workspace. It powers your email drafting agent and a knowledge base built from the Drive folders you choose.
         status: live
         tier: pro
@@ -166,6 +167,7 @@ groups:
       - key: discord
         name: Discord
         icon: discord
+        tagline: "Our bot will post updates in your server and answer @‑mentions."
         blurb: "Two-way, on request: our bot will post sign-ups, errors and your agents' updates in your server, and answer when you @‑mention it."
         status: on_request
         tier: vibe
@@ -177,6 +179,7 @@ groups:
       - key: github_org
         name: GitHub
         icon: github
+        tagline: "Your app's code in your own GitHub organization."
         blurb: Your app's code lives in your own GitHub organization, for white label and full ownership.
         status: on_request
         tier: enterprise
@@ -186,6 +189,7 @@ groups:
       - key: slack
         name: Slack
         icon: slack
+        tagline: "Notifications and your agent's updates in your Slack."
         blurb: The same notifications, and your agent's updates, in your Slack workspace.
         status: soon
         connects: [app_install]
@@ -193,13 +197,14 @@ groups:
           - { key: post_updates, name: Post notifications and agent updates, via: [app_install], status: soon }
 
   - key: add_ons
-    title: Add-on services
-    kicker: We run it
+    title: We run it
+    kicker: Add-on services
     summary: We set it up and keep it running, priced on top of your plan.
     entries:
       - key: google_workspace_managed
         name: Managed Workspace
         icon: google
+        tagline: "We create and run your Google Workspace for you."
         blurb: We create and run your Google Workspace, users and settings. Connecting one you already have stays free.
         status: live
         price: "$25/month + $15/user/month"
@@ -235,27 +240,32 @@ groups:
       - key: crypto
         name: Crypto and wallets
         icon: solana
+        tagline: "Wallet sign-in, on-chain vaults and stablecoin payouts."
         blurb: Wallet sign-in, on-chain vaults and stablecoin payouts on Solana.
         status: live
       - key: extra_storage
         name: Extra storage
         icon: "🗄️"
+        tagline: "More database and file storage as your app grows."
         blurb: More database and file storage when your app outgrows its plan.
         status: on_request
       - key: ai_features
         name: AI features
         icon: "🧠"
+        tagline: "Chat, search, summaries and agents in your app."
         blurb: Chat, search, summaries and agents built into your app, on the models that fit the job.
         status: on_request
       - key: custom_connectors
         name: Custom connectors
         icon: "🔌"
+        tagline: "Your agent reads the systems you already use."
         blurb: Your agent reads the systems you already use, such as Egnyte, built for your business.
         status: soon
         connects: [sign_in, api_key]
       - key: enterprise_extras
         name: White label, domains and compliance
         icon: "🛡️"
+        tagline: "Your brand everywhere, extra domains and compliance."
         blurb: Your brand on everything, extra domains, and compliance work such as CMMC and ITAR.
         status: on_request
         tier: enterprise
