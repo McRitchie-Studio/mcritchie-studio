@@ -267,6 +267,25 @@ class NavigationTest < ActiveSupport::TestCase
     assert_nil Navigation.page(:admin_dashboard).parent, "the admin dashboard is the root"
   end
 
+  # An unknown key raises in test and draws no trail in production, so every key a view
+  # hands the crumb trail must be a page in config/navigation.yml.
+  CRUMB_KEY_PATTERNS = [
+    /studio_crumbs\((?:parent:\s*)?:(\w+)/,
+    /current_page:\s*["':](\w+)/,
+    /sub_nav:\s*\{\s*nav:\s*:\w+,\s*current:\s*:(\w+)/,
+    /page:\s*:(\w+)\s*\}/
+  ].freeze
+
+  test "[unit] every crumb key a view names is a page in the registry" do
+    keys = Dir[Rails.root.join("app/views/**/*.erb")].flat_map do |file|
+      source = File.read(file)
+      CRUMB_KEY_PATTERNS.flat_map { |pattern| source.scan(pattern).flatten.map { |key| [ key, file ] } }
+    end
+    assert_operator keys.map(&:first).uniq.size, :>=, 10, "the scan found too few keys to mean anything"
+    missing = keys.reject { |key, _| Studio.crumbs.key?(key) }
+    assert_empty missing.map { |key, file| "#{key} (#{file.delete_prefix("#{Rails.root}/")})" }
+  end
+
   test "[unit] the app's own Studio.crumbs is drawn at boot" do
     assert Studio.crumbs.key?(:deployments)
     assert_equal :admin_dashboard, Studio.crumbs.fetch(:deployments).parent
