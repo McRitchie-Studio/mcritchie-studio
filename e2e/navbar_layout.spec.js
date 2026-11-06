@@ -622,7 +622,8 @@ test("the desktop navbar collapses on the scroll timeline, with no script per fr
 
   const run = await page.evaluate(async () => {
     const h = document.querySelector("header.nav-shell");
-    const probe = [...document.querySelectorAll("h1, h2")].find((e) => !h.contains(e));
+    // Not a heading: /tasks keeps its title in the pinned page header, which moves by design.
+    const probe = [...document.querySelectorAll("h1, h2, h3, main")].find((e) => !h.contains(e) && !e.closest("[data-pin], .sticky"));
     const frame = () => new Promise((r) => requestAnimationFrame(r));
     const writes = [];
     new MutationObserver((ms) => ms.forEach((m) => writes.push(m.attributeName))).observe(h, { attributes: true, attributeFilter: ["style"] });

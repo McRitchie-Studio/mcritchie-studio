@@ -95,7 +95,28 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # why this has to happen BEFORE the geometry is certified rather than as part of the
   # click. `inline: 'nearest'` so a control inside a horizontally scrolling lane is not
   # yanked sideways as well.
-  SCROLL_INTO_VIEW_JS = "arguments[0].scrollIntoView({ block: 'center', inline: 'nearest' });".freeze
+  #
+  # A pinned stack (the navbar, the engine's sticky page header) covers the top of the
+  # view, and on a short window it reaches past the middle, so centring alone can leave
+  # the element under it. The second step centres it in the part of the view below the
+  # stack, measured from the pinned boxes in the top half after the first scroll (a sticky box reports
+  # its stuck place only once the page has scrolled). An element inside the stack is
+  # left where the first step put it.
+  SCROLL_INTO_VIEW_JS = <<~JS.freeze
+    (function (el) {
+      el.scrollIntoView({ block: 'center', inline: 'nearest' });
+      const pinned = Array.from(document.querySelectorAll('[data-pin], header.nav-shell'))
+        .filter((p) => !p.contains(el) && ['sticky', 'fixed'].includes(getComputedStyle(p).position));
+      const cover = pinned.reduce((low, p) => {
+        const r = p.getBoundingClientRect();
+        return r.height > 0 && r.top < window.innerHeight / 2 ? Math.max(low, r.bottom) : low;
+      }, 0);
+      const box = el.getBoundingClientRect();
+      if (cover > 0 && box.top < cover) {
+        window.scrollBy(0, box.top - (cover + Math.max(0, (window.innerHeight - cover - box.height) / 2)));
+      }
+    })(arguments[0])
+  JS
 
   # Arm a one-shot witness on the ELEMENT so a swallowed click is a fact this file can
   # read, not a timing assumption it has to make.
