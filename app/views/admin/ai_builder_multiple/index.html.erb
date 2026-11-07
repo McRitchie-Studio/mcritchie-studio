@@ -5,25 +5,17 @@
 <% latest_index_week = @index_weeks.first %>
 
 <section class="space-y-6">
-  <header class="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-    <div>
-      <div class="flex items-center gap-3 mb-2">
-        <%= link_to "Basement", admin_basement_path, class: "text-secondary hover:text-heading text-sm font-medium transition" %>
-        <span class="text-muted text-sm">/</span>
-        <span class="text-muted text-sm">AI Builder Multiple</span>
-      </div>
-      <h1 class="text-3xl font-extrabold text-heading">AI Builder Multiple</h1>
-      <p class="text-secondary mt-2 max-w-3xl">
-        Public GitHub commit pace backtest for tracked AI builders against prolific non-AI open-source controls.
-        This is builder activity and public build velocity only; it does not measure true productivity.
-      </p>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
-      <%= link_to "Commit Log", "#commit-log", class: "btn btn-outline btn-sm" %>
-      <%= link_to "Tracked Builders", "#tracked-builders", class: "btn btn-outline btn-sm" %>
-      <%= link_to "JSON", admin_ai_builder_multiple_path(format: :json), class: "btn btn-neutral btn-sm" %>
-    </div>
-  </header>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the crumb trail from
+      config/navigation.yml, the commit log and the builder table as anchors (places on
+      this page), and the JSON feed in the Links menu (a page elsewhere). %>
+  <%= render "studio/page_header", title: "AI Builder Multiple", crumbs: studio_crumbs(:admin_ai_builder_multiple),
+        label: "Sections",
+        anchors: [{ label: "Commit Log", href: "#commit-log" }, { label: "Tracked Builders", href: "#tracked-builders" }],
+        menu: [{ label: "JSON", href: admin_ai_builder_multiple_path(format: :json), data: { test: "ai-builder-json" } }] %>
+  <p class="text-secondary max-w-3xl">
+    Public GitHub commit pace backtest for tracked AI builders against prolific non-AI open-source controls.
+    This is builder activity and public build velocity only; it does not measure true productivity.
+  </p>
 
   <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
     <%= link_to "#tracked-builders", class: "card p-4 block hover:border-primary/40 transition" do %>

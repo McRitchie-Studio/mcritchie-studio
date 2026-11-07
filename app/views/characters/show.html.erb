@@ -2,11 +2,10 @@
     the add-a-look form and every image the character appears in. Admin only
     (CharactersController#show; #create_look re-renders it with errors). %>
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
-  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
-    <%= link_to "Characters", characters_path, class: "hover:text-primary" %>
-    <span aria-hidden="true">/</span>
-    <span class="text-heading font-bold font-mono break-all"><%= @character.slug %></span>
-  </nav>
+  <%# The engine page header: the character's name is the page's one h1, and Edit is its
+      one action (docs/PAGE_HEADER.md). The profile card below holds the rest. %>
+  <%= render "studio/page_header", title: @character.name, crumbs: studio_crumbs(parent: :characters),
+        action: { label: "Edit", href: edit_character_path(@character), data: { test: "edit-character" } } %>
 
   <%= render "characters/profile", character: @character, kit: @kit,
              avatar_url: @character.avatar_url.presence || @sheets[@character.default_appearance_slug]&.image_url %>

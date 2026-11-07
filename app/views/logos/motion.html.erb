@@ -15,7 +15,7 @@
    end %>
 <% content_for :html_theme, @theme.to_s if @theme %>
 <%= tag.div class: "max-w-6xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
-  <%= render "logos/page_header", name:, chosen:, keep: motion_params.call.except(:context), status_href: "#motion" %>
+  <%= render "logos/page_header", name:, keep: motion_params.call.except(:context), status_href: "#motion" %>
 
   <section id="motion" class="space-y-5 min-w-0 scroll-mt-4" data-test="logo-type" data-type="motion" data-layout="split" aria-label="Motion">
     <div class="grid gap-5 min-w-0 lg:grid-cols-2" data-test="logo-top">

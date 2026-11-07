@@ -75,6 +75,17 @@ module LogosHelper
   # The page params that keep the page's context and colouring, for a link or form that leaves the tab's own settings.
   def logo_page_keeps(*more) = logo_page_params.slice(:context, :colouring, :download_format, *more)
 
+  # The crumb trail over a logos page's title (studio/_page_header): the registry's trail to the
+  # Logos index (config/navigation.yml), with the Logos crumb carrying the page's context, colouring
+  # and download format, so the way back lands on the same view of the kits. `keeps` is the params
+  # it carries; a brand page's logo_page_keeps unless given.
+  def logo_crumbs(keeps = logo_page_keeps)
+    trail = studio_crumbs(parent: :logos)
+    return trail if trail.empty?
+
+    trail[0...-1] + [ trail.last.merge(href: logos_path(keeps)) ]
+  end
+
   # A brand's own colouring on a page with no ?colouring=: its Original where it has one, else Alt.
   def logo_default_colouring(logo) = logo.original? ? :original : :alt
 
