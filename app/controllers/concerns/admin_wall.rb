@@ -74,6 +74,10 @@ module AdminWall
                       reset_release rebroadcast_release_modules qa_green_release]
   }.transform_values(&:freeze).freeze
 
+  # Public actions no route draws: only the exceptions app calls them (the friendly
+  # not-found page). The route-table guards exempt these and nothing else.
+  UNROUTED_PUBLIC = %w[studio/not_found#show].freeze
+
   # controller_path => actions any visitor may reach: the pages plus the actions.
   PUBLIC = PUBLIC_PAGES.merge(PUBLIC_ACTIONS) { |_, pages, actions| (pages + actions).freeze }.freeze
 
