@@ -14,11 +14,8 @@ require_relative "../../bin/lib/sop_registry"
 # are produced by bin/install-agent-docs, and until that runs, a newly registered
 # SOP is invisible to every agent no matter how correct the source is.
 #
-# The registry is the SOP files, and an agent resolves a name with bin/sop
-# (test/docs/sop_registry_generated_test.rb). The table left AGENTS.md to hold the
-# boot budget, so this file pins that the installed entry docs tell the agent to run
-# bin/sop, that the installed fixed-path tooling carries bin/sop and resolves a name,
-# and that the installer stays in its sandbox.
+# This file pins that the installed entry docs name bin/sop, that the installed
+# fixed-path bin/sop resolves a name, and that the installer stays in its sandbox.
 #
 # SANDBOXED: bin/install-agent-docs writes to $PROJECTS_DIR *and* to $HOME/.claude
 # and $HOME/.codex (user-global skills). We point BOTH at temp dirs, so the real
