@@ -30,11 +30,18 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/agent_login_requests"
   end,
-  # The TikTok, Google and Fathom sign-ins' single-use auth code, on their callbacks only.
+  # The TikTok, Google, Fathom and QuickBooks sign-ins' single-use auth code, on their callbacks only.
   lambda do |key, value, params = nil|
     next unless key.to_s == "code" && value.is_a?(String)
 
-    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom].include?(params["controller"].to_s)
+    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom admin/quickbooks].include?(params["controller"].to_s)
+  end,
+  # The QuickBooks callback's realmId: Intuit's id for the company connected.
+  # Not a secret, but it names a client's books, so it stays out of the log.
+  lambda do |key, value, params = nil|
+    next unless key.to_s == "realmId" && value.is_a?(String)
+
+    value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "admin/quickbooks"
   end,
   # The satellite visitor's IP the agent chat API takes for its per-IP cap
   # (Api::V1::AgentChatsController): hashed there, never stored, and kept out of

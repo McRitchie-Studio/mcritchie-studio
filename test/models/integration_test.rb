@@ -162,4 +162,16 @@ class IntegrationTest < ActiveSupport::TestCase
     assert Integration.find(:stripe_connect).method_soon?("sign_in"), "Stripe is Coming soon"
     refute Integration.find(:google_workspace_managed).method_soon?("managed")
   end
+
+  test "[unit] a dark entry is Coming soon and only an admin's groups carry it" do
+    quickbooks = Integration.find(:quickbooks)
+    assert quickbooks.dark?
+    assert quickbooks.soon?
+    assert_not Integration.find(:fathom).dark?, "the control: an offered entry is not dark"
+
+    keys = ->(admin) { Integration.groups_for(admin:).flat_map(&:entries).map(&:key) }
+    assert_includes keys.(true), "quickbooks"
+    assert_not_includes keys.(false), "quickbooks"
+    assert_equal keys.(true) - %w[quickbooks], keys.(false), "nothing else moves"
+  end
 end

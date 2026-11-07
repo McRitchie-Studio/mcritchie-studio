@@ -6,14 +6,15 @@ require "support/fathom_connect_fakes"
 # renders its three groups and never scrolls sideways. Every system test signs in as
 # the admin, so the Google section carries Connect Google (the OAuth client set
 # here) and its three cards carry no contact-form Connect, nor does the Fathom
-# card (its OAuth app set here too), which carries Connect Fathom instead.
+# card (its OAuth app set here too), which carries Connect Fathom instead, nor the
+# QuickBooks card, which carries its own (disabled) Connect QuickBooks.
 class IntegrationsPageTest < ApplicationSystemTestCase
   include GoogleConnectFakes
   include FathomConnectFakes
 
   GOOGLE_CARDS = %w[google_calendar gmail google_drive].freeze
   # The admin's cards whose real Connect replaces the contact-form one, in page order.
-  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom]).freeze
+  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom quickbooks]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
   # A headless window will not shrink below about 500px, so the width is set by
@@ -91,7 +92,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     rows = page.evaluate_script(<<~JS)
       [...document.querySelectorAll("[data-test='integration-group']")].map(group => {
         const byTop = {};
-        group.querySelectorAll("[data-test='integration-entry']").forEach(card => {
+        group.querySelectorAll("[data-test='integration-entry']:not([data-dark])").forEach(card => {
           const r = card.getBoundingClientRect();
           (byTop[Math.round(r.top)] ||= []).push(Math.round(r.height));
         });
@@ -103,6 +104,9 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       assert_operator heights.first.size, :<=, 4, group
     end
     assert_equal [ 4, 4 ], rows.to_h.fetch("connect").map(&:size), "Connect is two full rows of four, no lonely tile"
+    # A dark tile (built, not offered: QuickBooks) shows only to an admin and
+    # sits after the eight; the public page's layout above never counts it.
+    assert_equal %w[quickbooks], page.evaluate_script("[...document.querySelectorAll(\"[data-test='integration-entry'][data-dark]\")].map(c => c.dataset.entry)")
     assert_equal [ 3 ], rows.to_h.fetch("add_ons").map(&:size)
   end
 

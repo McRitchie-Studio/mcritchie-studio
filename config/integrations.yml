@@ -38,6 +38,10 @@
 #   price     integrations: omitted (they are free). add_ons: a price string, or
 #             omitted for "Quote". custom: never shown.
 #   price_note optional muted line under the price
+#   dark      optional: true for an entry built but not offered yet (the vendor
+#             app is not set up). Only an admin sees its tile; a visitor and a
+#             client never do, so the public page and its layout do not move.
+#             A dark entry must be `soon`.
 #   guide     optional: a guide page (/integrations/<guide>) the button opens
 #             instead of the contact form; the guide's own button then goes to
 #             the form. One of Integration::GUIDES.
@@ -195,6 +199,24 @@ groups:
         connects: [app_install]
         abilities:
           - { key: post_updates, name: Post notifications and agent updates, via: [app_install], status: soon }
+
+      # One person's own Intuit sign-in per QuickBooks Online company
+      # (QuickbooksConnection). Built and dark on our own hub (/admin/quickbooks)
+      # until the Intuit app is set up: `dark` keeps the tile off the public
+      # page, and `soon` keeps it honest. An admin sees the card's Connect
+      # (disabled until then) or each company's Disconnect
+      # (IntegrationsController::QUICKBOOKS_CARD).
+      - key: quickbooks
+        name: QuickBooks Online
+        icon: "📒"
+        tagline: "Your agents read your company info and reports. Read only."
+        blurb: Sign in with Intuit and your agents read your QuickBooks company info and reports, such as profit and loss. Read only, so they cannot change your books.
+        status: soon
+        dark: true
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: read_reports, name: Read your company info and reports, via: [sign_in] }
 
   - key: add_ons
     title: We run it

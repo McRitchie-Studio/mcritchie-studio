@@ -1,0 +1,20 @@
+<%# Admin only (IntegrationsController#index sets the QuickBooks connections for an admin and nobody else): the hub's own QuickBooks Online companies, on the QuickBooks card's Sign in row. Each connected company with its Disconnect, then Connect QuickBooks (another company). Until the Intuit app is set on this server, Connect renders disabled. All come back to this page. No token renders. %>
+<div class="mt-1.5 flex flex-col gap-1" data-test="quickbooks-connection" data-state="<%= connections.any? ? 'connected' : 'none' %>" data-connectable="<%= connectable %>">
+  <% connections.each do |connection| %>
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-test="quickbooks-company">
+      <span class="min-w-0 text-body [overflow-wrap:anywhere]">Connected to <span class="font-medium text-heading"><%= connection.company_name %></span><% if connection.sandbox? %> <span class="text-muted">(sandbox)</span><% end %></span>
+      <%= button_to "Disconnect", admin_quickbooks_disconnect_path(connection, return_to: integrations_path), method: :delete,
+                    class: "btn btn-neutral btn-sm",
+                    form: { class: "inline-flex", data: { test: "quickbooks-disconnect", turbo_confirm: "Disconnect QuickBooks for #{connection.company_name}?" } } %>
+    </div>
+  <% end %>
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <% if connectable %>
+      <%= link_to "Connect QuickBooks", admin_quickbooks_connect_path(return_to: integrations_path),
+                  class: "btn btn-primary btn-sm", data: { test: "quickbooks-connect", turbo: false } %>
+    <% else %>
+      <button type="button" class="btn btn-primary btn-sm opacity-50 cursor-not-allowed" disabled data-test="quickbooks-connect-disabled">Connect QuickBooks</button>
+      <span class="text-muted">Not set up on this server yet</span>
+    <% end %>
+  </div>
+</div>
