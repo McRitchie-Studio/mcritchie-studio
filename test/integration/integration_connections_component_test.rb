@@ -1,6 +1,7 @@
 require "test_helper"
 require "support/google_connect_fakes"
 require "support/fathom_connect_fakes"
+require "support/quickbooks_connect_fakes"
 
 # [component] /integrations: each card with connections says, behind its
 # Details toggle, how it connects (who each way covers, its setup and its
@@ -9,14 +10,17 @@ require "support/fathom_connect_fakes"
 # connection for any signed-in user in their action row, never behind
 # Details: Connect, or the account and Disconnect (an admin's the household's,
 # a non-admin's their own); a visitor sees neither. The Fathom card, in the
-# same Connect group, does the same for an admin.
+# same Connect group, does the same for an admin, and so does the QuickBooks
+# card, whose Connect renders disabled until the Intuit app is set.
 class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
   include FathomConnectFakes
+  include QuickbooksConnectFakes
 
   teardown do
     reset_google_connect
     reset_fathom_connect
+    reset_quickbooks_connect
   end
 
   CARDS = { "google_calendar" => "calendar", "gmail" => "gmail", "google_drive" => "drive" }.freeze
@@ -383,6 +387,53 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
       assert_equal "none", fathom_slot["data-state"]
       assert_nil fathom_slot.at_css("[data-test='fathom-connect']")
+    end
+  end
+
+  def quickbooks_slot = card("quickbooks").at_css("[data-test='entry-action'] [data-test='quickbooks-connection']")
+
+  test "[component] QuickBooks card is Coming soon to visitors and shows a disabled Connect to an admin until the Intuit app is set" do
+    with_quickbooks_env(creds: false) do
+      get integrations_path
+      assert card("quickbooks").at_css("[data-test='coming-soon']"), "dark: honest Coming soon"
+      assert_equal %w[sign_in], card("quickbooks").css("[data-test='entry-method']").map { _1["data-method"] }
+      assert_equal %w[read_reports], card("quickbooks").css("[data-test='entry-ability']").map { _1["data-ability"] }
+      assert_empty css_select("[data-test='quickbooks-connection']"), "visitor"
+      assert_equal "Get notified", card("quickbooks").at_css("[data-test='entry-cta']").text.strip
+
+      log_in_as users(:viewer)
+      get integrations_path
+      assert_empty css_select("[data-test='quickbooks-connection']"), "non-admin"
+
+      log_in_as users(:alex)
+      get integrations_path
+      assert_equal "none", quickbooks_slot["data-state"]
+      assert_equal "false", quickbooks_slot["data-connectable"]
+      assert quickbooks_slot.at_css("button[data-test='quickbooks-connect-disabled'][disabled]")
+      assert_nil quickbooks_slot.at_css("a[data-test='quickbooks-connect']")
+      assert_nil card("quickbooks").at_css("[data-test='entry-cta']"), "the admin's slot replaces the contact-form CTA"
+    end
+  end
+
+  test "[component] once the Intuit app is set an admin gets Connect, and each connected company its own Disconnect" do
+    log_in_as users(:alex)
+    with_quickbooks_env do
+      get integrations_path
+      link = quickbooks_slot.at_css("a[data-test='quickbooks-connect']")
+      assert_equal "Connect QuickBooks", link.text.strip
+      assert_equal admin_quickbooks_connect_path(return_to: "/integrations"), link["href"]
+
+      first = store_quickbooks(refresh_token: "qbo-synthetic-refresh")
+      store_quickbooks(realm_id: "1234500000000002", company_name: "Other Co", environment: "production")
+      get integrations_path
+      assert_equal "connected", quickbooks_slot["data-state"]
+      assert_equal [ "Connected to Other Co", "Connected to Synthetic Co (sandbox)" ],
+                   quickbooks_slot.css("[data-test='quickbooks-company'] > span").map { _1.text.squish }
+      forms = quickbooks_slot.css("form[data-test='quickbooks-disconnect']")
+      assert_equal 2, forms.size
+      assert_includes forms.map { _1["action"] }, admin_quickbooks_disconnect_path(first, return_to: "/integrations")
+      assert quickbooks_slot.at_css("a[data-test='quickbooks-connect']"), "another company can still connect"
+      assert_no_match(Regexp.union("qbo-synthetic-refresh", REALM), response.body)
     end
   end
 end

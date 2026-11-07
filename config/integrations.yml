@@ -160,7 +160,7 @@ groups:
       - key: quickbooks
         name: QuickBooks Online
         icon: "📒"
-        tagline: "Your agents read your company info and profit and loss. Read only."
+        tagline: "Your agents read your company info and reports. Read only."
         blurb: Sign in with Intuit and your agents read your QuickBooks company info and reports, such as profit and loss. Read only, so they cannot change your books.
         status: soon
         tier: pro

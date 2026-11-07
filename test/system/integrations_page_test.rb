@@ -6,14 +6,15 @@ require "support/fathom_connect_fakes"
 # renders its three groups and never scrolls sideways. Every system test signs in as
 # the admin, so the Google section carries Connect Google (the OAuth client set
 # here) and its three cards carry no contact-form Connect, nor does the Fathom
-# card (its OAuth app set here too), which carries Connect Fathom instead.
+# card (its OAuth app set here too), which carries Connect Fathom instead, nor the
+# QuickBooks card, which carries its own (disabled) Connect QuickBooks.
 class IntegrationsPageTest < ApplicationSystemTestCase
   include GoogleConnectFakes
   include FathomConnectFakes
 
   GOOGLE_CARDS = %w[google_calendar gmail google_drive].freeze
   # The admin's cards whose real Connect replaces the contact-form one, in page order.
-  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom]).freeze
+  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom quickbooks]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
   # A headless window will not shrink below about 500px, so the width is set by
