@@ -18,6 +18,11 @@ class IntegrationsController < ApplicationController
   # The Fathom card carries the hub's own Fathom connection for an admin
   # (Admin::FathomController), in its action row, the same way.
   FATHOM_CARD = "fathom".freeze
+  # The Microsoft 365 card carries the hub's own tenant connections for an
+  # admin (Admin::MsgraphController), in its action row, the same way. It stays
+  # Coming soon for everyone else, and its Connect stays disabled until the
+  # server can take a connection.
+  MSGRAPH_CARD = "microsoft_365".freeze
 
   def index
     @groups = Integration.groups
@@ -25,6 +30,7 @@ class IntegrationsController < ApplicationController
 
     load_google_connections
     load_fathom_connection if admin?
+    load_msgraph_connections if admin?
   end
 
   # /integrations/discord — the guide the Discord card's Connect opens: what a
@@ -53,5 +59,11 @@ class IntegrationsController < ApplicationController
   def load_fathom_connection
     @fathom = { connection: FathomConnection.readable,
                 connectable: Fathom::OAuthClient.connectable? && FathomConnection.encryption_ready? }
+  end
+
+  # { connections: every readable MsgraphConnection, newest first, connectable: }.
+  def load_msgraph_connections
+    @msgraph = { connections: MsgraphConnection.readable,
+                 connectable: Msgraph::OAuthClient.connectable? && MsgraphConnection.encryption_ready? }
   end
 end

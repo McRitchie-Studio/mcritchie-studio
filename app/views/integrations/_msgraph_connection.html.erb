@@ -1,0 +1,15 @@
+<%# Admin only (IntegrationsController#index sets the Microsoft 365 connections for an admin and nobody else): the hub's own tenant connections, on the Microsoft 365 card's action row. Each connected tenant by name, and Connect when the server can take one; Connect stays a disabled button until the app registration and encryption keys are set. Disconnect and the live read live on /admin/msgraph. No tenant id or token renders. %>
+<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1" data-test="msgraph-connection" data-state="<%= connections.any? ? 'connected' : 'none' %>" data-connectable="<%= connectable %>">
+  <% if connections.any? %>
+    <span class="min-w-0 text-body [overflow-wrap:anywhere]" data-test="msgraph-tenants">Connected: <span class="font-medium text-heading"><%= connections.map(&:display_name).to_sentence %></span></span>
+    <%= link_to "Manage", admin_msgraph_path, class: "btn btn-neutral btn-sm", data: { test: "msgraph-manage" } %>
+  <% end %>
+  <% if connectable %>
+    <%= link_to "Connect Microsoft 365", admin_msgraph_connect_path(return_to: integrations_path),
+                class: "btn btn-primary btn-sm", data: { test: "msgraph-connect", turbo: false } %>
+  <% elsif connections.empty? %>
+    <button type="button" class="btn btn-neutral btn-sm opacity-60 cursor-not-allowed" disabled data-test="msgraph-connect-disabled"
+            title="Not set up on this server yet">Connect Microsoft 365</button>
+    <%= link_to "Setup", admin_msgraph_path, class: "text-muted underline", data: { test: "msgraph-setup" } %>
+  <% end %>
+</div>
