@@ -22,6 +22,8 @@ async function params(locator) {
 test("compare welding v1 and v2 with the grid on: one scale, rows lined up", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.goto("/logos");
+  // Compare kits is a page elsewhere: the header's Links menu (task admin-pages-standard-header).
+  await page.locator(".page-header .page-header-menu-button").click();
   await page.locator("[data-test='compare-link']").click();
   await page.waitForURL(/\/logos\/compare\?left=welding&right=welding_v2$/);
   await expect(page.locator("[data-test='compare-side']")).toHaveCount(2);

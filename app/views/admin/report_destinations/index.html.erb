@@ -6,12 +6,10 @@
    end %>
 <% grouped = @channels.group_by { |c| c.category_name.presence || "No category" }.map { |category, channels| [ category, channels.map { |c| [ label_for.(c), c.id ] } ] } %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="report-destinations-page">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">Report destinations</h1>
-    <p class="text-secondary mt-2">
-      Where each report posts in Discord. A CTO report posts as its CTO's own bot when that bot's token is set, else as the agents' shared bot; every other report posts as the shared bot. Pick a channel and turn it on; the report posts there once per run and pings nobody.
-    </p>
-  </div>
+  <%= render "studio/page_header", title: "Report destinations", crumbs: studio_crumbs(:admin_report_destinations) %>
+  <p class="text-secondary">
+    Where each report posts in Discord. A CTO report posts as its CTO's own bot when that bot's token is set, else as the agents' shared bot; every other report posts as the shared bot. Pick a channel and turn it on; the report posts there once per run and pings nobody.
+  </p>
 
   <div class="card p-4 text-sm flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3" data-test="channel-directory">
     <div class="min-w-0 space-y-1">

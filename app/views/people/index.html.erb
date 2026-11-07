@@ -18,8 +18,9 @@
     return count;
   }
 }">
-  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
-    <h2 class="text-2xl font-bold text-heading">People</h2>
+  <%= render "studio/page_header", title: "People", crumbs: studio_crumbs(:people) %>
+  <%# The search and its count filter this page in place, so they stand under the header, not in it. %>
+  <div class="flex flex-col sm:flex-row items-start sm:items-center justify-end gap-3 mt-4 mb-4">
     <div class="flex items-center gap-3 w-full sm:w-auto">
       <input type="text"
              x-model.debounce.300ms="search"

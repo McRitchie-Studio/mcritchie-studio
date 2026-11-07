@@ -1,10 +1,10 @@
 <% content_for(:title, "Duplicate Scanner — McRitchie Studio") %>
 
 <section class="max-w-4xl mx-auto">
-  <div class="flex items-center justify-between mb-6">
-    <h2 class="text-2xl font-bold text-heading">Duplicate Scanner</h2>
-    <a href="/people/merge" class="btn btn-outline btn-sm">Merge Tool</a>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the merge tool is a page elsewhere, in the Links menu. %>
+  <%= render "studio/page_header", title: "Duplicate Scanner", crumbs: studio_crumbs(:duplicates_people),
+        menu: [{ label: "Merge Tool", href: merge_people_path, data: { test: "duplicates-link-merge" } }] %>
+  <div class="mb-6"></div>
 
   <% if @duplicate_groups.empty? %>
     <div class="empty-state">

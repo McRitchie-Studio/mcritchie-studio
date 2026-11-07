@@ -22,15 +22,18 @@
     and again on a Turbo visit (app/javascript/logo_gallery.js, data-logo-theme). %>
 <% content_for :html_theme, @theme.to_s if @theme %>
 <%= tag.div class: "max-w-7xl mx-auto px-4 py-6 space-y-5", data: { logo_theme: @theme } do %>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md). Compare kits is a page elsewhere, in the
+      Links menu: two kits side by side (task logo-compare-and-original-edits), opening on Commercial Welding
+      v1 and v2. Context, Colouring and the download format are forms that change how this page draws, which
+      fit none of the header's four kinds of control, so they stand on the line under the row. %>
+  <% left, right = LogoComparison.default_pair %>
+  <%= render "studio/page_header", title: "Logos", crumbs: studio_crumbs(:logos), data: { test: "logo-header" },
+        menu: [{ label: "Compare kits", href: logos_compare_path({ left:, right: }.merge(logo_page_keeps)), data: { test: "compare-link" } }] %>
   <div class="space-y-1">
-    <div class="flex flex-wrap items-center gap-3">
-      <h1 class="text-xl sm:text-2xl font-bold text-heading mr-auto">Logos</h1>
+    <div class="flex flex-wrap items-center gap-3" data-test="logo-header-bar">
       <%= render "context_form", url: logos_path %>
       <%= render "colouring_control", path: ->(page) { logos_path(page) }, chosen: @colouring_param || :original, default: :original %>
       <%= render "download_format_control", path: ->(page) { logos_path(page) } %>
-      <%# Two kits side by side (task logo-compare-and-original-edits), opening on Commercial Welding v1 and v2. %>
-      <% left, right = LogoComparison.default_pair %>
-      <%= link_to "Compare kits", logos_compare_path({ left:, right: }.merge(logo_page_keeps)), class: "btn btn-sm btn-neutral focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!", data: { test: "compare-link" } %>
     </div>
     <p class="text-sm text-secondary">Each brand's icon, Navbar Logo and Stacked Logo, drawn from its icon and its name. Open a brand to see every version and how it was built.</p>
     <p class="text-2xs text-muted" data-test="kit-note">A brand's Icon, Navbar and Stacked Logos are its saved kit choices where it has them (marked Saved), else its defaults, each drawn exactly as its brand page draws it. With a saved icon, all three draw it; without one, a saved Navbar or Stacked Logo keeps the icon it was saved with. Choose and save them on the brand's page.</p>

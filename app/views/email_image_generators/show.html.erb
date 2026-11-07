@@ -7,21 +7,12 @@
 <% character = @page.character %>
 <% prompt_config = { template: @page.prompt_template, blanks: EmailImages::GeneratorPrompt::BLANKS } %>
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
-  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
-    <%= link_to "Email images", email_images_path, class: "hover:text-primary" %>
-    <span aria-hidden="true">/</span>
-    <%= link_to "Generator", email_image_generators_path, class: "hover:text-primary" %>
-    <span aria-hidden="true">/</span>
-    <span class="text-heading font-bold font-mono break-all"><%= kit.key %></span>
-  </nav>
-
-  <div class="flex flex-wrap items-start gap-3">
-    <div class="min-w-0">
-      <h1 class="text-xl sm:text-2xl font-bold text-heading break-words"><%= kit.label %> email images</h1>
-      <p class="text-sm text-secondary">Copy the prompt below into a Claude Code session; the agent runs the <span class="font-mono"><%= EmailImages::GeneratorPrompt::SOP %></span> SOP with you.</p>
-    </div>
-    <%= link_to "Brand kit", email_brand_kit_path(kit.key), class: "btn btn-sm btn-neutral sm:ml-auto", data: { test: "brand-kit-link" } %>
-  </div>
+  <%# The engine page header: the kit's key ends the trail, and its brand kit is a page
+      elsewhere, in the Links menu (docs/PAGE_HEADER.md). %>
+  <%= render "studio/page_header", title: "#{kit.label} email images", crumb_label: kit.key,
+        crumbs: studio_crumbs(parent: :email_image_generators),
+        menu: [{ label: "Brand kit", href: email_brand_kit_path(kit.key), data: { test: "brand-kit-link" } }] %>
+  <p class="text-sm text-secondary">Copy the prompt below into a Claude Code session; the agent runs the <span class="font-mono"><%= EmailImages::GeneratorPrompt::SOP %></span> SOP with you.</p>
 
   <div class="grid gap-4 lg:grid-cols-5 lg:items-start">
     <% if character %>
