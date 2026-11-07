@@ -95,11 +95,7 @@ class ReleaseGemAllocationTest < Minitest::Test
   # `changelog:` is nil by DEFAULT — a repo tracking no CHANGELOG.md — so every
   # test written before the roll landed keeps exercising exactly the tree it was
   # written against, and the absent-file path stays covered by all of them.
-  #
-  # `fragments:` is nil by DEFAULT too — a tree with no changelog.d/ and no compiler, the
-  # shape of every engine SHA before /tasks/changelog-fragments. A Hash writes each
-  # { name => body } into changelog.d/ beside a README and installs FRAGMENT_COMPILER as
-  # bin/changelog-compile.
+  # `fragments:` (a { name => body } Hash) adds changelog.d/ and FRAGMENT_COMPILER.
   def build_projects_root(root, version: "0.4.0", tracked_lock: true, changelog: nil, fragments: nil)
     origin = File.join(root, "studio-engine-origin.git")
     repo   = File.join(root, "studio-engine")
