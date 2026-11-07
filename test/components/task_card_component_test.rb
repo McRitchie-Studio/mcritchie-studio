@@ -83,7 +83,7 @@ class TaskCardComponentTest < ActionView::TestCase
       card = card_for(task)
       assert card, "#{stage}: the root is #card-<slug>"
       assert_includes card["class"].split, "kanban-card", "#{stage}: the drag board finds it by .kanban-card"
-      assert_equal [task.slug, stage, "carl", "mcritchie-studio", "/tasks/#{task.slug}"],
+      assert_equal [task.slug, stage, "carl", "mcritchie-studio", "/devops/tasks/#{task.slug}"],
                    %w[data-slug data-stage data-agent data-apps data-href].map { |name| card[name] }
       assert_equal stage != "archived", card.css("[data-test='task-card-archive']").any?,
                    "#{stage}: only an archived card drops the archive action"
@@ -114,13 +114,13 @@ class TaskCardComponentTest < ActionView::TestCase
 
   test "test_waiting_approval: the request shows its bar, its countdown and the amber glow" do
     task = Task.create!(title: "Component approval card", stage: "building",
-                        metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3011/tasks" } })
+                        metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3011/devops/tasks" } })
 
     render_task_card(task.reload, crew_board: :build)
 
     card = card_for(task)
     assert_equal "approval", card["data-stage-glow"]
-    assert_equal "/tasks/#{task.slug}/local_review", card.css("[data-test='operator-approval-waiting']").first["href"]
+    assert_equal "/devops/tasks/#{task.slug}/local_review", card.css("[data-test='operator-approval-waiting']").first["href"]
     assert_equal "approval", card.css("[data-test='task-window-chip']").first["data-window-kind"]
   end
 

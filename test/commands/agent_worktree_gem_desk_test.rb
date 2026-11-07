@@ -104,7 +104,7 @@ class AgentWorktreeGemDeskTest < ActiveSupport::TestCase
     out, err, status = agent_worktree("bind-task", "solana-studio", TASK, "gem-task")
 
     assert status.success?, "#{out}\n#{err}"
-    assert_includes out, "task url: https://mcritchie.studio/tasks/gem-task"
+    assert_includes out, "task url: https://mcritchie.studio/devops/tasks/gem-task"
     context = JSON.parse(File.read(File.join(desk, ".agent-context.json")))
     assert_equal "gem-task", context.fetch("task_record_slug")
     assert_nil context.fetch("app_port")

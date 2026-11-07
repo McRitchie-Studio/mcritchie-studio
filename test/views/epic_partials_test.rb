@@ -17,7 +17,7 @@ class EpicPartialsViewTest < ActionView::TestCase
     render partial: "epics/epic_row", locals: { epic: summary }
 
     assert_select "[data-test='epic-row'][data-epic='devops-v3']"
-    assert_select "a[data-test='epic-row-link'][href='/epics/devops-v3']", text: "devops-v3"
+    assert_select "a[data-test='epic-row-link'][href='/devops/epics/devops-v3']", text: "devops-v3"
     stages = css_select("[data-test='epic-stage-count']").map { |el| el["data-stage"] }
     assert_equal %w[designed building shipped], stages
     assert_select "[data-test='epic-stage-count'][data-stage='shipped']", text: /Shipped\s*2/

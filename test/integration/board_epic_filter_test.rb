@@ -4,7 +4,7 @@ require "test_helper"
 require "turbo/broadcastable/test_helper"
 
 # [integration] the epic chip on BOTH render paths of the live card — the full
-# page (/tasks and /deployments) and the turbo-stream push DeploymentsBroadcaster
+# page (/devops/tasks and /deployments) and the turbo-stream push DeploymentsBroadcaster
 # sends — and the `?epic=<slug>` filter the chip links to, on both boards.
 #
 # A live partial renders from two paths, and a chip that shows on one and not the
@@ -28,7 +28,7 @@ class BoardEpicFilterTest < ActionDispatch::IntegrationTest
     get tasks_path
     assert_response :success
 
-    assert_select "#card-#{@member.slug} [data-test='task-epic-chip'][href='/tasks?epic=devops-v3']", text: "devops-v3"
+    assert_select "#card-#{@member.slug} [data-test='task-epic-chip'][href='/devops/tasks?epic=devops-v3']", text: "devops-v3"
     assert_select "#card-#{@plain.slug} [data-test='task-epic-chip']", count: 0
     assert_select "[data-test='board-epic-filter']", { count: 0 }, "no banner on the unfiltered board"
   end
@@ -39,7 +39,7 @@ class BoardEpicFilterTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
 
-    assert_select "#card-#{@member.slug} [data-test='task-epic-chip'][href='/tasks?epic=devops-v3']", text: "devops-v3"
+    assert_select "#card-#{@member.slug} [data-test='task-epic-chip'][href='/devops/tasks?epic=devops-v3']", text: "devops-v3"
   end
 
   # --- render path 2: the turbo-stream push ------------------------------------
@@ -51,7 +51,7 @@ class BoardEpicFilterTest < ActionDispatch::IntegrationTest
     assert_equal "card-#{@member.slug}", streams.first["target"]
     html = streams.first.to_html
     assert_includes html, "data-test=\"task-epic-chip\"", "the live re-render must wear the chip the page render wears"
-    assert_includes html, "/tasks?epic=devops-v3"
+    assert_includes html, "/devops/tasks?epic=devops-v3"
   end
 
   test "[integration] the broadcast card of a no-epic task carries no chip" do
@@ -71,7 +71,7 @@ class BoardEpicFilterTest < ActionDispatch::IntegrationTest
     assert_select "#card-#{@other.slug}", count: 0
     assert_select "#card-#{@plain.slug}", count: 0
     assert_select "[data-test='board-epic-filter'][data-epic='devops-v3'] [data-test='task-epic-chip']", text: "devops-v3"
-    assert_select "[data-test='board-epic-filter'] a[data-test='board-epic-filter-clear'][href='/tasks']"
+    assert_select "[data-test='board-epic-filter'] a[data-test='board-epic-filter-clear'][href='/devops/tasks']"
   end
 
   test "[integration] the filter matches through the same normalization the write used" do
@@ -92,7 +92,7 @@ class BoardEpicFilterTest < ActionDispatch::IntegrationTest
 
     assert_select "#card-#{@member.slug}", 1
     assert_select "#card-#{@other.slug}", count: 0
-    assert_select "[data-test='board-epic-filter'] a[data-test='board-epic-filter-clear'][href='/deployments']"
+    assert_select "[data-test='board-epic-filter'] a[data-test='board-epic-filter-clear'][href='/devops']"
   end
 
   # A filter that resolved to "everything" would read as a working filter.

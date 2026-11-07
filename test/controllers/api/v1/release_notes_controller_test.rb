@@ -38,7 +38,7 @@ module Api
         assert_equal false, body.dig("data", "delivered")
         assert_equal true, body.dig("data", "dry_run")
         assert_includes body.dig("data", "message"), "🚀 Production deployed: McRitchie Studio v71 (ef693ab)"
-        assert_includes body.dig("data", "message"), "• [Dynamic sticky table propagation](https://mcritchie.studio/tasks/task-ddd444)"
+        assert_includes body.dig("data", "message"), "• [Dynamic sticky table propagation](https://mcritchie.studio/devops/tasks/task-ddd444)"
       end
 
       test "delivers rich embeds when not a dry run" do

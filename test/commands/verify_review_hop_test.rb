@@ -79,7 +79,7 @@ class VerifyReviewHopTest < Minitest::Test
       path = target.split("?").first
 
       case
-      when path == "/tasks/#{SLUG}/local_review"
+      when path == "/devops/tasks/#{SLUG}/local_review"
         cta_response
       when path == "/_studio/local_review"
         mint_response(target)
@@ -100,7 +100,7 @@ class VerifyReviewHopTest < Minitest::Test
 
     def cta_response
       case @scenario
-      when :dead_end then redirect("#{base}/tasks/#{SLUG}")
+      when :dead_end then redirect("#{base}/devops/tasks/#{SLUG}")
       when :cta_404 then "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
       else redirect("#{base}/_studio/local_review?return_to=#{CGI.escape(REVIEW_PATH)}")
       end
@@ -180,7 +180,7 @@ class VerifyReviewHopTest < Minitest::Test
     assert(report["legs"].all? { |l| l["ok"] }, report.inspect)
   end
 
-  # [integration] the hyphen spelling (/tasks/:slug/local-review) 404s
+  # [integration] the hyphen spelling (/devops/tasks/:slug/local-review) 404s
   def test_cta_404_is_a_failure
     report, status = run_hop(scenario: :cta_404)
 

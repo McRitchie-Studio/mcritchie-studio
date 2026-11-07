@@ -34,7 +34,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # Archive/delete are the OUTER taskBoardChrome writes (the app half of the board
     # primitive rebase), hitting the SHARED task JSON routes — no per-action archive
     # endpoint: PATCH stage=archived, DELETE the task.
-    assert_includes response.body, "fetch('/tasks/' + slug + '.json'"
+    assert_includes response.body, "fetch('/devops/tasks/' + slug + '.json'"
     assert_includes response.body, "method: 'PATCH'"
     assert_includes response.body, "method: 'DELETE'"
     # Distinct exit animations: the app passes a distinct kind to the studio/board

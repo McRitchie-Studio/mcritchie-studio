@@ -274,7 +274,7 @@ class ChangeBuildsTest < ActiveSupport::TestCase
     end
     line = AgentMessage.find_by!(external_id: "change-build:combine-admin-links:submitted")
     assert_equal "Submitted for review, task `combine-admin-links`. https://github.com/McRitchie-Studio/mcritchie-studio/pull/9 · " \
-                 "#{AgentProposal::BOARD_URL}/tasks/combine-admin-links", line.response_text
+                 "#{AgentProposal::BOARD_URL}/devops/tasks/combine-admin-links", line.response_text
   end
 
   test "a card the launcher never started posts nothing at submitted; a web card's submitted line names no PR" do
