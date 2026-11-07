@@ -22,3 +22,26 @@ namespace :ci do
          "#{result.unreadable} unreadable (last #{days}d)")
   end
 end
+
+namespace :ci do
+  namespace :causes do
+    # A SAME-SHA RED THEN GREEN IS A DEFECT WITH A CAUSE (Alex McRitchie, 2026-11-06).
+    # The ingest files the cause cards live (GithubWorkflowRunIngestJob); this sweep
+    # files them from CI HISTORY, for a repo or a window the webhook did not see.
+    # Thin wrapper; the logic and its tests live in Ci::CauseSweep. Idempotent: an
+    # occurrence already on a card is not folded twice.
+    #
+    #   REPO=McRitchie-Studio/mcritchie-studio   the repo to read (required)
+    #   DAYS=14                                  how far back
+    #   DRY_RUN=1                                list the flips, enqueue nothing
+    desc "File CI cause cards for every same-SHA red then green in a repo's recent history"
+    task sweep: :environment do
+      repo = ENV.fetch("REPO")
+      days = ENV.fetch("DAYS", "14").to_i
+      dry_run = ENV["DRY_RUN"].present?
+      flips = Ci::CauseSweep.call(repo: repo, days: days, dry_run: dry_run)
+      flips.each { |f| puts "#{f[:workflow]} #{f[:sha][0, 8]} red #{f[:red][:run_id]}/#{f[:red][:attempt]} green #{f[:green][:run_id]}" }
+      puts "ci:causes:sweep#{' (DRY RUN)' if dry_run}: #{flips.size} flip(s) in #{repo} over #{days}d#{dry_run ? '' : ', cards enqueued'}"
+    end
+  end
+end

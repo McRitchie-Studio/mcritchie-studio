@@ -372,4 +372,40 @@ class GithubWorkflowRunIngestJobTest < ActiveJob::TestCase
     end
     assert_equal JOB_ID.to_s, ErrorLog.order(:id).last.target_name
   end
+
+  # ── a same-SHA red then green files cause cards (task deterministic-ci) ──
+  test "[unit] a re-run that passes enqueues the cause cards for the attempt that failed" do
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 1)
+
+    assert_enqueued_with(job: CiCauseCardJob, args: ["mcritchie/mcritchie-studio", RUN_ID, 1, RUN_ID, 2]) do
+      ingest(status: "completed", conclusion: "success", "run_attempt" => 2)
+    end
+  end
+
+  test "[unit] a second run at the same SHA that passes enqueues the cards for the red run" do
+    ingest(status: "completed", conclusion: "failure", run_id: 111, "run_attempt" => 1)
+
+    assert_enqueued_with(job: CiCauseCardJob, args: ["mcritchie/mcritchie-studio", 111, 1, 222, 1]) do
+      ingest(status: "completed", conclusion: "success", run_id: 222, "run_attempt" => 1)
+    end
+  end
+
+  test "[unit] a green with no red before it, a red alone, or a cancel files nothing" do
+    assert_no_enqueued_jobs(only: CiCauseCardJob) do
+      ingest(status: "completed", conclusion: "success", run_id: 301)
+      ingest(status: "completed", conclusion: "failure", run_id: 302, head_sha: "other")
+      ingest(status: "completed", conclusion: "cancelled", run_id: 303, head_sha: "third", "run_attempt" => 1)
+      ingest(status: "completed", conclusion: "success", run_id: 303, head_sha: "third", "run_attempt" => 2)
+    end
+  end
+
+  test "[unit] a re-delivered green enqueues nothing new for its own run" do
+    ingest(status: "completed", conclusion: "failure", "run_attempt" => 1)
+    ingest(status: "completed", conclusion: "success", "run_attempt" => 2)
+
+    assert_no_enqueued_jobs(only: CiCauseCardJob) do
+      ingest(status: "completed", conclusion: "success", "run_attempt" => 2)
+    end
+  end
+
 end
