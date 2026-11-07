@@ -24,7 +24,7 @@
 //
 // NOT @qa-readonly: it writes requests and agent messages. Nothing here talks to Claude.
 const { test, expect } = require("@playwright/test");
-const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
+const { blockThirdPartyRequests, capturedMagicLink, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 const { CONTRAST, eachTheme, TEXT_ON_SURFACE } = require("./contrast");
 
 // What a visitor sees: signed out, not the suite's default admin session.
@@ -361,12 +361,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
     modal.getByRole("button", { name: "Email me a sign-in link" }).click(),
   ]);
 
-  let link;
-  for (let attempt = 0; attempt < 10 && !link; attempt += 1) {
-    const inbox = await page.request.get("/_studio/local_emails.json").then((r) => r.json());
-    link = inbox.deliveries.find((d) => d.to === email && d.action_url);
-    if (!link) await page.waitForTimeout(200);
-  }
+  const link = await capturedMagicLink(page, email);
   expect(link, "the sign-in email was sent").toBeTruthy();
 
   // The emailed link signs in and lands on the app being built: the draft is
