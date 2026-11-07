@@ -213,7 +213,11 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    (studio-engine and solana-studio; turf-vault is under `apps`, never versioned). Each
    gets one of `Release::GemVersion.allocation`'s three outcomes:
 
-   - **ALLOCATE** — version written and bucket rolled, in one commit.
+   - **ALLOCATE** — version written and bucket rolled, in one commit. When the gem
+     carries `changelog.d/` and `bin/changelog-compile` (studio-engine), prepare first
+     compiles the fragments into `## Unreleased` and deletes them in the same commit
+     (`compiled N fragment(s)`); a fragment that does not compile refuses the sweep
+     with nothing written: fix it on the gem's `accepted` and re-run.
      `Release::Changelog.roll` writes `## <version> — <date>` in the file's own heading
      form directly under `## Unreleased` and moves the entries beneath it; an empty
      bucket still gets its heading (`no entries — the heading records the release`). A

@@ -21,6 +21,13 @@ test("a short thread keeps the full head however many messages were sent", () =>
   assert.equal(sizeFor("full", { turns: 0, content: 900, room: 700, overflowing: true }, SHARES), "full", "an empty thread never compacts");
 });
 
+test("under a page header, a shell too tall for its room steps on even with no thread (task app-page-tabs)", () => {
+  assert.equal(sizeFor("full", { turns: 0, content: 0, room: 500, cramped: true }, SHARES), "medium");
+  assert.equal(sizeFor("medium", { turns: 0, content: 0, room: 500, cramped: true }, SHARES), "compact");
+  assert.equal(sizeFor("compact", { turns: 0, content: 0, room: 500, cramped: true }, SHARES), "compact", "compact is the last step");
+  assert.equal(sizeFor("full", { turns: 0, content: 0, room: 500, cramped: false }, SHARES), "full", "control: it fits, so it stays");
+});
+
 test("past the medium share the head shrinks; past the compact share it is one line", () => {
   assert.equal(sizeFor("full", { turns: 1, content: 0.29 * 700, room: 700 }, SHARES), "full");
   assert.equal(sizeFor("full", { turns: 1, content: 0.31 * 700, room: 700 }, SHARES), "medium");

@@ -151,7 +151,8 @@ class BuildControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='build-launch']", 0
     assert_select "[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']", text: /Coach\s+· CTO of League Hub/
     assert_select "[data-test='agent-portrait'][style*='view-transition-name: agent-portrait'] [data-test='client-cto-portrait'][src*='cto_portraits/harbor']"
-    assert_select "[data-test='cto-chat-head'][data-client-cto='true'] h1", text: "League Hub"
+    assert_select "[data-test='cto-chat-head'][data-client-cto='true']"
+    assert_select "[data-test='app-page-header'] h1", text: /League Hub/
     assert_select "[data-test='devops-stage'][data-stage='building'][data-state='live']", 1, "the new build task is designed: Building, live"
     assert_select "[data-test='cto-chat-handover']", text: /Alex\s+Meet Coach, your CTO. I'll hand you over./
     # The CTO's opening message is there on arrival: code wrote it, no model ran, nothing is typing.

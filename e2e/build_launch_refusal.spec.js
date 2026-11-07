@@ -22,10 +22,9 @@ test("a refused Build My App shows its reason and next step on the summary card,
   await loginWithMagicLink(page, "refused-launch@test.com");
   await page.goto("/build/e2e-refused-launch-draft");
   const onboarding = page.getByRole("dialog", { name: "onboarding first name" });
-  if (await onboarding.isVisible().catch(() => false)) {
-    await onboarding.getByRole("button", { name: "Skip for now" }).click();
-    await expect(onboarding).toBeHidden();
-  }
+  // The seed names this owner "Pat Planner", so the first-name ask never opens.
+  // Asserted, not branched on (lint: bin/lib/e2e_race_patterns.rb).
+  await expect(onboarding, "Pat Planner has a first name; the ask never opens").toHaveCount(0);
 
   const summary = page.locator("[data-test='build-card-summary']");
   await expect(summary).toHaveAttribute("data-ready", "true");

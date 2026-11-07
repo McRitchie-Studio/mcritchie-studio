@@ -1,0 +1,111 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/agents-backup — the nightly encrypted backup of /Users/alex/projects/.agents
+# and Claude Code's memory folder into the private R2 bucket
+# mcritchie-agents-backup. The nightly launchd job
+# (config/launchd/studio.mcritchie.agents-backup.plist) calls `run`. Logic,
+# exclusions and the bucket layout: bin/lib/agents_backup.rb. Operator steps:
+# docs/agents/agents/steffon/sops/r2-backup.md § "Agent state backup".
+
+require_relative "lib/cli_arg_guard"
+require_relative "lib/agents_backup"
+require_relative "lib/op_vaults"
+require_relative "lib/op_meter" # every op read bounded and metered (OpMeter.popen)
+
+USAGE = <<~TXT
+  usage: bin/agents-backup plan [<source>]
+         bin/agents-backup run [--dry-run]
+         bin/agents-backup restore <source> <path> --to <dir>
+         bin/agents-backup status
+
+  plan     list the files a run would copy (local only: no credential, no network).
+  run      copy every planned file, encrypted, to current/<source>/ in the bucket,
+           archiving what it overwrote under archive/<stamp>/; then delete archive
+           stamps older than #{AgentsBackup::ARCHIVE_DAYS} days. Exits 1 unless every source copied.
+           --dry-run: rclone reports, nothing is written.
+  restore  copy one backed-up file into <dir> (never back in place).
+  status   the last run's receipt.
+
+  Sources: #{AgentsBackup::SOURCE_NAMES.join(', ')}. Credentials: 1Password item
+  #{AgentsBackup::ITEM} in the agent vault (op on PATH, OP_SERVICE_ACCOUNT_TOKEN set).
+TXT
+
+COMMANDS = %w[plan run restore status].freeze
+args = CliArgGuard.guard!(
+  ARGV,
+  program: "agents-backup",
+  usage: USAGE,
+  bool: %w[--dry-run],
+  value: %w[--to],
+  allow_positional: true,
+  consequence: "NOTHING ran: no copy, no restore, no receipt."
+)
+command, *rest = args.positionals
+unless COMMANDS.include?(command)
+  warn(USAGE)
+  exit 2
+end
+
+RECEIPT_DIR = File.join(Dir.home, ".agent-state-backup")
+
+# The default roots. READ-ONLY: a run copies from them and never writes them.
+def default_sources
+  { "agents" => File.join(ENV.fetch("CLAUDE_PROJECTS_DIR", File.join(Dir.home, "projects")), ".agents"),
+    "memory" => File.join(Dir.home, ".claude/projects/-Users-alex/memory") }
+end
+
+sources = AgentsBackup.sources(default_sources)
+
+def creds!
+  fields = %w[access-key-id secret-access-key endpoint crypt-password crypt-salt]
+  values = fields.to_h do |field|
+    value = OpMeter.popen({}, ["op", "read", OpVaults.ref(AgentsBackup::ITEM, field)],
+                          via: "agents-backup", err: File::NULL).to_s.strip
+    abort("agents-backup: could not read #{field} from #{AgentsBackup::ITEM} — NOTHING ran.") if value.empty?
+    [field, value]
+  end
+  %w[crypt-password crypt-salt].each do |field|
+    obscured, status = Open3.capture2("rclone", "obscure", "-", stdin_data: values.delete(field))
+    abort("agents-backup: rclone obscure failed — NOTHING ran.") unless status.success?
+    values["#{field}-obscured"] = obscured.strip
+  end
+  AgentsBackup.rclone_env(values)
+end
+
+case command
+when "plan"
+  abort(USAGE) if rest.length > 1 || args.bool?("--dry-run") || args.first("--to")
+  picked = rest.empty? ? sources : sources.slice(*rest)
+  abort("agents-backup: unknown source #{rest.first.inspect}") if picked.empty?
+  picked.each do |name, root|
+    files = AgentsBackup.plan(root)
+    puts("# #{name} #{root}: #{files.length} file(s)")
+    files.each { |f| puts("#{name}/#{f}") }
+  end
+when "run"
+  abort(USAGE) unless rest.empty? && args.first("--to").nil?
+  receipt = AgentsBackup::Runner.new(env: creds!, sources: sources).run(dry_run: args.bool?("--dry-run"))
+  unless receipt["dry_run"]
+    FileUtils.mkdir_p(RECEIPT_DIR, mode: 0o700)
+    File.write(File.join(RECEIPT_DIR, "last-run.json"), JSON.pretty_generate(receipt))
+  end
+  summary = receipt["sources"].map { |n, s| "#{n} #{s['files']} file(s) exit #{s['rclone_exit']}" }.join(", ")
+  if receipt["ok"]
+    puts("agents-backup: ok #{receipt['stamp']}#{' (dry run)' if receipt['dry_run']}: #{summary}; " \
+         "#{receipt['collected'].length} archive stamp(s) collected")
+    exit 0
+  end
+  warn("agents-backup: FAILED #{receipt['stamp']}: #{summary}")
+  exit 1
+when "restore"
+  dir = args.first("--to")
+  abort(USAGE) unless rest.length == 2 && dir && !args.bool?("--dry-run")
+  target, rc = AgentsBackup::Runner.new(env: creds!, sources: sources).restore(rest[0], rest[1], dir)
+  abort("agents-backup: restore FAILED (rclone exit #{rc})") unless rc.zero?
+  puts("agents-backup: restored #{rest[0]}/#{rest[1]} to #{target}")
+when "status"
+  path = File.join(RECEIPT_DIR, "last-run.json")
+  abort("agents-backup: no run recorded at #{path}") unless File.exist?(path)
+  puts(File.read(path))
+end
