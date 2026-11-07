@@ -37,9 +37,11 @@ test.describe("QA read-only smoke @qa-readonly", () => {
     await expect(page.locator('input[name="email"]')).toBeVisible();
   });
 
-  test("devops routes are removed @qa-readonly", async ({ request }) => {
-    const response = await request.get("/devops");
-    expect(response.status()).toBe(404);
+  // /devops is the walled board home since devops-namespace (2026-11-07); the retired
+  // DevOps cycle page under it stays gone.
+  test("the retired devops cycle page stays removed; /devops is walled @qa-readonly", async ({ request }) => {
+    const home = await request.get("/devops", { maxRedirects: 0 });
+    expect(home.status()).toBe(302);
 
     const cycle = await request.get("/devops/cycle");
     expect(cycle.status()).toBe(404);
