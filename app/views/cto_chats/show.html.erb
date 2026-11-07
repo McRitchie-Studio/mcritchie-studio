@@ -34,6 +34,6 @@
       </p>
     <% end %>
   <% end %>
-  <%= render "agent_chats/shell", page: "app", head: head, status: status, chat: chat, turns: (@messages.size if @available).to_i %>
+  <%= render "agent_chats/shell", page: "app", head: head, status: status, chat: chat, turns: (@messages.size if @available).to_i, under_header: true %>
   <%= render "cto_chats/avatar_picker", app: @app, app_cto: @cto.app_cto if @avatar_owner %>
 </div>

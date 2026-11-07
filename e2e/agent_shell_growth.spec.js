@@ -58,6 +58,10 @@ async function measure(page) {
     return {
       size: shell.dataset.shellSize,
       share: shell.getBoundingClientRect().height / window.innerHeight,
+      // The shell against the room below where it starts: 1 when it ends at the window's
+      // bottom. The app chat sits under the app page's header (task app-page-tabs), so its
+      // share of the whole window is smaller by the header's height.
+      fill: shell.getBoundingClientRect().height / (window.innerHeight - shell.getBoundingClientRect().top),
       head: head.height,
       composerInView: box.top >= 0 && box.bottom <= window.innerHeight + 1,
       // The thread ends where the chat box starts: nothing hides behind the box.
@@ -173,9 +177,9 @@ test("the CTO chat grows the same way: compact head, window-tall thread, chat bo
     await send(page, `Growth check ${Date.now()} ${i}: ${"a longer line of text ".repeat(5)}`);
   }
   await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "compact");
-  await page.waitForTimeout(300);
+  await expect.poll(async () => (await measure(page)).fill, { message: "the shell fills the window below the tab header" }).toBeGreaterThan(0.95);
   const grown = await measure(page);
-  expect(grown.share).toBeGreaterThan(0.75);
+  expect(grown.share).toBeGreaterThan(0.6);
   expect(grown.share).toBeLessThanOrEqual(1.0);
   expect(grown.composerInView).toBe(true);
   expect(grown.threadClear).toBe(true);

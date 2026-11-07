@@ -113,10 +113,18 @@ function keepLogAtEnd(shell) {
   if (log) stickIfFollowing(log);
 }
 
-// The chat box in the window: the page scrolls only as far as it must.
+// The chat box in the window: the page scrolls only as far as it must. Under a
+// page header (the app page's Chat tab) a window shorter than the shell's floor
+// (agent_shell.css) leaves the shell running past the bottom, where the sticky
+// chat box would sit over the thread's end: the page scrolls the shell's end
+// into view first.
 function keepComposerInView(shell) {
   const form = shell.querySelector("[data-cto-chat-form], [data-build-first-form]");
   if (!form) return;
+  if (shell.hasAttribute("data-shell-under-header")) {
+    const past = shell.getBoundingClientRect().bottom - window.innerHeight;
+    if (past > 1) window.scrollBy(0, Math.ceil(past));
+  }
   const box = form.getBoundingClientRect();
   if (box.bottom > window.innerHeight || box.top < 0) form.scrollIntoView({ block: "nearest" });
 }
