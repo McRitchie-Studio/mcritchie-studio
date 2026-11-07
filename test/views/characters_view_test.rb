@@ -38,13 +38,15 @@ class CharactersViewTest < ActionView::TestCase
     render partial: "characters/profile",
            locals: { character: @character, kit: @character.brand_kit, avatar_url: "/agents/turf-monster.webp" }
 
-    assert_select "[data-test='character-profile'] h1", "Turf Monster"
+    # The name and Edit are the page header's (characters/show, task admin-pages-standard-header):
+    # the card draws no heading of its own, so the page keeps one h1.
+    assert_select "[data-test='character-profile'] h1", 0
     assert_select "[data-test='profile-kind']", "mascot"
     assert_select "[data-test='profile-bio'] dd", "The gator."
     assert_select "[data-test='profile-personality'] dd", "Loud."
     assert_select "[data-test='profile-voice'] dd", "Short lines."
     assert_select "a[data-test='profile-brand-kit'][href='/email_images/brand_kits/turf-monster']", /Turf Monster/
-    assert_select "a[data-test='edit-character'][href='/characters/turf-monster/edit']"
+    assert_select "a[data-test='edit-character']", 0
   end
 
   test "a look card shows its art, default badge and sheet state" do
