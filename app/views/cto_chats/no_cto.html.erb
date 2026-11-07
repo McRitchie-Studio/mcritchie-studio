@@ -1,0 +1,7 @@
+<%# /applications/:slug/chat for an app with no CTO yet (AppOwnership.cto_for_app nil; CtoChatsController#show): the Chat tab's empty state, in the words the Overview's CTO card uses. Owner or admin only, like the chat. %>
+<%= render "applications/page_header", app: @app, admin: @admin, current: :chat %>
+<section class="max-w-3xl mx-auto px-4 pt-4 pb-10" data-test="cto-chat-no-cto" data-app="<%= @app.slug %>">
+  <div class="card p-4 text-sm">
+    <p class="text-secondary" data-test="application-no-cto">This app has no CTO yet.</p>
+  </div>
+</section>

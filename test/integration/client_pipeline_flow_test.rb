@@ -1,7 +1,7 @@
 require "test_helper"
 
 # [integration] The client pipeline (docs/agents/system/client-pipeline.md): an owner
-# opens /applications/:slug/pipeline from the app page and sees
+# opens /applications/:slug/pipeline from the app page's Pipeline tab and sees
 # only their app's tasks, by lane, with nothing internal in the page; a stranger,
 # another app's owner and a visitor are kept out (404, or sign in); an unannounced
 # app is a 404 even to its owner; an admin sees the task links and PR links.
@@ -31,13 +31,14 @@ class ClientPipelineFlowTest < ActionDispatch::IntegrationTest
   test "[integration] the owner sees their app's lanes and cards, with no internals anywhere in the page" do
     log_in_as(@owner)
     get application_path("turf-monster")
-    assert_select "a[data-test='application-pipeline-link'][href=?]", pipeline_application_path("turf-monster")
+    assert_select "a[data-test='app-tab'][data-tab='pipeline'][href=?]", pipeline_application_path("turf-monster"), text: "Pipeline"
     assert_select "#studio-link-sidebar a[href=?]", pipeline_application_path("turf-monster"), count: 0
     assert_select "#studio-link-sidebar a[href=?]", application_path("turf-monster"), text: /Turf Monster/
 
     get pipeline_application_path("turf-monster")
     assert_response :success
-    assert_select "h1", text: "Turf Monster pipeline"
+    assert_select "h1", text: /Turf Monster/
+    assert_select "a[data-test='app-tab'][data-tab='pipeline'][aria-current='page']"
     assert_select "[data-test='pipeline-lane']", count: 6
     assert_select "[data-test='pipeline-lane'][data-lane='building'] [data-test='pipeline-card-title']", text: /Wire the live scores/
     assert_select "[data-test='pipeline-lane'][data-lane='building'] [data-test='pipeline-card-role']", text: "Builder"

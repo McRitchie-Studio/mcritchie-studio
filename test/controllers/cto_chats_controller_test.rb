@@ -31,7 +31,7 @@ class CtoChatsControllerTest < ActionDispatch::IntegrationTest
     # The agent shell: the CTO's portrait and name on top, the app's status card, then the chat.
     assert_select "[data-test='agent-shell'][data-shell='app']" do
       assert_select "[data-test='agent-caption']", text: /Turf\s+· CTO of #{apps(:turf_monster).name}/
-      assert_select "[data-test='cto-chat-head'] h1", text: apps(:turf_monster).name
+      assert_select "[data-test='cto-chat-head'] h2", text: apps(:turf_monster).name
       assert_select "[data-test='devops-stage']", 3
       assert_select "[data-test='devops-stage'][data-state='pending']", 3, "nothing in flight: no pill lit, no checks"
       assert_select "[data-test='devops-idle']", text: "Nothing in progress right now."
