@@ -215,6 +215,7 @@ class InstallClaudeAgentsTest < Minitest::Test
       "CODEX_REQUIREMENTS_PATH" => File.join(home, "codex-requirements.toml"),
       "AGENT_RUNTIME_RUBY_PATH_PREFIX" => File.dirname(RbConfig.ruby),
       "AGENT_RUNTIME_ZPROFILE" => File.join(home, ".zprofile"),
+      "CLAUDE_AGENTS_DIR" => File.join(home, ".claude", "agents"),
       "PATH" => "#{File.dirname(RbConfig.ruby)}:#{ENV.fetch('PATH')}"
     }
   end

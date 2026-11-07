@@ -227,6 +227,8 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       # git's own override for the global file the installer wires the credential helper
       # into; unpinned, the installer would rewrite the real machine's ~/.gitconfig.
       "GIT_CONFIG_GLOBAL" => File.join(home, ".gitconfig"),
+      # The Claude subagent definitions bin/install-claude-agents writes.
+      "CLAUDE_AGENTS_DIR" => File.join(home, ".claude", "agents"),
       # The installer's many jq blocks scratch through `mktemp`, which resolves TMPDIR —
       # pin it into the sandbox too so those transient writes can't land on the real
       # machine, and so the manifest's `${TMPDIR:-/tmp}` destination proves out inside.
