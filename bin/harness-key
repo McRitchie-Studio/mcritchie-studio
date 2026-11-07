@@ -97,7 +97,7 @@ class HarnessKeyCli
     HarnessKey.write(dir, { "request" => data["slug"], "collect_key" => data["collect_key"], "ends_at" => data["ends_at"],
                             "label" => label, "harness_session_id" => harness_session_id }, env: @env)
     @out.puts("harness-key: #{data['slug']} requested for #{label}, pending until #{data['ends_at']}. " \
-              "Operator: on #{@api.base_url}/tasks find the row that reads `Harness key · #{label}` and #{data['slug']}; " \
+              "Operator: on #{@api.base_url}/devops/tasks find the row that reads `Harness key · #{label}` and #{data['slug']}; " \
               "Approve it, or give this session its one-time code for `bin/harness-key collect --code <code>`.")
     OK
   end

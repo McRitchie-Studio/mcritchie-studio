@@ -127,7 +127,9 @@ pages:
 
   # ── Site administration ──────────────────────────────────────────────────
   admin_dashboard:    { page: "admin/dashboard#show",         audience: admin, label: Admin dashboard, emoji: "📊", hover_emoji: "🔬", desc: Users + request logs, icon: chart-column, crumb: Admin }
-  deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board, icon: rocket, parent: admin_dashboard }
+  # /devops, the board home, is the ROOT of the DevOps crumb trail (devops-namespace,
+  # Alex McRitchie 2026-11-07): its pages read "DevOps › …", never "Admin › Deployments".
+  deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board, icon: rocket, crumb: DevOps }
   admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks, icon: palette, parent: admin_dashboard }
   admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser, parent: admin_basement }
   logos:              { page: "logos#index",                  audience: admin, label: Branding Kits, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built, icon: diamond, parent: admin_dashboard, crumb: Logos }
@@ -181,12 +183,13 @@ pages:
   # ── Video ────────────────────────────────────────────────────────────────
   alt_videos: { page: "alt_videos#index", audience: admin, label: Alt videos, emoji: "🎬", hover_emoji: "🔁", desc: "Every recast version, with clip progress", parent: videos }
 
-  # ── The board family and the heartbeat (reached from the sub-navs) ───────
+  # ── The board family under /devops, and the heartbeat (reached from the sub-navs) ──
   stages:                   { page: "tasks#stages",             audience: admin, label: Stages, parent: deployments }
   epics:                    { page: "epics#index",              audience: admin, label: Epics, parent: deployments }
   triage:                   { page: "triage#index",             audience: admin, label: Triage, parent: deployments }
   intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence, parent: deployments }
-  pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex, parent: deployments }
+  # The Pokédex is an agent page, its own section beside DevOps, so its trail is Admin's.
+  pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex, parent: admin_dashboard }
   recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks, parent: deployments }
   all_deployments:          { page: "releases#index",           audience: admin, label: All Deployments, parent: deployments }
   mason_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat, parent: deployments }

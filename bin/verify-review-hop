@@ -151,7 +151,7 @@ if options[:local_url]
   mint.fragment = nil
   mint_url = mint.to_s
 else
-  cta_url = "#{options[:board].chomp("/")}/tasks/#{slug}/local_review"
+  cta_url = "#{options[:board].chomp("/")}/devops/tasks/#{slug}/local_review"
   res = request(:get, cta_url)
   verdict = record.call("cta", ReviewHop.cta(status: res.code, location: res["location"]))
   mint_url = res["location"] if verdict.ok?

@@ -14,7 +14,7 @@
   window.epicCards = window.epicCards || function () {
     const send = async (slug, method, body) => {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-      return fetch('/tasks/' + slug + '.json', {
+      return fetch('<%= tasks_path %>/' + slug + '.json', {
         method,
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': csrf },
         credentials: 'same-origin',

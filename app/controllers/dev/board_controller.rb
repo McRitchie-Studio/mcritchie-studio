@@ -386,7 +386,7 @@ module Dev
       merged = task.metadata.deep_dup
       devops = (merged["devops"] ||= {})
       devops["approval_status"] = Task::OPERATOR_APPROVAL_WAITING
-      devops["local_url"] = "http://localhost#{":#{request.port}" unless request.port == 80}/tasks"
+      devops["local_url"] = "http://localhost#{":#{request.port}" unless request.port == 80}#{tasks_path}"
       task.update!(metadata: merged)
     end
   end

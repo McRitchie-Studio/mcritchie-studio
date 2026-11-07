@@ -753,7 +753,7 @@ shape["kind"] = kind.empty? ? nil : kind
 shape["exempt"] = EXEMPT_KINDS.include?(kind) && code_files.empty?
 
 task_url = task["task_url"] || task.dig("devops", "task_url")
-task_url ||= "https://mcritchie.studio/tasks/#{task["slug"]}" if task["slug"]
+task_url ||= "https://mcritchie.studio/devops/tasks/#{task["slug"]}" if task["slug"]
 
 report = {
   "ok" => errors.empty?,
