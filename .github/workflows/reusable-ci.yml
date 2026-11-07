@@ -430,6 +430,17 @@ jobs:
           PLAYWRIGHT_JSON_OUTPUT_NAME: e2e-report-shard-${{ matrix.shard }}.json
         run: npx playwright test --grep-invert @quarantine --shard=${{ matrix.shard }}/${{ strategy.job-total }} --reporter=list,json
 
+      # THE DETERMINISM CHECK AT THE DOOR: every spec this PR adds or changes runs five
+      # times (`--repeat-each 5`), this shard's share of the repeats. A spec that is red
+      # one run in five is a defect with a cause; it is found here, before the merge,
+      # not as a red on somebody else's PR. No receipt: the list reporter only, so the
+      # executed set above is untouched. bin/lib/e2e_repeat_changed.rb.
+      - name: Repeat this PR's changed specs five times
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432
+        run: bin/e2e-repeat-changed --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+
       # ALWAYS, not `if: failure()`. A FAILING spec still ran — the executed-set gate must see
       # its receipt to count it. Uploading only on failure would mean the gate could only ever
       # audit the runs that were already red.

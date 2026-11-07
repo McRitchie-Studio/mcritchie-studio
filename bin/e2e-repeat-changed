@@ -1,0 +1,28 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/e2e-repeat-changed — run every Playwright spec this PR adds or changes five times
+# (`--repeat-each 5`). The why and the rules: bin/lib/e2e_repeat_changed.rb.
+#
+#   Usage: bin/e2e-repeat-changed [--shard=K/N]
+#
+# Exit: Playwright's own status, or 0 when there is nothing to repeat (said on stdout).
+require_relative "lib/e2e_repeat_changed"
+
+shard = ARGV.find { |a| a.start_with?("--shard=") }&.delete_prefix("--shard=")
+diff = E2eRepeatChanged.name_status
+if diff.nil?
+  puts "e2e-repeat-changed: not a pull request (or its diff is unreadable); nothing to repeat"
+  exit 0
+end
+
+specs = E2eRepeatChanged.changed_specs(diff)
+cmd = E2eRepeatChanged.command(specs, shard: shard)
+if cmd.nil?
+  puts "e2e-repeat-changed: this PR changes no e2e spec; nothing to repeat"
+  exit 0
+end
+
+puts "e2e-repeat-changed: #{specs.size} changed spec(s), each run #{E2eRepeatChanged::REPEATS} times#{" (shard #{shard})" if shard}:"
+specs.each { |s| puts "  #{s}" }
+exec(*cmd)
