@@ -44,9 +44,8 @@ pulls. That work moved to the [Pokémon](../pokemon/role.md) legion in Operation
 5. If blocked, say what is missing and who holds it
 
 ## Installing the subagent
-The Claude subagent definition is [`claude-agent.md`](claude-agent.md). Install
-it beside the other souls:
-
-```bash
-cp /Users/alex/projects/mcritchie-studio/docs/agents/agents/mack/claude-agent.md /Users/alex/.claude/agents/mack.md
-```
+The Claude subagent definition is [`claude-agent.md`](claude-agent.md). The
+production ship installs it as `/Users/alex/.claude/agents/mack.md`:
+`bin/install-agent-docs` runs `bin/install-claude-agents`, which backs up any
+copy it overwrites. Do not copy it by hand. To see whether the installed copy
+matches its source, run `bin/install-claude-agents check`.

@@ -16,7 +16,8 @@ Docs are part of the product surface for agents. When code changes behavior, upd
 The projects-root `/Users/alex/projects/AGENTS.md` and `CLAUDE.md` are
 **generated**. `bin/install-agent-docs` copies `docs/agents/index.md` →
 `AGENTS.md` and `docs/agents/claude.md` → `CLAUDE.md` (plus the user-global
-skills). Edit the sources in this repo; never edit the generated roots — an edit
+skills, and each soul's `docs/agents/agents/<soul>/claude-agent.md` →
+`~/.claude/agents/<soul>.md` through `bin/install-claude-agents`). Edit the sources in this repo; never edit the generated roots — an edit
 there is silently reverted by the next install.
 
 **Nobody hand-runs the installer.** The install is an owned pipeline step:

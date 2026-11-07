@@ -244,6 +244,8 @@ class BinHelpFlagClassTest < Minitest::Test
     # bin/lib/cli_arg_guard.rb: it is Ruby, and this bootstrap repairs Ruby.
     # History: task docs-installer-help-publishes.
     "install-agent-docs"     => :own_guard,
+    # The subagent-definition installer bin/install-agent-docs runs; --help exits 1.
+    "install-claude-agents"  => :optparse,
     "agent-runtime"          => :own_guard,
     # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). `get --help` ran the REAL
     # `get`, measured to mint a live installation token, write it to the shared store, and print

@@ -116,7 +116,7 @@ Every step a first run of this runbook asks for, and who does it now (audited 20
 | 32 | Install Claude Code | not in the runbook before | Alex McRitchie-only for now: the checklist names the installer when `claude` is missing. Installing it unattended is a follow-up |
 | 33 | Sign Claude Code in with claude.ai | not in the runbook before | Alex McRitchie-only: his claude.ai login in a browser. Phase 10 reads `claude auth status` and puts `claude auth login` on the checklist; it never logs in for him |
 | 34 | Chrome avatar-menu profiles | Appendix D | Alex McRitchie-only: Google asks the person to sign each account in. Then `bin/chrome-profiles apply` and `pin-dock` restore the order from 1Password; on the checklist until the ordered launcher exists |
-| 35 | Subagent definitions in `~/.claude/agents/` | soul docs (`claude-agent.md`) | Follow-up: copied by hand today; `bin/agent-runtime install` could mirror them |
+| 35 | Subagent definitions in `~/.claude/agents/` | soul docs (`claude-agent.md`) | Automated: `bin/install-agent-docs` runs `bin/install-claude-agents`, so bringup and every production ship write them |
 | 36 | Client build launcher service | not in the runbook before | Automated by task `launcher-in-burn-down` (Phase 10, the second entry in `config/local_services.yml`) |
 | 37 | `AGENT_API_SECRET` in the hub's `.env` for the launchd services | not in the runbook before | On the checklist when missing: Phase 10 names the `op read` that appends it. The build does not write the secret itself (Phase 4 writes `.env` without it on purpose) |
 

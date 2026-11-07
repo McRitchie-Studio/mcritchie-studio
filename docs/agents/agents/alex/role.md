@@ -129,9 +129,8 @@ team: he breaks it down into cards for the builders.
 5. Tell the client the truth about what ships and when
 
 ## Installing the subagent
-The Claude subagent definition is [`claude-agent.md`](claude-agent.md). Install
-it beside the other souls:
-
-```bash
-cp /Users/alex/projects/mcritchie-studio/docs/agents/agents/alex/claude-agent.md /Users/alex/.claude/agents/alex.md
-```
+The Claude subagent definition is [`claude-agent.md`](claude-agent.md). The
+production ship installs it as `/Users/alex/.claude/agents/alex.md`:
+`bin/install-agent-docs` runs `bin/install-claude-agents`, which backs up any
+copy it overwrites. Do not copy it by hand. To see whether the installed copy
+matches its source, run `bin/install-claude-agents check`.

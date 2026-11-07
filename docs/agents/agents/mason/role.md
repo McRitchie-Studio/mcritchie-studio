@@ -79,9 +79,8 @@ The tier is `AgentSession::ADMIN_SOULS`; nothing about it is a stored credential
 5. Log activity after significant decisions
 
 ## Installing the subagent
-The Claude subagent definition is [`claude-agent.md`](claude-agent.md). Install
-it beside the other souls:
-
-```bash
-cp /Users/alex/projects/mcritchie-studio/docs/agents/agents/mason/claude-agent.md /Users/alex/.claude/agents/mason.md
-```
+The Claude subagent definition is [`claude-agent.md`](claude-agent.md). The
+production ship installs it as `/Users/alex/.claude/agents/mason.md`:
+`bin/install-agent-docs` runs `bin/install-claude-agents`, which backs up any
+copy it overwrites. Do not copy it by hand. To see whether the installed copy
+matches its source, run `bin/install-claude-agents check`.

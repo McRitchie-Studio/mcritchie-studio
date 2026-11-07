@@ -7,6 +7,10 @@
 #   docs/agents/skills/<name>/  -> $HOME/.claude/skills/<name>/   (user-global Claude Code skills)
 #   docs/agents/skills/<name>/  -> $HOME/.codex/skills/<name>/    (user-global Codex skills)
 #   retired managed skills      -> removed from the same runtime skill dirs
+#   docs/agents/agents/<soul>/claude-agent.md
+#                               -> $HOME/.claude/agents/<soul>.md (Claude Code subagent
+#                                  definitions, through bin/install-claude-agents, which
+#                                  backs up any copy it overwrites)
 #   bin/ lib/ config/ + the pure app/models/{release,devops} the scripts load
 #                               -> $PROJECTS_DIR/.agents/tooling/<sha>/   (fast-lane tooling)
 #                               -> $PROJECTS_DIR/.agents/bin              (symlink, atomically swapped)
@@ -74,6 +78,12 @@ SKILLS_DEST_DIRS=(
 RETIRED_SKILLS=(
   "qa-release"
 )
+# The Claude Code subagent definitions. bin/install-claude-agents owns the writes, the
+# backups and the comparison (bin/lib/claude_agent_definitions.rb); this script only
+# names the folder and runs it in each mode, so the ship's sync_agent_docs step that
+# installs the fixed-path tooling installs these too. Overridable for tests.
+CLAUDE_AGENTS_DIR="${CLAUDE_AGENTS_DIR:-$HOME/.claude/agents}"
+CLAUDE_AGENTS_INSTALLER="$ROOT/bin/install-claude-agents"
 SKILL_PAIRS=()
 if [ -d "$SKILLS_SRC_DIR" ]; then
   # -mindepth 2: only mirror files INSIDE a <name>/ skill dir, so a top-level
@@ -92,11 +102,13 @@ usage() {
 Usage: bin/install-agent-docs [install|check|manifest]
 
 install  Copy the agent entrypoints to \$PROJECTS_DIR (AGENTS.md + CLAUDE.md),
-         mirror user-global skills, prune retired managed skills, and install
+         mirror user-global skills, prune retired managed skills, write the
+         Claude subagent definitions to ~/.claude/agents, and install
          the fast-lane tooling at \$PROJECTS_DIR/.agents/tooling/<sha> behind the
          atomically swapped symlink \$PROJECTS_DIR/.agents/bin.
-check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md plus ~/.claude/skills and
-         ~/.codex/skills match the tracked sources, with retired skills absent.
+check    Verify \$PROJECTS_DIR/{AGENTS,CLAUDE}.md, ~/.claude/skills,
+         ~/.codex/skills and ~/.claude/agents match the tracked sources, with
+         retired skills absent.
 manifest DRY RUN: write NOTHING; print every absolute path install WOULD write,
          one per line, each prefixed "WRITE\\t". Lets a guard assert ATTRIBUTABLY
          that no destination escapes a sandbox — without fingerprinting the
@@ -579,6 +591,12 @@ if [ "$MODE" = "check" ]; then
       fi
     done
   done
+  # The subagent definitions: against the published tree when there is one, else $ROOT.
+  agents_check=(check --dest "$CLAUDE_AGENTS_DIR")
+  [ -n "$shipped_tree" ] && agents_check+=(--rev "$shipped_tree")
+  if ! ruby "$CLAUDE_AGENTS_INSTALLER" "${agents_check[@]}"; then
+    status=1
+  fi
   check_fast_lane_tooling
   if [ "$status" -ne 0 ]; then
     # DRIFT IS NOT A CHORE THE READER OWES. Measured 2026-09-07: three separate
@@ -641,6 +659,16 @@ for pair in "${ALL_PAIRS[@]}"; do
   install_pair "$src" "$tgt"
   [ "$MODE" = "manifest" ] || echo "  $tgt (from $src)"
 done
+# NON-FATAL TO THE REST: a bad definition (say, a frontmatter name that is not its
+# folder's) must not stop the fast-lane tooling and hooks below from installing.
+# The failure is reported and turns the final exit status non-zero instead.
+claude_agents_failed=""
+if [ "$MODE" = "manifest" ]; then
+  ruby "$CLAUDE_AGENTS_INSTALLER" manifest --dest "$CLAUDE_AGENTS_DIR" || claude_agents_failed=1
+elif ! ruby "$CLAUDE_AGENTS_INSTALLER" install --dest "$CLAUDE_AGENTS_DIR"; then
+  claude_agents_failed=1
+  echo "WARN: bin/install-claude-agents failed; the subagent definitions in $CLAUDE_AGENTS_DIR were not all written" >&2
+fi
 install_fast_lane_tooling
 
 ensure_codex_tui_config() {
@@ -1498,3 +1526,4 @@ echo "Next reads for a fresh agent:"
 echo "  - $PROJECTS_DIR/AGENTS.md"
 echo "  - $PROJECTS_DIR/mcritchie-studio/docs/ECOSYSTEM.md"
 echo "  - $PROJECTS_DIR/mcritchie-studio/docs/agents/modules/culture.md"
+[ -z "$claude_agents_failed" ] || exit 1

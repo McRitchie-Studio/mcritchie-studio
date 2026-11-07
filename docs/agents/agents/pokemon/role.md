@@ -60,9 +60,8 @@ specialists review to, so meeting them here is what keeps the PR from bouncing:
 5. On a block, run [`../../modules/address-blocker.md`](../../modules/address-blocker.md); on a block you can show is wrong, hand your evidence to the session, which raises a contest for Avi to rule on
 
 ## Installing the subagent
-The Claude subagent definition is [`claude-agent.md`](claude-agent.md). Install
-it beside the other souls:
-
-```bash
-cp /Users/alex/projects/mcritchie-studio/docs/agents/agents/pokemon/claude-agent.md /Users/alex/.claude/agents/pokemon.md
-```
+The Claude subagent definition is [`claude-agent.md`](claude-agent.md). The
+production ship installs it as `/Users/alex/.claude/agents/pokemon.md`:
+`bin/install-agent-docs` runs `bin/install-claude-agents`, which backs up any
+copy it overwrites. Do not copy it by hand. To see whether the installed copy
+matches its source, run `bin/install-claude-agents check`.
