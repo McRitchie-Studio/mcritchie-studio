@@ -92,18 +92,25 @@ async function deleteVoice(page) {
 
 async function openChat(page) {
   await page.setViewportSize({ width: 390, height: 844 });
-  // The chat marks itself ready before its first poll answers. A spec that counts
-  // the thread has to wait for that poll, or an earlier spec's turn lands after the
-  // count and reads as a second send.
-  const firstPoll = page.waitForResponse((response) => response.url().includes("/agent_chat/turns"));
+  // The chat marks itself ready BEFORE its first poll has drawn the thread's history,
+  // so a spec that counted the thread then could count it empty, and an earlier spec's
+  // turn drawn a moment later read as a second send (10 CI reds, 11-01..03, task
+  // deterministic-ci). Waiting on "a turns response" did not close it: the page being
+  // left polls too, and a response is headers, not a render. So the wait is on the
+  // STATE: the server's own history for this thread, read with the URL the chat polls,
+  // drawn in full. Then a count taken after it is the thread's real count.
   await page.goto("/chat");
-  await firstPoll;
-  await expect(page.locator(CHAT)).toHaveAttribute("data-agent-chat-ready", "true");
-  await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const chat = page.locator(CHAT);
+  await expect(chat).toHaveAttribute("data-agent-chat-ready", "true");
+  const { url, soul } = await chat.evaluate((el) => ({ url: el.dataset.agentChatTurnsUrl, soul: el.dataset.agentChatSoul }));
+  const history = await page.request.get(`${url}${url.includes("?") ? "&" : "?"}${new URLSearchParams({ soul, limit: "50" })}`);
+  expect(history.ok(), "the chat's own history read answers").toBe(true);
+  const sentTurns = (await history.json()).turns.filter((turn) => turn.role !== "agent").length;
+  await expect(chat.locator("[data-test='agent-chat-sent']"), "the thread's history is drawn").toHaveCount(sentTurns);
   await expect(page.locator(RECORDER)).toHaveAttribute("data-voice-recorder-ready", "true");
 }
 
-async function holdToTalk(page, { holdMs = 700 } = {}) {
+async function holdToTalk(page, { holdMs = 700, heard = true } = {}) {
   const recorder = page.locator(RECORDER);
   // Each sent turn pushes the button down; past the fold a press at its box lands on nothing.
   const button = recorder.locator("[data-voice-recorder-button]");
@@ -112,7 +119,14 @@ async function holdToTalk(page, { holdMs = 700 } = {}) {
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await expect(recorder).toHaveAttribute("data-voice-recorder-state", "recording");
-  await page.waitForTimeout(holdMs);
+  const pressedAt = await page.evaluate(() => performance.now());
+  // The press is released on STATE, not after a guessed sleep: first the recorder has
+  // heard the stubbed voice (a loaded runner can start the audio graph late, and a
+  // release before any frame arrives sends silence), then the press has lasted holdMs
+  // on the page's own clock. The length of the press is the input under test (a hold,
+  // not a tap: voice_recorder's TAP_MS), so it is measured, never slept.
+  if (heard) await expect(recorder).toHaveAttribute("data-voice-recorder-heard", "true");
+  await page.waitForFunction(({ since, ms }) => performance.now() - since >= ms, { since: pressedAt, ms: holdMs });
   await page.mouse.up();
   await expect(recorder).not.toHaveAttribute("data-voice-recorder-state", /recording|starting/);
 }
@@ -181,7 +195,7 @@ test("a silent take is refused on the device, and nothing is sent", async ({ pag
   let posts = 0;
   page.on("request", (request) => { if (request.url().endsWith("/voice/takes")) posts += 1; });
 
-  await holdToTalk(page);
+  await holdToTalk(page, { heard: false });
 
   await expect(page.locator(VOICE)).toHaveAttribute("data-voice-chat-state", "silent");
   await expect(page.locator("[data-test='voice-chat-status']")).toContainText("I couldn't hear anything");

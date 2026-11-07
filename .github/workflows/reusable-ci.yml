@@ -457,7 +457,11 @@ jobs:
         if: failure()
         with:
           name: playwright-report-shard-${{ matrix.shard }}
-          path: playwright-report
+          # test-results holds each failed spec's error-context.md (the page's DOM at
+          # the failure): the evidence a red needs to name its cause (task deterministic-ci).
+          path: |
+            playwright-report
+            test-results
           if-no-files-found: ignore
 
   # THE EXECUTED-SET GATE. The `playwright` job above can prove its specs PASSED; it cannot
