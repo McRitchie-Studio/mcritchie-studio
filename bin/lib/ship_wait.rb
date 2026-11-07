@@ -94,7 +94,30 @@ module ShipWait
   # far finer than a 12-minute job needs.
   MIN_INTERVAL_S = 1
 
+  # bin/submit's step-6 line names the CI budget it measured (bin/lib/ci_wait_budget.rb).
+  # A fixed 1800 s here would cut a submit off inside a measured budget that is longer
+  # (engine PR CI ran ~20 min at p90 before its browser lane sharded), so a default
+  # wait stretches to cover that budget plus AFTER_CI_S for dor-check and the move.
+  CI_BUDGET_RE = %r{6/8 ci — waiting for CI to settle on the PR \(timeout (\d+)s}
+  AFTER_CI_S = 600
+
   module_function
+
+  # The CI budget bin/submit announced in this log, in seconds; nil before step 6.
+  # LAST match wins, like the sentinel: a resumed submit announces again.
+  def ci_budget_s(text)
+    match = nil
+    text.to_s.each_line { |line| match = Regexp.last_match(1).to_i if line =~ CI_BUDGET_RE }
+    match
+  end
+
+  # The wait's bound once the CI budget is known: never shorter than it was, and long
+  # enough to cover the CI wait that began at `seen_at_s` (seconds into this wait).
+  def extended_timeout(timeout, ci_budget_s:, seen_at_s:)
+    return timeout unless ci_budget_s
+
+    [timeout, seen_at_s + ci_budget_s + AFTER_CI_S].max
+  end
 
   # Did this ship reach the seam? Exact-line, not a substring: the phrase also
   # appears in bin/submit's own header comment and in these docs, and a watcher

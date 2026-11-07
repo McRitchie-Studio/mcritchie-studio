@@ -237,7 +237,11 @@ runs the full suite in ~9 min on the PR, so `submitted` carries a settled GREEN
 CI, and a red CI is caught while the desk is still warm. The wait decides
 nothing — `bin/dor-check` runs next and owns the verdict — and it is bounded at
 both ends: a run that never appears or never finishes reaches the verdict as a
-WAIT. `SHIP_CI_WAIT=off` disarms it.
+WAIT. `SHIP_CI_WAIT=off` disarms it. The running budget is MEASURED per repo: the
+p90 of its recent green PR CI plus 300s, floored at 900s and capped by release's
+structural budget (`bin/lib/ci_wait_budget.rb`). A wait that runs out writes a
+`SUBMIT CI WAIT TIMED OUT` comment on the task, and `bin/submit-wait` stretches its
+own default bound to cover the budget `bin/submit` announces.
 
 **Budget ~12 minutes for a cold `bin/submit`.** That exceeds what some agent
 harnesses allow one foreground command, so **run it in the background — and wait
