@@ -3,7 +3,7 @@
   <% connections.each do |connection| %>
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1" data-test="egnyte-domain" data-domain="<%= connection.domain %>">
       <span class="min-w-0 text-body [overflow-wrap:anywhere]">Connected <span class="font-medium text-heading"><%= connection.host %></span></span>
-      <%= button_to "Disconnect", admin_egnyte_disconnect_path(domain: connection.domain, return_to: integrations_path), method: :delete,
+      <%= button_to "Disconnect", admin_egnyte_disconnect_path(egnyte_domain: connection.domain, return_to: integrations_path), method: :delete,
                     class: "btn btn-neutral btn-sm",
                     form: { class: "inline-flex", data: { test: "egnyte-disconnect", turbo_confirm: "Disconnect Egnyte for #{connection.host}?" } } %>
     </div>
@@ -13,7 +13,7 @@
                   data: { test: "egnyte-connect", turbo: false } do |form| %>
       <%= hidden_field_tag :return_to, integrations_path %>
       <label class="sr-only" for="egnyte-card-domain">Egnyte domain</label>
-      <%= form.text_field :domain, id: "egnyte-card-domain", required: true, placeholder: "domain.egnyte.com", autocomplete: "off", spellcheck: false,
+      <%= form.text_field :egnyte_domain, id: "egnyte-card-domain", required: true, placeholder: "domain.egnyte.com", autocomplete: "off", spellcheck: false,
                           class: "input-field min-w-0 flex-1 text-xs", data: { test: "egnyte-domain-field" } %>
       <%= form.submit "Connect Egnyte", class: "btn btn-primary btn-sm" %>
     <% end %>

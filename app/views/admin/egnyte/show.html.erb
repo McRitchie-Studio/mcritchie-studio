@@ -1,4 +1,4 @@
-<%# The standing Egnyte connections page (/admin/egnyte): each connected domain, who granted it and when, and a live read proving it: one page of a folder (the Shared root, or the folder ?domain=&path= names), its subfolders as links and its files with their sizes; or Egnyte's error said plainly. Disconnect per domain, and a domain field with Connect. The developer key and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
+<%# The standing Egnyte connections page (/admin/egnyte): each connected domain, who granted it and when, and a live read proving it: one page of a folder (the Shared root, or the folder ?egnyte_domain=&path= names), its subfolders as links and its files with their sizes; or Egnyte's error said plainly. Disconnect per domain, and a domain field with Connect. The developer key and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
 <% can_connect = @configured && @encryption_ready %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="egnyte-connection-page" data-count="<%= @connections.size %>">
@@ -42,7 +42,7 @@
             <% end %>
           </p>
         </div>
-        <%= button_to "Disconnect", admin_egnyte_disconnect_path(domain: connection.domain), method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto",
+        <%= button_to "Disconnect", admin_egnyte_disconnect_path(egnyte_domain: connection.domain), method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto",
                       form: { class: "shrink-0", data: { test: "egnyte-disconnect", turbo_confirm: "Disconnect Egnyte for #{connection.host}?" } } %>
       </div>
 
@@ -56,7 +56,7 @@
           </p>
           <% parent = File.dirname(folder.path.to_s) %>
           <% if folder.path.to_s != Egnyte::Reader::ROOT && parent != "/" %>
-            <%= link_to "Up to #{parent}", admin_egnyte_path(domain: connection.domain, path: parent), class: "text-xs text-primary hover:underline break-all", data: { test: "egnyte-up" } %>
+            <%= link_to "Up to #{parent}", admin_egnyte_path(egnyte_domain: connection.domain, path: parent), class: "text-xs text-primary hover:underline break-all", data: { test: "egnyte-up" } %>
           <% end %>
           <% if folder.entries.empty? %>
             <p class="text-muted">This folder is empty.</p>
@@ -64,7 +64,7 @@
             <ul class="divide-y divide-subtle rounded-lg border border-subtle">
               <% folder.folders.each do |sub| %>
                 <li class="px-3 py-2 min-w-0" data-test="egnyte-folder">
-                  <%= link_to "📁 #{sub.name}", admin_egnyte_path(domain: connection.domain, path: sub.path), class: "text-primary hover:underline break-all" %>
+                  <%= link_to "📁 #{sub.name}", admin_egnyte_path(egnyte_domain: connection.domain, path: sub.path), class: "text-primary hover:underline break-all" %>
                 </li>
               <% end %>
               <% folder.files.each do |file| %>
@@ -85,7 +85,7 @@
       <label for="egnyte-domain" class="font-semibold text-heading block">Connect a domain</label>
       <p class="text-muted text-xs">The name before .egnyte.com. Connect sends you to that domain's Egnyte sign-in and asks for its files only.</p>
       <div class="flex flex-col sm:flex-row gap-2">
-        <%= form.text_field :domain, id: "egnyte-domain", required: true, placeholder: "domain.egnyte.com", autocomplete: "off", spellcheck: false,
+        <%= form.text_field :egnyte_domain, id: "egnyte-domain", required: true, placeholder: "domain.egnyte.com", autocomplete: "off", spellcheck: false,
                             class: "input-field w-full min-w-0 text-sm", data: { test: "egnyte-domain-field" } %>
         <%= form.submit "Connect Egnyte", class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0" %>
       </div>

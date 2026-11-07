@@ -7,7 +7,7 @@ module Admin
   #
   # /admin/egnyte (show) is the standing page: each connected domain, who
   # granted it and when, and a live read proving it (one page of a folder,
-  # /Shared by default; ?domain=&path= browses one domain's folder), with
+  # /Shared by default; ?egnyte_domain=&path= browses one domain's folder), with
   # Egnyte's error said plainly; Disconnect per domain; and a domain field with
   # Connect. The developer key and encryption keys show (by NAME, never a
   # value) only while one is missing.
@@ -54,7 +54,7 @@ module Admin
       back = safe_return_to(params[:return_to])
       return redirect_to(back, alert: ENCRYPTION_NOT_SET) unless EgnyteConnection.encryption_ready?
 
-      domain = EgnyteConnection.normalize_domain(params[:domain]) or return redirect_to(back, alert: BAD_DOMAIN)
+      domain = EgnyteConnection.normalize_domain(params[:egnyte_domain]) or return redirect_to(back, alert: BAD_DOMAIN)
       url = Egnyte::OAuthClient.authorize_url(domain:, redirect_uri: callback_url, state: new_state)
       session[:egnyte_connect_domain] = domain
       session[:egnyte_connect_return_to] = back
@@ -91,7 +91,7 @@ module Admin
     # then says to remove the access in Egnyte.
     def disconnect
       back = safe_return_to(params[:return_to])
-      connection = EgnyteConnection.find_by(domain: EgnyteConnection.normalize_domain(params[:domain]))
+      connection = EgnyteConnection.find_by(domain: EgnyteConnection.normalize_domain(params[:egnyte_domain]))
       return redirect_to(back, notice: "That Egnyte domain was not connected, so nothing changed.", status: :see_other) unless connection
 
       revoked = revoke(connection)
@@ -123,10 +123,10 @@ module Admin
       false
     end
 
-    # The folder this page reads for a connection: ?path= when ?domain= names
+    # The folder this page reads for a connection: ?path= when ?egnyte_domain= names
     # it, else the Shared root.
     def browse_path(connection)
-      return Egnyte::Reader::ROOT unless params[:domain].to_s == connection.domain && params[:path].present?
+      return Egnyte::Reader::ROOT unless params[:egnyte_domain].to_s == connection.domain && params[:path].present?
 
       params[:path].to_s
     end

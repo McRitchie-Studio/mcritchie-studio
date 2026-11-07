@@ -138,7 +138,7 @@ module Egnyte
       def revoked?(status, json, detail)
         return false unless [ 400, 401, 403 ].include?(status)
 
-        json["error"] == "invalid_grant" || detail.to_s.match?(/invalid refresh token|invalid_grant|expired/i)
+        json["error"] == "invalid_grant" || detail.to_s.match?(/invalid refresh token|invalid_grant/i)
       end
 
       def call(url, form)
