@@ -8,7 +8,7 @@ test.describe("mason pipeline admin wall", () => {
   test.use({ storageState: VISITOR });
 
   test("mason pipeline sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
-    const res = await request.get("/mason/pipeline", { maxRedirects: 0 });
+    const res = await request.get("/devops/pipeline", { maxRedirects: 0 });
     expect(res.status()).toBe(302);
     expect(new URL(res.headers()["location"], "http://host").pathname).toBe("/login");
 

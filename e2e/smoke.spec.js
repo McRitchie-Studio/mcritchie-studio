@@ -157,7 +157,7 @@ test("nav links work without errors @quarantine", async ({ page }) => {
 test("logged-in link sidebar reopens after browser back from signed-in routes", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
 
-  const routes = ["/dashboard", "/tasks", "/tasks/task-ea8541e4b5b6", "/agents"];
+  const routes = ["/dashboard", "/devops/tasks", "/devops/tasks/task-ea8541e4b5b6", "/agents"];
   const triggers = ["button[data-link-sidebar-trigger]:visible"];
 
   for (const route of routes) {

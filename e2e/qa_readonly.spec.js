@@ -28,7 +28,7 @@ test.describe("QA read-only smoke @qa-readonly", () => {
   });
 
   test("the task board sends a visitor to sign-in @qa-readonly", async ({ page, request }) => {
-    const tasks = await request.get("/tasks", { maxRedirects: 0 });
+    const tasks = await request.get("/devops/tasks", { maxRedirects: 0 });
     expect(tasks.status()).toBe(302);
     expect(new URL(tasks.headers()["location"], "http://host").pathname).toBe("/login");
 

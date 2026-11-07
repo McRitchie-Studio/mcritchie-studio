@@ -35,7 +35,7 @@ test.describe("as the owner", () => {
     for (const internal of [SEEDED_PR, "pull/8501", "Carl", "localhost", "e2e-release-inclusion-in-demo"]) {
       expect(html, `${internal} must not reach an owner`).not.toContain(internal);
     }
-    await expect(pipeline.locator("a[href^='/tasks/']")).toHaveCount(0);
+    await expect(pipeline.locator("a[href^='/devops/tasks/']")).toHaveCount(0);
     await expect(pipeline.locator("[data-test='pipeline-card-pr']")).toHaveCount(0);
 
     await page.setViewportSize({ width: 390, height: 844 });

@@ -15,7 +15,7 @@ test("a card's epic chip filters the board to that epic", async ({ page }) => {
   await expect(member).toBeVisible();
   const chip = member.locator("[data-test='task-epic-chip']");
   await expect(chip).toHaveText("devops-v3");
-  await expect(chip).toHaveAttribute("href", "/tasks?epic=devops-v3");
+  await expect(chip).toHaveAttribute("href", "/devops/tasks?epic=devops-v3");
 
   // A no-epic card wears no chip — the partial renders nothing rather than an
   // empty slot.
@@ -28,7 +28,7 @@ test("a card's epic chip filters the board to that epic", async ({ page }) => {
   // The chip is an anchor inside a clickable card: its click must navigate to the
   // filter, not open the task page the card itself links to.
   await chip.click();
-  await expect(page).toHaveURL(/\/tasks\?epic=devops-v3$/);
+  await expect(page).toHaveURL(/\/devops\/tasks\?epic=devops-v3$/);
 
   // Filtered: the member stays, the bystander is gone, and the board is narrower.
   await expect(page.locator("#card-e2e-epic-chip-demo")).toBeVisible();
@@ -40,6 +40,6 @@ test("a card's epic chip filters the board to that epic", async ({ page }) => {
   await expect(banner).toBeVisible();
   await expect(banner).toHaveAttribute("data-epic", "devops-v3");
   await banner.locator("[data-test='board-epic-filter-clear']").click();
-  await expect(page).toHaveURL(/\/tasks$/);
+  await expect(page).toHaveURL(/\/devops\/tasks$/);
   await expect(page.locator("#card-e2e-cleared-block-demo")).toBeVisible();
 });
