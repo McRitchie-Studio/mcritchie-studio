@@ -145,7 +145,7 @@ APP_OVERRIDES = {
     "stack" => "rails",
     "ruby_path" => "/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin",
     "session_env" => "MCRITCHIE_SESSION_KEY",
-    "session_key" => "_studio_session",
+    "session_key" => "_studio_local_session", # local desks; QA and production: lib/session_cookie.rb
     "sidekiq" => false,
     # Ports a FOREIGN app squats inside this band — never hand them to a worktree
     # even when the squatter is momentarily down (allocate_port's live-listener
