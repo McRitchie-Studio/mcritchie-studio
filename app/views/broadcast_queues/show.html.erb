@@ -3,17 +3,13 @@
     already rendered for its reader and held. Nothing on this page sends except
     the confirmed Execute form at the bottom of the confirm panel. %>
 <div class="max-w-6xl mx-auto px-4 py-8 space-y-6" data-broadcast-queue>
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div class="min-w-0">
-      <p class="text-secondary text-sm"><%= link_to "← All broadcasts", broadcasts_path, class: "text-primary underline" %></p>
-      <h1 class="text-2xl font-extrabold text-heading mt-1">Queue</h1>
-      <p class="text-secondary text-sm mt-1 break-words"><%= @broadcast.subject.presence || "(no subject)" %> · <%= @broadcast.template_label %> · <%= @broadcast.target_list.presence || "no list" %></p>
-    </div>
-    <nav class="flex gap-2" aria-label="Broadcast">
-      <%= link_to "Editor", edit_broadcast_path(@broadcast), class: "btn btn-secondary" %>
-      <span class="btn btn-primary" aria-current="page">Queue</span>
-    </nav>
-  </div>
+  <%# The engine page header (docs/PAGE_HEADER.md): the old "All broadcasts" link is the
+      crumb trail, through this broadcast's editor; Editor and Queue are two views of one
+      broadcast, the tabs. %>
+  <%= render "studio/page_header", title: "Queue",
+        crumbs: studio_crumbs(parent: :broadcast, broadcast: @broadcast),
+        label: "Broadcast", tabs: broadcast_view_tabs(@broadcast, current: :queue) %>
+  <p class="text-secondary text-sm break-words"><%= @broadcast.subject.presence || "(no subject)" %> · <%= @broadcast.template_label %> · <%= @broadcast.target_list.presence || "no list" %></p>
 
   <%# The page's one message: these are loaded, not fired. %>
   <section class="card p-4 border-l-4 border-warning flex flex-wrap items-start gap-3" data-locked-banner>

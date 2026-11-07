@@ -1,31 +1,30 @@
 <section>
-  <div class="mb-6 flex items-center justify-between">
-    <%= link_to "&larr; All Tasks".html_safe, deployments_path, class: "text-secondary hover:text-heading text-sm transition" %>
-    <div class="flex items-center gap-2">
-      <%= link_to "Sizing", task_sizing_path(@task), class: "btn btn-outline btn-sm" %>
-      <% if logged_in? %>
-        <%= link_to "Edit", edit_task_path(@task.slug), class: "btn btn-outline btn-sm" %>
+  <%# THE HEADER: the engine page header (studio/_page_header, docs/PAGE_HEADER.md), as on
+      the boards. The old "All Tasks" back link is the crumb trail; the four kinds of
+      control take the old buttons: Edit is the one action, Sizing and the assigned agent
+      are pages elsewhere in the Links menu, and the stage, priority and slug are meta.
+      The engine hides the meta under 40rem, so a phone gets them in the row below. %>
+  <% task_meta = capture do %>
+    <span class="inline-flex flex-wrap items-center gap-2 normal-case tracking-normal" data-test="task-meta">
+      <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
+      <% if @task.priority > 0 %>
+        <span class="text-xs text-warning-ink font-medium" data-test="task-priority">Priority <%= @task.priority %></span>
       <% end %>
-    </div>
-  </div>
+      <span class="text-xs text-muted font-mono" data-test="task-slug"><%= @task.slug %></span>
+    </span>
+  <% end %>
+  <% task_menu = [{ label: "Sizing", href: task_sizing_path(@task), data: { test: "task-link-sizing" } }] %>
+  <% if @task.agent_slug.present? %>
+    <% task_menu << { label: "Agent: #{@task.agent_slug}", href: agent_path(@task.agent_slug), data: { test: "task-link-agent" } } %>
+  <% end %>
+  <%= render "studio/page_header", title: @task.title, crumb_label: "Task",
+        crumbs: studio_crumbs(parent: :deployments),
+        meta: task_meta, menu: task_menu,
+        action: ({ label: "Edit", href: edit_task_path(@task.slug), data: { test: "task-edit" } } if logged_in?) %>
+  <div class="sm:hidden mt-2" data-test="task-meta-phone"><%= task_meta %></div>
+  <div class="mb-6"></div>
 
   <div class="card p-6 mb-6">
-    <div class="flex items-start justify-between mb-4">
-      <div>
-        <h2 class="text-2xl font-bold text-heading"><%= @task.title %></h2>
-        <div class="flex items-center gap-3 mt-2">
-          <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
-          <% if @task.priority > 0 %>
-            <span class="text-xs text-warning-ink font-medium">Priority <%= @task.priority %></span>
-          <% end %>
-          <% if @task.agent_slug.present? %>
-            <%= link_to @task.agent_slug, agent_path(@task.agent_slug), class: "text-xs text-primary hover:text-primary-300" %>
-          <% end %>
-        </div>
-      </div>
-      <span class="text-xs text-muted font-mono"><%= @task.slug %></span>
-    </div>
-
     <%# Session resume — moved here from the board cards. The control DISPLAYS the
         truncated command (…<last4>) and COPIES the full resume command (hidden span);
         the live build-claim cue shows when a session looks active in another terminal. %>

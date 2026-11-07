@@ -1,33 +1,54 @@
 <section>
-  <div class="mb-6 flex items-center justify-between">
-    <%= link_to "&larr; All Content".html_safe, contents_path, class: "text-secondary hover:text-heading text-sm transition" %>
-    <div class="flex items-center gap-2">
-      <% lineup_workflows = %w[starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense] %>
-      <% if lineup_workflows.include?(@content.workflow) && @content.team_slug.present? %>
-        <% preview_params = @content.lineup_side ? { side: @content.lineup_side } : {} %>
-        <%= link_to "👀 Preview", team_lineup_graphic_path(@content.team_slug, preview_params),
-              class: "btn btn-outline btn-sm", target: "_blank" %>
-        <% if %w[idea hook script].include?(@content.stage) %>
-          <% confirm_msg = @content.tiktok_workflow? \
-                ? "TikTok captures take ~25–30s (19s clip + upload). Continue?" \
-                : "This takes ~10–15s while we capture and upload to S3. Continue?" %>
-          <%= button_to "🎬 Generate Assets",
-                generate_lineup_assets_content_path(@content.slug),
-                class: "btn btn-secondary btn-sm",
-                form: { class: "inline-block", "data-turbo": "false" },
-                data: { confirm: confirm_msg } %>
-        <% end %>
-        <% if @content.tiktok_workflow? && @content.stage == "assets" %>
-          <%= button_to "✨ Prep for Post",
-                prep_for_tiktok_content_path(@content.slug),
-                class: "btn btn-primary btn-sm",
-                form: { class: "inline-block", "data-turbo": "false" },
-                data: { confirm: "Generate caption variants + sound vibes via Claude. ~5s. Continue?" } %>
-        <% end %>
+  <%# THE HEADER: the engine page header (docs/PAGE_HEADER.md). The old "All Content" back
+      link is the crumb trail; Edit is the one action; the lineup preview is a page
+      elsewhere, in the Links menu; the stage, the type and the slug are meta, with a
+      phone copy below, since the engine hides the meta under 40rem. Generate Assets and
+      Prep for Post are form posts that run a job, which fits none of the header's four
+      kinds of control, so they stand on the page in the row under the header. %>
+  <% lineup_workflows = %w[starter_post_x starter_post_tiktok_offense starter_post_tiktok_defense] %>
+  <% lineup = lineup_workflows.include?(@content.workflow) && @content.team_slug.present? %>
+  <% content_menu = [] %>
+  <% if lineup %>
+    <% preview_params = @content.lineup_side ? { side: @content.lineup_side } : {} %>
+    <% content_menu << { label: "👀 Preview", href: team_lineup_graphic_path(@content.team_slug, preview_params), data: { test: "content-link-preview" } } %>
+  <% end %>
+  <% content_meta = capture do %>
+    <span class="inline-flex flex-wrap items-center gap-2 normal-case tracking-normal" data-test="content-meta">
+      <%= render "components/badge", text: @content.stage.humanize, scheme: content_stage_scheme(@content.stage) %>
+      <% if @content.content_type.present? %>
+        <span class="text-xs text-secondary"><%= @content.content_type.humanize %></span>
       <% end %>
-      <%= link_to "Edit", edit_content_path(@content.slug), class: "btn btn-primary btn-sm" %>
+      <span class="text-xs text-muted font-mono"><%= @content.slug %></span>
+    </span>
+  <% end %>
+  <%= render "studio/page_header", title: @content.title, crumbs: studio_crumbs(parent: :contents),
+        meta: content_meta, menu: content_menu,
+        action: { label: "Edit", href: edit_content_path(@content.slug), data: { test: "content-edit" } } %>
+  <div class="sm:hidden mt-2"><%= content_meta %></div>
+  <% generate = lineup && %w[idea hook script].include?(@content.stage) %>
+  <% prep = lineup && @content.tiktok_workflow? && @content.stage == "assets" %>
+  <% if generate || prep %>
+    <div class="mt-4 flex flex-wrap items-center gap-2" data-test="content-workflow-actions">
+      <% if generate %>
+        <% confirm_msg = @content.tiktok_workflow? \
+              ? "TikTok captures take ~25–30s (19s clip + upload). Continue?" \
+              : "This takes ~10–15s while we capture and upload to S3. Continue?" %>
+        <%= button_to "🎬 Generate Assets",
+              generate_lineup_assets_content_path(@content.slug),
+              class: "btn btn-secondary btn-sm",
+              form: { class: "inline-block", "data-turbo": "false" },
+              data: { confirm: confirm_msg } %>
+      <% end %>
+      <% if prep %>
+        <%= button_to "✨ Prep for Post",
+              prep_for_tiktok_content_path(@content.slug),
+              class: "btn btn-primary btn-sm",
+              form: { class: "inline-block", "data-turbo": "false" },
+              data: { confirm: "Generate caption variants + sound vibes via Claude. ~5s. Continue?" } %>
+      <% end %>
     </div>
-  </div>
+  <% end %>
+  <div class="mb-6"></div>
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Main Content -->
@@ -102,19 +123,6 @@
       <% end %>
 
       <div class="card p-6">
-        <div class="flex items-start justify-between mb-4">
-          <div>
-            <h2 class="text-2xl font-bold text-heading"><%= @content.title %></h2>
-            <div class="flex items-center gap-3 mt-2">
-              <%= render "components/badge", text: @content.stage.humanize, scheme: content_stage_scheme(@content.stage) %>
-              <% if @content.content_type.present? %>
-                <span class="text-xs text-secondary"><%= @content.content_type.humanize %></span>
-              <% end %>
-            </div>
-          </div>
-          <span class="text-xs text-muted font-mono"><%= @content.slug %></span>
-        </div>
-
         <% if @content.description.present? %>
           <div class="mb-4">
             <p class="label-upper">Description</p>
