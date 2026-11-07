@@ -980,7 +980,10 @@ nobody files it under "flaky". The system holds that line in five places:
   Playwright base). Turf's `retries: 2` goes to 0 once its seed causes are fixed.
 - **No apt on the PR path.** The lanes that need packages run in the lane image (the
   `lane-image` input above); the apt mirror stall was the top red-then-green cause.
-  Guard: `test/lib/ci_lane_image_test.rb`.
+  The container runs `--init --shm-size=2g --user 1001`, as close to the hosted VM as a
+  container gets: a reaping PID 1, room for Chrome, and the runner's own user. A system
+  test's Chrome needs `--no-sandbox` there (`ApplicationSystemTestCase.in_container?`,
+  set by the image's `CI_LANE_IMAGE=1`). Guard: `test/lib/ci_lane_image_test.rb`.
 - **A cause card for every flip.** When a run goes green at a SHA where a run of the
   same workflow (or an earlier attempt of the same run, a re-run) went red,
   `GithubWorkflowRunIngestJob` enqueues `CiCauseCardJob`. It reads the red jobs' logs
