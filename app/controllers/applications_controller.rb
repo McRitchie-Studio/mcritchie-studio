@@ -5,9 +5,13 @@
 # viewer owns that app or is an admin: an app a viewer does not own does not
 # exist for them, so an unannounced app's slug never leaks.
 #
+# show, pipeline and the CTO chat (CtoChatsController#show) are one page with three
+# tabs, Overview | Pipeline | Chat, under one header (applications/_page_header,
+# ApplicationsHelper#app_page_tabs; task app-page-tabs). Each keeps its own URL.
+#
 #   index   the visible apps, split by ApplicationsWatchList into live apps
 #           (left) and apps pending launch (right); 404 for a viewer who owns none
-#   show    name, emoji and colour, a lazy health frame, the CTO card, and the
+#   show    the Overview tab: a lazy health frame, the CTO card, and the
 #           brand kits it takes with their status (BrandKitApp; Applied, Kit
 #           changed or Not applied), the brand linked to /logos for an admin
 #   health  the frame: the app's health for the last morning window, cached;
@@ -16,7 +20,7 @@
 #           docs/agents/system/agent-usage.md); owner or admin, like the page.
 #           Dollars are an admin's: an owner reads tokens and the meter only
 #   usage_cap  admin only: the app's package tier and the per-app cap lift
-#   pipeline  the app's tasks by lane, read-only (ClientPipeline,
+#   pipeline  the Pipeline tab: the app's tasks by lane, read-only (ClientPipeline,
 #           docs/agents/system/client-pipeline.md): sanitized for an owner, with
 #           PR links for an admin; an unannounced app is a 404 to all but admins
 class ApplicationsController < ApplicationController
@@ -48,7 +52,8 @@ class ApplicationsController < ApplicationController
 
   def pipeline
     @admin = AppOwnership.admin?(current_user)
-    raise ActiveRecord::RecordNotFound, "no such app" if !@admin && AppCatalog::UNANNOUNCED.include?(@app.slug)
+    # One rule for the 404 and the hidden Pipeline tab (ApplicationsHelper), so the two never drift.
+    raise ActiveRecord::RecordNotFound, "no such app" if helpers.app_pipeline_hidden?(@app, admin: @admin)
 
     @pipeline = ClientPipeline.build(@app, admin: @admin)
   end

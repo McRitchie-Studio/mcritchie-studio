@@ -1,6 +1,6 @@
 // [e2e] An app owner reads their app's pipeline (docs/agents/system/client-pipeline.md).
 // owner@turf.test owns Turf Monster, which e2e/seed.rb puts on the Builder tier (2
-// building lanes). From the app page they open the pipeline: six lanes, the lane
+// building lanes). From the app page they open the Pipeline tab: six lanes, the lane
 // meter, and the seeded reviewed Turf task under Ready for QA, with no agent name, PR
 // link or task link anywhere on the page. Another app's pipeline is a 404. At phone
 // width nothing runs off the side. The seeded admin sees the same card with its PR.
@@ -19,9 +19,10 @@ test.describe("as the owner", () => {
     await loginWithMagicLink(page, "owner@turf.test");
 
     await page.goto("/applications/turf-monster");
-    await page.locator("[data-test='application-pipeline-link']").click();
+    await page.locator("a[data-test='app-tab'][data-tab='pipeline']").click();
     await expect(page).toHaveURL(/\/applications\/turf-monster\/pipeline$/);
-    await expect(page.getByRole("heading", { name: "Turf Monster pipeline", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Turf Monster", level: 1 })).toBeVisible();
+    await expect(page.locator("a[data-test='app-tab'][data-tab='pipeline']")).toHaveAttribute("aria-current", "page");
     await expect(page.locator("#studio-link-sidebar a[href='/applications/turf-monster']")).toHaveCount(1);
     await expect(page.locator("#studio-link-sidebar a[href='/applications/turf-monster/pipeline']")).toHaveCount(0);
 

@@ -1,7 +1,9 @@
-<%# /applications/:slug/chat: the viewer's own live chat with the app's CTO. Owner or admin only. The page is the agent shell (agent_chats/_shell): the CTO's portrait, the app's status card (Building · Releasing · Deploying, then the tokens this month), then the thread and the chat box. docs/agents/system/agent-message-loop.md ("Web chat") %>
+<%# /applications/:slug/chat, the app page's Chat tab: the viewer's own live chat with the app's CTO. Owner or admin only. The page is the agent shell (agent_chats/_shell): the CTO's portrait, the app's status card (Building · Releasing · Deploying, then the tokens this month), then the thread and the chat box. docs/agents/system/agent-message-loop.md ("Web chat") %>
 <%# Build my app lands here from /build, after the launch panel (build/_launch): both pages opt in to a view transition, so the panel's portrait morphs into the CTO's head (Turbo 8). %>
 <% turbo_refreshes_with method: :morph, scroll: :preserve %>
 <% client = @cto.client? %>
+<%# The app page's Chat tab (task app-page-tabs): the shared header, then the shell, which measures where it starts (agent_shell.js), so it still ends at the window's bottom. %>
+<%= render "applications/page_header", app: @app, admin: @admin, current: :chat %>
 <%# The owner's page holds the avatar picker (cto_chats/_avatar_picker): data-cto-avatar-picker shows its openers (cto_animal.css), the head's portrait and an avatar ask's answer. %>
 <div data-test="cto-chat-page" data-app="<%= @app.slug %>" data-soul="<%= @cto.soul %>"<%= " data-cto-avatar-picker".html_safe if @avatar_owner %>>
   <% head = capture do %>
@@ -32,6 +34,6 @@
       </p>
     <% end %>
   <% end %>
-  <%= render "agent_chats/shell", page: "app", head: head, status: status, chat: chat, turns: (@messages.size if @available).to_i %>
+  <%= render "agent_chats/shell", page: "app", head: head, status: status, chat: chat, turns: (@messages.size if @available).to_i, under_header: true %>
   <%= render "cto_chats/avatar_picker", app: @app, app_cto: @cto.app_cto if @avatar_owner %>
 </div>

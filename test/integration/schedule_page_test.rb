@@ -30,7 +30,7 @@ class SchedulePageTest < ActionDispatch::IntegrationTest
   end
 
   test "public pages carry the booking popup, its frame not yet requested" do
-    [ root_path, about_path, privacy_path ].each do |path|
+    [ root_path, privacy_path ].each do |path|
       get path
 
       assert_select "dialog[data-booking-dialog]", { count: 1 }, path

@@ -47,6 +47,8 @@
 @import './cto_animal.css';
 /* Every text-* size on the type scale's five roles (task hub-adopts-type-scale). */
 @import './type_scale.css';
+/* The app page's tab header on a phone (task app-page-tabs). */
+@import './app_page.css';
 
 
 /* The layer scale now comes from the ENGINE — see engine.css `-- Layer scale`,

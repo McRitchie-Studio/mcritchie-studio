@@ -116,10 +116,10 @@ defaults.
 
 ## About page
 
-`/about` (`landing#about`) is the studio's company page: what it does, how a
-launch works, who runs it, and the ways to get in touch. Public, static, and
-linked from the footer's Company column. Its copy restates the home page and
-`/packages`; keep the three in step when one changes.
+The hub has no about page of its own. Alex McRitchie's about page lives on
+alex.build: `/about` is a 301 to `https://alex.build/about`, and the footer's
+Company column links there directly. The home page's old `#about` section went
+with it (task hub-drops-about-section, 2026-11-06).
 
 ## Site footer and booking (public pages)
 
@@ -154,7 +154,7 @@ style, script or Leaflet of its own.
   page that already shows the inline frame (`/`, `/schedule`) the click scrolls
   to that frame instead. The href stays `/schedule`, the fallback. Call sites:
   the footer's Contact column (marked `{ booking: true }` in the facts),
-  `landing/about`, and `PackagesHelper#package_cta_link`.
+  `integrations/index`, and `PackagesHelper#package_cta_link`.
 - **The map** is Leaflet 1.9.4 on OpenStreetMap's keyless tiles, served by the
   engine through the asset pipeline (`/assets/studio/leaflet-*.js` and `.css`).
   It is fetched only once the map is within 400px of the viewport, after

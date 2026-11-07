@@ -9,7 +9,9 @@ test("landing page loads", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("body")).toContainText("McRitchie Studio");
   await expect(page.locator("body")).toContainText("Built for 2027");
-  await expect(page.locator("body")).toContainText("Alex McRitchie");
+  // The "Alex McRitchie" About section moved to alex.build/about (task
+  // hub-drops-about-section); the booking band follows the hero now.
+  await expect(page.locator("body")).toContainText("Get in Touch");
 });
 
 test("dashboard loads with agent cards", async ({ page }) => {
