@@ -12,6 +12,8 @@
   <%= render "studio/page_header", title: @release.slug, crumbs: studio_crumbs(parent: :all_deployments),
         meta: state_badge,
         menu: [{ label: "All Deployments", href: all_deployments_path, data: { test: "release-link-all" } }] %>
+  <%# The engine hides the meta under 40rem, so a phone gets the state here instead. %>
+  <div class="sm:hidden mt-2" data-test="release-state-phone"><%= state_badge %></div>
   <div class="mb-6"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">

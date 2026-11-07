@@ -113,6 +113,7 @@ class HubHeaderControlsTest < ActionDispatch::IntegrationTest
     get_header deployment_path(release.slug)
 
     assert_select "#{ROW} .page-header-meta [data-test=release-state]", text: "shipped"
+    assert_select "[data-test=release-state-phone].sm\\:hidden [data-test=release-state]", text: "shipped"
     assert_equal [ all_deployments_path ], menu_hrefs
   end
 end
