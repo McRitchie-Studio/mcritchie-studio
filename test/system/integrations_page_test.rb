@@ -13,7 +13,8 @@ class IntegrationsPageTest < ApplicationSystemTestCase
 
   GOOGLE_CARDS = %w[google_calendar gmail google_drive].freeze
   # The admin's cards whose real Connect replaces the contact-form one, in page order.
-  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom]).freeze
+  # The admin's Microsoft 365 card (in Talk to us) carries its tenant slot in place of its CTA too.
+  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom microsoft_365]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
   # A headless window will not shrink below about 500px, so the width is set by
@@ -42,7 +43,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         without = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => !card.querySelector("[data-test='entry-cta']")).map(card => card.dataset.entry)
         JS
-        assert_equal CONNECTION_CARDS, without, "#{theme} at #{width}px: only the admin's Google and Fathom cards drop their CTA"
+        assert_equal CONNECTION_CARDS, without, "#{theme} at #{width}px: only the admin's Google, Fathom and Microsoft 365 cards drop their CTA"
         clipped = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => {
             const cta = card.querySelector("[data-test='entry-cta']");

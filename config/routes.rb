@@ -481,6 +481,13 @@ Rails.application.routes.draw do
     get "fathom/connect", to: "fathom#connect", as: :fathom_connect
     delete "fathom/connection", to: "fathom#disconnect", as: :fathom_disconnect
     get "fathom/callback", to: "fathom#callback", as: :fathom_callback
+
+    # The Microsoft 365 tenant connections (Admin::MsgraphController). The
+    # callback path is the redirect URI registered on the Entra app: keep it exactly.
+    get "msgraph", to: "msgraph#show", as: :msgraph
+    get "msgraph/connect", to: "msgraph#connect", as: :msgraph_connect
+    delete "msgraph/connections/:id", to: "msgraph#disconnect", as: :msgraph_disconnect
+    get "msgraph/callback", to: "msgraph#callback", as: :msgraph_callback
   end
 
   # HTML

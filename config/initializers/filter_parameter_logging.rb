@@ -36,6 +36,17 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom].include?(params["controller"].to_s)
   end,
+  # The Microsoft 365 admin-consent callback's tenant id (MsgraphConnection
+  # stores it encrypted). Matched on its own controller, or beside the
+  # `admin_consent` key it always rides with: the request line's filtered path
+  # filters the bare query, which carries no controller. A bare :tenant would
+  # mask every other `tenant` param.
+  lambda do |key, value, params = nil|
+    next unless key.to_s == "tenant" && value.is_a?(String)
+    next unless params.is_a?(Hash)
+
+    value.replace("[FILTERED]") if params["controller"].to_s == "admin/msgraph" || params.key?("admin_consent")
+  end,
   # The satellite visitor's IP the agent chat API takes for its per-IP cap
   # (Api::V1::AgentChatsController): hashed there, never stored, and kept out of
   # the request log here. Scoped to that controller: a bare :ip would partial-match

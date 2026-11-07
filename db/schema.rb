@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_233000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_06_200000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1915,6 +1915,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_233000) do
     t.decimal "output_rate", precision: 12, scale: 4, null: false
     t.datetime "updated_at", null: false
     t.index ["model"], name: "index_model_rate_overrides_on_model", unique: true
+  end
+
+  create_table "msgraph_connections", force: :cascade do |t|
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "display_name", null: false
+    t.text "tenant_id", null: false
+    t.string "tenant_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["connected_at"], name: "index_msgraph_connections_on_connected_at"
+    t.index ["tenant_key"], name: "index_msgraph_connections_on_tenant_key", unique: true
   end
 
   create_table "news", force: :cascade do |t|
