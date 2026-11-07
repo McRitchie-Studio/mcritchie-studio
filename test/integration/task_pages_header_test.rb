@@ -77,8 +77,7 @@ class TaskPagesHeaderTest < ActionDispatch::IntegrationTest
       { path: admin_agent_message_path(@message), title: "Message #{@message.id}", crumbs: [ admin_agent_messages_path ] },
       { path: admin_model_pricing_model_path("claude-opus-4-8"), title: nil, crumbs: [ admin_model_pricing_path ] },
       { path: broadcast_queue_path(@broadcast), title: "Queue", crumbs: [ broadcasts_path, edit_broadcast_path(@broadcast) ] },
-      { path: edit_broadcast_path(@broadcast), title: "Edit broadcast", crumbs: [ broadcasts_path ],
-        menu: [ preview_broadcast_path(@broadcast) ] },
+      { path: edit_broadcast_path(@broadcast), title: "Edit broadcast", crumbs: [ broadcasts_path ] },
       { path: cyvasse_four_scoreboard_path, title: "Cyvasse four-style test", crumbs: [ broadcast_analytics_path ] },
       { path: team_depth_chart_path(@team.slug), title: "🏈 Header Gridiron — Depth Chart", crumbs: [ nfl_rosters_path ] },
       { path: epic_path("header-epic"), title: "header-epic", crumbs: [ deployments_path, epics_path ],
@@ -128,6 +127,9 @@ class TaskPagesHeaderTest < ActionDispatch::IntegrationTest
     assert_select "#{ROW} nav.page-header-tabs a[href=?]", broadcast_queue_path(@broadcast)
     assert_select "#{ROW} #copy-html-btn", 0
     assert_select "#copy-html-btn", 1
+    # A new tab, so the editor's unsaved edits survive; the engine menu takes no target.
+    assert_select "#{ROW} [data-test=broadcast-link-preview]", 0
+    assert_select "a[data-test=broadcast-link-preview][target=_blank][href=?]", preview_broadcast_path(@broadcast)
 
     get_header broadcast_queue_path(@broadcast)
     assert_select "#{ROW} nav.page-header-tabs a[aria-current=page][href=?]", broadcast_queue_path(@broadcast)

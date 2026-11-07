@@ -1,14 +1,15 @@
 <div class="max-w-7xl mx-auto px-4 py-8">
   <%# The engine page header (docs/PAGE_HEADER.md). The old "All broadcasts" link is the
-      crumb trail; Editor and Queue are two views of one broadcast, the tabs; the preview
-      is a page elsewhere, in the Links menu. Copy HTML for HubSpot copies to the
-      clipboard: it is no link, so it fits none of the header's four kinds of control and
-      stands on the page, under the header. %>
+      crumb trail; Editor and Queue are two views of one broadcast, the tabs. Copy HTML
+      copies to the clipboard, and Open preview opens a new tab so unsaved edits survive
+      (the engine menu takes no target): neither fits the header's four kinds of control,
+      so both stand on the page, under the header. %>
   <%= render "studio/page_header", title: "Edit broadcast", crumb_label: "Editor",
         crumbs: studio_crumbs(parent: :broadcasts),
-        label: "Broadcast", tabs: broadcast_view_tabs(@broadcast, current: :editor),
-        menu: [{ label: "Open preview ↗", href: preview_broadcast_path(@broadcast), data: { test: "broadcast-link-preview" } }] %>
+        label: "Broadcast", tabs: broadcast_view_tabs(@broadcast, current: :editor) %>
   <div class="mt-3 mb-6 flex flex-wrap items-center gap-3">
+    <%= link_to "Open preview ↗", preview_broadcast_path(@broadcast), target: "_blank", rel: "noopener",
+          class: "btn btn-outline btn-sm", data: { test: "broadcast-link-preview" } %>
     <button type="button" id="copy-html-btn"
             data-export-url="<%= preview_broadcast_path(@broadcast, assets: 's3') %>"
             class="btn btn-primary btn-sm">Copy HTML for HubSpot</button>
