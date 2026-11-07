@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/change_builder_on"
 require "tmpdir"
 require_relative "../../bin/lib/client_build_launcher"
 
@@ -13,6 +14,7 @@ require_relative "../../bin/lib/client_build_launcher"
 # recorded failed with a short reason, told in the thread and raised by the floor
 # alert. Control: a web app owner's started card gets no builder.
 class ChangeBuilderLauncherLoopTest < ActionDispatch::IntegrationTest
+  include ChangeBuilderOn
   include ActiveJob::TestHelper
 
   OWNER_SLACK = "U0OWNER001".freeze
@@ -107,7 +109,7 @@ class ChangeBuilderLauncherLoopTest < ActionDispatch::IntegrationTest
   end
 
   def launcher(claude, timeout_seconds: nil)
-    config = ClientBuildLauncher.config.merge("cap" => 2)
+    config = ClientBuilds.config.merge("cap" => 2)  # the switched-on copy ChangeBuilderOn installed
     builder = ClientBuildLauncher::ChangeBuilder.new(
       config: config, claude: claude, projects_dir: @projects, log_root: File.join(@projects, "logs"),
       env: { "HOME" => Dir.home, "PATH" => "/usr/bin:/bin", "ANTHROPIC_API_KEY" => "sk-leak",
