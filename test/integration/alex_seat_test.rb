@@ -79,12 +79,14 @@ class AlexSeatTest < ActionDispatch::IntegrationTest
 
   # ── Routes: /alex/* serves, /xan/* forwards ───────────────────────────────
 
-  test "the seat's pages answer under /mason" do
+  # The Insight Bank and the pipeline moved to /devops (devops-namespace); the
+  # per-session heartbeat stays under /mason.
+  test "the seat's heartbeat answers under /mason, its insight pages under /devops" do
     assert_equal "/mason/heartbeat", mason_heartbeat_path
-    assert_equal "/mason/insights", mason_insights_path
-    assert_equal "/mason/pipeline", mason_pipeline_path
+    assert_equal "/devops/insights", mason_insights_path
+    assert_equal "/devops/pipeline", mason_pipeline_path
     assert_routing "/mason/heartbeat", controller: "heartbeat", action: "show"
-    assert_routing "/mason/insights", controller: "heartbeat", action: "insights"
+    assert_routing "/devops/insights", controller: "heartbeat", action: "insights"
 
     get mason_heartbeat_path
     assert_response :success
@@ -99,14 +101,14 @@ class AlexSeatTest < ActionDispatch::IntegrationTest
     {
       "/ray/heartbeat?session_id=abc"          => "/mason/heartbeat?session_id=abc",
       "/ray/heartbeat/activities/7/feedback"   => "/mason/heartbeat/activities/7/feedback",
-      "/ray/insights"                          => "/mason/insights",
-      "/ray/pipeline"                          => "/mason/pipeline",
+      "/ray/insights"                          => "/devops/insights",
+      "/ray/pipeline"                          => "/devops/pipeline",
       "/xan/heartbeat"                         => "/mason/heartbeat",
       "/xan/heartbeat?session_id=abc"          => "/mason/heartbeat?session_id=abc",
       "/xan/heartbeat/activities?page=2"       => "/mason/heartbeat/activities?page=2",
       "/xan/heartbeat/activities/7/feedback"   => "/mason/heartbeat/activities/7/feedback",
-      "/xan/insights"                          => "/mason/insights",
-      "/xan/pipeline"                          => "/mason/pipeline"
+      "/xan/insights"                          => "/devops/insights",
+      "/xan/pipeline?tab=2"                    => "/devops/pipeline?tab=2"
     }.each do |old, new|
       get old
       assert_response :moved_permanently, old

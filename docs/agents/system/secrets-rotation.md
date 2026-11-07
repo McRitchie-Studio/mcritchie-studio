@@ -117,7 +117,7 @@ Message verifiers are deliberately **not** rotated: the old key is the leaked on
    - `curl -s -o /dev/null -w '%{http_code}\n' https://mcritchie.studio/up` and `/signin` answer 200 (`/login` is a 301 to `/signin`).
    - Real-cookie proof, which `verify_rotation` approximates but does not replace: before the swap, `curl -c jar.txt https://mcritchie.studio/signin` and unmask the page's `csrf-token` (`pad XOR token`, 32 + 32 bytes); after it, `curl -b jar.txt` the same page. The same unmasked token means the pre-swap session read. A new one means it did not.
    - Board tokens: the cached token now 401s (`curl -s -o /dev/null -w '%{http_code}\n' -H @<(printf 'Authorization: Bearer %s\n' "$(jq -r .token /Users/alex/projects/.agents/atomic-capture/token.json)") https://mcritchie.studio/api/v1/tasks`); then `rm -f /Users/alex/projects/.agents/atomic-capture/token.json` and `/Users/alex/projects/.agents/bin/task show hub-rotates-secret-key-base` succeeds on a fresh mint.
-   - Sign-in persists: a browser signed in before the swap loads `https://mcritchie.studio/tasks` without a login (Alex McRitchie's own session is the check at his next visit).
+   - Sign-in persists: a browser signed in before the swap loads `https://mcritchie.studio/devops/tasks` without a login (Alex McRitchie's own session is the check at his next visit).
    - Watch `ErrorLog` and Sentry for 15 minutes for `InvalidSignature` or `InvalidMessage` spikes.
 
    **Rollback** (symmetric, one PATCH, so sessions written under either key keep reading):

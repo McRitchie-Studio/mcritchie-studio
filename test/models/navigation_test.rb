@@ -36,7 +36,7 @@ class NavigationTest < ActiveSupport::TestCase
     view = Rails.application.routes.url_helpers
     paths = Navigation.placed_keys.to_h { |key| [ key, Navigation.page(key).path(view) ] }
 
-    assert_equal "/tasks", paths.fetch("tasks")
+    assert_equal "/devops/tasks", paths.fetch("tasks")
     assert_equal "/games/2026", paths.fetch("games_season")
     assert_equal "/error_logs", paths.fetch("error_logs")
     assert paths.values.all? { |path| path.start_with?("/") }
@@ -194,7 +194,7 @@ class NavigationTest < ActiveSupport::TestCase
     assert_equal [ "Tasks", "Home" ], general.pages.map(&:label)
     assert_equal "Tasks", registry.page(:tasks).label
     assert_equal %w[tasks root], admin.pages.map(&:key)
-    assert_equal "/tasks", admin.pages.first.path(Rails.application.routes.url_helpers), "the override moves no route"
+    assert_equal "/devops/tasks", admin.pages.first.path(Rails.application.routes.url_helpers), "the override moves no route"
     assert_equal %w[tasks root], registry.placed_keys
   end
 
@@ -258,13 +258,25 @@ class NavigationTest < ActiveSupport::TestCase
     assert_equal [ { label: "Start", href: "/" } ], crumbs.trail(view, :tasks)
   end
 
-  test "[unit] the real registry gives every board page the trail Admin, Deployments" do
+  # devops-namespace (Alex McRitchie, 2026-11-07): the board home is the root of its
+  # own trail, "DevOps", not a child of the admin dashboard.
+  test "[unit] the real registry gives every board page the trail DevOps" do
     crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
-    %i[tasks stages epics triage intelligence pokedex recent_tasks mason_pipeline mason_insights].each do |key|
-      assert_equal %i[admin_dashboard deployments], crumbs.chain(key)[0...-1], key
+    %i[tasks stages epics triage intelligence recent_tasks all_deployments mason_pipeline mason_insights
+       review_events_hub].each do |key|
+      assert_equal %i[deployments], crumbs.chain(key)[0...-1], key
     end
+    assert_equal "DevOps", Navigation.page(:deployments).crumb_label
+    assert_nil Navigation.page(:deployments).parent, "the DevOps board home is a root"
     assert_equal "Admin", Navigation.page(:admin_dashboard).crumb_label
     assert_nil Navigation.page(:admin_dashboard).parent, "the admin dashboard is the root"
+  end
+
+  test "[unit] the agent pages keep their own section, out of the DevOps trail" do
+    crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
+    %i[pokedex activities_agents agents].each do |key|
+      refute_includes crumbs.chain(key), :deployments, key
+    end
   end
 
   # An unknown key raises in test and draws no trail in production, so every key a view
@@ -288,6 +300,7 @@ class NavigationTest < ActiveSupport::TestCase
 
   test "[unit] the app's own Studio.crumbs is drawn at boot" do
     assert Studio.crumbs.key?(:deployments)
-    assert_equal :admin_dashboard, Studio.crumbs.fetch(:deployments).parent
+    assert_nil Studio.crumbs.fetch(:deployments).parent, "the DevOps board home is a crumb root"
+    assert_equal :deployments, Studio.crumbs.fetch(:triage).parent
   end
 end

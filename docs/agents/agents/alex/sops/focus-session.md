@@ -163,7 +163,7 @@ shows them near idle. So:
 Spawn each builder as a `pokemon` subagent with this brief, filled in:
 
 ```text
-Build task <slug>: https://mcritchie.studio/tasks/<slug>
+Build task <slug>: https://mcritchie.studio/devops/tasks/<slug>
 Epic plan: /Users/alex/projects/.agents/epics/<epic-slug>.md (read it first; you are piece <n>)
 Desk: <the path bin/task begin printed> (already created; do not run bin/task begin again)
 
@@ -242,7 +242,7 @@ the diff was never prose), the PR is tier B: spawn `carl`.
 Spawn the reviewer with this brief, filled in:
 
 ```text
-Review PR <url> for task <slug> (https://mcritchie.studio/tasks/<slug>), base accepted.
+Review PR <url> for task <slug> (https://mcritchie.studio/devops/tasks/<slug>), base accepted.
 Run docs/agents/agents/carl/sops/pr-review-primary.md end to end, as the soul named here.
 Claim by slug, naming that soul; the claim prints the dreams selected for the task, so read them before the diff:
   bin/task review-claim acquire <slug> --agent <mason for tier A | carl for tiers B and C>
