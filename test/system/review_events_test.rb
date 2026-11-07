@@ -45,26 +45,22 @@ class ReviewEventsTest < ApplicationSystemTestCase
 
     visit deployments_path
 
-    # Under a chromedriver/chrome version skew in CI, the native click on the
-    # <summary> is sometimes silently swallowed (PRs #460 and #467 red-flagged
-    # here at the [open] assertion). A missed click leaves the <details> closed
-    # forever, so a single click followed by assert_selector just burns the
-    # Capybara wait and fails. Retry the click with a bounded poll between
-    # attempts: the browser sets the open attribute synchronously when an
-    # activation registers, so a 2s poll coming back false means the click
-    # never landed and a re-click cannot toggle an open menu shut.
-    menu = find("[data-test='deployment-link-menu']")
+    # The header's Links menu (studio-engine studio/_page_header `menu:`) is a popover
+    # list opened from its button. Under a chromedriver/chrome version skew in CI a
+    # native click is sometimes silently swallowed (PRs #460 and #467), so the click is
+    # retried with a bounded poll: the popover's links are visible the moment the
+    # activation registers, and a re-click is only sent while they are not.
+    menu_button = find(".page-header .page-header-menu-button", text: "Links")
     3.times do
-      menu.find("summary").click
-      break if page.has_css?("[data-test='deployment-link-menu'][open]", wait: 2)
+      menu_button.click
+      break if page.has_css?("[data-test='deployment-link-menu-docs']", visible: true, wait: 2)
     end
-    assert_selector "[data-test='deployment-link-menu'][open]"
+    assert_selector "[data-test='deployment-link-menu-docs']", visible: true
 
-    # The dropdown stacks "Stages" directly above "Docs"; the same click skew
-    # once mis-landed a too-early click on the adjacent "Stages" link (asserted
-    # "/stages" instead of "/review_events"). With the menu confirmed open,
-    # resolve the Docs link by its unique hook (verifying its href so a
-    # selector drift can't pass silently), then click that exact element.
+    # The list stacks "Stages" directly above "Docs"; the same click skew once
+    # mis-landed a too-early click on the adjacent "Stages" link. With the menu
+    # confirmed open, resolve the Docs link by its unique hook (verifying its href so
+    # a selector drift can't pass silently), then click that exact element.
     docs_link = find("[data-test='deployment-link-menu-docs']")
     assert_equal review_events_hub_path, URI.parse(docs_link[:href]).path
     docs_link.click

@@ -29,7 +29,7 @@ test("/deployments wears the crumb header: trail, h2-size title, actions right, 
   const title = row.locator("h1.page-header-title");
   await expect(title).toHaveText("Deployments");
   expect(await title.evaluate((el) => getComputedStyle(el).fontSize)).toBe("30px");
-  await expect(row.locator(".page-header-actions a", { hasText: "New Task" })).toBeVisible();
+  await expect(row.locator(".page-header-actions a.page-header-action", { hasText: "New Task" })).toBeVisible();
   for (const name of ["Epics", "Intelligence", "Pokédex", "Pipeline", "Insights", "Recent"]) {
     await expect(row.locator(".page-header-links a", { hasText: name })).toHaveCount(1);
   }

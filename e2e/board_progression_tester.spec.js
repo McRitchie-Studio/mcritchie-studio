@@ -31,7 +31,7 @@ test("Advance walks a fixture into WAITING APPROVAL, then settles it", async ({ 
   const res = await page.goto("/tasks");
   expect(res.ok()).toBe(true);
 
-  const tester = page.locator("[data-test='board-header-actions'] [data-test='dev-board-tools']");
+  const tester = page.locator("[data-test='board-header-tools'] [data-test='dev-board-tools']");
   await expect(tester, "the TASK group lives in the board header").toBeVisible();
   await expect(tester.locator("span").first()).toHaveText("Task");
 
@@ -93,7 +93,7 @@ test("Advance walks a fixture into WAITING APPROVAL, then settles it", async ({ 
 
   // Clean up the fixture we spawned. The tester renders on both boards, so the
   // Delete button is reachable from here too.
-  const deployTester = page.locator("[data-test='board-header-actions'] [data-test='dev-board-tools']");
+  const deployTester = page.locator("[data-test='board-header-tools'] [data-test='dev-board-tools']");
   await deployTester.getByRole("button", { name: "Delete" }).click();
   await expect(merged).toHaveCount(0);
 });

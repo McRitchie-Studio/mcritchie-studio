@@ -1,0 +1,47 @@
+/* The logo grid backdrop (app/views/shared/_logo_grid.html.erb, built by
+   app/javascript/logo_grid.js; task logo-grid-backdrop). Each cell carries
+   --lit, 0 to 1, from the script: dim and grey at 0, full colour, full size and
+   a soft primary glow at 1. The edges fade out, so the grid has no hard border. */
+.logo-grid {
+  --logo-grid-cell: 92px;
+  --logo-grid-tile: 68px;
+  --logo-grid-rest: 0.09;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  -webkit-mask-image: radial-gradient(ellipse 75% 70% at 50% 50%, #000 45%, transparent 100%);
+  mask-image: radial-gradient(ellipse 75% 70% at 50% 50%, #000 45%, transparent 100%);
+}
+.dark .logo-grid { --logo-grid-rest: 0.12; }
+@media (max-width: 639px) {
+  .logo-grid { --logo-grid-cell: 72px; --logo-grid-tile: 54px; }
+}
+
+.logo-grid-cell {
+  --lit: 0;
+  position: absolute;
+  width: var(--logo-grid-tile);
+  height: var(--logo-grid-tile);
+  border-radius: 22%;
+  overflow: hidden;
+  background: var(--color-surface-alt, #2a2550);
+  opacity: calc(var(--logo-grid-rest) + var(--lit) * (1 - var(--logo-grid-rest)));
+  transform: translate(-50%, -50%) scale(calc(0.84 + var(--lit) * 0.16));
+  filter: grayscale(calc(1 - var(--lit)));
+  box-shadow: 0 0 calc(var(--lit) * 28px) rgb(var(--color-primary-500-rgb, 139 92 246) / calc(var(--lit) * 0.55));
+  will-change: opacity, transform, filter;
+}
+.logo-grid-cell img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Reduced motion: the script runs no loop; the grid rests a little brighter,
+   so the band still reads as a wall of faces and logos. */
+@media (prefers-reduced-motion: reduce) {
+  .logo-grid, .dark .logo-grid { --logo-grid-rest: 0.22; }
+}

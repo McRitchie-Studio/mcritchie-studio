@@ -5,14 +5,15 @@
 <% integrity = @duration_metrics["integrity"] || {} %>
 
 <div class="max-w-7xl mx-auto px-4 py-6">
-  <% header_actions = capture do %>
-    <div class="flex items-center gap-2">
-      <span class="rounded px-2 py-0.5 text-xs font-bold <%= release_state_classes(@release.state) %>"><%= @release.state %></span>
-      <%= link_to "All Deployments", all_deployments_path, class: "btn btn-neutral btn-sm" %>
-    </div>
-  <% end %>
+  <%# The state is a status badge, not a control: the header's meta, beside the title.
+      All Deployments is a page elsewhere: the Links menu (docs/PAGE_HEADER.md). %>
+  <% state_badge = tag.span(@release.state, class: "rounded px-2 py-0.5 text-xs font-bold #{release_state_classes(@release.state)}",
+                            data: { test: "release-state" }) %>
   <%= render "studio/page_header", title: @release.slug, crumbs: studio_crumbs(parent: :all_deployments),
-        actions_html: header_actions %>
+        meta: state_badge,
+        menu: [{ label: "All Deployments", href: all_deployments_path, data: { test: "release-link-all" } }] %>
+  <%# The engine hides the meta under 40rem, so a phone gets the state here instead. %>
+  <div class="sm:hidden mt-2" data-test="release-state-phone"><%= state_badge %></div>
   <div class="mb-6"></div>
 
   <div class="grid grid-cols-1 md:grid-cols-5 gap-3 mb-6">

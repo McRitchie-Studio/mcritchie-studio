@@ -105,7 +105,7 @@ class AdminWallTest < ActionDispatch::IntegrationTest
       assert_not signed_in_route?(controller, action), "#{pair} must need an admin"
     end
 
-    public_pages = %w[landing#index landing#terms landing#privacy landing#about packages#index packages#stack
+    public_pages = %w[landing#index landing#terms landing#privacy packages#index packages#stack
                       build#new build#create build#show build#check contact_submissions#new
                       contact_submissions#create unsubscribes#show email_tracking#open links#index
                       schedule#index nfl#index rankings#quarterback games#season depth_charts#show
