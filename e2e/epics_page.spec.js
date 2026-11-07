@@ -60,7 +60,7 @@ test("the epics page lists an epic and clicks through to its tasks by stage", as
 
     await row.locator("[data-test='epic-row-link']").click();
     await expect(page).toHaveURL(new RegExp(`/epics/${EPIC}$`));
-    await expect(page.locator("[data-test='epic-header'] h1")).toHaveText(EPIC);
+    await expect(page.locator(".page-header h1.page-header-title")).toHaveText(EPIC);
 
     // Each task sits in its stage's section, on a card that actually shows.
     const building = page.locator("[data-test='epic-stage'][data-stage='building']");
