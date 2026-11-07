@@ -417,6 +417,8 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(again.status()).toBe(303);
   expect(new URL(again.headers().location, page.url()).pathname).toBe(`/applications/${address}/chat`);
   await expect(page.locator("[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']")).toContainText("Marbles");
+  // The chat is the app page's Chat tab (task app-page-tabs): the shared header, Chat open; the send below runs inside it.
+  await expect(page.locator("[data-test='app-page-header'] a[data-test='app-tab'][data-tab='chat']")).toHaveAttribute("aria-current", "page");
   await expect(page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("data-animal", tappedAnimal.replace("animal:", ""));
   const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
   await expect(head.locator("h2")).toBeVisible();
