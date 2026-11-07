@@ -1,17 +1,8 @@
-// [e2e] The Microsoft 365 tenant connection, as an admin meets it: on
-// /integrations the Microsoft 365 card (in Talk to us) carries Connect
-// Microsoft 365; the stand-in's admin consent comes back to /integrations
-// connected for the tenant Graph names, and /admin/msgraph proves the read:
-// the first page of users and whether there are more, the Teams, the root
-// site and its drives, on a first load and a second (the second rides the
-// in-memory token cache, which test/controllers/admin/msgraph_controller_test.rb
-// counts). Disconnect deletes the tenant. No page shows the tenant id.
-//
-// WHAT THIS DOES NOT PROVE. Nothing here reaches Microsoft: the lane's stand-in
-// (config/initializers/msgraph_connect_stand_in.rb) answers for the
-// admin-consent page, the token endpoint and the Graph reads. The callback,
-// the token request and cache, the stored MsgraphConnection and the pages are
-// real. The real request shapes are pinned in test/services/msgraph/.
+// [e2e] An admin connects a Microsoft 365 tenant from the /integrations card,
+// reads it on /admin/msgraph (users, Teams, root site, drives) on two loads,
+// and disconnects. No page shows the tenant id. Nothing reaches Microsoft: the
+// lane's stand-in (config/initializers/msgraph_connect_stand_in.rb) answers
+// consent, tokens and reads; the callback, token cache, row and pages are real.
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 
