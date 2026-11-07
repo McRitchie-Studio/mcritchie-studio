@@ -8,7 +8,8 @@ build at once. Plan: Phase 8 of `.agents/epics/domain-agents.md` (Alex McRitchie
 ## The page
 
 `/applications/:slug/pipeline` (`ApplicationsController#pipeline`,
-`ClientPipeline`). Read-only. It is linked from the app page's **Pipeline** card
+`ClientPipeline`). Read-only. It is the app page's **Pipeline** tab (Overview |
+Pipeline | Chat, `applications/_page_header`), on the app page
 which an owner reaches from the sidebar's **My Apps** section.
 
 - **Who:** the app's owner or an admin (`AppOwnership.manage_app?`). Anyone else
