@@ -395,7 +395,7 @@ repository, so this Mac was their only copy until 2026-11-06 (task
   `.secret-cache/`, `tooling/`, `bin.pre-tooling-*`, `locks/`, and any file
   named like a token or secret (`*.token`, `token.json`, `*tokens.json`,
   `.env*`, `*.pem`, `*.key`, `keys.txt`, `harness-key.json`,
-  `*credentials*.json`, `*secret*.json`, `*.lock`). The list is
+  `*credentials*.json`, `*secret*.json`, `*.lock`, `op-reads.log`). The list is
   `AgentsBackup::EXCLUDE_*` in `bin/lib/agents_backup.rb`, held by
   `test/lib/agents_backup_test.rb`.
 - **Layout.** `current/<agents|memory>/…` holds the latest copy of every file
@@ -411,6 +411,11 @@ repository, so this Mac was their only copy until 2026-11-06 (task
 - **Restore** one file into a folder, never in place:
   `bin/agents-backup restore memory MEMORY.md --to /tmp/restore`. Copy it back
   by hand after you read it.
+- **Proven 2026-11-06.** First run: 2,796 + 502 files, 0 failures; a raw listing
+  showed 0 plaintext names and objects that begin `RCLONE`; the token was refused
+  (403) on `mcritchie-studio-production`. Restore of `memory/MEMORY.md` and
+  `agents/character-sheet-recipe.md` into a scratch folder matched the originals
+  by SHA-256. A second run archived the 2 files it overwrote.
 
 ## Background — not needed to execute
 

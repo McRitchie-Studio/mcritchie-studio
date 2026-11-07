@@ -55,7 +55,10 @@ module AgentsBackup
     ".env", ".env*", "*.env",
     "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa*", "id_ed25519*",
     "harness-key.json", "*-key.json", "keys.txt", "*credentials*.json", "*secret*.json",
-    "*.lock"
+    "*.lock",
+    # The op read log names every 1Password item and field read on this Mac: a
+    # map of the credentials, worthless to restore.
+    "op-reads.log*"
   ].freeze
 
   FNM = File::FNM_CASEFOLD | File::FNM_DOTMATCH

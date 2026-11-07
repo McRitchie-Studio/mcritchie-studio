@@ -254,6 +254,10 @@ command carries on; it never fails `status` or `prepare`, which make the same re
   re-minted on its first credential refusal, and every 50 minutes after that, so a
   watch that outlives the token resumes on a fresh one. A dispatch refused on credentials is
   sent again only once GitHub shows no run carrying its correlation id.
+  GitHub also enforces the branch: since 2026-11-06 the hub's `production`
+  environment carries a deployment-branch policy that admits `main` alone (task
+  `safety-floor-settings`), so a run dispatched on any other ref is refused before
+  it can read `HEROKU_API_KEY`. `bin/release` dispatches on `main`, the default.
 - **A GEM-ONLY release ships too**: under the default flow `prepare` already published
   the final and tagged it `v<x.y.z>`, so the ship finds it live and fast-forwards the
   gem repos; the RubyGems publish IS the deploy (a **GEM-ONLY** badge). Under the

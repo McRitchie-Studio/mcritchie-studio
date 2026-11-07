@@ -19,7 +19,6 @@ class AgentsBackupTest < Minitest::Test
     sessions/abc.json
     memory-notes/hub-entry-tokens.md
     memory-notes/secret-cache-design.md
-    op-reads.log
   ].freeze
 
   SECRET = %w[
@@ -40,6 +39,7 @@ class AgentsBackupTest < Minitest::Test
     tooling/abc123/bin/task
     bin.pre-tooling-20260925163609/gh-app-mint-token.rb
     locks/release.lock.json
+    op-reads.log
   ].freeze
 
   def setup
