@@ -964,6 +964,25 @@ class ReleaseGemAllocationTest < Minitest::Test
     end
   end
 
+  # A fragment-only merge after the roll is a late entry too: the re-run must compile it into 0.4.1.
+  def test_a_rerun_re_rolls_a_late_fragment_into_the_same_version
+    with_root do |root|
+      origin, repo = build_projects_root(root, changelog: changelog, fragments: {})
+      assert allocate(root, members: [member(kind: "bug", slug: "first-fix")]).last
+      git(repo, "fetch", "--quiet", "origin")
+      git(repo, "checkout", "--quiet", "-B", "member", "origin/accepted")
+      File.write(File.join(repo, "changelog.d", "late.fixed.md"), "- late fragment\n")
+      git(repo, "add", "-A")
+      git(repo, "commit", "--quiet", "-m", "late fragment")
+      git(repo, "push", "--quiet", "origin", "member:refs/heads/accepted")
+      out, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix"), member(kind: "bug", slug: "late")])
+
+      assert ok, out
+      rolled = pushed(origin, "CHANGELOG.md")
+      assert_operator rolled.index("## 0.4.1"), :<, rolled.index("- late fragment"), "the fragment ships in 0.4.1"
+    end
+  end
+
   def test_a_rerun_with_nothing_new_still_skips
     with_root do |root|
       origin, = build_projects_root(root, changelog: changelog)

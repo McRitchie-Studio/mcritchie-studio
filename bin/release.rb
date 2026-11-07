@@ -7935,6 +7935,9 @@ def gem_allocation_plan(group, failures)
   # already rolled `current` and has gained entries since (Release::GemVersion
   # #reallocation), and the guard below judges the same text.
   changelog = changelog_at(repo, tip)
+  # A fragment merged after the roll is a late entry too: judge the compiled bucket.
+  # A compile failure keeps the bare text; changelog_refusal below names it.
+  changelog = compiled_changelog_at(repo, tip, changelog).first || changelog if changelog
 
   decision = Release::GemVersion.allocation(
     current: current,
