@@ -392,21 +392,21 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
   def egnyte_slot = card("egnyte").at_css("[data-test='entry-action'] [data-test='egnyte-connection']")
 
-  test "[component] Egnyte card is Coming soon for clients and shows an admin Connect with a domain field" do
+  test "[component] the dark Egnyte card is an admin's only, with Connect and a domain field" do
     with_egnyte_env do
       get integrations_path
-      assert card("egnyte").at_css("[data-test='coming-soon']"), "dark for clients"
-      assert_equal "egnyte", card("egnyte").at_css("[data-test='entry-lead']")["data-lead"]
-      assert_equal %w[sign_in], card("egnyte").css("[data-test='entry-method']").map { _1["data-method"] }
-      assert_empty css_select("[data-test='egnyte-connection']"), "visitor"
-      assert_equal "Get notified", card("egnyte").at_css("[data-test='entry-cta']").text.strip
+      assert_nil card("egnyte"), "dark: a visitor's page does not list it"
+      assert css_select("[data-test='integration-entry'][data-entry='fathom']").any?, "the control: the Connect group renders"
 
       log_in_as users(:viewer)
       get integrations_path
-      assert_empty css_select("[data-test='egnyte-connection']"), "non-admin"
+      assert_nil card("egnyte"), "non-admin"
 
       log_in_as users(:alex)
       get integrations_path
+      assert card("egnyte").at_css("[data-test='coming-soon']"), "not offered to clients yet"
+      assert_equal "egnyte", card("egnyte").at_css("[data-test='entry-lead']")["data-lead"]
+      assert_equal %w[sign_in], card("egnyte").css("[data-test='entry-method']").map { _1["data-method"] }
       assert_equal [ "none", "true" ], %w[data-state data-connectable].map { egnyte_slot[_1] }
       form = egnyte_slot.at_css("form[data-test='egnyte-connect']")
       assert_equal [ admin_egnyte_connect_path, "post" ], [ form["action"], form["method"] ]

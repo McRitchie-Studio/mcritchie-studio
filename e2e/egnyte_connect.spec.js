@@ -1,5 +1,5 @@
 // [e2e] The Egnyte connection, as an admin meets it: on /integrations the
-// Egnyte card (in the Connect group, Coming soon for clients) carries a domain
+// Egnyte card (in the Connect group; dark, so only an admin sees it) carries a domain
 // field and Connect Egnyte; connecting comes back to /integrations with the
 // domain connected, and /admin/egnyte proves the read: the Shared root's
 // folders and file, and a subfolder one click in. The stand-in's access tokens

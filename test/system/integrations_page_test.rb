@@ -106,7 +106,12 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       heights.each { |row| assert_equal 1, row.uniq.size, "#{group}: cards in a row differ in height #{row}" }
       assert_operator heights.first.size, :<=, 4, group
     end
-    assert_equal [ 4, 4 ], rows.to_h.fetch("connect").map(&:size), "Connect is two full rows of four, no lonely tile"
+    # The public eight are two full rows of four; only an admin's dark tiles
+    # (built, not offered: Integration::Entry#dark?) run past them.
+    dark = Integration.entries(admin: true).count { _1.dark? && _1.group == "connect" }
+    connect = rows.to_h.fetch("connect").map(&:size)
+    assert_equal [ 4, 4 ], connect.first(2), "Connect is two full rows of four, no lonely public tile"
+    assert_equal dark, connect.drop(2).sum, "only the admin's dark tiles sit below them"
     assert_equal [ 3 ], rows.to_h.fetch("add_ons").map(&:size)
   end
 

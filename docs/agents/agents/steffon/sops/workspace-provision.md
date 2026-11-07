@@ -541,9 +541,11 @@ Connect, and the hub keeps one row per domain. One scope, `Egnyte.filesystem`
 one file (`Egnyte::Reader#upload`, the only write). The hub dogfoods it at
 **`/admin/egnyte`** (admin only): each domain, who connected it, a live read of
 `/Shared` (or the folder `?egnyte_domain=&path=` names), and Disconnect. The
-Egnyte card in the Connect group of `/integrations` is Coming soon for clients;
-for an admin it carries the domain field and Connect, rendered disabled until the
-server holds the key, and each connected domain with its Disconnect.
+Egnyte card in the Connect group of `/integrations` is dark (`dark: true` in
+`config/integrations.yml`): the public page does not list it. An admin's page
+does, with the domain field and Connect, rendered disabled until the server holds
+the key, and each connected domain with its Disconnect. Offering it to clients is
+a config change: drop `dark`, and mind the public page's two rows of four.
 
 **Tokens** (Egnyte's authentication docs, read 2026-11-06). The authorization code
 flow on `https://<domain>.egnyte.com/puboauth/token`. The access token lives 30

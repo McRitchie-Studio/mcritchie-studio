@@ -24,7 +24,7 @@ class IntegrationsController < ApplicationController
   EGNYTE_CARD = "egnyte".freeze
 
   def index
-    @groups = Integration.groups
+    @groups = Integration.groups(admin: admin?)
     return unless logged_in?
 
     load_google_connections
