@@ -10,7 +10,7 @@ require "test_helper"
 # which pages it is on.
 class SiteFooterTest < ActionDispatch::IntegrationTest
   test "public pages end with the footer: address, legal links and a map" do
-    [ root_path, about_path, schedule_index_path, privacy_path, terms_path, packages_path ].each do |path|
+    [ root_path, schedule_index_path, privacy_path, terms_path, packages_path ].each do |path|
       get path
       assert_response :success, path
 
@@ -168,7 +168,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
     assert_select "footer[data-site-footer] nav[aria-label='Company']" do
       assert_select "a", 3
       assert_select "a[href='#{root_path}']", text: "Home"
-      assert_select "a[href='#{about_path}']", text: "About"
+      assert_select "a[href='https://alex.build/about']", text: "About"
       assert_select "a[href='#{marketing_kit_path}']", text: "Marketing Kit"
       assert_select "span[aria-disabled='true']", text: "Career", count: 1
     end
@@ -207,7 +207,7 @@ class SiteFooterTest < ActionDispatch::IntegrationTest
   test "a signed-in viewer keeps the footer on each public-site controller" do
     log_in_as(users(:alex))
 
-    [ root_path, about_path, terms_path, packages_path, packages_stack_path, build_path, contact_form_path,
+    [ root_path, terms_path, packages_path, packages_stack_path, build_path, contact_form_path,
       schedule_index_path ].each do |path|
       get path
       assert_response :success, path

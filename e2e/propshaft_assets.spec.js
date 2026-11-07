@@ -19,7 +19,7 @@ test("the public pages load fingerprinted Propshaft assets that apply, at 390 an
 
   for (const width of [390, 1280]) {
     await page.setViewportSize({ width, height: 900 });
-    for (const path of ["/", "/about", "/packages"]) {
+    for (const path of ["/", "/marketing-kit", "/packages"]) {
       await page.goto(path);
       const sheets = await page.evaluate(() =>
         [...document.styleSheets].filter((s) => s.href).map((s) => ({ name: new URL(s.href).pathname, rules: s.cssRules.length })));
@@ -39,7 +39,7 @@ test("the public pages load fingerprinted Propshaft assets that apply, at 390 an
 
   // The engine's motion layer arrives through its host.css (studio-engine 0.114.2;
   // the hub no longer imports engine-motion.css itself): a .spinner spins.
-  await page.goto("/about");
+  await page.goto("/marketing-kit");
   await page.emulateMedia({ reducedMotion: "no-preference" });
   const spin = await page.evaluate(() => {
     const el = document.createElement("span");

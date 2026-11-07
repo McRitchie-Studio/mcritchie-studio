@@ -219,7 +219,7 @@ test("the sidebar opens and closes after a move", async ({ page }) => {
 test("the real sign-in page plays a left style, and its field takes input", async ({ browser }) => {
   const context = await browser.newContext({ storageState: VISITOR });
   const page = await context.newPage();
-  await open(page, "/about");
+  await open(page, "/marketing-kit");
   await visit(page, "/signin");
   expectLeftStyle(await seen(page));
   const email = page.locator("input[type='email']").filter({ visible: true }).first();
@@ -277,7 +277,7 @@ test("the launch panel morphs into the chat at its own address", async ({ browse
 test("a GET that redirects moves the page once", async ({ browser }) => {
   const context = await browser.newContext({ storageState: VISITOR });
   const page = await context.newPage();
-  await open(page, "/about");
+  await open(page, "/marketing-kit");
   await visit(page, "/contact");
   expect(await page.evaluate(() => window.__moves), "the control").toHaveLength(1);
   const load = settled(page);

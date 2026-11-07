@@ -32,7 +32,7 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
   end
 
   test "a visitor gets the engine navbar: brand, sign-in, links menu and theme toggle" do
-    get about_path
+    get marketing_kit_path
     assert_response :success
 
     assert_select "header.nav-shell[data-pin='nav'][data-studio-controller='nav-collapse']", 1 do
@@ -85,7 +85,7 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
 
   test "a member never sees the signed-out CTA" do
     log_in_as users(:viewer)
-    get about_path
+    get marketing_kit_path
     assert_response :success
 
     assert_select "[data-nav-signed-out-cta], [data-nav-sign-in]", count: 0
@@ -93,7 +93,7 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
 
   test "a member gets the account control by first name and the links menu, with no log out link" do
     log_in_as users(:viewer)
-    get about_path
+    get marketing_kit_path
     assert_response :success
     # "Viewer User" by first name, which the engine prints from 0.106.
     first_name = "Viewer"
@@ -121,7 +121,7 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
 
   test "a member's phone tools draw the theme toggle, then the gear" do
     log_in_as users(:viewer)
-    get about_path
+    get marketing_kit_path
     assert_response :success
 
     pair = css_select(".nav-phone-tools > *")
@@ -132,7 +132,7 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
 
   test "an admin's menu button is the admin menu, with no second cog" do
     log_in_as users(:alex)
-    get about_path
+    get marketing_kit_path
     assert_response :success
 
     assert_select "header.nav-shell" do

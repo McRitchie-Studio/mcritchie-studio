@@ -33,7 +33,7 @@ class AssetUrlsTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] every asset on the public pages is fingerprinted and answers 200" do
-    pages = [ root_path, about_path, packages_path, agents_path, tasks_path ]
+    pages = [ root_path, packages_path, agents_path, tasks_path ]
 
     checked = pages.flat_map { |page| asset_urls_on(page).map { |url| [ page, url ] } }.uniq(&:last)
     assert checked.any? { |_, url| url.match?(%r{/assets/tailwind-\h+\.css\z}) }, "the tailwind build was not linked"

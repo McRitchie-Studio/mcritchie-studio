@@ -21,7 +21,7 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     email_tracking#click email_tracking#goal email_tracking#open
     games#season games#show games#week
     integrations#discord integrations#index
-    landing#about landing#index landing#privacy landing#terms
+    landing#index landing#privacy landing#terms
     lineup_graphics#show
     links#index
     chat#index

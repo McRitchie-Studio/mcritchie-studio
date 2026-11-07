@@ -9,7 +9,7 @@ test.use({ storageState: VISITOR });
 // studio-engine renders them (`studio_booking_frame`, `studio_booking_link`, the
 // popup the footer carries) and its browser lane proves the scripts on lab
 // pages. This spec proves the WIRING here: that /, /schedule, /privacy and
-// /about call the engine's helpers in a way its scripts answer to. The scripts
+// /integrations call the engine's helpers in a way its scripts answer to. The scripts
 // act only on elements marked data-studio-booking, so a link written by hand,
 // or a frame from a leftover local partial, would sit on the page looking right
 // and do nothing; the selectors below carry the marker for that reason.
@@ -89,19 +89,21 @@ test("Schedule a call opens the booking popup in place, and Escape closes it", a
   await expect(dialog).toBeHidden();
 });
 
-test("the About page's own Schedule a call button opens the same popup", async ({ page }) => {
+// /integrations carries a page button of its own (Book a call); /about did until
+// it moved to alex.build (task hub-drops-about-section).
+test("a page's own booking button opens the same popup", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   const asked = await stubGoogle(page);
-  await page.goto("/about");
+  await page.goto("/integrations");
 
   const dialog = page.locator("dialog[data-booking-dialog][data-studio-booking]");
   await expect(dialog).toBeHidden();
 
   // The page's button, not the footer's link.
-  await page.locator("a.btn[data-booking-popup]", { hasText: "Schedule a call" }).click();
+  await page.locator("a.btn[data-booking-popup][data-test='not-listed-cta']", { hasText: "Book a call" }).click();
 
   await expect(dialog).toBeVisible();
-  await expect(page).toHaveURL(/\/about$/);
+  await expect(page).toHaveURL(/\/integrations$/);
   await expect(page.frameLocator("iframe[data-booking-popup-frame]").locator("#stub")).toHaveText("booking stub");
   expect(asked).toHaveLength(1);
 

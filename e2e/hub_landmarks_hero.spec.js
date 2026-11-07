@@ -44,9 +44,9 @@ test("/packages passes axe's lang and landmark rules at 1280 and 390", async ({ 
   await expectShellPasses(page, "/packages");
 });
 
-test("/about passes axe's lang and landmark rules at 1280 and 390", async ({ page }) => {
+test("/marketing-kit passes axe's lang and landmark rules at 1280 and 390", async ({ page }) => {
   test.setTimeout(45_000);
-  await expectShellPasses(page, "/about");
+  await expectShellPasses(page, "/marketing-kit");
 });
 
 test("the home page at 390px requests no image over 300 KB, and the hero is the phone crop", async ({ page }) => {
@@ -92,5 +92,23 @@ test("a 390px phone at device scale 3 still fetches no image over 300 KB", async
     expect(images.filter((i) => i.bytes > 300 * 1024), "images over 300 KB at 390px, scale 3").toEqual([]);
   } finally {
     await context.close();
+  }
+});
+
+// Alex McRitchie's about content moved to alex.build/about (task
+// hub-drops-about-section, 2026-11-06). The home page draws no #about section at
+// either width, no in-page link points at it (in-page links smooth-scroll through
+// the engine, so a dead #about would scroll nowhere), and the footer's About goes
+// straight to alex.build.
+test("the home page has no About section at 1280 and 390, and About links to alex.build", async ({ page }) => {
+  await blockThirdPartyRequests(page);
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/");
+    await expect(page.locator("main section").first(), `${width}: the hero still renders`).toBeVisible();
+    await expect(page.locator("#about"), `${width}: no #about section`).toHaveCount(0);
+    await expect(page.getByText("Acquisition Entrepreneur"), `${width}: the about copy is gone`).toHaveCount(0);
+    await expect(page.locator("a[href='#about'], a[href='/#about'], a[href='/about']"), `${width}: no link to the old about`).toHaveCount(0);
+    await expect(page.locator("footer[data-site-footer] a", { hasText: "About" })).toHaveAttribute("href", "https://alex.build/about");
   }
 });

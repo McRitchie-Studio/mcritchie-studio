@@ -7,9 +7,9 @@ require "test_helper"
 # or footer (axe html-has-lang, landmark-one-main, region;
 # lane-ui-infrastructure P1).
 class LayoutLandmarksTest < ActionDispatch::IntegrationTest
-  # The home page and /about are full width (content_for :full_width); /packages
+  # The home page and /marketing-kit are full width (content_for :full_width); /packages
   # takes the padded column. Both arms of the layout are covered.
-  PAGES = { "/" => :full_width, "/packages" => :column, "/about" => :full_width }.freeze
+  PAGES = { "/" => :full_width, "/packages" => :column, "/marketing-kit" => :full_width }.freeze
 
   PAGES.each do |path, arm|
     test "#{path} (#{arm}) renders html lang en and one main around the page" do
@@ -32,12 +32,12 @@ class LayoutLandmarksTest < ActionDispatch::IntegrationTest
   # the header and main, so it rides in a labelled region; with no bar there is
   # no empty landmark.
   test "every status bar sits in the Site status region, and no bar means no region" do
-    get "/about"
+    get "/marketing-kit"
     bars = css_select("[data-studio-bar-stack]").size
     assert_equal bars, css_select("[role=region][aria-label='Site status'] [data-studio-bar-stack]").size
     assert_equal [ bars, 1 ].min, css_select("[role=region][aria-label='Site status']").size
 
-    Studio.stub(:show_environment_banner?, false) { get "/about" }
+    Studio.stub(:show_environment_banner?, false) { get "/marketing-kit" }
     assert_select "[data-studio-bar-stack]", 0
     assert_select "[role=region][aria-label='Site status']", 0
   end

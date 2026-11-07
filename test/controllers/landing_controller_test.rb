@@ -7,7 +7,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "landing page renders acquisition-focused hero and about copy" do
+  test "landing page renders the acquisition-focused hero, and its about copy lives on alex.build" do
     get root_path
 
     assert_response :success
@@ -24,13 +24,12 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Your"
     assert_not_includes response.body, "Solutions For"
     assert_includes response.body, "Build a best-in-class website in minutes"
-    # About
-    assert_includes response.body, "Acquisition Entrepreneur"
-    assert_includes response.body, "Over a decade of operational"
-    # Cards
-    assert_includes response.body, "Originating and scaling new business"
-    assert_includes response.body, "Technical Architecture"
-    assert_includes response.body, "Product and engineering design, development"
+    # The About section and its four cards moved to alex.build/about
+    # (task hub-drops-about-section, 2026-11-06).
+    assert_not_includes response.body, "Acquisition Entrepreneur"
+    assert_not_includes response.body, "Over a decade of operational"
+    assert_not_includes response.body, "Originating and scaling new business"
+    assert_not_includes response.body, "Technical Architecture"
     # the consultant-era copy must not return
     assert_not_includes response.body, "supercharge your team"
     assert_not_includes response.body, "Ten years' experience"
@@ -63,7 +62,8 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "[data-test='hero-meet-alex']", 0, "the hero has no Meet Alex link"
     assert_select "a", text: "Meet Alex", count: 0
-    assert_select "section#about", 1, "the About section still renders"
+    assert_select "section#about", 0, "the About section moved to alex.build/about"
+    assert_select "a[href='#about']", 0, "no in-page link points at the dropped section"
   end
 
   # Was "shows only the full-width video chat card", pinning the "Chat Over
