@@ -21,7 +21,7 @@ const { loginWithMagicLink } = require("./helpers");
 test("a board edit preserves the devops keys its form never renders", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
 
-  const taskPath = "/devops/tasks/e2e-devops-key-preservation-demo";
+  const taskPath = "/tasks/e2e-devops-key-preservation-demo";
   await page.goto(taskPath);
   await expect(page.getByText("AGENT-CONTEXT-SURVIVES-THE-EDIT")).toBeVisible();
 

@@ -158,13 +158,13 @@ test("an app's owner says go on a proposal in their own chat and sees the design
     await expect(go.locator("[data-test='cto-chat-confirm-held']")).toHaveCount(0);
 
     // AgentProposalJob opens the task; its answer streams into the go's turn.
-    const link = go.locator("[data-test='cto-chat-reply'] a[href*='/devops/tasks/e2e-owner-kickoff-times']");
+    const link = go.locator("[data-test='cto-chat-reply'] a[href*='/tasks/e2e-owner-kickoff-times']");
     await expect(link).toBeVisible({ timeout: 20_000 });
     await expect(go.locator("[data-test='cto-chat-reply']")).toContainText("Opened");
-    slug = (await link.getAttribute("href")).split("/devops/tasks/").pop();
+    slug = (await link.getAttribute("href")).split("/tasks/").pop();
 
     await page.reload();
-    await expect(page.locator(`[data-test='cto-chat-reply'] a[href$='/devops/tasks/${slug}']`)).toBeVisible();
+    await expect(page.locator(`[data-test='cto-chat-reply'] a[href$='/tasks/${slug}']`)).toBeVisible();
     expect(pageErrors, report()).toHaveLength(0);
   } finally {
     // The task the go opened is this spec's row: delete it, so no later spec that
