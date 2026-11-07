@@ -407,14 +407,27 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     assert_every_chip_was_measured(carousel_acts, width)
     assert_chips_readable(carousel_acts, carousel_heads, width, where: "the Workflows summary card's carousel")
 
-    # THE SIDEBAR: opened first, or every chip measures 0x0.
+    # THE SIDEBAR: opened first, or every chip measures 0x0. It shows ONE soul at a time
+    # (Previous / Next) and hides the rest, so each soul is shown by its dot, then measured.
     open_workflows_sidebar
     acts = page.all("#{CARD} button[data-row='action'] code", visible: :all)
     heads = page.all("#{CARD} button[data-row='heartbeat'] code", visible: :all)
     assert_equal carousel_acts.size, acts.size, "the sidebar offers every act the carousel does"
     assert_equal 7, heads.size, "expected seven row-1 heartbeat chips in the sidebar at #{width}px"
-    assert_every_chip_was_measured(acts, width)
-    assert_chips_readable(acts, heads, width, where: "the Workflows sidebar")
+    slugs = find(CARD)["data-agents"].split(",")
+    measured = 0
+    slugs.each do |slug|
+      click_when_settled("#{CARD} [data-test='workflows-dot'][data-agent='#{slug}']")
+      assert_selector "#{CARD}[data-active-agent='#{slug}']", wait: OPEN_WAIT
+      soul = "#{CARD} [data-test='workflows-soul'][data-agent='#{slug}']"
+      assert_selector soul, visible: true, wait: OPEN_WAIT
+      soul_acts = page.all("#{soul} button[data-row='action'] code", visible: :all)
+      soul_heads = page.all("#{soul} button[data-row='heartbeat'] code", visible: :all)
+      assert_every_chip_was_measured(soul_acts, width)
+      assert_chips_readable(soul_acts, soul_heads, width, where: "the Workflows sidebar (#{slug})")
+      measured += soul_acts.size
+    end
+    assert_equal acts.size, measured, "every sidebar act chip was measured, soul by soul, at #{width}px"
   end
 
   def assert_chips_readable(acts, heads, width, where:)
@@ -539,8 +552,10 @@ class WorkflowsCardChipFitTest < ApplicationSystemTestCase
     JS
   end
 
+  # The SHOWN soul's act chips: the sidebar display:nones every other soul, so those
+  # measure 0px by design, not because the sidebar failed to paint.
   def act_chip_widths
-    page.all("#{CARD} button[data-row='action'] code", visible: :all)
+    page.all("#{CARD} [data-test='workflows-soul'] button[data-row='action'] code", visible: true)
         .map { |c| page.evaluate_script("arguments[0].scrollWidth", c).to_i }
   end
 

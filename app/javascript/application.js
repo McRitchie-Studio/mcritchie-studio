@@ -39,6 +39,8 @@ import "chat_attachments"
 import "usage_countdown"
 // The app chat status card's live pill countdown, MM:SS ticked each second: inert where no pill counts down.
 import "devops_countdown"
+// The /deployments Workflows sidebar's Previous / Next, one soul at a time: delegated, inert elsewhere.
+import "workflows_cycle"
 // Hold to talk to Alex on /chat: transcribe a take, send it as a message naming who spoke; delegated, inert elsewhere.
 import "voice_chat"
 // The logo grid backdrop: tiles near the pointer light and trail; builds only where [data-logo-grid] is.

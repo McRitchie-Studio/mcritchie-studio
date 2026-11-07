@@ -8,8 +8,8 @@
     are decided HERE, once, and both presentations draw from that one decision.
       :summary  the Workflows summary card — ONE soul at a time on a 5-minute carousel
                 (tasks/_agents_summary_card), the third card of the summary row
-      :detail   the Workflows SIDEBAR — every soul and every command, stacked
-                vertically, each command beside what it launches
+      :detail   the Workflows SIDEBAR — ONE soul at a time, every command beside what
+                it launches, with Previous / Next to cycle the souls (wrapping)
     Two files each deciding chip membership is how a chip lands on one surface and not
     the other; test/lib/workflows_card_carve_out_test.rb reads the decision below.
 
@@ -54,16 +54,61 @@
   <%= render "tasks/agents_summary_card", entries: entries.rotate(first) %>
 <% else %>
   <%= render "components/copy_text_script" %>
+  <%# ONE SOUL AT A TIME, with Previous / Next (Alex McRitchie, 2026-11-07: "add a next
+      button to the Workflows modal so the user can still cycle through the agents to
+      make things quick"). A stacked list of eight souls runs past the fold, so a Next
+      that only scrolled would land the next soul anywhere on screen; one soul filling
+      the panel puts its every phrase in the same place on each press. The buttons
+      wrap, so the panel reads as the card's wheel turned by hand, and the dots jump.
+      Every soul stays in the DOM (hidden, not removed), so the server render, the tests and
+      a no-JS read still carry every launcher.
+
+      The behaviour is app/javascript/workflows_cycle.js, off the data-workflows-*
+      attributes below. It also OPENS ON THE CARD'S SOUL: a click on the Workflows card
+      hands the soul in frame to this panel. %>
   <div id="heartbeats-card"
        class="<%= card_class %>"
+       data-workflows-cycle
+       data-active-agent="<%= entries.first&.dig(:launcher, :agent_slug) %>"
+       data-agents="<%= entries.map { |entry| entry[:launcher][:agent_slug] }.join(",") %>"
        data-test="heartbeats-card">
     <p class="text-2xs text-muted">Copy any phrase to launch that soul's workflow.</p>
-    <%# ONE SOUL PER ROW, vertically — the sidebar's width is what lets every command
-        sit beside its description, which the half-width card of five columns never
-        could. No compact toggle: nothing here is hidden. %>
-    <div class="mt-4 flex flex-col divide-y divide-subtle/70" data-test="heartbeats-list">
-      <% entries.each do |entry| %>
-        <div class="py-3 first:pt-0 last:pb-0">
+    <div class="mt-3 flex items-center justify-between gap-2" data-test="workflows-cycle-nav">
+      <button type="button" data-workflows-step="-1"
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-subtle text-secondary transition hover:border-primary/40 hover:text-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+              aria-label="Previous agent"
+              data-test="workflows-prev"><span class="text-base leading-none" aria-hidden="true">&lsaquo;</span></button>
+      <div class="flex min-w-0 flex-col items-center gap-1.5">
+        <span class="text-2xs text-muted" aria-live="polite" data-test="workflows-position">
+          <span data-workflows-position>1</span> of <%= entries.size %>
+        </span>
+        <div class="flex items-center gap-1" role="tablist" aria-label="Choose a soul" data-test="workflows-dots">
+          <% entries.each_with_index do |entry, i| %>
+            <% slug = entry[:launcher][:agent_slug] %>
+            <%# The card's dot, the same control at the same size, so the two read as one wheel. %>
+            <button type="button"
+                    class="h-1.5 w-1.5 rounded-full bg-[var(--color-border-strong)] transition-all duration-300 hover:bg-[var(--color-text-muted)] data-[active=true]:w-3 data-[active=true]:bg-primary"
+                    data-active="<%= i.zero? %>"
+                    role="tab"
+                    aria-selected="<%= i.zero? %>"
+                    aria-label="Show <%= entry[:soul]&.name.presence || slug.titleize %>"
+                    data-test="workflows-dot"
+                    data-agent="<%= slug %>"
+                    data-workflows-go="<%= slug %>"></button>
+          <% end %>
+        </div>
+      </div>
+      <button type="button" data-workflows-step="1"
+              class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-subtle text-secondary transition hover:border-primary/40 hover:text-heading focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+              aria-label="Next agent"
+              data-test="workflows-next"><span class="text-base leading-none" aria-hidden="true">&rsaquo;</span></button>
+    </div>
+    <div class="mt-4" data-test="heartbeats-list">
+      <% entries.each_with_index do |entry, i| %>
+        <div <% unless i.zero? %>hidden<% end %>
+             data-workflows-soul
+             data-test="workflows-soul"
+             data-agent="<%= entry[:launcher][:agent_slug] %>">
           <%= render "tasks/heartbeat_launcher", launcher: entry[:launcher], soul: entry[:soul],
                      actions: entry[:actions], layout: :row %>
         </div>
