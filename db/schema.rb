@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_05_233000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_06_180000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1540,6 +1540,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_05_233000) do
     t.index ["approved_at"], name: "index_dream_swaps_on_approved_at"
     t.index ["created_at"], name: "index_dream_swaps_on_created_at"
     t.index ["session_id"], name: "index_dream_swaps_on_session_id", unique: true
+  end
+
+  create_table "egnyte_connections", force: :cascade do |t|
+    t.datetime "access_expires_at"
+    t.text "access_token", null: false
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "domain", null: false
+    t.datetime "last_refreshed_at"
+    t.text "refresh_token"
+    t.datetime "updated_at", null: false
+    t.string "username"
+    t.index ["domain"], name: "index_egnyte_connections_on_domain", unique: true
   end
 
   create_table "email_brand_references", force: :cascade do |t|
