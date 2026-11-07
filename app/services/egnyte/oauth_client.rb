@@ -76,7 +76,7 @@ module Egnyte
       # The token endpoint's JSON for a sign-in's code: access_token,
       # refresh_token, expires_in, token_type.
       def exchange_code(domain:, code:, redirect_uri:)
-        post(domain, TOKEN_PATH, grant_type: "authorization_code", code:, redirect_uri:, scope: SCOPE)
+        post(domain, TOKEN_PATH, { grant_type: "authorization_code", code:, redirect_uri:, scope: SCOPE })
       end
 
       # An access token for the connection. The stored one while it is fresh;
@@ -92,7 +92,7 @@ module Egnyte
           next current if stale.blank? && connection.access_fresh?(now)
           raise Revoked, "Egnyte refused this connection and it holds no refresh token; connect again" if connection.refresh_token.blank?
 
-          answer = post(connection.domain, TOKEN_PATH, grant_type: "refresh_token", refresh_token: connection.refresh_token)
+          answer = post(connection.domain, TOKEN_PATH, { grant_type: "refresh_token", refresh_token: connection.refresh_token })
           raise Error, "Egnyte answered a refresh with no access token" if answer["access_token"].blank?
 
           connection.rotate!(answer, now:)
