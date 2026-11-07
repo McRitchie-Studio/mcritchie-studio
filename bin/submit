@@ -87,7 +87,8 @@
 #   SHIP_BASE_BRANCH      PR base (default accepted — the ladder's first rung)
 #   SHIP_PROJECTS_DIR     root-guard worktree glob root (tests)
 #   SHIP_CI_WAIT          `off` reads CI once instead of waiting (default: armed)
-#   SHIP_CI_WAIT_TIMEOUT  seconds to wait on a RUNNING CI (default 900)
+#   SHIP_CI_WAIT_TIMEOUT  seconds to wait on a RUNNING CI (default: measured, bin/lib/ci_wait_budget.rb)
+#   SHIP_CI_HISTORY       `off` skips the run-history read; the wait keeps the 900s floor
 #   SHIP_CI_WAIT_APPEARANCE  seconds to wait for a run to EXIST (default 120)
 #   SHIP_CI_WAIT_INTERVAL poll interval, floored at 2s (default 20)
 #   SHIP_CI_STATE         injected CiStatus state (tests — `state:green`)

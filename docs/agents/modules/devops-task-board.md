@@ -769,7 +769,10 @@ point:
   refuses it*, recording its usual failed `dor` attempt with the failing checks
   named. Duplicating that allow-list in the wrapper is how the two copies drift.
 - **It is bounded at BOTH ends, and names which end it hit.** `:pending` gets the
-  full budget (`SHIP_CI_WAIT_TIMEOUT`, default 900s). But `gh pr checks` reports
+  full budget: the p90 of the repo's recent green PR CI plus 300s, never under 900s
+  and never past release's structural ceiling (`bin/lib/ci_wait_budget.rb`; an
+  explicit `SHIP_CI_WAIT_TIMEOUT` wins). A wait that runs out writes a
+  `SUBMIT CI WAIT TIMED OUT` comment on the task. But `gh pr checks` reports
   `none` in the window between the push and GitHub creating the run, and
   `unverified` when the read ITSELF fails (a gh/network fault) — treat either as
   settled and the wait exits within a second of every push, silently doing nothing

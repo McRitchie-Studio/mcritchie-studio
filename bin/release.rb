@@ -69,7 +69,9 @@
 #          deploys — and BEFORE the gem publish, so gems publish the post-merge
 #          tree. Aborts loudly on a conflict or a push that did not take. A
 #          merge-forward commit is then carried onto `accepted` (a fast-forward).
-#       4d. GEM MEMBERS — prepare publishes the FINAL x.y.z (tagged v<x.y.z>) and
+#       4d. GEM MEMBERS — prepare publishes the FINAL x.y.z (tagged v<x.y.z>) only
+#          after the pre-publish gate (every swept app's CI green on its promoted
+#          tree, and the gem tip's own CI green), and
 #          consumers lock it before the pre-QA gate, so the ship deploys the SHAs QA
 #          gated with no re-lock (Release::GemFlow; docs/agents/system/gem-release-flow.md).
 #          A red QA that changes the gem burns x.y.z: the next prepare allocates the
