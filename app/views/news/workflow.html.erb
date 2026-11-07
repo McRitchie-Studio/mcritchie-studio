@@ -1,10 +1,8 @@
 <section>
-  <div class="mb-6 flex items-center justify-between">
-    <%= link_to "&larr; News Pipeline".html_safe, news_index_path, class: "text-secondary hover:text-heading text-sm transition" %>
-  </div>
-
-  <h2 class="text-2xl font-bold text-heading mb-2">News Workflow</h2>
-  <p class="text-secondary text-sm mb-8">News items flow through 6 stages, each owned by a specific agent. Articles are progressively enriched with metadata, summaries, and opinions as they move through the pipeline.</p>
+  <%# The engine page header (docs/PAGE_HEADER.md): the old "News Pipeline" back link is
+      the crumb trail. %>
+  <%= render "studio/page_header", title: "News Workflow", crumbs: studio_crumbs(:workflow_news_index) %>
+  <p class="text-secondary text-sm mt-2 mb-8">News items flow through 6 stages, each owned by a specific agent. Articles are progressively enriched with metadata, summaries, and opinions as they move through the pipeline.</p>
 
   <!-- Pipeline Overview -->
   <div class="flex flex-wrap items-center gap-2 mb-8">

@@ -1479,7 +1479,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     get sop_path
 
     assert_response :success
-    assert_select "h2", "DevOps SOP"
+    assert_select "h1.page-header-title", "DevOps SOP"
     # One lane per accountable owner (the four lanes from the vocabulary YAML).
     [ "Builder", "Primary Reviewer", "Steffon", "Avi" ].each do |owner|
       assert_includes response.body, owner, "expected the #{owner} lane"
@@ -1720,17 +1720,21 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='review-followup-guard']", count: 0
   end
 
-  test "task show 'All Tasks' back-link points to /deployments" do
+  # The old "All Tasks" back link is the page header's crumb trail now (task
+  # task-pages-standard-header): its last crumb, and the phone's parent link, are /deployments.
+  test "task show's crumb trail leads back to /deployments" do
     get task_path(@new_task.slug)
     assert_response :success
-    assert_select "a[href=?]", deployments_path, text: /All Tasks/
+    assert_select ".page-header nav.page-header-crumbs li:nth-last-child(2) a.page-header-crumb[href=?]", deployments_path
+    assert_select ".page-header a.page-header-parent[href=?]", deployments_path
   end
 
-  test "new task 'All Tasks' back-link points to /deployments" do
+  test "new task's crumb trail leads back to /deployments" do
     log_in_as(@admin)
     get new_task_path
     assert_response :success
-    assert_select "a[href=?]", deployments_path, text: /All Tasks/
+    assert_select ".page-header nav.page-header-crumbs li:nth-last-child(2) a.page-header-crumb[href=?]", deployments_path
+    assert_select ".page-header a.page-header-parent[href=?]", deployments_path
   end
 
   test "[component] new followup task form preserves source context" do

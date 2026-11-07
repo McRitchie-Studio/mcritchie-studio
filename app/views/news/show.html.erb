@@ -1,33 +1,32 @@
 <section>
-  <div class="mb-6 flex items-center justify-between">
-    <%= link_to "&larr; All News".html_safe, news_index_path, class: "text-secondary hover:text-heading text-sm transition" %>
-    <% if logged_in? %>
-      <%= link_to "Edit", edit_news_path(@news.slug), class: "btn btn-outline btn-sm" %>
-    <% end %>
-  </div>
+  <%# THE HEADER: the engine page header (docs/PAGE_HEADER.md). The old "All News" back
+      link is the crumb trail; Edit is the one action; the stage, the feeling and the slug
+      are meta, with a phone copy below, since the engine hides the meta under 40rem. %>
+  <% news_meta = capture do %>
+    <span class="inline-flex flex-wrap items-center gap-2 normal-case tracking-normal" data-test="news-meta">
+      <%= render "components/badge", text: @news.stage.humanize, scheme: news_stage_scheme(@news.stage) %>
+      <% if @news.feeling_emoji.present? %>
+        <span class="text-lg leading-none"><%= @news.feeling_emoji %></span>
+      <% end %>
+      <% if @news.feeling.present? %>
+        <span class="text-xs text-secondary"><%= @news.feeling %></span>
+      <% end %>
+      <span class="text-xs text-muted font-mono"><%= @news.slug %></span>
+    </span>
+  <% end %>
+  <%= render "studio/page_header", title: @news.title, crumbs: studio_crumbs(parent: :news_index),
+        meta: news_meta,
+        action: ({ label: "Edit", href: edit_news_path(@news.slug), data: { test: "news-edit" } } if logged_in?) %>
+  <div class="sm:hidden mt-2"><%= news_meta %></div>
+  <div class="mb-6"></div>
 
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Main Content -->
     <div class="lg:col-span-2 space-y-6">
       <div class="card p-6">
-        <div class="flex items-start justify-between mb-4">
-          <div>
-            <h2 class="text-2xl font-bold text-heading"><%= @news.title %></h2>
-            <% if @news.title_short.present? && @news.title_short != @news.title %>
-              <p class="text-secondary text-sm mt-1"><%= @news.title_short %></p>
-            <% end %>
-            <div class="flex items-center gap-3 mt-2">
-              <%= render "components/badge", text: @news.stage.humanize, scheme: news_stage_scheme(@news.stage) %>
-              <% if @news.feeling_emoji.present? %>
-                <span class="text-lg"><%= @news.feeling_emoji %></span>
-              <% end %>
-              <% if @news.feeling.present? %>
-                <span class="text-xs text-secondary"><%= @news.feeling %></span>
-              <% end %>
-            </div>
-          </div>
-          <span class="text-xs text-muted font-mono"><%= @news.slug %></span>
-        </div>
+        <% if @news.title_short.present? && @news.title_short != @news.title %>
+          <p class="text-secondary text-sm mb-4"><%= @news.title_short %></p>
+        <% end %>
 
         <% if @news.article_image_url.present? %>
           <div class="mb-4 rounded-lg overflow-hidden">

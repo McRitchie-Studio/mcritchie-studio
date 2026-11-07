@@ -1,24 +1,25 @@
 <section>
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
-      <%= link_to "&larr; Task".html_safe, task_path(@task.slug), class: "text-secondary hover:text-heading text-sm transition" %>
-      <%= link_to "Deployments", deployments_path, class: "text-secondary hover:text-heading text-sm transition" %>
-      <%= link_to "Review Hub", review_events_hub_path, class: "text-secondary hover:text-heading text-sm transition" %>
-    </div>
-    <span class="text-xs text-muted font-mono"><%= @task.slug %></span>
-  </div>
+  <%# THE HEADER: the engine page header (docs/PAGE_HEADER.md). The old back links are the
+      crumb trail (Admin, Deployments, the task); the Review Hub is a page elsewhere, in
+      the Links menu; the stage and the slug are meta, with a phone copy below, since the
+      engine hides the meta under 40rem. %>
+  <% review_meta = capture do %>
+    <span class="inline-flex flex-wrap items-center gap-2 normal-case tracking-normal" data-test="review-events-meta">
+      <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
+      <span class="text-xs text-muted font-mono"><%= @task.slug %></span>
+    </span>
+  <% end %>
+  <%= render "studio/page_header", title: "Review activity",
+        crumbs: studio_crumbs(parent: :task, task: @task),
+        meta: review_meta,
+        menu: [{ label: "Review Hub", href: review_events_hub_path, data: { test: "review-events-link-hub" } }] %>
+  <div class="sm:hidden mt-2"><%= review_meta %></div>
+  <div class="mb-6"></div>
 
   <div class="card p-6">
-    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <p class="label-upper">Review Activity</p>
-        <h2 class="mt-1 text-2xl font-bold text-heading"><%= @task.title %></h2>
-        <p class="mt-2 max-w-3xl text-sm text-muted">
-          Heavy and light reviewer check-ins are recorded as append-only review activity, so long-running reviews show their actual progress instead of only a final stage move.
-        </p>
-      </div>
-      <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
-    </div>
+    <p class="mb-5 max-w-3xl text-sm text-muted">
+      Heavy and light reviewer check-ins are recorded as append-only review activity, so long-running reviews show their actual progress instead of only a final stage move.
+    </p>
 
     <% lanes = review_event_lanes(@task, @agents, @review_events, process: @review_process) %>
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-2" data-test="review-events-grid">

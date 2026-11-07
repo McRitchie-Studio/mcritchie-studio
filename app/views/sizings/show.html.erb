@@ -1,20 +1,23 @@
 <section>
-  <div class="mb-4 flex items-center gap-3">
-    <%= link_to "&larr;".html_safe, task_path(@task.slug), class: "text-secondary hover:text-heading text-xl transition" %>
-    <h2 class="text-2xl font-bold text-heading"><%= @task.title %></h2>
-  </div>
-  <div class="flex items-center gap-3 text-xs text-muted mb-6">
-    <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
-    <% if @task.agent_slug.present? %>
-      <span aria-hidden="true">·</span>
-      <span>assigned: <%= @task.agent_slug %></span>
-    <% end %>
-    <span aria-hidden="true">·</span>
-    <span class="font-mono"><%= @task.slug %></span>
-  </div>
+  <%# The engine page header (docs/PAGE_HEADER.md): the old back arrow is the crumb
+      trail's last link, the task. The stage, the assignee and the slug are meta, with a
+      phone copy below, since the engine hides the meta under 40rem. %>
+  <% sizing_meta = capture do %>
+    <span class="inline-flex flex-wrap items-center gap-2 normal-case tracking-normal text-xs text-muted" data-test="sizing-meta">
+      <%= render "components/badge", text: @task.stage.humanize, scheme: stage_scheme(@task.stage) %>
+      <% if @task.agent_slug.present? %>
+        <span>assigned: <%= @task.agent_slug %></span>
+      <% end %>
+      <span class="font-mono"><%= @task.slug %></span>
+    </span>
+  <% end %>
+  <%= render "studio/page_header", title: @task.title, crumb_label: "Sizing",
+        crumbs: studio_crumbs(parent: :task, task: @task), meta: sizing_meta %>
+  <div class="sm:hidden mt-2"><%= sizing_meta %></div>
+  <div class="mb-6"></div>
 
   <div class="card p-6">
-    <h3 class="text-lg font-bold text-heading mb-2">Sealed-bid sizing</h3>
+    <h2 class="text-lg font-bold text-heading mb-2">Sealed-bid sizing</h2>
     <p class="text-secondary text-sm mb-6">
       Per the sizing rubric: each role submits independently. Honor system — don't peek before you submit. <code class="text-xs text-muted">actual_size</code> is set post-release.
     </p>
