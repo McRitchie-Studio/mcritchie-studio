@@ -1,6 +1,6 @@
 <%# What /admin/tiktok/callback shows once the sign-in is stored: which account, what TikTok granted, and when the refresh token dies. It renders the stored connection and no token: nothing here is to be copied anywhere. %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-tiktok-connected>
-  <h1 class="text-3xl font-bold text-heading">TikTok connected and saved</h1>
+  <%= render "studio/page_header", title: "TikTok connected and saved", crumbs: studio_crumbs(parent: :admin_tiktok), crumb_label: "Connected" %>
   <p class="text-secondary">
     This server stored the connection, with its refresh token encrypted. There is nothing to copy:
     drafting uses it from here on.

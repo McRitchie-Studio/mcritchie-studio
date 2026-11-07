@@ -67,13 +67,10 @@ function contentBoardChrome() {
 </script>
 
 <section x-data="contentBoardChrome()" class="min-h-screen">
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
-    <h2 class="text-2xl font-bold text-heading">Content Pipeline</h2>
-    <% if logged_in? %>
-      <%= link_to "New Idea", new_content_path, class: "btn btn-primary" %>
-    <% end %>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): New Idea is its one action. %>
+  <%= render "studio/page_header", title: "Content Pipeline", crumbs: studio_crumbs(:contents),
+        action: ({ label: "New Idea", href: new_content_path, data: { test: "contents-new-idea" } } if logged_in?) %>
+  <div class="mb-6"></div>
 
   <!-- Stage Progression -->
   <%= render "shared/pipeline_progression", highlight: "content" %>

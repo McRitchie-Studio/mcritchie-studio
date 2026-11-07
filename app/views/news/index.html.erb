@@ -107,13 +107,10 @@ function newsBoardChrome() {
 </script>
 
 <section x-data="newsBoardChrome()" class="min-h-screen">
-  <!-- Header -->
-  <div class="flex items-center justify-between mb-6">
-    <h2 class="text-2xl font-bold text-heading">News Pipeline</h2>
-    <% if logged_in? %>
-      <%= link_to "New Article", new_news_path, class: "btn btn-primary" %>
-    <% end %>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): New Article is its one action. %>
+  <%= render "studio/page_header", title: "News Pipeline", crumbs: studio_crumbs(:news_index),
+        action: ({ label: "New Article", href: new_news_path, data: { test: "news-new-article" } } if logged_in?) %>
+  <div class="mb-6"></div>
 
   <!-- Stage Progression -->
   <%= render "shared/pipeline_progression", highlight: "news" %>

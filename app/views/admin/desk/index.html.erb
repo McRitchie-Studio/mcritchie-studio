@@ -7,18 +7,16 @@
   .desk-status-ignored     { opacity: .6; }
 </style>
 
-<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-  <h1 class="text-xl font-semibold">Desk</h1>
-  <div id="desk-filters" class="flex items-center gap-2 text-sm">
-    <%= link_to "All", admin_desk_path, class: @status ? "" : "font-semibold underline" %>
-    <% DeskCaptureItem::STATUSES.each do |s| %>
-      <%= link_to "#{s} (#{@counts.fetch(s, 0)})", admin_desk_path(status: s),
-                  class: s == @status ? "font-semibold underline" : "" %>
-    <% end %>
-  </div>
-</div>
+<%# The engine page header (studio-engine docs/PAGE_HEADER.md). Each status is a view of the same desk:
+    the header's tabs, with the status's count in its label. %>
+<% desk_tabs = [{ label: "All", href: admin_desk_path, current: ("page" unless @status), data: { test: "desk-filter-all" } }] +
+     DeskCaptureItem::STATUSES.map { |s|
+       { label: "#{s} (#{@counts.fetch(s, 0)})", href: admin_desk_path(status: s),
+         current: ("page" if s == @status), data: { test: "desk-filter-#{s}" } }
+     } %>
+<%= render "studio/page_header", title: "Desk", crumbs: studio_crumbs(:admin_desk), label: "Desk status", tabs: desk_tabs %>
 
-<p class="text-sm opacity-70 mb-4">
+<p class="text-sm opacity-70 mt-4 mb-4">
   Mail forwarded to <code>team@mcritchie.studio</code> lands here for the
   knowledge-capture sweep. Quarantined rows came from senders outside the
   allowlist — raw kept, attachments never extracted.

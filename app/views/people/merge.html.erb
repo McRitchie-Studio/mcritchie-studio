@@ -27,10 +27,10 @@
     this[side + 'Results'] = [];
   }
 }">
-  <div class="flex items-center justify-between mb-6">
-    <h2 class="text-2xl font-bold text-heading">Merge People</h2>
-    <a href="/people/duplicates" class="btn btn-outline btn-sm">Scan Duplicates</a>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the duplicate scanner is a page elsewhere, in the Links menu. %>
+  <%= render "studio/page_header", title: "Merge People", crumbs: studio_crumbs(:merge_people),
+        menu: [{ label: "Scan Duplicates", href: duplicates_people_path, data: { test: "merge-link-duplicates" } }] %>
+  <div class="mb-6"></div>
 
   <p class="text-secondary text-sm mb-6">
     Merge one person into another. Contracts, roster spots, coaches, athlete data, looks, and images

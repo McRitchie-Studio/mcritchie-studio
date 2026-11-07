@@ -17,14 +17,16 @@
 <% draggable = admin? %>
 
 <section class="min-h-screen space-y-6">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): People is a page elsewhere, in the Links
+      menu. The board's counts are status chips, not controls, so they stay on the page beside the lead,
+      where a phone still shows them. %>
+  <%= render "studio/page_header", title: "Model Pipeline", crumbs: studio_crumbs(:model_pipeline),
+        menu: [{ label: "People", href: people_path, data: { test: "pipeline-link-people" } }] %>
   <div class="flex flex-wrap items-end justify-between gap-3">
-    <div class="min-w-0">
-      <h2 class="text-2xl font-bold text-heading">Model Pipeline</h2>
-      <p class="text-sm text-muted">
-        Every character model in flight. A lane is where a model's own evidence puts it.
-      </p>
-    </div>
-    <div class="flex flex-wrap items-center gap-2">
+    <p class="text-sm text-muted min-w-0">
+      Every character model in flight. A lane is where a model's own evidence puts it.
+    </p>
+    <div class="flex flex-wrap items-center gap-2" data-test="pipeline-counts">
       <span class="badge text-2xs <%= pipeline_chip_classes(:neutral) %>" data-test="pipeline-total">
         <%= pluralize(board[:total], "model") %>
       </span>
@@ -43,7 +45,6 @@
           <%= board[:hand_placed_count] %> placed by hand
         </span>
       <% end %>
-      <%= link_to "People →", people_path, class: "btn btn-sm btn-outline" %>
     </div>
   </div>
 
