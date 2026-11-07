@@ -854,7 +854,7 @@ class ApplicationHelperTest < ActionView::TestCase
     render partial: "tasks/heartbeats_card"
 
     slugs = heartbeat_launchers.map { |launcher| launcher[:agent_slug] }
-    assert_select "[data-test='heartbeats-card'][x-data='workflowsCycle()'][data-agents=?]", slugs.join(",")
+    assert_select "[data-test='heartbeats-card'][data-workflows-cycle][data-agents=?]", slugs.join(",")
     assert_select "[data-test='heartbeats-card'][data-active-agent=?]", slugs.first
     assert_select "button[data-test='workflows-next'][aria-label='Next agent']", count: 1
     assert_select "button[data-test='workflows-prev'][aria-label='Previous agent']", count: 1
@@ -862,8 +862,10 @@ class ApplicationHelperTest < ActionView::TestCase
     assert_select "[data-test='workflows-position']", text: /1\s+of #{slugs.size}/
     # Every soul is rendered; only the first is shown before Alpine boots.
     assert_select "[data-test='workflows-soul']", count: slugs.size
-    assert_select "[data-test='workflows-soul'][data-agent=?]:not([style])", slugs.first
-    assert_select "[data-test='workflows-soul'][style='display: none']", count: slugs.size - 1
+    assert_select "[data-test='workflows-soul'][data-agent=?]:not([hidden])", slugs.first
+    assert_select "[data-test='workflows-soul'][hidden]", count: slugs.size - 1
+    assert_select "button[data-test='workflows-next'][data-workflows-step='1']", count: 1
+    assert_select "button[data-test='workflows-prev'][data-workflows-step='-1']", count: 1
   end
 
   test "[component] _heartbeats_card (the Workflows sidebar) lists every soul and every command" do
