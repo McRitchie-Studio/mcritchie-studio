@@ -24,7 +24,7 @@ class IntegrationsController < ApplicationController
   QUICKBOOKS_CARD = "quickbooks".freeze
 
   def index
-    @groups = Integration.groups
+    @groups = Integration.groups_for(admin: admin?)
     return unless logged_in?
 
     load_google_connections

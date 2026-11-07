@@ -58,7 +58,7 @@
           <% quickbooks_here = @quickbooks && entry.key == IntegrationsController::QUICKBOOKS_CARD %>
           <% shows_blurb = entry.line != entry.blurb %>
           <% details = shows_blurb || entry.tier_note.present? || entry.connection_methods.any? || entry.price_note.present? || entry.price_label %>
-          <article class="flex flex-col rounded-xl border border-subtle bg-surface p-4" data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>">
+          <article class="flex flex-col rounded-xl border border-subtle bg-surface p-4" data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>"<% if entry.dark? %> data-dark="true"<% end %>>
             <div class="flex items-start gap-3">
               <% if entry.brand %>
                 <span data-test="entry-lead" data-lead="<%= entry.brand %>"><%= render "packages/brand", key: entry.brand, size: :lead %></span>

@@ -392,21 +392,22 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
   def quickbooks_slot = card("quickbooks").at_css("[data-test='entry-action'] [data-test='quickbooks-connection']")
 
-  test "[component] QuickBooks card is Coming soon to visitors and shows a disabled Connect to an admin until the Intuit app is set" do
+  test "[component] the dark QuickBooks card is an admin's alone, with Connect disabled until the Intuit app is set" do
     with_quickbooks_env(creds: false) do
       get integrations_path
-      assert card("quickbooks").at_css("[data-test='coming-soon']"), "dark: honest Coming soon"
-      assert_equal %w[sign_in], card("quickbooks").css("[data-test='entry-method']").map { _1["data-method"] }
-      assert_equal %w[read_reports], card("quickbooks").css("[data-test='entry-ability']").map { _1["data-ability"] }
-      assert_empty css_select("[data-test='quickbooks-connection']"), "visitor"
-      assert_equal "Get notified", card("quickbooks").at_css("[data-test='entry-cta']").text.strip
+      assert_nil card("quickbooks"), "a visitor never sees a dark tile"
+      assert card("fathom"), "the control: the Connect group rendered"
 
       log_in_as users(:viewer)
       get integrations_path
-      assert_empty css_select("[data-test='quickbooks-connection']"), "non-admin"
+      assert_nil card("quickbooks"), "nor does a non-admin"
 
       log_in_as users(:alex)
       get integrations_path
+      assert_equal "true", card("quickbooks")["data-dark"]
+      assert card("quickbooks").at_css("[data-test='coming-soon']"), "honest: Coming soon"
+      assert_equal %w[sign_in], card("quickbooks").css("[data-test='entry-method']").map { _1["data-method"] }
+      assert_equal %w[read_reports], card("quickbooks").css("[data-test='entry-ability']").map { _1["data-ability"] }
       assert_equal "none", quickbooks_slot["data-state"]
       assert_equal "false", quickbooks_slot["data-connectable"]
       assert quickbooks_slot.at_css("button[data-test='quickbooks-connect-disabled'][disabled]")

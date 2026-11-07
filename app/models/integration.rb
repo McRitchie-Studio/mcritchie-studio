@@ -35,8 +35,11 @@ class Integration
   end
 
   Entry = Struct.new(:key, :group, :name, :icon, :tagline, :blurb, :status, :tier, :tier_note, :price, :price_note, :guide,
-                     :connects, :abilities, :connection_methods, keyword_init: true) do
+                     :connects, :abilities, :connection_methods, :dark, keyword_init: true) do
     def live? = status == "live"
+
+    # Built but not offered yet: only an admin sees the tile (see config/integrations.yml).
+    def dark? = dark == true
 
     # The one short line a tile shows: the tagline, or the blurb when the
     # entry has none. The tile's Details shows the blurb when they differ.
@@ -112,6 +115,11 @@ class Integration
 
     def entries = groups.flat_map(&:entries)
 
+    # The groups a viewer sees: a dark entry only for an admin.
+    def groups_for(admin:)
+      groups.each { |group| group.entries = group.entries.reject(&:dark?) unless admin }
+    end
+
     # Every connection method the config defines, keyed by its key.
     def connection_methods
       config.fetch("connection_methods").to_h do |key, attrs|
@@ -150,6 +158,7 @@ class Integration
     # fails the page instead of rendering something it cannot honestly label.
     def validate!(entry)
       raise ArgumentError, "#{entry.key}: unknown status #{entry.status.inspect}" unless STATUSES.include?(entry.status)
+      raise ArgumentError, "#{entry.key}: a dark entry is Coming soon, never offered as live" if entry.dark? && !entry.soon?
       raise ArgumentError, "#{entry.key}: unknown guide #{entry.guide.inspect}" if entry.guide.present? && !GUIDES.include?(entry.guide)
       raise ArgumentError, "#{entry.key}: unknown tier #{entry.tier.inspect}" if entry.tier.present? && WorkspacePackage.find(entry.tier).nil?
     end
