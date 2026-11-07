@@ -466,6 +466,7 @@ document.addEventListener('turbo:before-cache', function() {
     ONE place instead of restating it. A spec that restated it went stale the day the
     beat changed, and its failure looked like a broken animation rather than a stale test. %>
 <section x-data="kanbanBoard(<%= live_updates.to_json %>, <%= (live_updates && crew_board == :deploy).to_json %>)" data-test="kanban-board"
+         :data-board-narrow="boardNarrow ? 'true' : 'false'"
          @resize.window="measureLanes()"
          data-beat-ms="<%= (Release::BOARD_FLIP_CADENCE * 1000).round %>" class="min-h-screen">
   <%= render "agent_login_requests/pending" %>

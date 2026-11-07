@@ -40,7 +40,9 @@ module NavigationHelper
   # aria-current="page" (Alex McRitchie 2026-11-06, docs/PAGE_HEADER.md "The four kinds
   # of control"). Unlike the old switcher buttons, the current board stays in the row:
   # a tab group shows where you are. Each tab keeps its stage count badges, from
-  # `counts` or else the board's own load (@tasks_by_stage).
+  # `counts` or else the board's own load (@tasks_by_stage). A narrow-only tab
+  # (narrow_only_on) carries data-narrow-only: the Deploy board hides it while it is
+  # wide enough for all six lanes (the board's data-board-narrow, application.css).
   def board_view_tabs(current:, counts: nil)
     current = current.to_s
     counts = (counts || (@tasks_by_stage || {}).transform_values(&:size)).with_indifferent_access
@@ -54,7 +56,8 @@ module NavigationHelper
       end
       { label: safe_join([ item.text, *badges ], " "), href: item.page.path(self),
         current: (item.page.key == current ? "page" : nil),
-        data: { test: "board-view-tab-#{item.page.key}" } }
+        data: { test: "board-view-tab-#{item.page.key}",
+                narrow_only: ("" if item.narrow_only_on&.include?(current)) }.compact }
     end
   end
 
