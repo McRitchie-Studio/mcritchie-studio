@@ -44,7 +44,7 @@ test("deployments analytics card navigates to release history and detail", async
   const allDeploymentsLink = card.getByRole("link", { name: "All Deployments" });
   await allDeploymentsLink.evaluate((el) => el.scrollIntoView({ block: "center", behavior: "instant" }));
   await allDeploymentsLink.click();
-  await expect(page).toHaveURL(/\/deployments\/all$/);
+  await expect(page).toHaveURL(/\/devops\/deployments$/);
   await expect(page.getByRole("heading", { name: "All Deployments" })).toBeVisible();
   // 25 release rows + the 2 pinned running-average rows (3-release / 10-release).
   await expect(page.locator("table tbody tr")).toHaveCount(27);
@@ -52,15 +52,15 @@ test("deployments analytics card navigates to release history and detail", async
   await expect(page.getByText(/Page 1 \//)).toBeVisible();
 
   await page.getByRole("link", { name: "Next" }).click();
-  await expect(page).toHaveURL(/\/deployments\/all\?page=2$/);
+  await expect(page).toHaveURL(/\/devops\/deployments\?page=2$/);
   await expect(page.getByRole("link", { name: "Previous" })).toBeVisible();
   await expect(page.getByRole("link", { name: "rel-e2e-page-01" })).toBeVisible();
 
-  const releaseLink = page.locator("table tbody a[href^='/deployments/']").first();
+  const releaseLink = page.locator("table tbody a[href^='/devops/deployments/']").first();
   const releaseSlug = (await releaseLink.textContent()).trim();
   await releaseLink.click();
 
-  await expect(page).toHaveURL(new RegExp(`/deployments/${releaseSlug}$`));
+  await expect(page).toHaveURL(new RegExp(`/devops/deployments/${releaseSlug}$`));
   await expect(page.getByRole("heading", { name: releaseSlug })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Stage Averages" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Member Tasks" })).toBeVisible();

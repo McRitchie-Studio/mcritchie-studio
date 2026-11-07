@@ -2027,7 +2027,7 @@ def write_feature_marker(task)
     "app" => Array(dv["repositories"]).first,
     "feature" => dv["worktree_slug"],
     "worktree_slug" => dv["worktree_slug"],
-    "task_url" => "#{BASE_URL}/tasks/#{slug}",
+    "task_url" => "#{BASE_URL}/devops/tasks/#{slug}",
     "stage" => task["stage"],
     "mascot" => mascot,             # bin/statusline renders <type-emoji> <mascot> — the session's Pokémon handle
     "mascot_color" => mascot_color, # …tinted with the mascot's least-common type color, riding with the name
@@ -2044,7 +2044,7 @@ def write_feature_marker(task)
   marker.merge!(FeatureMarker.genesis(existing_marker(path),
                                       "genesis_slug" => slug,
                                       "genesis_feature" => dv["worktree_slug"] || slug,
-                                      "genesis_url" => "#{BASE_URL}/tasks/#{slug}",
+                                      "genesis_url" => "#{BASE_URL}/devops/tasks/#{slug}",
                                       "genesis_at" => Time.now.utc.strftime("%Y-%m-%dT%H:%M:%SZ")))
 
   FileUtils.mkdir_p(File.dirname(path))
@@ -3090,12 +3090,12 @@ when "begin"
   rescue StandardError
     {}
   end
-  puts "#{app} · #{slug} · #{BASE_URL}/tasks/#{slug}"
+  puts "#{app} · #{slug} · #{BASE_URL}/devops/tasks/#{slug}"
   puts "worktree: #{worktree_dir}"
   puts "port: #{context["app_port"]}" if context["app_port"]
   puts "url: #{context["local_url"]}" if context["local_url"]
   puts "magic link: #{ReviewHop.mint_url(context["local_url"])}" if context["local_url"]
-  puts "task: #{BASE_URL}/tasks/#{slug}"
+  puts "task: #{BASE_URL}/devops/tasks/#{slug}"
   # THE INTENT SCOUT (docs/agents/agents/avi/sops/intent-scout.md). begin LAUNCHES
   # it itself, detached, once (IntentScout.auto_launch): a must-do is mechanical.
   # It decides here, before any line prints, so the summary can name the outcome

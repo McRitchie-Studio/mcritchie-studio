@@ -146,7 +146,7 @@ test("the Workflows sidebar opens on the soul the card has in frame", async ({ p
   await tab.waitForLoadState("domcontentloaded");
   expect(new URL(tab.url()).pathname).toBe("/agents/carl");
   await tab.close();
-  expect(new URL(page.url()).pathname).toBe("/deployments");
+  expect(new URL(page.url()).pathname).toBe("/devops");
   await expect(page.locator("#deploy-sidebar-agents")).toBeHidden();
 
   await openDeploySidebar(page, "agents");

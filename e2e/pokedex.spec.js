@@ -9,7 +9,7 @@ test.describe("pokedex admin wall", () => {
   test.use({ storageState: VISITOR });
 
   test("pokedex and its board nav send a visitor to sign-in @qa-readonly", async ({ page, request }) => {
-    for (const path of ["/pokedex", "/deployments"]) {
+    for (const path of ["/pokedex", "/devops"]) {
       const res = await request.get(path, { maxRedirects: 0 });
       expect(res.status(), `${path} is walled`).toBe(302);
       expect(new URL(res.headers()["location"], "http://host").pathname, `${path} redirects to sign-in`).toBe("/login");

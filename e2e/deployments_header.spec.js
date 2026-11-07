@@ -18,15 +18,15 @@ test("/deployments: one action, the board tabs with Deployments marked, and a Li
   const action = row.locator("a.page-header-action");
   await expect(action).toHaveCount(1);
   await expect(action).toHaveText("New Task");
-  await expect(action).toHaveAttribute("href", "/tasks/new");
+  await expect(action).toHaveAttribute("href", "/devops/tasks/new");
   await expect(row.locator(".page-header-actions .btn-primary")).toHaveCount(1);
 
   // The tabs: Deployments is the current one, Triage is one click away.
   const tabs = row.locator("nav.page-header-tabs[aria-label='Board views']");
   await expect(tabs).toBeVisible();
   await expect(tabs.locator("a[aria-current='page']")).toHaveCount(1);
-  await expect(tabs.locator("a[aria-current='page']")).toHaveAttribute("href", "/deployments");
-  const triage = tabs.locator("a[href='/triage']");
+  await expect(tabs.locator("a[aria-current='page']")).toHaveAttribute("href", "/devops");
+  const triage = tabs.locator("a[href='/devops/triage']");
   await expect(triage).toBeVisible();
   await expect(triage).not.toHaveAttribute("aria-current", /.+/);
 
@@ -39,7 +39,7 @@ test("/deployments: one action, the board tabs with Deployments marked, and a Li
   await expect(list).toBeVisible();
   await expect(button).toHaveAttribute("aria-expanded", "true");
   await expect(list.locator("a")).toHaveText(["Stages", "Docs"]);
-  await expect(list.locator("a[data-test='deployment-link-menu-stages']")).toHaveAttribute("href", "/stages");
+  await expect(list.locator("a[data-test='deployment-link-menu-stages']")).toHaveAttribute("href", "/devops/stages");
   await page.keyboard.press("Escape");
   await expect(list).toBeHidden();
   await expect(button).toHaveAttribute("aria-expanded", "false");
@@ -54,12 +54,12 @@ test("/deployments: one action, the board tabs with Deployments marked, and a Li
 test("the Triage tab leads to /triage, where Triage is the marked tab", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/deployments");
-  await page.locator(`${ROW} nav.page-header-tabs a[href='/triage']`).click();
-  await expect(page).toHaveURL(/\/triage$/);
+  await page.locator(`${ROW} nav.page-header-tabs a[href='/devops/triage']`).click();
+  await expect(page).toHaveURL(/\/devops\/triage$/);
 
   const tabs = page.locator(`${ROW} nav.page-header-tabs[aria-label='Board views']`);
-  await expect(tabs.locator("a[aria-current='page']")).toHaveAttribute("href", "/triage");
-  await expect(tabs.locator("a[href='/deployments']")).toBeVisible();
+  await expect(tabs.locator("a[aria-current='page']")).toHaveAttribute("href", "/devops/triage");
+  await expect(tabs.locator("a[href='/devops']")).toBeVisible();
   await expect(page.locator(`${ROW} [data-test='triage-open-count']`)).toHaveCount(0);
   await expect(page.locator("[data-test='triage-open-count']")).toBeVisible();
 });

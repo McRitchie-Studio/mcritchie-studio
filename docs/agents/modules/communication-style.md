@@ -62,7 +62,7 @@ branch names, and SHAs are pipeline plumbing.
 ```text
 Shipped the geo gate fix — blank lookups now fail closed.
 
-Task: https://mcritchie.studio/tasks/<slug>
+Task: https://mcritchie.studio/devops/tasks/<slug>
 PR:   <pr-url>  (base `accepted`)
 
 | What changed | Where |
@@ -225,7 +225,7 @@ bin/review-link /<path>
 Labels in the handoff:
 
 ```text
-Task: https://mcritchie.studio/tasks/<slug>
+Task: https://mcritchie.studio/devops/tasks/<slug>
 Magic Link: <the magic link line bin/task begin printed, return_to=/<path>>
 Local Demo: http://localhost:<port>/<path>
 ```

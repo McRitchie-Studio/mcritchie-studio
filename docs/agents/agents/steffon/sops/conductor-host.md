@@ -187,7 +187,7 @@ bin/conductor-host-setup                 # requests it now that the secret is in
 ```
 
 **Alex McRitchie** approves the row `Harness key · conductor-mini` on
-`https://mcritchie.studio/tasks` (the Approve tap, or the one-time code in his
+`https://mcritchie.studio/devops/tasks` (the Approve tap, or the one-time code in his
 reply). Then the operator collects it:
 
 ```bash

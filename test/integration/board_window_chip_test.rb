@@ -4,7 +4,7 @@ require "test_helper"
 require "turbo/broadcastable/test_helper"
 
 # [integration] the operator-window countdown on BOTH render paths of the live
-# card — the full page (/tasks and /deployments) and the turbo-stream push
+# card — the full page (/devops/tasks and /deployments) and the turbo-stream push
 # DeploymentsBroadcaster sends — plus the task API's derived `windows` field
 # that `bin/task wait-window` polls, and the Next Release card's production
 # window with its Approve button on both of ITS render paths.
@@ -17,7 +17,7 @@ class BoardWindowChipTest < ActionDispatch::IntegrationTest
 
   setup do
     @waiting = Task.create!(title: "Window waiting board task", stage: "building",
-                            metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3011/tasks" } })
+                            metadata: { "devops" => { "approval_status" => "waiting", "local_url" => "http://localhost:3011/devops/tasks" } })
     @quiet = Task.create!(title: "Window quiet board task", stage: "building")
     @headers = {
       "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)}"
@@ -102,7 +102,7 @@ class BoardWindowChipTest < ActionDispatch::IntegrationTest
     get deployments_path
     assert_response :success
     assert_select "#current-release [data-test='release-ship-window'] [data-test='task-window-chip'][data-window-kind='production']"
-    assert_select "#current-release [data-test='release-ship-approve'][data-approve-url='/deployments/#{rel.slug}/ship_authorization']"
+    assert_select "#current-release [data-test='release-ship-approve'][data-approve-url='/devops/deployments/#{rel.slug}/ship_authorization']"
 
     streams = capture_turbo_stream_broadcasts("deployments") { DeploymentsBroadcaster.release_modules }
     html = streams.map(&:to_html).join

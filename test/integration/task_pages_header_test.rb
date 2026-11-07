@@ -54,7 +54,7 @@ class TaskPagesHeaderTest < ActionDispatch::IntegrationTest
   def pages
     [
       { path: task_path(@task.slug), title: @task.title,
-        crumbs: [ admin_dashboard_path, deployments_path ], action: edit_task_path(@task.slug),
+        crumbs: [ deployments_path ], action: edit_task_path(@task.slug),
         menu: [ task_sizing_path(@task), agent_path(@task.agent_slug) ] },
       { path: review_events_task_path(@task.slug), title: "Review activity",
         crumbs: [ deployments_path, task_path(@task.slug) ], menu: [ review_events_hub_path ] },

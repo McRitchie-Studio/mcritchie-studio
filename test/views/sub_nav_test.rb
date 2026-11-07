@@ -134,9 +134,9 @@ class SubNavTest < ActionView::TestCase
     assert_select "header", 0, "the row is never a <header>: the pinned stack takes the first one as the navbar"
     assert_select "h1", 1
     assert_select "#{row} h1.page-header-title", text: "Triage"
-    assert_select "#{row} .page-header-crumbs li", 3
-    assert_equal [ admin_dashboard_path, deployments_path ], css_select("#{row} .page-header-crumbs a").map { |a| a["href"] }
-    assert_select "#{row} .page-header-crumbs a[data-page-transition-back]", 2
+    assert_select "#{row} .page-header-crumbs li", 2
+    assert_equal [ deployments_path ], css_select("#{row} .page-header-crumbs a").map { |a| a["href"] }
+    assert_select "#{row} .page-header-crumbs a[data-page-transition-back]", 1
     assert_select "#{row} .page-header-crumb-current[aria-current=page]", text: "Triage"
     assert_select "#{row} .page-header-meta", text: "Findings Inbox"
     assert_select "#{row} .page-header-actions", 0, "no controls passed, so no control cluster"
@@ -182,6 +182,21 @@ class SubNavTest < ActionView::TestCase
   test "[component] a named page gets its trail without a sub-nav" do
     render partial: "components/page_header", locals: { title: "Epics", page: :epics }
 
-    assert_equal %w[Admin Deployments Epics], css_select(".page-header-crumbs li").map { |li| li.text.strip }
+    assert_equal %w[DevOps Epics], css_select(".page-header-crumbs li").map { |li| li.text.strip }
+  end
+
+  # devops-namespace: every board and insight page's trail starts at DevOps, linked
+  # to /devops, never at Admin.
+  { tasks: "Tasks", triage: "Triage", stages: "Stages", epics: "Epics", intelligence: "Intelligence",
+    recent_tasks: "Recent tasks", all_deployments: "All Deployments", mason_insights: "Insight Bank",
+    mason_pipeline: "Pipeline", review_events_hub: "Review Process Hub" }.each do |key, title|
+    test "[component] the #{key} page's crumbs start with DevOps" do
+      render partial: "components/page_header", locals: { title: title, page: key }
+
+      first = css_select(".page-header-crumbs li a").first
+      assert_equal "DevOps", first.text.strip
+      assert_equal "/devops", first["href"]
+      refute_includes css_select(".page-header-crumbs li").map { |li| li.text.strip }, "Admin"
+    end
   end
 end

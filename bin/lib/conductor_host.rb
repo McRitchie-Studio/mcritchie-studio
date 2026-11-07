@@ -31,7 +31,7 @@ module ConductorHost
   HUB_URL = "https://github.com/McRitchie-Studio/mcritchie-studio.git"
   BREW_INSTALL = '/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
   CLAUDE_INSTALL = "curl -fsSL https://claude.ai/install.sh | bash"
-  BOARD_TASKS = "https://mcritchie.studio/tasks"
+  BOARD_TASKS = "https://mcritchie.studio/devops/tasks"
   LAUNCHER_SOUL = "client-build-launcher"
   LIVE_SECONDS = 5 * 60 # AgentDispatcher::SILENT_AFTER
   PRE_CUTOVER = "the current conductor (until bin/conductor-host-setup --take-over)"

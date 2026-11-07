@@ -552,24 +552,24 @@ test("one live observer per fade survives eight Turbo hops, Back and Forward inc
     const ledgers = [start];
     for (let hop = 0; hop < 4; hop += 1) {
       await page.locator('[data-test="task-card-title"]').first().click();
-      await page.waitForURL(/\/tasks\/[^/]+$/);
+      await page.waitForURL(/\/devops\/tasks\/[^/]+$/);
       await page.waitForTimeout(600);
       ledgers.push(await read());
       check(ledgers[ledgers.length - 1], `hop ${hop * 2 + 1} (task detail)`);
 
       await page.goBack();
-      await page.waitForURL(/\/tasks$/);
+      await page.waitForURL(/\/devops\/tasks$/);
       await page.waitForTimeout(600);
       ledgers.push(await read());
       check(ledgers[ledgers.length - 1], `hop ${hop * 2 + 2} (Back to the board)`);
 
       if (hop === 1) {
         await page.goForward();
-        await page.waitForURL(/\/tasks\/[^/]+$/);
+        await page.waitForURL(/\/devops\/tasks\/[^/]+$/);
         await page.waitForTimeout(600);
         check(await read(), "Forward to the task detail");
         await page.goBack();
-        await page.waitForURL(/\/tasks$/);
+        await page.waitForURL(/\/devops\/tasks$/);
         await page.waitForTimeout(600);
         check(await read(), "Back again from Forward");
       }

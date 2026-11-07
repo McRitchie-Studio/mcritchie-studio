@@ -10,6 +10,32 @@ API** an agent uses to authenticate and create/move tasks — auth secret, beare
 token, endpoints, writable fields, and the normalizer footguns — see
 [`task-board-api.md`](task-board-api.md).
 
+## Board Addresses
+
+The board and its insight pages live under `/devops`, and their crumb trail
+starts at **DevOps** (Alex McRitchie, 2026-11-07). The older addresses answer
+`301` to the new ones, with the path suffix and the query string kept, so a
+printed link still works. Print the new address.
+
+| Page | Address | Was |
+|------|---------|-----|
+| Board home (the Deploy lane) | `/devops` | `/deployments` |
+| Build lane board | `/devops/tasks` | `/tasks` |
+| One task (and its `edit`, `sizing`, `review_events`, `local_review`) | `/devops/tasks/<slug>` | `/tasks/<slug>` |
+| Recent tasks | `/devops/tasks/recent` | `/tasks/recent` |
+| Every release | `/devops/deployments` | `/deployments/all` |
+| One release | `/devops/deployments/<release>` | `/deployments/<release>` |
+| Triage | `/devops/triage` | `/triage` |
+| Stages · the SOP | `/devops/stages` · `/devops/stages/sop` | `/stages` · `/stages/sop` |
+| Epics · one epic | `/devops/epics` · `/devops/epics/<slug>` | `/epics` · `/epics/<slug>` |
+| Review hub | `/devops/review_events` | `/review_events` |
+| Intelligence | `/devops/intelligence` | `/intelligence` |
+| Insight Bank | `/devops/insights` | `/mason/insights` |
+| Pipeline | `/devops/pipeline` | `/mason/pipeline` |
+
+The agent pages (Agents, Pokédex, Activities, Dreams), the per-session heartbeat
+(`/mason/heartbeat`) and the API (`/api/v1/...`) did not move.
+
 ## Flat Tasks First
 
 Do not create parent/child task trees by default. Deliver increments of work as
@@ -156,7 +182,7 @@ in review, so a ship no longer costs you the request (fixed 2026-09-09).
 3. In chat, put the local URL in a standard top-level line:
 
    ```text
-   Task: https://mcritchie.studio/tasks/<task-slug>
+   Task: https://mcritchie.studio/devops/tasks/<task-slug>
    Local Demo: http://localhost:<port>/<path>
    Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/auth flows
    ```
@@ -250,8 +276,8 @@ grace passed with it still open — proceed on the default above) · `1` the boa
 could not be read · `3` usage. It is bounded by construction: the loop's deadline
 is the latest open end plus the grace, recomputed on every read.
 
-**Grant production authority:** the Approve button on `/deployments` (admin)
-posts `POST /deployments/<release>/ship_authorization`, which records the one
+**Grant production authority:** the Approve button on `/devops` (admin)
+posts `POST /devops/deployments/<release>/ship_authorization`, which records the one
 `ship_authorized completed` event under the conductor's own idempotency key —
 so a grant and the ship's own completion stamp are one row. `bin/release ship
 --mode ask|timed|auto|cleared` picks how authority is taken (default `timed`, from
@@ -272,11 +298,11 @@ key from every other write and counts a marker only when its signature verifies 
 its own row, so any other answer reads as recorded, with no approver (the
 lines are tabled in Steffon's `production-deploy` SOP). The Last Release card keeps
 the grant line as the record of what the approval carried. A claim taken or released and a grant recorded each update an open
-`/deployments` without a reload.
+`/devops` without a reload.
 
 ## Task Conversation and QA Feedback
 
-The task board owns the durable conversation for an increment. `/tasks` cards
+The task board owns the durable conversation for an increment. `/devops/tasks` cards
 show the latest feedback inline so agents can scan the queue without opening a
 separate tool. Open the task detail page when you need the full thread or need
 to add a note. The response taxonomy lives in
@@ -445,7 +471,7 @@ browser reads a lifecycle left-to-right instead of hunting alphabetized columns.
 reorder in place; hence a view.)
 
 **Logical, NOT chronological.** `release_timeline` mirrors `Release::STAGES` — the
-same canonical order the /deployments tracker uses. Release stamps deliberately
+same canonical order the /devops tracker uses. Release stamps deliberately
 land OUT of wall-clock order: `assembling_started_at` is stamped back at MERGE time
 (`Conductor.sweep!`) and `qa_deploy_started_at` before the QA deploy, so both land
 BEFORE `qa_green!` stamps `tested_at`. That is by design — it is precisely why
@@ -1048,7 +1074,7 @@ for an epic (DevOps v3, `docs/agents/system/devops-v3-design.md` §3): an epic i
 a plan the focus session holds, not a card, so there is no Epic record to create
 first — the slug is simply the handle its tasks share. A card whose task has one
 wears an **epic chip** beside its task-slug chip, and clicking the chip filters
-the board to that epic (`/tasks?epic=<slug>`; `/deployments` honours the same
+the board to that epic (`/devops/tasks?epic=<slug>`; `/devops` honours the same
 param). Same charset as a task slug, lowercased on the way in.
 
 ```bash
@@ -1076,17 +1102,17 @@ the `update` remedy — set it on the existing task instead.
 
 An epic has its own pages, reached from the **Epics** link above every board:
 
-- **`/epics`** lists every epic, newest activity first. Each row shows the task
+- **`/devops/epics`** lists every epic, newest activity first. Each row shows the task
   count by stage, a done bar, when the epic started and when it last moved.
   **Done** means the task reached production: `shipped`, or `archived` after it
   shipped. A task archived without shipping counts toward the total only.
-- **`/epics/<slug>`** shows that epic's tasks grouped by stage, on the board's own
+- **`/devops/epics/<slug>`** shows that epic's tasks grouped by stage, on the board's own
   card. The header gives the counts, the done bar, and the span from the first
   task created to the last task shipped, with links to both boards filtered to the
   epic.
 - **Release notes** group each app's tasks under their epic, loose tasks first.
   The Discord header lists the release's epics, and each task card names its
-  epic in the footer. The release card on `/deployments` shows the same epics as
+  epic in the footer. The release card on `/devops` shows the same epics as
   chips.
 
 Both pages read `EpicSummary`, which folds one grouped query over `tasks`. There

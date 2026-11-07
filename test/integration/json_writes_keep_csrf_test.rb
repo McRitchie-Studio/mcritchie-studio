@@ -51,7 +51,7 @@ class JsonWritesKeepCsrfTest < ActionDispatch::IntegrationTest
   test "a forged form PATCH to /tasks/<slug>.json is refused and the task keeps its stage" do
     task = tasks(:new_task)
 
-    post "/tasks/#{task.slug}.json", params: { _method: "patch", task: { stage: "archived" } }
+    post "/devops/tasks/#{task.slug}.json", params: { _method: "patch", task: { stage: "archived" } }
 
     assert_refused_as_forgery
     assert_equal "designed", task.reload.stage
@@ -61,7 +61,7 @@ class JsonWritesKeepCsrfTest < ActionDispatch::IntegrationTest
     task = tasks(:new_task)
     token = page_csrf_token(tasks_path)
 
-    patch "/tasks/#{task.slug}.json", params: { task: { stage: "archived" } },
+    patch "/devops/tasks/#{task.slug}.json", params: { task: { stage: "archived" } },
                                       headers: board_headers(token), as: :json
 
     assert_response :success
@@ -71,7 +71,7 @@ class JsonWritesKeepCsrfTest < ActionDispatch::IntegrationTest
   test "a forged form DELETE to /tasks/<slug>.json is refused and the task survives" do
     task = tasks(:new_task)
 
-    post "/tasks/#{task.slug}.json", params: { _method: "delete" }
+    post "/devops/tasks/#{task.slug}.json", params: { _method: "delete" }
 
     assert_refused_as_forgery
     assert Task.exists?(task.id)

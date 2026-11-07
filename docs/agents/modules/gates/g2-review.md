@@ -270,7 +270,7 @@ Gate-zero reads CI for you. When you read it yourself:
 ## UI surfaces
 
 - **Task gates card** — the "Testing gates" card on
-  `https://mcritchie.studio/tasks/<slug>` renders the G2a Primary and G2b
+  `https://mcritchie.studio/devops/tasks/<slug>` renders the G2a Primary and G2b
   Light chips beside the two DoR chips: latest attempt (`×n` badge),
   status, and the expandable `scout-report` SOP list (the gate-zero dor-check
   now records on the separate `dor_review` chip, not on G2a).

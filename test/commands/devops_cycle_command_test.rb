@@ -20,7 +20,7 @@ class DevopsCycleCommandTest < ActiveSupport::TestCase
     assert_includes out, "Reviewed (1)"
     assert_includes out, "Assembled (1)"
     assert_includes out, "Ship sidebar recovery (task-pr123)"
-    assert_includes out, "#{FIXTURE_BOARD}/tasks/task-pr123"
+    assert_includes out, "#{FIXTURE_BOARD}/devops/tasks/task-pr123"
     assert_includes out, "qa-intake: avi-ready McRitchie-Studio/mcritchie-studio#123"
     assert_includes out, "latest qa_feedback: Needs one more navbar regression test before merge."
   end

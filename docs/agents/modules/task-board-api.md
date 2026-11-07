@@ -213,7 +213,7 @@ The endpoint:
 
 - resolves the provided task slugs from the production task board
 - groups linked task titles by application in the standard ecosystem order
-- links every task to `https://mcritchie.studio/tasks/<task-slug>`
+- links every task to `https://mcritchie.studio/devops/tasks/<task-slug>`
 - includes empty application sections as `No deployed tasks`
 - posts to `DISCORD_RELEASE_NOTES_WEBHOOK_URL` with
   `DISCORD_DEPLOY_WEBHOOK_URL` as a compatibility fallback

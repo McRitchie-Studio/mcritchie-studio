@@ -44,7 +44,7 @@ bin/task update <task-slug> --local-url http://localhost:<port>/<path> --approva
 ```
 
 ```text
-Task: https://mcritchie.studio/tasks/<task-slug>
+Task: https://mcritchie.studio/devops/tasks/<task-slug>
 Local Demo: http://localhost:<port>/<path>
 Local Inbox: http://localhost:<port>/_studio/local_emails   # only for email/auth flows
 ```
@@ -203,7 +203,7 @@ level down inside `@scope` and `.bin` as well, before git deletes anything. Neve
   each with its safety class, `rationale:` line, and exact `remove … --yes` command. That
   dry run is the approval packet.
 - `cleanup --write` files candidates on the **desk ledger** (`DeskRecord`, Desks panel on
-  [/deployments](https://mcritchie.studio/deployments)). A teardown files its record
+  [/devops](https://mcritchie.studio/devops)). A teardown files its record
   **before** destroying anything. When the board does not answer, the record is queued
   at `<projects>/.agents/desk-ledger-queue.jsonl` and posts, in order, on the next
   ledger write; the teardown refuses only when the board answers with a refusal or the

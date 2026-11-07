@@ -18,14 +18,14 @@ const noSidewaysScroll = (page) =>
 
 test("desktop: crumbs, the one h1, the Edit action and a Links menu that opens", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto(`/tasks/${SLUG}`);
+  await page.goto(`/devops/tasks/${SLUG}`);
   const row = page.locator(ROW);
 
-  // The crumb trail: Admin, Deployments, then the page itself.
+  // The crumb trail: DevOps, then the page itself.
   const crumbs = row.locator("nav.page-header-crumbs[aria-label='Breadcrumb']");
   await expect(crumbs).toBeVisible();
-  await expect(crumbs.locator("a.page-header-crumb")).toHaveText(["Admin", "Deployments"]);
-  await expect(crumbs.locator("a.page-header-crumb").last()).toHaveAttribute("href", "/deployments");
+  await expect(crumbs.locator("a.page-header-crumb")).toHaveText(["DevOps"]);
+  await expect(crumbs.locator("a.page-header-crumb").last()).toHaveAttribute("href", "/devops");
   await expect(crumbs.locator(".page-header-crumb-current")).toHaveText("Task");
   await expect(row.locator("a.page-header-parent")).toBeHidden();
 
@@ -38,7 +38,7 @@ test("desktop: crumbs, the one h1, the Edit action and a Links menu that opens",
   const action = row.locator("a.page-header-action");
   await expect(action).toHaveCount(1);
   await expect(action).toHaveText("Edit");
-  await expect(action).toHaveAttribute("href", `/tasks/${SLUG}/edit`);
+  await expect(action).toHaveAttribute("href", `/devops/tasks/${SLUG}/edit`);
 
   // The Links menu: closed at rest, open on a click, closed again on Escape.
   const button = row.locator(".page-header-menu-button");
@@ -48,7 +48,7 @@ test("desktop: crumbs, the one h1, the Edit action and a Links menu that opens",
   await expect(list).toBeVisible();
   await expect(button).toHaveAttribute("aria-expanded", "true");
   await expect(list.locator("a")).toHaveText(["Sizing", "Agent: alex"]);
-  await expect(list.locator("[data-test='task-link-sizing']")).toHaveAttribute("href", `/tasks/${SLUG}/sizing`);
+  await expect(list.locator("[data-test='task-link-sizing']")).toHaveAttribute("href", `/devops/tasks/${SLUG}/sizing`);
   await page.keyboard.press("Escape");
   await expect(list).toBeHidden();
 
@@ -57,14 +57,14 @@ test("desktop: crumbs, the one h1, the Edit action and a Links menu that opens",
 
 test("390px: the parent link, the title, the action, the menu, the phone meta, and no sideways scroll", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(`/tasks/${SLUG}`);
+  await page.goto(`/devops/tasks/${SLUG}`);
   const row = page.locator(ROW);
 
   // The trail gives way to one link to the parent.
   const parent = row.locator("a.page-header-parent");
   await expect(parent).toBeVisible();
-  await expect(parent).toHaveAttribute("href", "/deployments");
-  await expect(parent).toContainText("Deployments");
+  await expect(parent).toHaveAttribute("href", "/devops");
+  await expect(parent).toContainText("DevOps");
 
   await expect(row.locator("h1.page-header-title")).toHaveText(TITLE);
   await expect(row.locator("a.page-header-action")).toBeVisible();

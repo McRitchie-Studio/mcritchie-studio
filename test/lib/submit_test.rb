@@ -29,14 +29,14 @@ class SubmitTest < Minitest::Test
   BRANCH = "feat/#{SLUG}"
 
   # The board bin/submit renders task links against — DERIVED from the pin, not
-  # spelled out. It used to be the literal "https://mcritchie.studio/tasks/…",
+  # spelled out. It used to be the literal "https://mcritchie.studio/devops/tasks/…",
   # which passed only because run_ship left TASK_API_BASE unpinned and bin/submit
   # fell through to its production default. Two problems with that: the assertion
   # "the PR body must LEAD with the task URL" was really asserting the production
   # HOST, and no containment floor could pin the board without a false red here.
   # Deriving it keeps the assertion about the URL's SHAPE, which is what these
   # tests are actually for.
-  TASK_URL = "#{OutboundSeams::UNROUTABLE}/tasks/#{SLUG}"
+  TASK_URL = "#{OutboundSeams::UNROUTABLE}/devops/tasks/#{SLUG}"
   PR_URL = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"
 
   # A throwaway repo on the task branch with a bare `origin` carrying an
@@ -731,7 +731,7 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # AN EMPTY baseRefName IS NOT A STACK (/tasks/review-guards-stacked-prs, third item).
+  # AN EMPTY baseRefName IS NOT A STACK (/devops/tasks/review-guards-stacked-prs, third item).
   # `gh pr list --head "" --state open` is NO FILTER to real gh and returns EVERY open PR, so
   # an unread or absent base would make the probe name the FIRST open PR as this PR's parent
   # and preserve a MIS-BASED PR on the strength of a coincidence. No answer falls to the repair.
@@ -818,7 +818,7 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # --- cheap refusals come BEFORE the push (/tasks/submit-checks-before-push) -------
+  # --- cheap refusals come BEFORE the push (/devops/tasks/submit-checks-before-push) -------
   #
   # 0/8 asks bin/dor-check --precheck (every merge-gate rule but the CI read) before
   # anything is committed; 2/8 runs bin/fast-check after the commit and BEFORE the

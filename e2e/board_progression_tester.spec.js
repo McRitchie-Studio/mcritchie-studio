@@ -59,7 +59,7 @@ test("Advance walks a fixture into WAITING APPROVAL, then settles it", async ({ 
 
   // It is the real CTA, not a label: the whole bar is the hand-off link, which is
   // what makes the demo clickable at all.
-  await expect(waitingBar).toHaveAttribute("href", `/tasks/${slug}/local_review`);
+  await expect(waitingBar).toHaveAttribute("href", `/devops/tasks/${slug}/local_review`);
 
   // The CI beat (posted, not clicked — see the header): the card stays put and its
   // meter appears, which is the whole reason the beat exists.

@@ -145,7 +145,7 @@ test("task card archive and delete buttons persist and use distinct exits", asyn
   await expect(archiveCard.locator("[data-test='task-card-archive']")).toBeVisible();
   await recordExitActions(page, archiveSlug);
   const archiveRespPromise = page.waitForResponse((response) =>
-    response.url().includes(`/tasks/${archiveSlug}.json`) && response.request().method() === "PATCH"
+    response.url().includes(`/devops/tasks/${archiveSlug}.json`) && response.request().method() === "PATCH"
   );
   await archiveCard.locator("[data-test='task-card-archive']").click();
   const archiveResp = await archiveRespPromise;
@@ -164,7 +164,7 @@ test("task card archive and delete buttons persist and use distinct exits", asyn
   await recordExitActions(page, deleteSlug);
   page.once("dialog", (dialog) => dialog.accept());
   const deleteRespPromise = page.waitForResponse((response) =>
-    response.url().includes(`/tasks/${deleteSlug}.json`) && response.request().method() === "DELETE"
+    response.url().includes(`/devops/tasks/${deleteSlug}.json`) && response.request().method() === "DELETE"
   );
   await deleteCard.locator("[data-test='task-card-delete']").click();
   const deleteResp = await deleteRespPromise;

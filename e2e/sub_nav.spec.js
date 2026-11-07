@@ -14,14 +14,14 @@ const { CONTRAST } = require("./contrast");
 // Each page a sub-nav sits on: its path, the sub-navs it draws, and the link that
 // marks the page itself (null where the sub-nav leaves the current page out).
 const PAGES = [
-  { path: "/tasks", navs: ["board_sections"], current: null },
-  { path: "/deployments", navs: ["board_sections"], current: null },
-  { path: "/stages", navs: ["board_sections"], current: "/stages" },
-  { path: "/epics", navs: ["board_sections"], current: "/epics" },
-  { path: "/triage", navs: ["board_sections"], current: null },
+  { path: "/devops/tasks", navs: ["board_sections"], current: null },
+  { path: "/devops", navs: ["board_sections"], current: null },
+  { path: "/devops/stages", navs: ["board_sections"], current: "/devops/stages" },
+  { path: "/devops/epics", navs: ["board_sections"], current: "/devops/epics" },
+  { path: "/devops/triage", navs: ["board_sections"], current: null },
   { path: "/mason/heartbeat", navs: ["heartbeat"], current: null },
   { path: "/mason/heartbeat/activities", navs: ["heartbeat"], current: "/mason/heartbeat/activities" },
-  { path: "/mason/pipeline", navs: ["heartbeat"], current: null },
+  { path: "/devops/pipeline", navs: ["heartbeat"], current: null },
 ];
 // The board views are the page header's tabs now (e2e/deployments_header.spec.js), not a
 // sub-nav. board_sections is the engine page header's links line now (studio/_page_header
@@ -73,7 +73,7 @@ test.describe("a visitor", () => {
     for (const href of ["/nfl", "/games/2026", "/build", "/packages"]) {
       await expect(main.locator(`a[href='${href}']`), `${href} is a public entry`).toHaveCount(1);
     }
-    for (const href of ["/tasks", "/dashboard", "/admin/dashboard", "/deployments", "/agents", "/people", "/docs"]) {
+    for (const href of ["/devops/tasks", "/dashboard", "/admin/dashboard", "/devops", "/agents", "/people", "/docs"]) {
       await expect(main.locator(`a[href='${href}']`), `${href} is an admin entry`).toHaveCount(0);
     }
     // Studio is the public section now: the rows a visitor may open, and none of the admin pages above.

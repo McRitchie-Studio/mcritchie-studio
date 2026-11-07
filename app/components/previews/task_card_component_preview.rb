@@ -55,7 +55,7 @@ class TaskCardComponentPreview < ViewComponent::Preview
   def waiting_approval
     card(stage: "building", board: :build, epic_slug: "devops-v3",
          devops: { "approval_status" => "waiting", "approval_requested_at" => 3.minutes.ago.iso8601,
-                   "local_url" => "http://localhost:3011/tasks" })
+                   "local_url" => "http://localhost:3011/devops/tasks" })
   end
 
   # A bounced task whose PR head has not moved since the send-back.

@@ -34,7 +34,7 @@ class SizingsControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "show redirects when task not found" do
-    get "/tasks/does-not-exist/sizing"
+    get "/devops/tasks/does-not-exist/sizing"
     assert_redirected_to tasks_path
   end
 

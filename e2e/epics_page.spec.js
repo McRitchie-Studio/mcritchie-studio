@@ -51,7 +51,7 @@ test("the epics page lists an epic and clicks through to its tasks by stage", as
 
     // The board's own link row reaches the index.
     await page.locator("[data-test='board-link-epics']").first().click();
-    await expect(page).toHaveURL(/\/epics$/);
+    await expect(page).toHaveURL(/\/devops\/epics$/);
 
     const row = page.locator(`[data-test='epic-row'][data-epic='${EPIC}']`);
     await expect(row).toBeVisible();
@@ -59,7 +59,7 @@ test("the epics page lists an epic and clicks through to its tasks by stage", as
     await expect(row.locator("[data-test='epic-stage-count'][data-stage='building']")).toContainText("1");
 
     await row.locator("[data-test='epic-row-link']").click();
-    await expect(page).toHaveURL(new RegExp(`/epics/${EPIC}$`));
+    await expect(page).toHaveURL(new RegExp(`/devops/epics/${EPIC}$`));
     await expect(page.locator(".page-header h1.page-header-title")).toHaveText(EPIC);
 
     // Each task sits in its stage's section, on a card that actually shows.
