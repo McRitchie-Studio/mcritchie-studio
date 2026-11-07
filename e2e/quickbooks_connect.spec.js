@@ -1,18 +1,10 @@
-// [e2e] The QuickBooks Online connection, as an admin meets it: on
-// /integrations the QuickBooks card (in the Connect group) carries Connect
-// QuickBooks; connecting comes back to /integrations connected to the company
-// CompanyInfo names, and /admin/quickbooks proves the read: the company and
-// this year's profit and loss to date, with its net income. Loading the page
-// twice proves the refresh token rotated: the stand-in honours only the last
-// refresh token it issued, so a refresh that did not store its new token would
-// fail the second load. Disconnect revokes at the stand-in and deletes the row.
-//
-// WHAT THIS DOES NOT PROVE. Nothing here reaches Intuit: the lane's stand-in
-// (config/initializers/quickbooks_connect_stand_in.rb) answers for Intuit's
-// sign-in page, its token and revoke endpoints and the reads. The callback,
-// the code exchange, refresh and revoke code, the stored QuickbooksConnection
-// and the pages are real. The real request shapes are pinned in
-// test/services/quickbooks/.
+// [e2e] An admin connects QuickBooks from the /integrations card, reads the
+// company and its profit and loss on /admin/quickbooks twice (the stand-in
+// honours only its last refresh token, so a lost rotation fails load two), and
+// disconnects. Nothing reaches Intuit: config/initializers/
+// quickbooks_connect_stand_in.rb answers sign-in, tokens, revoke and reads.
+// The callback, exchange, refresh, revoke and pages are real; request shapes
+// are pinned in test/services/quickbooks/.
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 

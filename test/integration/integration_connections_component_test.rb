@@ -9,9 +9,8 @@ require "support/quickbooks_connect_fakes"
 # there is more than one. The Google Calendar, Gmail and Drive cards carry a
 # connection for any signed-in user in their action row, never behind
 # Details: Connect, or the account and Disconnect (an admin's the household's,
-# a non-admin's their own); a visitor sees neither. The Fathom card, in the
-# same Connect group, does the same for an admin, and so does the QuickBooks
-# card, whose Connect renders disabled until the Intuit app is set.
+# a non-admin's their own); a visitor sees neither. The Fathom and dark
+# QuickBooks cards do the same for an admin alone.
 class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
   include FathomConnectFakes
