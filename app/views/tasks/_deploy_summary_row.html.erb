@@ -77,6 +77,13 @@ function soulCarousel(count, ms) {
     _last: 0,
     init() {
       this.agents = (this.$el.dataset.agents || '').split(',');
+      // Any click on the card tells the Workflows sidebar which soul is in frame, so
+      // the sidebar it opens shows that soul (workflowsCycle). A click, not a watch on
+      // `index`: the wheel keeps turning while the sidebar is open, and a timed turn
+      // must not pull the sidebar off the soul the operator cycled to.
+      this.$el.addEventListener('click', () => {
+        window.dispatchEvent(new CustomEvent('workflows-focus', { detail: this.agents[this.index] }));
+      });
       this._last = Date.now();
       this._tick = setInterval(() => {
         const now = Date.now();
@@ -99,6 +106,26 @@ function soulCarousel(count, ms) {
       if (i === this.index) return 'active';
       if (i === this.prev) return 'leaving';
       return 'waiting';
+    }
+  };
+}
+
+// The Workflows SIDEBAR's hand-turned wheel (tasks/_heartbeats_card, :detail): one
+// soul at a time, Previous / Next wrapping at both ends, the dots jumping. show(slug)
+// is how the summary card hands over the soul it had in frame; an unknown slug is
+// ignored rather than resetting the operator's place.
+function workflowsCycle() {
+  return {
+    index: 0,
+    agents: [],
+    init() { this.agents = (this.$el.dataset.agents || '').split(',').filter(Boolean); },
+    get count() { return this.agents.length; },
+    go(i) { if (this.count) this.index = ((i % this.count) + this.count) % this.count; },
+    next() { this.go(this.index + 1); },
+    prev() { this.go(this.index - 1); },
+    show(slug) {
+      const i = this.agents.indexOf(slug);
+      if (i >= 0) this.index = i;
     }
   };
 }
