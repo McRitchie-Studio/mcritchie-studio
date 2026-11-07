@@ -136,6 +136,14 @@ class TaskPagesHeaderTest < ActionDispatch::IntegrationTest
     assert_select "#{ROW} nav.page-header-tabs a[href=?]", edit_broadcast_path(@broadcast), text: "Editor"
   end
 
+  test "[component] /contents/:slug: the lineup Preview stays on the page and opens a new tab" do
+    content = Content.create!(title: "Header lineup", stage: "idea", workflow: "starter_post_x", team_slug: @team.slug)
+    get_header content_path(content.slug)
+    assert_select "#{ROW} [data-test=content-link-preview]", 0
+    assert_select "[data-test=content-workflow-actions] a[data-test=content-link-preview][target=_blank][href=?]",
+                  team_lineup_graphic_path(@team.slug)
+  end
+
   test "[component] /docs/:path lifts the doc's first h1 into the header and keeps one h1" do
     get_header doc_path("agents/steffon/HEARTBEAT")
     assert_select ".prose-themed h1", 0
