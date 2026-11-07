@@ -12,8 +12,10 @@
 #   * `pull_request` (closed + merged)     — refreshes the merged column of the
 #                                            task(s) that PR belongs to (devops-v3
 #                                            4c-i: the board derives `merged`, no
-#                                            agent stamps it). Every other action
-#                                            is ignored.
+#                                            agent stamps it), and moves a task
+#                                            still `submitted` on to `reviewed`
+#                                            when the PR is its own. Every other
+#                                            action is ignored.
 #
 # IDEMPOTENT + MONOTONIC by design. GitHub delivers webhooks AT-LEAST-ONCE and
 # OUT OF ORDER, so this job:
@@ -217,7 +219,9 @@ class GithubWorkflowRunIngestJob < ApplicationJob
     return if url.blank? && branch.blank?
 
     tasks_for_pull_request(url, branch).each do |task|
-      TaskMergedRungRefreshJob.perform_now(task.slug)
+      # pr_url: lets the stage follow the merge — a `submitted` task whose OWN PR
+      # this is moves to `reviewed` (Task#follow_pull_request_merge!).
+      TaskMergedRungRefreshJob.perform_now(task.slug, pr_url: url)
     end
   end
 

@@ -904,6 +904,11 @@ end
 # NO `merged` STAMP (devops-v3 4c-i). The board derives the rung from GitHub
 # (Task#merged_rung) and refreshes its `merged` column itself when the task lands
 # on `reviewed` (TaskMergedRungRefreshJob), so review no longer writes it.
+#
+# THE BOARD FOLLOWS THE MERGE (stage-follows-github). GitHub's merged
+# `pull_request` webhook may move the task `reviewed` before the move below runs.
+# The move then confirms the stage: the API answers a same-stage move with a 200
+# and writes no second transition.
 def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: nil)
   # A carried operator-approval request is SHOWN before the merge and never refuses
   # it (surface-waiting-request-at-merge). The move below settles it and the board

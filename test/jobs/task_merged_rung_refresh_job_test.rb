@@ -3,6 +3,7 @@
 require "test_helper"
 require "minitest/mock"
 require_relative "../support/fake_task_derivation"
+require_relative "../../lib/seam_reconcile"
 
 # The board refreshes its own `merged` cache (devops-v3 piece 4c-i): nobody stamps
 # it. TaskMergedRungRefreshJob does the write; a merged `pull_request` webhook finds
@@ -113,6 +114,128 @@ class TaskMergedRungRefreshJobTest < ActiveJob::TestCase
     assert_nil t.reload.merged
     assert_empty fake.calls, "no GitHub read for a PR that did not merge"
   end
+
+  # ── stage-follows-github: the stage follows the merge ─────────────────────
+  # A merged PR used to refresh only `merged`; the task sat `submitted` until
+  # devops-reconcile healed the stamp_lost class (engine-loader-family: 19.5 h).
+
+  def merge_transitions(t)
+    t.task_events.transitions.where(from_stage: "submitted", to_stage: "reviewed")
+  end
+
+  test "[unit] a merged own PR moves a submitted task to reviewed with the merge stamp" do
+    t = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+    end
+
+    t.reload
+    assert_equal %w[reviewed accepted], [t.stage, t.merged]
+    event = merge_transitions(t).sole
+    assert_equal TaskEvent::GITHUB_SOURCE, event.source
+    assert_equal TaskEvent::SYSTEM_ACTOR, event.actor, "no open review intent: the system placeholder"
+  end
+
+  test "[unit] the move is attributed to the reviewer whose open intent the merge completes" do
+    t = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+    t.record_intent_event(to_stage: "reviewed", actor: "carl", reviewers: [{ "slug" => "carl", "weight" => "primary" }])
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+    end
+
+    event = merge_transitions(t.reload).sole
+    assert_equal "carl", event.actor
+    assert_equal [{ "slug" => "carl", "weight" => "primary" }], event.metadata["reviewers"]
+  end
+
+  test "[unit] only from submitted: a building or reviewed task keeps its stage" do
+    building = task(stage: "building", devops: { "pr_url" => PR_URL })
+    reviewed = task(stage: "reviewed", devops: { "pr_url" => PR_URL })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+    end
+
+    assert_equal "building", building.reload.stage, "a building task is not under review; the stage holds"
+    assert_equal "accepted", building.merged, "the merged cache still refreshes"
+    assert_equal "reviewed", reviewed.reload.stage
+    assert_empty merge_transitions(reviewed)
+  end
+
+  test "[unit] only for the task's own PR: a PR matched by branch in another repo moves nothing" do
+    t = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+    other = "https://github.com/McRitchie-Studio/turf-monster/pull/88"
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted", other => "accepted" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event(url: other, branch: "feat/#{t.slug}"))
+    end
+
+    assert_equal "submitted", t.reload.stage, "turf-monster#88 is not one of this task's PRs"
+  end
+
+  test "[unit] a multi-repo task waits until every repo has merged" do
+    sibling = "https://github.com/McRitchie-Studio/turf-monster/pull/89"
+    t = task(stage: "submitted", devops: { "repositories" => [HUB, "turf-monster"], "pr_url" => PR_URL,
+                                           "pr_urls" => { "turf-monster" => sibling } })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted", sibling => nil })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+    end
+    assert_equal "submitted", t.reload.stage, "the sibling PR is still open"
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted", sibling => "accepted" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event(url: sibling))
+    end
+    assert_equal %w[reviewed accepted], [t.reload.stage, t.merged]
+  end
+
+  test "[unit] only a merge onto accepted moves it: a stacked-parent merge or another rung holds" do
+    stacked = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+    other = PR_URL.sub("777", "779")
+    past = task(stage: "submitted", devops: { "pr_url" => other })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => nil, other => "release" })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event(url: other))
+    end
+
+    assert_equal "submitted", stacked.reload.stage, "merged into a parent branch: on no rung yet"
+    assert_equal "submitted", past.reload.stage, "not the accepted rung the review path lands on"
+  end
+
+  test "[unit] an unreadable GitHub moves nothing" do
+    t = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => :unreadable })) do
+      GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event)
+    end
+
+    assert_equal "submitted", t.reload.stage
+    assert_nil t.merged
+  end
+
+  test "[unit] a re-delivered merge event is idempotent: one transition" do
+    t = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })) do
+      2.times { GithubWorkflowRunIngestJob.perform_now("pull_request", pull_request_event) }
+    end
+
+    assert_equal "reviewed", t.reload.stage
+    assert_equal 1, merge_transitions(t).count
+  end
+
+  test "[unit] the refresh job alone, without a PR url, never moves the stage" do
+    t = task(stage: "submitted", devops: { "pr_url" => PR_URL })
+
+    with_github(FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })) do
+      TaskMergedRungRefreshJob.perform_now(t.slug)
+    end
+
+    assert_equal %w[submitted accepted], [t.reload.stage, t.merged]
+  end
 end
 
 # [integration] The same path end to end through the signed receiver.
@@ -146,6 +269,41 @@ class GithubPullRequestWebhookTest < ActionDispatch::IntegrationTest
 
     assert_response :ok
     assert_equal "accepted", t.reload.merged
+  end
+
+  # stage-follows-github: merged and stage land together, so the pr-review seam
+  # reconcile has no stamp_lost to find on a fresh merge.
+  test "[integration] a signed merged-PR delivery moves submitted to reviewed and leaves no stamp_lost" do
+    t = Task.create!(title: "stage follows github sample task", stage: "submitted",
+                     metadata: { "devops" => { "shape" => "backend", "repositories" => ["mcritchie-studio"],
+                                               "pr_url" => PR_URL } })
+    before = SeamReconcile.classify({ "slug" => t.slug, "stage" => t.stage },
+                                    pr_state: :merged, merged_state: :unset)
+    assert_equal :stamp_lost, before&.anomaly, "precondition: the old board state reads as stamp_lost"
+
+    body = JSON.generate("action" => "closed",
+                         "pull_request" => { "html_url" => PR_URL, "merged" => true, "head" => { "ref" => "feat/x" } })
+    headers = { "Content-Type" => "application/json", "X-GitHub-Event" => "pull_request",
+                "X-Hub-Signature-256" => "sha256=#{OpenSSL::HMAC.hexdigest("SHA256", SECRET, body)}" }
+
+    Github::TaskDerivation.stub(:new, FakeTaskDerivation.new(rungs: { PR_URL => "accepted" })) do
+      perform_enqueued_jobs { post "/api/v1/github/webhook", params: body, headers: headers }
+    end
+
+    assert_response :ok
+    t.reload
+    assert_equal %w[reviewed accepted], [t.stage, t.merged]
+    after = SeamReconcile.classify({ "slug" => t.slug, "stage" => t.stage },
+                                   pr_state: :merged, merged_state: :set, merged_value: t.merged)
+    assert_nil after, "no pr-review seam anomaly after a fresh merge"
+
+    # The race with pr-review: its own `bin/task move reviewed` lands after the
+    # webhook. A same-stage move is a confirming no-op, never a refusal.
+    auth = { "Authorization" => "Bearer #{Rails.application.message_verifier("api_auth").generate("test", purpose: :api_auth, expires_in: 1.hour)}" }
+    patch "/api/v1/tasks/#{t.slug}", params: { stage: "reviewed", event: { source: "cli", actor: "avi" } },
+                                     headers: auth, as: :json
+    assert_response :ok
+    assert_equal 1, t.task_events.transitions.where(from_stage: "submitted", to_stage: "reviewed").count
   end
 end
 
