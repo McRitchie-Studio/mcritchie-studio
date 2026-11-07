@@ -94,6 +94,10 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(option).toContainText("Test Athlete Alpha");
   await expect(option.locator("[data-test='search-row-badge']")).toHaveText("2 looks");
   await expect(option.locator("[data-test='search-row-look-name']")).toHaveText("Home Blue");
+  // The options' text is in the DOM a tick before the list is shown (the results land,
+  // then `open`), and toContainText does not wait for visibility: a box read then is
+  // null (pass 7 of 20, 2026-11-06). Wait on the list's own word that it is placed.
+  await expect(recast(page, 1).locator("[data-test='recast-results']")).toHaveAttribute("data-placed", "true");
   const list = await recast(page, 1).locator("[data-test='recast-results']").boundingBox();
   const field = await combo.boundingBox();
   expect(list.width).toBeGreaterThan(field.width);
