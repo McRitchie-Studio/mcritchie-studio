@@ -57,6 +57,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "clean-artifacts"        => :cli_arg_guard,
     "register-app"           => :cli_arg_guard,
     "r2-backup"              => :cli_arg_guard,
+    "agents-backup"          => :cli_arg_guard,
     # The nightly UI budget (.github/workflows/ui-budget.yml): --collect opens
     # production pages in a browser and writes a results file.
     "ui-budget"              => :cli_arg_guard,
