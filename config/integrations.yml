@@ -159,7 +159,7 @@ groups:
       - key: egnyte
         name: Egnyte
         icon: egnyte
-        tagline: "Your agents browse your Egnyte folders and file documents into them."
+        tagline: "Your agents browse your Egnyte folders and file documents."
         blurb: Sign in to your Egnyte domain and your agents can browse its folders, read what each file is, and upload a document where you point them.
         status: soon
         tier: pro
