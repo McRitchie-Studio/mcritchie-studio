@@ -14,7 +14,8 @@ which an owner reaches from the sidebar's **My Apps** section.
 
 - **Who:** the app's owner or an admin (`AppOwnership.manage_app?`). Anyone else
   gets 404, never 403; a visitor is sent to sign in. An unannounced app
-  (`AppCatalog::UNANNOUNCED`) is a 404 to everyone but an admin.
+  (`AppCatalog::UNANNOUNCED`) is a 404 to everyone but an admin, and its owner's app
+  page shows no Pipeline tab (one rule for both: `ApplicationsHelper#app_pipeline_hidden?`).
 - **Which tasks:** every task whose `devops.repositories` names the app's slug
   (`Task.for_repository`; an App slug is its repo slug). A multi-repo task shows
   on each app it names.
