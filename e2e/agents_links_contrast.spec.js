@@ -1,6 +1,6 @@
 const { test, expect } = require("@playwright/test");
 
-// [component] The /agents header links (Dreams, Activities feed) and each agent
+// [component] The /agents header links (Dreams, Activities feed, in the Links menu) and each agent
 // row's docs link ("10 files": app/views/agents/index.html.erb; once a wall of
 // role/soul/heartbeat chips, before the page became a table)
 // sit on theme tokens, so they read in BOTH themes. They used white-alpha pills
@@ -49,9 +49,17 @@ const BORDERS = (selector) => {
   });
 };
 
+// Dreams and the Activities feed are pages elsewhere, so they are the header's Links
+// menu (studio-engine docs/PAGE_HEADER.md, "The four kinds of control"): the list opens
+// from the Links button, and its items read against the list's own ground. The button
+// is the outline a reader sees at rest, so it is the one measured against the page.
 test("the /agents header links read in both themes", async ({ page }) => {
   await page.goto("/agents");
+  const button = page.locator(".page-header .page-header-menu-button");
+  await expect(button).toHaveText(/Links/);
+  await button.click();
   await expect(page.locator("[data-test='agents-dreams-link']")).toBeVisible();
+  await expect(page.locator("[data-test='agents-activities-link']")).toBeVisible();
 
   await eachTheme(page, async (theme) => {
     const labels = await page.evaluate(CONTRAST, LINKS);
@@ -59,8 +67,8 @@ test("the /agents header links read in both themes", async ({ page }) => {
     for (const label of labels) {
       expect(label.ratio, `${theme}: "${label.text}" text contrast`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
     }
-    for (const outline of await page.evaluate(BORDERS, LINKS)) {
-      expect(outline.ratio, `${theme}: "${outline.text}" outline against the page`).toBeGreaterThanOrEqual(BORDER_FLOOR);
+    for (const outline of await page.evaluate(BORDERS, ".page-header .page-header-menu-button")) {
+      expect(outline.ratio, `${theme}: the Links button outline against the page`).toBeGreaterThanOrEqual(BORDER_FLOOR);
     }
   });
 });
