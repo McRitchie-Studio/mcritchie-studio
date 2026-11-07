@@ -1,16 +1,11 @@
 # frozen_string_literal: true
 
-# Guard: NO CI STEP FETCHES FROM AN APT MIRROR. The lanes that need system packages
-# run inside the lane image (.github/ci-image/Dockerfile, built weekly by
-# mirror-ci-images.yml), which carries every package pre-installed.
-#
-# WHY. The apt mirror stalling in "Install system packages" was the largest single
-# cause of a red-then-green CI run: hub 12 jobs, engine 35 job-steps in two weeks
-# (refactor-review-2026-11-06, lane-health 2f). A bounded retry loop
-# (.github/scripts/apt-retry, removed with this guard) made the stall rarer, never
-# absent, and a red that a re-run turns green is a defect with a cause (Alex
-# McRitchie, 2026-11-06), not something to retry. This guard replaced
-# test/lib/ci_apt_step_timeout_test.rb. History: task deterministic-ci.
+# Guard: NO CI STEP FETCHES FROM AN APT MIRROR. The lanes that need packages run
+# inside the lane image (.github/ci-image/Dockerfile, built weekly by
+# mirror-ci-images.yml). The apt mirror stall was the top red-then-green cause
+# (refactor-review-2026-11-06, lane-health 2f), and a red a re-run turns green is a
+# defect with a cause, not a retry (Alex McRitchie, 2026-11-06). Replaced
+# test/lib/ci_apt_step_timeout_test.rb. Task: deterministic-ci.
 require "minitest/autorun"
 require "yaml"
 

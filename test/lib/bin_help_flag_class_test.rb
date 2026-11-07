@@ -77,6 +77,7 @@ class BinHelpFlagClassTest < Minitest::Test
     # The content pipeline's agent CLI. CLAIMS and WRITES, so `--help` is wired
     # through the parser and exits before dispatch — verified against a dead
     # base URL, so no subcommand reached the network.
+    "e2e-repeat-changed"     => :optparse,
     "content"                => :optparse,
     # Posts video to a public X account. `--help` is wired through OptionParser
     # and an unknown flag refuses before any credential read or upload.

@@ -64,13 +64,10 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(recast(page, 1).locator("input[type='checkbox']")).toHaveCount(0);
   // Replace with is at the top, above the sightings (folded behind the title, so open them); the bottom
   // block (swap toggle, then naming) is under them.
-  // Opening reflows the card for two frames: cardFitRow shows EVERY clear chip, waits two
-  // frames, measures, then trims to one row, so everything under the sightings jumps up.
-  // Four separate boundingBox round-trips straddled that trim (CI, 2026-10-27: card-bottom
-  // read at 688.86 before it, performer-resolution, which sits INSIDE card-bottom, at 605.86
-  // after). So the spec waits for the card to say its fit has settled (data-card-fit, set
-  // by castCardDisclosure#cardFitRow after the painted trim) and reads all four tops once,
-  // from one layout. No polling retry: a wrong order after "settled" is a real defect.
+  // Opening reflows the card for two frames (cardFitRow shows every chip, then trims to
+  // one row), and reads that straddled the trim went red in CI. So the spec waits for the
+  // card's data-card-fit="settled" (castCardDisclosure#cardFitRow) and reads all four tops
+  // once, from one layout. No polling retry: a wrong order after "settled" is a defect.
   const tops = (...names) => card(page, 1).evaluate((el, ts) => Object.fromEntries(
     ts.map((t) => [t, el.querySelector(`[data-test='${t}']`).getBoundingClientRect().top])), names);
   await card(page, 1).locator("[data-test='performer-title']").click();

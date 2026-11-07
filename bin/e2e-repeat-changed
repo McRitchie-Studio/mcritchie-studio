@@ -8,9 +8,19 @@
 #   Usage: bin/e2e-repeat-changed [--shard=K/N]
 #
 # Exit 0 when every pass is green or there is nothing to run (said on stdout), else 1.
+require "optparse"
 require_relative "lib/e2e_repeat_changed"
 
-shard = ARGV.find { |a| a.start_with?("--shard=") }&.delete_prefix("--shard=")
+shard = nil
+OptionParser.new do |o|
+  o.banner = "usage: bin/e2e-repeat-changed [--shard=K/N]"
+  o.on("--shard=K/N", %r{\A\d+/\d+\z}, "run this shard's share of the five passes") { |v| shard = v }
+  o.on("-h", "--help", "print this help") do
+    puts o
+    exit 0
+  end
+end.parse!(ARGV)
+abort "bin/e2e-repeat-changed: unexpected argument(s): #{ARGV.join(' ')}" unless ARGV.empty?
 diff = E2eRepeatChanged.name_status
 if diff.nil?
   puts "e2e-repeat-changed: not a pull request (or its diff is unreadable); nothing to repeat"

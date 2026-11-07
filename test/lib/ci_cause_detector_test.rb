@@ -26,12 +26,12 @@ class CiCauseDetectorTest < Minitest::Test
   LOG
 
   PLAYWRIGHT = <<~LOG
-    2026-11-03T10:00:00.0000000Z   1) [chromium] › e2e/video_recast.spec.js:240:3 › recast › results fit a phone
+    2026-11-03T10:00:00.0000000Z   1) [chromium] › e2e/sample_race.spec.js:240:3 › recast › results fit a phone
     2026-11-03T10:00:00.0000001Z
     2026-11-03T10:00:00.0000002Z     Error: expect(received).toBeLessThanOrEqual(expected)
     2026-11-03T10:00:00.0000003Z     Expected: <= 390
     2026-11-03T10:00:00.0000004Z     Received:    412
-    2026-11-03T10:00:00.0000005Z   2) [chromium] › e2e/video_recast.spec.js:301:3 › recast › swaps a cast member
+    2026-11-03T10:00:00.0000005Z   2) [chromium] › e2e/sample_race.spec.js:301:3 › recast › swaps a cast member
     2026-11-03T10:00:00.0000006Z
     2026-11-03T10:00:00.0000007Z     Error: Timed out 5000ms waiting for expect(locator).toBeVisible()
   LOG
@@ -90,7 +90,7 @@ class CiCauseDetectorTest < Minitest::Test
 
   def test_one_spec_file_failing_at_two_lines_is_one_cause
     c = only(CiCauseDetector.causes(job_name: "ci / playwright (3)", log: PLAYWRIGHT))
-    assert_equal ["test", "e2e/video_recast.spec.js"], [c[:klass], c[:key]]
+    assert_equal ["test", "e2e/sample_race.spec.js"], [c[:klass], c[:key]]
   end
 
   def test_the_app_raising_under_a_test_is_product
@@ -119,12 +119,12 @@ class CiCauseDetectorTest < Minitest::Test
   end
 
   def test_slug_and_title_are_stable_and_board_shaped
-    slug = CiCauseDetector.slug("McRitchie-Studio/mcritchie-studio", "e2e/video_recast.spec.js")
-    assert_equal "ci-cause-mcritchie-studio-e2e-video-recast-spec-js", slug
+    slug = CiCauseDetector.slug("McRitchie-Studio/mcritchie-studio", "e2e/sample_race.spec.js")
+    assert_equal "ci-cause-mcritchie-studio-e2e-sample-race-spec-js", slug
     long = CiCauseDetector.slug("o/r", "SomeVeryLongMinitestClassNameThatGoesOnAndOnForeverAndEverTest")
     assert_operator long.length, :<=, 60
     assert_equal long, CiCauseDetector.slug("o/r", "SomeVeryLongMinitestClassNameThatGoesOnAndOnForeverAndEverTest")
-    assert_equal "Find test cause video_recast", CiCauseDetector.title("test", "e2e/video_recast.spec.js")
+    assert_equal "Find test cause sample_race", CiCauseDetector.title("test", "e2e/sample_race.spec.js")
     assert_equal 4, CiCauseDetector.title("infra", "apt-mirror").split.size
   end
 
