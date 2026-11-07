@@ -30,11 +30,11 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/agent_login_requests"
   end,
-  # The TikTok, Google and Fathom sign-ins' single-use auth code, on their callbacks only.
+  # The TikTok, Google, Fathom and Egnyte sign-ins' single-use auth code, on their callbacks only.
   lambda do |key, value, params = nil|
     next unless key.to_s == "code" && value.is_a?(String)
 
-    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom].include?(params["controller"].to_s)
+    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom admin/egnyte].include?(params["controller"].to_s)
   end,
   # The satellite visitor's IP the agent chat API takes for its per-IP cap
   # (Api::V1::AgentChatsController): hashed there, never stored, and kept out of

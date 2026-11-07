@@ -1,0 +1,115 @@
+<%# The standing Egnyte connections page (/admin/egnyte): each connected domain, who granted it and when, and a live read proving it: one page of a folder (the Shared root, or the folder ?egnyte_domain=&path= names), its subfolders as links and its files with their sizes; or Egnyte's error said plainly. Disconnect per domain, and a domain field with Connect. The developer key and encryption setup shows only while one of them is missing, by NAME only. It renders no token and no part of one, and no value of any env var. %>
+<% can_connect = @configured && @encryption_ready %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="egnyte-connection-page" data-count="<%= @connections.size %>">
+  <div>
+    <h1 class="text-3xl font-bold text-heading">Egnyte connections</h1>
+    <p class="text-secondary mt-2">
+      The Egnyte domains this server can reach, each connected by signing in. A connection can browse folders, read file details and upload a file. No token is shown here.
+    </p>
+  </div>
+
+  <% if @unreadable.any? %>
+    <p class="card p-4 text-sm text-body" data-test="egnyte-unreadable">
+      <span class="font-semibold text-warning-ink">Stored but unreadable:</span> <%= @unreadable.to_sentence %>. They were encrypted with keys this server no longer has; connecting again replaces them.
+    </p>
+  <% end %>
+
+  <% if @connections.empty? %>
+    <div class="card p-4 text-sm space-y-1" data-test="egnyte-section" data-state="none">
+      <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="egnyte-badge">Not connected</span>
+      <p class="text-muted" data-test="egnyte-detail"><%= can_connect ? "No Egnyte domain is connected. Enter one below; Connect signs in on that domain and asks for its files only." : "Connect is off until the setup below is done." %></p>
+    </div>
+  <% end %>
+
+  <% @connections.each do |connection| %>
+    <% read = @reads.fetch(connection.domain) %>
+    <% folder = read.folder %>
+    <div class="card p-4 space-y-3 text-sm" data-test="egnyte-section" data-domain="<%= connection.domain %>" data-state="<%= read.error ? 'read_failed' : 'connected' %>">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div class="min-w-0 space-y-1">
+          <h2 class="font-semibold text-heading text-base break-all" data-field="host"><%= connection.host %></h2>
+          <% if read.error %>
+            <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="egnyte-badge">Connected, but the read failed</span>
+          <% else %>
+            <span class="badge text-xs bg-success/10 text-success-ink border-success/40" data-test="egnyte-badge">Connected</span>
+          <% end %>
+          <p class="text-body" data-test="egnyte-account">
+            <% if connection.username.present? %><span class="font-semibold text-heading break-all" data-field="username"><%= connection.username %></span><% end %>
+            <span class="block text-muted text-xs" data-field="connected">Connected <%= stamp.(connection.connected_at) %><% if connection.connected_by.present? %> by <%= connection.connected_by %><% end %></span>
+            <% if connection.last_refreshed_at %>
+              <span class="block text-muted text-xs" data-field="refreshed">Token last refreshed <%= stamp.(connection.last_refreshed_at) %></span>
+            <% end %>
+          </p>
+        </div>
+        <%= button_to "Disconnect", admin_egnyte_disconnect_path(egnyte_domain: connection.domain), method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto",
+                      form: { class: "shrink-0", data: { test: "egnyte-disconnect", turbo_confirm: "Disconnect Egnyte for #{connection.host}?" } } %>
+      </div>
+
+      <% if read.error %>
+        <p class="text-body" data-test="egnyte-read-error"><%= read.error %></p>
+      <% else %>
+        <div class="space-y-2" data-test="egnyte-read" data-path="<%= folder.path %>" data-folders="<%= folder.folders.size %>" data-files="<%= folder.files.size %>" data-more="<%= folder.more? %>">
+          <p class="font-medium text-heading break-all" data-field="path">
+            <%= folder.path %>
+            <span class="font-normal text-muted">· <%= pluralize(folder.folders.size, "folder") %>, <%= pluralize(folder.files.size, "file") %><%= folder.more? ? ", and more after them" : "" %></span>
+          </p>
+          <% parent = File.dirname(folder.path.to_s) %>
+          <% if folder.path.to_s != Egnyte::Reader::ROOT && parent != "/" %>
+            <%= link_to "Up to #{parent}", admin_egnyte_path(egnyte_domain: connection.domain, path: parent), class: "text-xs text-primary hover:underline break-all", data: { test: "egnyte-up" } %>
+          <% end %>
+          <% if folder.entries.empty? %>
+            <p class="text-muted">This folder is empty.</p>
+          <% else %>
+            <ul class="divide-y divide-subtle rounded-lg border border-subtle">
+              <% folder.folders.each do |sub| %>
+                <li class="px-3 py-2 min-w-0" data-test="egnyte-folder">
+                  <%= link_to "📁 #{sub.name}", admin_egnyte_path(egnyte_domain: connection.domain, path: sub.path), class: "text-primary hover:underline break-all" %>
+                </li>
+              <% end %>
+              <% folder.files.each do |file| %>
+                <li class="px-3 py-2 flex flex-wrap justify-between gap-x-3 min-w-0" data-test="egnyte-file">
+                  <span class="text-body break-all min-w-0"><%= file.name %></span>
+                  <span class="text-muted text-xs shrink-0"><%= number_to_human_size(file.size) if file.size %><% if file.last_modified %> · <%= stamp.(file.last_modified) %><% end %></span>
+                </li>
+              <% end %>
+            </ul>
+          <% end %>
+        </div>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% if can_connect %>
+    <%= form_with url: admin_egnyte_connect_path, method: :post, local: true, class: "card p-4 space-y-2 text-sm", data: { test: "egnyte-connect", turbo: false } do |form| %>
+      <label for="egnyte-domain" class="font-semibold text-heading block">Connect a domain</label>
+      <p class="text-muted text-xs">The name before .egnyte.com. Connect sends you to that domain's Egnyte sign-in and asks for its files only.</p>
+      <div class="flex flex-col sm:flex-row gap-2">
+        <%= form.text_field :egnyte_domain, id: "egnyte-domain", required: true, placeholder: "domain.egnyte.com", autocomplete: "off", spellcheck: false,
+                            class: "input-field w-full min-w-0 text-sm", data: { test: "egnyte-domain-field" } %>
+        <%= form.submit "Connect Egnyte", class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0" %>
+      </div>
+    <% end %>
+  <% else %>
+    <dl class="card p-4 space-y-3 text-sm border-warning/40" data-test="egnyte-server">
+      <% unless @configured %>
+        <div>
+          <dt class="text-muted text-xs mb-1">Developer key</dt>
+          <dd class="text-body break-words" data-field="client" data-set="false">
+            <span class="font-semibold text-warning-ink">Not set.</span>
+            Set <span class="font-mono text-xs">EGNYTE_CLIENT_ID</span> and <span class="font-mono text-xs">EGNYTE_CLIENT_SECRET</span>.
+            <span class="text-muted">Its redirect URI must be <span class="font-mono text-xs break-all"><%= @callback_url %></span></span>
+          </dd>
+        </div>
+      <% end %>
+      <% unless @encryption_ready %>
+        <div>
+          <dt class="text-muted text-xs mb-1">Encryption</dt>
+          <dd class="text-body break-words" data-field="encryption" data-ready="false">
+            <span class="font-semibold text-warning-ink">Not ready.</span> Set <span class="font-mono text-xs"><%= EgnyteConnection::ENCRYPTION_ENV.join(", ") %></span>: without them no connection can be stored.
+          </dd>
+        </div>
+      <% end %>
+    </dl>
+  <% end %>
+</section>

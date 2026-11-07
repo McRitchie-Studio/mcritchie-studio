@@ -530,6 +530,51 @@ rotated pair through [`credential-filing`](credential-filing.md). Locally,
 (`config/initializers/fathom_connect_stand_in.rb`) whose token endpoint honours
 only the last refresh token it issued; nothing reaches Fathom.
 
+## 10. Egnyte by sign-in — a document store, one row per domain
+
+The same `sign_in` method for Egnyte (`EgnyteConnection`, `Egnyte::OAuthClient`,
+`Egnyte::Reader`), built dark: nothing happens until the developer key is set and
+an admin connects a domain. Egnyte's Public API answers on each domain's own host
+(`https://<domain>.egnyte.com/pubapi/...`), so the admin types the domain before
+Connect, and the hub keeps one row per domain. One scope, `Egnyte.filesystem`
+(Egnyte has no read-only variant): browse folders, read file metadata, and upload
+one file (`Egnyte::Reader#upload`, the only write). The hub dogfoods it at
+**`/admin/egnyte`** (admin only): each domain, who connected it, a live read of
+`/Shared` (or the folder `?egnyte_domain=&path=` names), and Disconnect. The
+Egnyte card in the Connect group of `/integrations` is dark (`dark: true` in
+`config/integrations.yml`): the public page does not list it. An admin's page
+does, with the domain field and Connect, rendered disabled until the server holds
+the key, and each connected domain with its Disconnect. Offering it to clients is
+a config change: drop `dark`, and mind the public page's two rows of four.
+
+**Tokens** (Egnyte's authentication docs, read 2026-11-06). The authorization code
+flow on `https://<domain>.egnyte.com/puboauth/token`. The access token lives 30
+days; a refresh answers a new access token and a new refresh token. Egnyte asks
+callers to cache the access token (its token endpoint allows about 100 requests
+an hour), so the row keeps both tokens encrypted with the expiry, and
+`Egnyte::OAuthClient.access_token` refreshes only within a day of expiry or after
+a 401, under the row's lock. Read limits: about 2 calls a second and 1,000 a day
+per access token; a 429 is said on the page. A refused refresh (revoked, or the
+user's password changed) shows on the page; the fix is Disconnect, then Connect.
+
+**Revoke.** Disconnect calls `POST /pubapi/v1/tokens/revoke` on the domain, then
+deletes the row. When Egnyte does not confirm the revoke, the row still goes and
+the notice says to remove the access in Egnyte.
+
+**The bulk import is a follow-up.** `Egnyte::Reader#each_entry` walks one folder a
+page at a time; the import job recurses with it, and adds a download read and the
+chunked upload (`/fs-content-chunked`, for files over 100 MB).
+
+**The developer key.** Register it at developers.egnyte.com (Alex McRitchie's
+turn, in the epic), with the redirect URI `https://mcritchie.studio/admin/egnyte/callback`
+for production and `https://qa.mcritchie.studio/admin/egnyte/callback` for QA. Set
+its pair as `EGNYTE_CLIENT_ID` (the API key) and `EGNYTE_CLIENT_SECRET` (the
+shared secret), and file it as `egnyte.industries.applications` through
+[`credential-filing`](credential-filing.md). Locally, `EGNYTE_STAND_IN=1` walks the
+whole flow against a stand-in (`config/initializers/egnyte_connect_stand_in.rb`)
+that accepts any domain and honours only the last refresh token it issued;
+nothing reaches Egnyte.
+
 ## Switching a workspace off — and back on
 
 ```bash

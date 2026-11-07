@@ -1,19 +1,23 @@
 require "application_system_test_case"
 require "support/google_connect_fakes"
 require "support/fathom_connect_fakes"
+require "support/egnyte_connect_fakes"
 
 # [e2e] /integrations at phone, tablet and desktop width, light and dark: the page
 # renders its three groups and never scrolls sideways. Every system test signs in as
 # the admin, so the Google section carries Connect Google (the OAuth client set
 # here) and its three cards carry no contact-form Connect, nor does the Fathom
-# card (its OAuth app set here too), which carries Connect Fathom instead.
+# card (its OAuth app set here too), which carries Connect Fathom instead, nor
+# does the Egnyte card (its developer key set too), which carries its domain
+# field and Connect Egnyte.
 class IntegrationsPageTest < ApplicationSystemTestCase
   include GoogleConnectFakes
   include FathomConnectFakes
+  include EgnyteConnectFakes
 
   GOOGLE_CARDS = %w[google_calendar gmail google_drive].freeze
   # The admin's cards whose real Connect replaces the contact-form one, in page order.
-  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom]).freeze
+  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom egnyte]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
   # A headless window will not shrink below about 500px, so the width is set by
@@ -21,7 +25,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
   teardown { page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride") }
 
   test "[e2e] /integrations loads light and dark at 375, 768 and 1280 with no horizontal scroll" do
-    with_connect_env { with_fathom_env { assert_no_sideways_scroll } }
+    with_connect_env { with_fathom_env { with_egnyte_env { assert_no_sideways_scroll } } }
   end
 
   def assert_no_sideways_scroll
@@ -38,11 +42,11 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
         assert_operator overflow, :<=, 0, "#{theme} at #{width}px scrolls sideways by #{overflow}px"
         # Every card's button sits inside its card, wrapped below the price if it
-        # must. The admin's Google and Fathom cards have none: their Connect is above.
+        # must. The admin's Google, Fathom and Egnyte cards have none: their Connect is above.
         without = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => !card.querySelector("[data-test='entry-cta']")).map(card => card.dataset.entry)
         JS
-        assert_equal CONNECTION_CARDS, without, "#{theme} at #{width}px: only the admin's Google and Fathom cards drop their CTA"
+        assert_equal CONNECTION_CARDS, without, "#{theme} at #{width}px: only the admin's Google, Fathom and Egnyte cards drop their CTA"
         clipped = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => {
             const cta = card.querySelector("[data-test='entry-cta']");
@@ -102,7 +106,12 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       heights.each { |row| assert_equal 1, row.uniq.size, "#{group}: cards in a row differ in height #{row}" }
       assert_operator heights.first.size, :<=, 4, group
     end
-    assert_equal [ 4, 4 ], rows.to_h.fetch("connect").map(&:size), "Connect is two full rows of four, no lonely tile"
+    # The public eight are two full rows of four; only an admin's dark tiles
+    # (built, not offered: Integration::Entry#dark?) run past them.
+    dark = Integration.entries(admin: true).count { _1.dark? && _1.group == "connect" }
+    connect = rows.to_h.fetch("connect").map(&:size)
+    assert_equal [ 4, 4 ], connect.first(2), "Connect is two full rows of four, no lonely public tile"
+    assert_equal dark, connect.drop(2).sum, "only the admin's dark tiles sit below them"
     assert_equal [ 3 ], rows.to_h.fetch("add_ons").map(&:size)
   end
 

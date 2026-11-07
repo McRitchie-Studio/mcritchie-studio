@@ -68,7 +68,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
               [ "Stack", "/stack" ], [ "Credentials", "/credentials" ],
               [ "Broadcasts", "/broadcasts" ], [ "Contacts", "/contacts" ], [ "Email analytics", "/broadcasts/analytics" ],
               [ "Error logs", "/error_logs" ], [ "TikTok connection", "/admin/tiktok" ], [ "Google connection", "/admin/google" ],
-              [ "Fathom connection", "/admin/fathom" ], [ "Agent inbox", "/admin/agent_messages" ],
+              [ "Fathom connection", "/admin/fathom" ], [ "Egnyte connection", "/admin/egnyte" ], [ "Agent inbox", "/admin/agent_messages" ],
               [ "Report destinations", "/admin/report_destinations" ], [ "CSP reports", "/admin/csp_reports" ],
               [ "Upgrade proposals", "/admin/upgrade_proposals" ],
               [ "Teams", "/teams" ], [ "People", "/people" ], [ "Builders", "/builders" ], [ "Docs", "/docs" ],
@@ -422,6 +422,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
   def admin_tiktok_path = "/admin/tiktok"
   def admin_google_path = "/admin/google"
   def admin_fathom_path = "/admin/fathom"
+  def admin_egnyte_path = "/admin/egnyte"
   def activities_agents_path = "/agents/activities"
   def admin_ai_builder_multiple_path = "/admin/ai_builder_multiple"
   def workflow_news_index_path = "/news/workflow"
