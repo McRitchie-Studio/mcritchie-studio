@@ -5,7 +5,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { CELL, animates, RADIUS, cellCentre, intensity, layout, rowStep, settle, tileIndex, wander } from "../../app/javascript/logo_grid.js";
+import { CELL, animates, layoutChanged, RADIUS, cellCentre, intensity, layout, rowStep, settle, tileIndex, wander } from "../../app/javascript/logo_grid.js";
 
 test("layout covers the box with one spare row and column", () => {
   assert.deepEqual(layout(920, 400, 92), { cols: 11, rows: 6, cell: 92 });
@@ -91,4 +91,14 @@ test("reduced motion gets a still grid; everyone else, phones too, gets the loop
   assert.equal(animates(media(false)), true);
   assert.equal(animates(null), true);
   assert.equal(animates(() => { throw new Error("no media"); }), true);
+});
+
+test("the grid rebuilds only when its layout changed", () => {
+  const built = { cols: 11, rows: 6, cell: 92, count: 18 };
+  assert.equal(layoutChanged(null, built), true, "the first build always runs");
+  assert.equal(layoutChanged(built, { ...built }), false, "the start-up resize event changes nothing");
+  assert.equal(layoutChanged(built, { ...built, cols: 12 }), true);
+  assert.equal(layoutChanged(built, { ...built, rows: 7 }), true);
+  assert.equal(layoutChanged(built, { ...built, cell: 72 }), true, "the phone pitch");
+  assert.equal(layoutChanged(built, { ...built, count: 19 }), true);
 });
