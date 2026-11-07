@@ -29,10 +29,11 @@ test("the gallery scrolls sideways, its still loads, and the fade follows the sc
   const widths = await row.evaluate((el) => [...el.children].map((li) => Math.round(li.getBoundingClientRect().width)));
   expect(new Set(widths).size).toBe(1);
 
-  // Cyvasse, Turf Monster, Prisoners Dilemma and Rantly lead
-  // (config/build_examples.yml `lead`); the first two on their own domains.
+  // Turf Monster, Commercial Welding, Cyvasse, Prisoners Dilemma and Rantly lead
+  // (config/build_examples.yml `lead`; Alex McRitchie, 2026-11-07); the first
+  // three on their own domains.
   const hosts = await page.locator("[data-test='build-example']").evaluateAll((links) => links.map((a) => new URL(a.href).host));
-  expect(hosts.slice(0, 4)).toEqual(["cyvasse.xyz", "turfmonster.media", "prisoners-dilemma.mcritchie.studio", "rantly.mcritchie.studio"]);
+  expect(hosts.slice(0, 5)).toEqual(["turfmonster.media", "commercialwelding.llc", "cyvasse.xyz", "prisoners-dilemma.mcritchie.studio", "rantly.mcritchie.studio"]);
 
   // The description is one line, cut with an ellipsis. Measured, not read off
   // the class: fill one with far more than a line of text and it must still

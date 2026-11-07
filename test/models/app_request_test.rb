@@ -286,15 +286,15 @@ class AppRequestTest < ActiveSupport::TestCase
     end
   end
 
-  test "the gallery leads with Cyvasse, Turf Monster, Prisoners Dilemma and Rantly, the rest after in their usual order" do
+  test "the gallery leads with Turf Monster, Commercial Welding, Cyvasse, Prisoners Dilemma and Rantly, the rest after in their usual order" do
     %w[portfolio rantly weekly-lock prisoners-dilemma].each_with_index do |subdomain, i|
       live = draft(user: users(:alex)).queue!("zz-lead-#{i}")
       live.update_columns(subdomain: subdomain, status: "live", updated_at: i.minutes.ago)
     end
     subdomains = BuildGallery.examples.map { |e| BuildGallery.subdomain(e.url) }
 
-    assert_equal %w[cyvasse turfmonster prisoners-dilemma rantly], subdomains.first(4)
-    assert_equal %w[portfolio weekly-lock], subdomains.drop(4) & %w[portfolio weekly-lock], "newest first after the lead"
+    assert_equal %w[turfmonster commercialwelding cyvasse prisoners-dilemma rantly], subdomains.first(5)
+    assert_equal %w[portfolio weekly-lock], subdomains.drop(5) & %w[portfolio weekly-lock], "newest first after the lead"
   end
 
   test "[unit] Cyvasse and Turf Monster cards link to their own domains, each with its still and loop" do
