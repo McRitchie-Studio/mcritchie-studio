@@ -363,21 +363,22 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     reviewed  = Task.where(stage: "reviewed").count
     assembled = Task.where(stage: "assembled").count
 
-    # On /tasks the Tasks button is hidden (redundant with the title); the
-    # Deployments button shows with its reviewed + assembled badges.
+    # The board views are the header's tabs: on /tasks the Tasks tab is the current
+    # one, and the Deployments tab carries its reviewed + assembled badges.
     get tasks_path
     assert_response :success
-    assert_select %(nav[aria-label="Board views"]) do
-      assert_select %(a[href="#{deployments_path}"]), { minimum: 1 }
-      assert_select %(a[href="#{tasks_path}"]), { count: 0 }
-      assert_select %(span[title="#{reviewed} reviewed"]), text: reviewed.to_s
-      assert_select %(span[title="#{assembled} assembled"]), text: assembled.to_s
+    assert_select %(nav.page-header-tabs[aria-label="Board views"]) do
+      assert_select %(a[href="#{deployments_path}"]), 1
+      assert_select %(a[href="#{tasks_path}"][aria-current="page"]), 1
+      assert_select %(a[href="#{deployments_path}"] span[title="#{reviewed} reviewed"]), text: reviewed.to_s
+      assert_select %(a[href="#{deployments_path}"] span[title="#{assembled} assembled"]), text: assembled.to_s
     end
 
-    # On /deployments the Tasks button shows with its building badge.
+    # On /deployments the Tasks tab shows with its building badge.
     get deployments_path
     assert_response :success
-    assert_select %(nav[aria-label="Board views"] span[title="#{building} building"]), text: building.to_s
+    assert_select %(nav.page-header-tabs[aria-label="Board views"] a[href="#{tasks_path}"] span[title="#{building} building"]),
+                  text: building.to_s
   end
 
   test "[component] deployments links to /tasks/recent in the board sections nav" do
@@ -402,20 +403,22 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # read through the board's boardNarrow, so the two can never disagree.
     get deployments_path
     assert_response :success
-    tasks_link = css_select(%(nav[aria-label="Board views"] a[href="#{tasks_path}"])).first
-    assert tasks_link, "deployments should still render the Tasks link (for the collapsed narrow view)"
-    assert_equal "boardNarrow", tasks_link["x-show"],
-      "the Tasks link follows the board's lane collapse"
-    assert css_select("[data-test='kanban-board']").first["x-data"].to_s.start_with?("kanbanBoard("),
-      "it renders inside the board that owns boardNarrow"
+    tasks_tab = css_select(%(nav.page-header-tabs[aria-label="Board views"] a[href="#{tasks_path}"])).first
+    assert tasks_tab, "deployments should still render the Tasks tab (for the collapsed narrow view)"
+    assert tasks_tab.key?("data-narrow-only"), "the Tasks tab follows the board's lane collapse"
+    board = css_select("[data-test='kanban-board']").first
+    assert board["x-data"].to_s.start_with?("kanbanBoard("), "it renders inside the board that owns boardNarrow"
+    assert_equal "boardNarrow ? 'true' : 'false'", board[":data-board-narrow"],
+      "the board publishes boardNarrow for the tab's CSS rule"
+    assert_select %(nav.page-header-tabs a[href="#{deployments_path}"][aria-current="page"]), 1
 
     # /stages has no board, so nothing makes the Tasks link redundant — it stays
-    # visible at every width.
+    # in the Links menu at every width.
     get stages_path
     assert_response :success
-    stages_tasks_link = css_select(%(nav[aria-label="Board views"] a[href="#{tasks_path}"])).first
+    stages_tasks_link = css_select(%(.page-header-menu-list a[href="#{tasks_path}"])).first
     assert stages_tasks_link, "stages should render the Tasks link"
-    assert_nil stages_tasks_link["x-show"], "the Tasks link must not be hidden on /stages"
+    assert_not stages_tasks_link.key?("data-narrow-only"), "the Tasks link must not be hidden on /stages"
   end
 
   test "[component] deployments board links to the cross-session Activities view" do
@@ -474,10 +477,10 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select %(nav[aria-label="Board sections"] a[href="#{stages_path}"]), count: 0
-    assert_select %([data-test="deployment-link-menu"] a[href="#{stages_path}"]),
+    assert_select %(.page-header-menu-list a[data-test="deployment-link-menu-stages"][href="#{stages_path}"]),
       text: "Stages",
       count: 1
-    assert_select %([data-test="deployment-link-menu"] a[href="#{review_events_hub_path}"]),
+    assert_select %(.page-header-menu-list a[data-test="deployment-link-menu-docs"][href="#{review_events_hub_path}"]),
       text: "Docs",
       count: 1
     assert_select %([data-test="submitted-review-docs-link"]), count: 0
@@ -1177,7 +1180,7 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     [tasks_path, deployments_path].each do |path|
       get path
       assert_response :success
-      assert_select "[data-test='board-header-actions'] button", text: "Archived", count: 0
+      assert_select ".page-header-actions button", text: "Archived", count: 0
       assert_not_includes response.body, "showArchived",
                           "#{path} still carries the archived-toggle Alpine state"
     end
@@ -1510,19 +1513,19 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
   end
 
   test "each board page cross-links to the other boards" do
-    # The active board hides its own (redundant) toggle button, so a page links
-    # to the OTHER board(s); Stages stays reachable from top-links or the
-    # /deployments older-links menu.
+    # Each board's header reaches the other boards (as tabs on a board, as Links menu
+    # items on /stages); Stages stays reachable from the links line or the
+    # /deployments Links menu.
     { tasks_path => "tasks", deployments_path => "deployments", stages_path => "stages" }.each do |page, current|
       get page
       assert_response :success
       if current == "deployments"
-        assert_select %([data-test="deployment-link-menu"] a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages menu link"
+        assert_select %(.page-header-menu-list a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages menu link"
       else
-        assert_select %(nav a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages nav link"
+        assert_select %(.page-header a[href="#{stages_path}"]), { minimum: 1 }, "#{page} missing Stages nav link"
       end
-      assert_select %(nav a[href="#{tasks_path}"]), { minimum: 1 }, "#{page} missing Tasks nav link" unless current == "tasks"
-      assert_select %(nav a[href="#{deployments_path}"]), { minimum: 1 }, "#{page} missing Deployments nav link" unless current == "deployments"
+      assert_select %(.page-header a[href="#{tasks_path}"]), { minimum: 1 }, "#{page} missing Tasks nav link" unless current == "tasks"
+      assert_select %(.page-header a[href="#{deployments_path}"]), { minimum: 1 }, "#{page} missing Deployments nav link" unless current == "deployments"
     end
   end
 

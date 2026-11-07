@@ -742,3 +742,24 @@ footer[data-site-footer] .ftr-link[href^="mailto:"] { overflow-wrap: normal; }
   animation-duration: 320ms;
   animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
+
+/* A board view tab's stage count (NavigationHelper#board_view_tabs): small numerals
+   after the tab's label, in the tab's own colour, so the count reads on the neutral
+   tab and on the gliding primary pill alike. */
+.page-header-tab-count {
+  display: inline-block;
+  min-width: 1.1em;
+  margin-left: 0.125rem;
+  font-size: 0.75em;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+}
+
+/* A narrow-only board view tab (the Deploy board's Tasks tab): a six-lane board already
+   shows the whole Build lane, so the tab shows only while the board reports itself too
+   narrow for six (kanbanBoard's boardNarrow, bound to data-board-narrow). Hidden until
+   Alpine says so, as the old x-show button was. */
+[data-test="kanban-board"]:not([data-board-narrow="true"]) .page-header-tab[data-narrow-only] {
+  display: none;
+}

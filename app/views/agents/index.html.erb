@@ -6,17 +6,11 @@
     its own page (the Docs cell links there). The pending table renders only for an admin. %>
 <% show_pending = !@pending_setups.nil? %>
 <section>
-  <% header_actions = capture do %>
-    <div class="flex flex-wrap items-center gap-2">
-      <%= link_to dreams_path, class: "inline-flex items-center gap-1.5 rounded-lg border border-strong bg-surface-alt px-3 py-2 text-sm font-semibold text-body hover:border-primary/40 hover:text-heading transition", data: { test: "agents-dreams-link" } do %>
-        Dreams <span aria-hidden="true">&rarr;</span>
-      <% end %>
-      <%= link_to activities_agents_path, class: "inline-flex items-center gap-1.5 rounded-lg border border-strong bg-surface-alt px-3 py-2 text-sm font-semibold text-body hover:border-primary/40 hover:text-heading transition", data: { test: "agents-activities-link" } do %>
-        Activities feed <span aria-hidden="true">&rarr;</span>
-      <% end %>
-    </div>
-  <% end %>
-  <%= render "studio/page_header", title: "Agents", crumbs: studio_crumbs(:agents), actions_html: header_actions %>
+  <%# Dreams and the activities feed are pages elsewhere: the Links menu
+      (docs/PAGE_HEADER.md, "The four kinds of control"). %>
+  <%= render "studio/page_header", title: "Agents", crumbs: studio_crumbs(:agents),
+        menu: [{ label: "Dreams", href: dreams_path, data: { test: "agents-dreams-link" } },
+               { label: "Activities feed", href: activities_agents_path, data: { test: "agents-activities-link" } }] %>
   <div class="mb-6"></div>
   <div class="<%= show_pending ? 'grid gap-6 min-w-0 lg:grid-cols-2 lg:items-start' : '' %>" data-test="agents-split" data-layout="<%= show_pending ? 'split' : 'single' %>">
   <% if show_pending %>

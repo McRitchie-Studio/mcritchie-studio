@@ -85,10 +85,10 @@ async function expectLanesFitAndClear(page, width, { lanes, scrollbar = 0 }) {
   expect(row.visible, `the board's own width decides the lane count at ${width}px`).toBe(lanes);
   expect(row.scrollWidth, "the lanes fit the board").toBeLessThanOrEqual(row.clientWidth + 1);
   expect(row.laneScroll, "the sideways scroller stays off").not.toBe("true");
-  // The toggle, and the board switcher's Tasks button (the Build lane, one click away),
-  // show exactly when lanes are collapsed: both read the lane row's container query.
+  // The toggle, and the header's Tasks tab (the Build lane, one click away), show
+  // exactly when lanes are collapsed: both read the lane row's container query.
   await expect(page.locator("[data-test='all-stages-toggle']")).toBeVisible({ visible: lanes < 6 });
-  await expect(page.locator("nav[aria-label='Board views'] a[href='/tasks']")).toBeVisible({ visible: lanes < 6 });
+  await expect(page.locator("nav.page-header-tabs[aria-label='Board views'] a[href='/tasks']")).toBeVisible({ visible: lanes < 6 });
 
   for (const y of [0, 150]) {
     await page.evaluate((top) => window.scrollTo(0, top), y);

@@ -466,48 +466,30 @@ document.addEventListener('turbo:before-cache', function() {
     ONE place instead of restating it. A spec that restated it went stale the day the
     beat changed, and its failure looked like a broken animation rather than a stale test. %>
 <section x-data="kanbanBoard(<%= live_updates.to_json %>, <%= (live_updates && crew_board == :deploy).to_json %>)" data-test="kanban-board"
+         :data-board-narrow="boardNarrow ? 'true' : 'false'"
          @resize.window="measureLanes()"
          data-beat-ms="<%= (Release::BOARD_FLIP_CADENCE * 1000).round %>" class="min-h-screen">
   <%= render "agent_login_requests/pending" %>
   <%# THE HEADER: the engine page header (studio/_page_header). The crumb trail comes from
-      config/navigation.yml's parents; the board switcher, All Stages and the board's own
-      actions stand on the right; the board's sibling pages are the links line under the
-      title. The row is sticky, so it is a direct child of this section, the board's long
+      config/navigation.yml's parents; the board's sibling pages are the links line under
+      the title. The right side takes the four kinds of control (Alex McRitchie
+      2026-11-06, docs/PAGE_HEADER.md "The four kinds of control"): the board views as
+      tabs, Stages and Docs in the Links menu, New Task as the one action, and the
+      local-only progression testers as tools. All Stages changes only how this board
+      draws, so it is not a header control: it stands in the filter row above the lanes.
+      The row is sticky, so it is a direct child of this section, the board's long
       container. The bleed matches the page's own gutters. %>
-  <% header_actions = capture do %>
-    <div class="flex items-center gap-2 flex-wrap justify-end" data-test="board-header-actions">
-      <%= render "components/sub_nav", nav: :board_views, current: current_page %>
-      <% if columns.size > 4 %>
-        <%# When the board is too narrow for six lanes the upstream ones collapse
-            (Building with them — it carries blocked, needs-attention tasks); this
-            reveals all six (x-scroll). Shown only while the lane row's container query
-            reports the board narrow (boardNarrow, read off its probe), so it never
-            offers a toggle that does nothing. x-show owns display. %>
-        <button type="button" @click="toggleAllStages()"
-                x-show="boardNarrow" style="display: none"
-                data-test="all-stages-toggle"
-                :aria-pressed="showAllCols ? 'true' : 'false'"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
-                :class="showAllCols ? 'bg-primary text-white border-primary' : ''">
-          <span>All Stages</span>
-        </button>
-      <% end %>
-      <% if logged_in? %>
-        <%= link_to "New Task", new_task_path, class: "btn btn-sm btn-primary" %>
-      <% end %>
-      <% if current_page == "deployments" %>
-        <%= render "deployment_link_menu" %>
-      <% end %>
-      <% if Rails.env.local? %>
-        <%# Local-only progression tester, beside the board's own actions (New
-            Task / Links) — the operator drives a demo from one row instead of
-            hunting between the header and the filter row. Both groups are
-            hidden entirely outside Rails.env.local?. %>
-        <%= render "dev_board_tools" %>
-        <%= render "dev_deploy_tools" %>
-      <% end %>
-    </div>
+  <% header_menu = [] %>
+  <% if current_page == "deployments" %>
+    <% header_menu = [{ label: "Stages", href: stages_path, data: { test: "deployment-link-menu-stages" } },
+                      { label: "Docs", href: review_events_hub_path, data: { test: "deployment-link-menu-docs" } }] %>
   <% end %>
+  <% header_tools = capture do %>
+    <div class="flex items-center gap-2 flex-wrap justify-end" data-test="board-header-tools">
+      <%= render "dev_board_tools" %>
+      <%= render "dev_deploy_tools" %>
+    </div>
+  <% end if Rails.env.local? %>
   <% header_links = sub_nav_links(:board_sections, current: current_page) %>
   <% if current_user&.admin? %>
     <% header_links += [{ label: "💵 Model Pricing", href: admin_model_pricing_path, data: { test: "board-link-model-pricing" } }] %>
@@ -515,7 +497,11 @@ document.addEventListener('turbo:before-cache', function() {
   <%= render "studio/page_header",
         title: title,
         crumbs: studio_crumbs(current_page),
-        actions_html: header_actions,
+        label: "Board views",
+        tabs: board_view_tabs(current: current_page),
+        menu: header_menu,
+        action: ({ label: "New Task", href: new_task_path, data: { test: "board-new-task" } } if logged_in?),
+        tools_html: header_tools,
         links: header_links,
         links_label: Navigation.sub_nav(:board_sections).label,
         row_class: "-mx-3 px-3 sm:-mx-4 sm:px-4 lg:-mx-6 lg:px-6 xl:-mx-8 xl:px-8" %>
@@ -549,9 +535,12 @@ document.addEventListener('turbo:before-cache', function() {
       the way back pointing at THIS board. %>
   <%= render "tasks/epic_filter", epic_slug: @epic_filter, clear_path: deployments_path %>
   <% board_apps = (@tasks_by_stage&.values&.flatten || []).flat_map(&:devops_repositories).uniq.sort %>
-  <% if board_apps.any? %>
+  <% all_stages_toggle = columns.size > 4 %>
+  <% if board_apps.any? || all_stages_toggle %>
     <div class="flex flex-wrap items-center gap-2 mb-4" data-test="board-filter-row">
+      <% if board_apps.any? %>
       <span class="text-xs font-semibold uppercase tracking-wider text-muted mr-1">Apps</span>
+      <% end %>
       <% board_apps.each do |app| %>
         <button type="button"
                 @click="toggleApp('<%= app %>')"
@@ -565,6 +554,23 @@ document.addEventListener('turbo:before-cache', function() {
                 class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-surface text-secondary border border-subtle transition">
           <% if (emoji = app_emoji(app)) %><span class="leading-none"><%= emoji %></span><% end %>
           <span><%= app %></span>
+        </button>
+      <% end %>
+      <% if all_stages_toggle %>
+        <%# When the board is too narrow for six lanes the upstream ones collapse
+            (Building with them — it carries blocked, needs-attention tasks); this
+            reveals all six (x-scroll). Shown only while the lane row's container query
+            reports the board narrow (boardNarrow, read off its probe), so it never
+            offers a toggle that does nothing. x-show owns display. It changes how this
+            board draws, not what it shows, so it sits here with the other board
+            filters, not in the header (docs/PAGE_HEADER.md, "The four kinds of control"). %>
+        <button type="button" @click="toggleAllStages()"
+                x-show="boardNarrow" style="display: none"
+                data-test="all-stages-toggle"
+                :aria-pressed="showAllCols ? 'true' : 'false'"
+                class="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition bg-surface text-secondary border border-subtle hover:text-heading"
+                :class="showAllCols ? 'bg-primary text-white border-primary' : ''">
+          <span>All Stages</span>
         </button>
       <% end %>
     </div>
