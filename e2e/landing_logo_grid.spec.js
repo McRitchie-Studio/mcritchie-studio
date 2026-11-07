@@ -80,3 +80,24 @@ test("a phone gets the wandering light and no sideways scroll", async ({ page })
       .map((c) => parseFloat(getComputedStyle(c).getPropertyValue("--lit")) || 0)))).toBeGreaterThan(0.5);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 });
+
+// Leaving the page within the resize debounce (150ms) used to let the pending
+// rebuild run on the released grid and start a frame loop nothing stopped
+// (task logo-grid-loop-hardening). Count animation frames requested after a
+// Turbo visit away: a live loop asks for one every frame (~36 in 600ms).
+test("a visit away right after load leaves no logo-grid frame loop running", async ({ page }) => {
+  await page.addInitScript(() => {
+    const request = window.requestAnimationFrame.bind(window);
+    window.__frames = 0;
+    window.requestAnimationFrame = (callback) => { window.__frames += 1; return request(callback); };
+  });
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await openBand(page);
+  await page.evaluate(() => window.Turbo.visit("/privacy"));
+  await page.waitForURL("**/privacy");
+  await expect(page.locator("[data-logo-grid]")).toHaveCount(0);
+  // Past the 150ms debounce, then a window to count in; a quiet page asks for (almost) none.
+  const before = await page.evaluate(() => new Promise((done) => setTimeout(() => done(window.__frames), 300)));
+  const after = await page.evaluate(() => new Promise((done) => setTimeout(() => done(window.__frames), 600)));
+  expect(after - before, "frames requested on /privacy after leaving the grid").toBeLessThan(6);
+});

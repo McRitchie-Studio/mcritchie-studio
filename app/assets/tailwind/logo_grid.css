@@ -43,5 +43,5 @@
 /* Reduced motion: the script runs no loop; the grid rests a little brighter,
    so the band still reads as a wall of faces and logos. */
 @media (prefers-reduced-motion: reduce) {
-  .logo-grid { --logo-grid-rest: 0.22; }
+  .logo-grid, .dark .logo-grid { --logo-grid-rest: 0.22; }
 }

@@ -249,4 +249,16 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_operator body.index("data-test=\"portfolio-band\""), :<, body.index("data-get-in-touch")
     assert_operator body.index("hero-title"), :<, body.index("data-test=\"portfolio-band\"")
   end
+
+  # [component] Reduced motion rests the grid at 0.22 in dark mode too (task
+  # logo-grid-loop-hardening): the dark rule set 0.12 and outranked the
+  # reduced-motion rule, so a dark reduced-motion visitor saw a near-empty band.
+  test "[component] logo grid reduced-motion rest covers dark mode" do
+    css = Rails.root.join("app/assets/tailwind/logo_grid.css").read
+    block = css[/@media \(prefers-reduced-motion: reduce\) \{(.*?)\n\}/m, 1]
+
+    assert block, "the reduced-motion block exists"
+    assert_match(/\.dark \.logo-grid/, block, "the dark rule is overridden too")
+    assert_match(/--logo-grid-rest:\s*0\.22/, block)
+  end
 end

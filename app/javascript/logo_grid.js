@@ -45,6 +45,14 @@ export function tileIndex(row, col, count, step = rowStep(count)) {
   return (((col + row * step) % count) + count) % count;
 }
 
+// Whether a new layout differs from the built one. The resize observer fires once
+// at start-up and on every size change; rebuilding an unchanged grid only throws
+// away the tiles (and the one lit under the pointer).
+export function layoutChanged(built, next) {
+  if (!built) return true;
+  return built.cols !== next.cols || built.rows !== next.rows || built.cell !== next.cell || built.count !== next.count;
+}
+
 // The centre of cell (row, col), in px from the grid's top left. The first
 // row and column bleed half a cell past the edge, so the grid has no margin.
 export function cellCentre(row, col, cell = CELL) {
@@ -123,10 +131,9 @@ class LogoGrid {
     this.host.addEventListener("pointermove", this.onMove, { passive: true });
     this.host.addEventListener("pointerleave", this.onLeave, { passive: true });
     if (typeof ResizeObserver !== "undefined") {
-      let pending = 0;
       this.resize = new ResizeObserver(() => {
-        clearTimeout(pending);
-        pending = setTimeout(() => this.build(), 150);
+        clearTimeout(this.resizeTimer);
+        this.resizeTimer = setTimeout(() => this.build(), 150);
       });
       this.resize.observe(el);
     }
@@ -143,9 +150,13 @@ class LogoGrid {
   }
 
   build() {
+    if (this.released) return;
     const cell = parseFloat(getComputedStyle(this.el).getPropertyValue("--logo-grid-cell")) || CELL;
     const { cols, rows } = layout(this.el.clientWidth, this.el.clientHeight, cell);
     const count = this.tiles.length;
+    const next = { cols, rows, cell, count };
+    if (!layoutChanged(this.built, next)) return;
+    this.built = next;
     const step = rowStep(count);
     const fragment = document.createDocumentFragment();
     this.cells = [];
@@ -182,7 +193,7 @@ class LogoGrid {
   }
 
   wake() {
-    if (this.still || this.frame || !this.visible) return;
+    if (this.released || this.still || this.frame || !this.visible) return;
     this.last = performance.now();
     this.frame = requestAnimationFrame((t) => this.tick(t));
   }
@@ -200,10 +211,15 @@ class LogoGrid {
       }
       cell.lit = lit;
     }
-    if (this.visible) this.frame = requestAnimationFrame((t) => this.tick(t));
+    if (this.visible && !this.released) this.frame = requestAnimationFrame((t) => this.tick(t));
   }
 
+  // Lets go of everything: the frame loop, the pending resize rebuild, the
+  // observers and the listeners. A released grid never builds or wakes again,
+  // so nothing keeps running on a node Turbo has swapped out.
   release() {
+    this.released = true;
+    clearTimeout(this.resizeTimer);
     cancelAnimationFrame(this.frame);
     this.frame = 0;
     this.host.removeEventListener("pointermove", this.onMove);
