@@ -85,6 +85,21 @@
   </div>
 </section>
 
+<!-- Portfolio -->
+<%# The portfolio band over the logo grid backdrop (task logo-grid-backdrop; Alex
+    McRitchie, 2026-11-07: a Cloudflare-style lit grid, of the agents and the
+    apps). The copy is a placeholder until the portfolio section card. A soft wash
+    of the page colour sits behind the words so they read over lit tiles. %>
+<section class="relative overflow-hidden border-t border-subtle" data-logo-grid-host data-test="portfolio-band" style="min-height: clamp(30rem, 72vh, 46rem);">
+  <%= render "shared/logo_grid" %>
+  <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 42% 46% at 50% 50%, color-mix(in srgb, var(--color-page) 88%, transparent) 0%, color-mix(in srgb, var(--color-page) 55%, transparent) 60%, transparent 100%);"></div>
+  <div class="relative z-10 max-w-2xl mx-auto px-4 text-center pointer-events-none" style="padding-block: clamp(8rem, 24vh, 15rem);">
+    <h2 class="text-4xl font-extrabold text-heading mb-3">Check Out Our Portfolio</h2>
+    <p class="text-secondary text-lg mb-8">Apps built by our team of agents.</p>
+    <%= link_to "See the Portfolio", websites_path, class: "btn btn-primary btn-lg pointer-events-auto", data: { test: "portfolio-band-cta" } %>
+  </div>
+</section>
+
 <!-- About -->
 <section id="about" class="max-w-4xl mx-auto px-4 section-padding">
   <div class="text-center mb-12">
