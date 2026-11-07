@@ -384,9 +384,14 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     %w[navbar stacked icon].each do |type|
       get logo_brand_path("studio", type:)
       assert_response :success
-      assert_select "header[data-test='logo-header']" do
-        assert_select "nav[aria-label='Breadcrumb'] h1.text-sm", "McRitchie Studio"
+      # The engine page header (task admin-pages-standard-header): the brand is the row's one h1, the type tabs are
+      # its tabs, and Context and the kit's save line stand on the line under it.
+      assert_select ".page-header[data-test='logo-header']" do
+        assert_select "nav[aria-label='Breadcrumb'] a.page-header-crumb", "Logos"
+        assert_select "h1.page-header-title", "McRitchie Studio"
         assert_select "[data-test='logo-tabs'] [data-test='logo-tab']", 4   # Icon, Navbar Logo, Stacked Logo and Motion
+      end
+      assert_select "[data-test='logo-header-bar']" do
         assert_select "[data-test='context-form']", 1
         assert_select "[data-test='kit-status']", 1
       end
@@ -468,9 +473,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='guides-sentence']", 0
     assert_select "[data-test='watermark-note']", 0
     assert_includes response.body, "window.copyText"
-    # Every control on the page has the page's own focus ring: the tabs, the Rule options, the guides toggle, Download and Copy SVG.
+    # Every control in the page's body has the page's own focus ring: the Rule options, the guides toggle, Download and
+    # Copy SVG. The type tabs are the engine page header's tabs (task admin-pages-standard-header), with its ring.
     ringed = css_select(".btn").select { |control| control["class"].include?("focus-visible:outline-[#4338CA]! dark:focus-visible:outline-white!") }
-    assert_equal %w[logo-tab logo-tab logo-tab logo-tab logo-download colouring-option colouring-option rule-option rule-option rule-option] +
+    assert_equal %w[logo-download colouring-option colouring-option rule-option rule-option rule-option] +
                  %w[text-option] * 3 + %w[guides-toggle kit-save-default compare-link edit-jump kit-save kit-download] +
                  %w[kit-pick-open kit-pick-download kit-pick-download] * 3 + %w[kit-notes-save kit-original-upload], ringed.map { |control| control["data-test"] }
   end
@@ -485,9 +491,10 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
                       ["stacked", "Stacked Logo", logo_brand_path("industries", type: "stacked")], ["motion", "Motion", logo_brand_path("industries", type: "motion")]],
                      css_select("a[data-test='logo-tab']").map { |tab| [tab["data-type"], tab.text.strip, tab["href"]] }
         assert_equal [current], css_select("a[data-test='logo-tab'][aria-current='page']").map { |tab| tab["data-type"] }
-        assert_select "a[data-test='logo-tab'].btn", 4, "a .btn carries the focus ring"
-        assert_select "a[data-test='logo-tab'][aria-current='page'].btn-primary.border.border-transparent", 1, "the chosen tab is the same box as the others"
-        assert_select "a[data-test='logo-tab'].btn-neutral:not(.border-transparent)", 3
+        # The engine page header's tabs (task admin-pages-standard-header): one .btn-sm box each, the chosen one primary.
+        assert_select "a[data-test='logo-tab'].page-header-tab.btn", 4, "a .btn carries the focus ring"
+        assert_select "a[data-test='logo-tab'][aria-current='page'].btn-primary", 1
+        assert_select "a[data-test='logo-tab'].btn-neutral:not([aria-current])", 3
       end
       assert_select "[data-test='logo-type'][data-type='#{current}']", 1
     end
@@ -586,14 +593,14 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
       assert_select "select#logo-context option[selected][value='watermark']", 1
     end
     assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf", type: "stacked", context: "watermark", rule: 3), text: "Hide"
-    assert_select "a[data-test='logos-crumb'][href=?]", logos_path(context: "watermark"), text: "Logos"
+    assert_select ".page-header-crumbs a.page-header-crumb[href=?]", logos_path(context: "watermark"), text: "Logos"
 
     # Light and dark are the hub's theme, which every page keeps already: a link never carries them.
     get logo_brand_path("turf", context: "dark", guides: 1)
     assert_equal [logo_brand_path("turf", rule: 3, guides: 1), logo_brand_path("turf", guides: 1), logo_brand_path("turf", rule: 6, guides: 1)],
                  css_select("a[data-test='rule-option']").map { |option| option["href"] }
     assert_equal [%w[guides 1]], css_select("form[data-test='context-form'] input[type='hidden']").map { |i| [i["name"], i["value"]] }
-    assert_select "a[data-test='logos-crumb'][href=?]", logos_path
+    assert_select ".page-header-crumbs a.page-header-crumb[href=?]", logos_path
     assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf"), text: "Hide"
 
     # The defaults (Navbar Logo, the theme's logos, rule of 4, guides off) are left out, even when named.
@@ -602,7 +609,7 @@ class LogosControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[data-test='logo-tab'][data-type='navbar'][href=?]", logo_brand_path("turf")
     assert_select "a[data-test='guides-toggle'][href=?]", logo_brand_path("turf", guides: 1), text: "Show"
     assert_select "form[data-test='context-form'] input[type='hidden']", 0
-    assert_select "a[data-test='logos-crumb'][href=?]", logos_path
+    assert_select ".page-header-crumbs a.page-header-crumb[href=?]", logos_path
   end
 
   test "a brand with no note in its style shows none" do

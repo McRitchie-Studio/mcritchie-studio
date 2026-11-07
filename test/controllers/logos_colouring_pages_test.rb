@@ -78,7 +78,7 @@ class LogosColouringPagesTest < ActionDispatch::IntegrationTest
     get logo_brand_path("industries", colouring: "alt", rule: 3)
     srcs.each { |src| assert_nil query(src)["colouring"], "an Alt logo's URL is as before: #{src}" }
     assert_equal ["alt"], css_select("[data-test='colouring-option'][aria-current='true']").map { |option| option["data-colouring"] }
-    links = css_select("[data-test='logo-tab'], [data-test='rule-option'], [data-test='guides-toggle'], [data-test='logos-crumb']").map { |a| a["href"] }
+    links = css_select("[data-test='logo-tab'], [data-test='rule-option'], [data-test='guides-toggle'], .page-header-crumbs a.page-header-crumb[href^='/logos']").map { |a| a["href"] }
     links.each { |href| assert_equal "alt", query(href)["colouring"], href }
     hidden = css_select("[data-test='context-form'] input[type=hidden]").to_h { |input| [input["name"], input["value"]] }
     assert_equal "alt", hidden["colouring"]
