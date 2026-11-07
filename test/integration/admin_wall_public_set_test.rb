@@ -41,6 +41,7 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     studio/links#consume studio/links#show
     studio/local_emails#index
     studio/local_reviews#show
+    studio/not_found#show
     tasks#local_review
     team_grades#show
     websites#index
@@ -128,10 +129,15 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     assert_not AdminWall.public?("a_controller_drawn_tomorrow", "index")
   end
 
+  # Public, governed by the wall, and drawn by no route: only the exceptions app
+  # calls it (studio-engine Studio::ExceptionsApp, the friendly not-found page).
+  UNROUTED_PUBLIC = %w[studio/not_found#show].freeze
+
   test "[unit] every public action in either source is a routed action the wall governs" do
     routed = governed_actions.map { |controller, action| "#{controller}##{action}" }
 
-    assert_empty EXPECTED_PUBLIC - routed, "listed public, yet no wall-governed route serves it"
+    assert_empty EXPECTED_PUBLIC - routed - UNROUTED_PUBLIC, "listed public, yet no wall-governed route serves it"
+    assert_empty UNROUTED_PUBLIC & routed, "an unrouted public action gained a route: drop it from UNROUTED_PUBLIC"
   end
 
   test "[unit] every registry page marked admin is behind the wall" do
