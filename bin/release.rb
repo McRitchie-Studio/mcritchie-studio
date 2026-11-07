@@ -7796,7 +7796,8 @@ def allocate_gem_versions!(gem_groups, label: nil)
   if DRY
     gem_groups.each do |group|
       step("  gem #{group['repo']}: last published (last v* tag ∪ RubyGems) + the members' bump → rewrite " \
-           "#{gem_meta_for(group['repo'])['version_file']} → roll CHANGELOG.md's '## Unreleased' into the " \
+           "#{gem_meta_for(group['repo'])['version_file']} → compile #{CHANGELOG_FRAGMENT_DIR}/ fragments into " \
+           "'## Unreleased' (when the gem carries #{CHANGELOG_COMPILER}) → roll CHANGELOG.md's '## Unreleased' into the " \
            "allocated version → `bundle lock` → ONE commit of all three onto " \
            "origin/#{ACCEPTED_BRANCH} → promote onto origin/#{RELEASE_BRANCH} (a fast-forward when contained) " \
            "(skips when already advanced, unless the members now earn more or entries arrived after the roll; " \
@@ -7934,6 +7935,9 @@ def gem_allocation_plan(group, failures)
   # already rolled `current` and has gained entries since (Release::GemVersion
   # #reallocation), and the guard below judges the same text.
   changelog = changelog_at(repo, tip)
+  # A fragment merged after the roll is a late entry too: judge the compiled bucket.
+  # A compile failure keeps the bare text; changelog_refusal below names it.
+  changelog = compiled_changelog_at(repo, tip, changelog).first || changelog if changelog
 
   decision = Release::GemVersion.allocation(
     current: current,
@@ -7999,6 +8003,11 @@ def changelog_refusal(repo, tip, published, replaces: nil)
     return nil
   end
 
+  # Judge the file the roll will actually move: the bucket WITH the fragments the
+  # version commit compiles into it (compile_changelog_fragments!), not the bare file.
+  text, refusal = compiled_changelog_at(repo, tip, text)
+  return refusal if refusal
+
   text = Release::Changelog.unroll(text, version: replaces) || text if replaces
   Release::Changelog.refusal(text, published_version: published)
 end
@@ -8045,6 +8054,9 @@ def commit_gem_version!(repo, tip, decision, failures)
     end
     File.write(ws_version, rewritten)
 
+    compiled = compile_changelog_fragments!(repo, workspace, failures)
+    next if compiled == :failed
+
     rolled = roll_changelog!(repo, workspace, version, failures, replaces: decision.replaces)
     next if rolled == :failed
 
@@ -8052,6 +8064,9 @@ def commit_gem_version!(repo, tip, decision, failures)
 
     staged = [version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil, rolled ? CHANGELOG_FILE : nil].compact
     sh("git", "-C", workspace, "add", "--", *staged)
+    # -A: the compile DELETED the fragments it folded in, and a plain add of a
+    # removed path stages nothing.
+    sh("git", "-C", workspace, "add", "-A", "--", CHANGELOG_FRAGMENT_DIR) if compiled == true
     # NOTHING TO COMMIT IS SAID, NOT SKIPPED IN SILENCE. When origin/accepted already
     # carries the version file, its lock and its changelog at this version (a hand
     # bump the refusal above asks for, or a re-roll that moved nothing), `git commit`
@@ -8094,6 +8109,86 @@ def commit_gem_version!(repo, tip, decision, failures)
 end
 
 CHANGELOG_FILE = "CHANGELOG.md"
+
+# CHANGELOG FRAGMENTS (/tasks/changelog-fragments). An engine PR adds
+# `changelog.d/<slug>.<kind>.md` instead of editing `## Unreleased`, because GitHub's
+# merge check ignores the file's `merge=union` driver and 39 of 40 engine PRs collided
+# on it. The GEM owns the format and the compiler (`bin/changelog-compile`, which folds
+# every fragment into `## Unreleased` by kind and deletes it); the release only calls
+# it, in the version commit, BEFORE the roll, so the fragments land under the
+# allocated version and leave the tree in the same commit.
+#
+# A NO-OP for a tree without both the folder and the compiler: an older engine SHA,
+# solana-studio, turf-vault. Such a tree rolls exactly as it did before.
+CHANGELOG_FRAGMENT_DIR = "changelog.d"
+CHANGELOG_COMPILER = "bin/changelog-compile"
+
+def changelog_fragments?(dir)
+  File.directory?(File.join(dir, CHANGELOG_FRAGMENT_DIR)) &&
+    File.file?(File.join(dir, CHANGELOG_COMPILER)) &&
+    File.file?(File.join(dir, CHANGELOG_FILE))
+end
+
+# Runs the gem's own compiler over `dir`. [:none | :compiled | :failed, output].
+def run_changelog_compiler(dir)
+  return [:none, ""] unless changelog_fragments?(dir)
+
+  out, status = bounded_capture2e(RbConfig.ruby, File.join(dir, CHANGELOG_COMPILER), "--root", dir,
+                                  deadline: command_deadline, chdir: dir)
+  [status.success? ? :compiled : :failed, out.to_s]
+end
+
+# THE DECIDE-PHASE READ. CHANGELOG.md as the version commit will roll it: the gem's
+# CHANGELOG.md, changelog.d/ and bin/ at `tip`, extracted to a scratch directory, and
+# compiled there by the gem's own compiler. [text, nil] on success (the input text
+# when the tree carries no fragments), [nil, refusal] when the fragments do not
+# compile, so a bad fragment aborts the sweep with nothing written.
+def compiled_changelog_at(repo, tip, text)
+  path = repo_path(repo)
+  listed, ok = git_capture("-C", path, "ls-tree", "--name-only", tip, "--", CHANGELOG_FRAGMENT_DIR, CHANGELOG_COMPILER)
+  names = ok ? listed.lines.map(&:strip) : []
+  return [text, nil] unless names.include?(CHANGELOG_FRAGMENT_DIR) && names.include?(CHANGELOG_COMPILER)
+
+  Dir.mktmpdir("changelog-compile") do |dir|
+    tar = File.join(dir, "tree.tar")
+    _, archived = git_capture("-C", path, "archive", "--format=tar", "-o", tar, tip, "--",
+                              CHANGELOG_FILE, CHANGELOG_FRAGMENT_DIR, "bin")
+    tree = File.join(dir, "tree")
+    FileUtils.mkdir_p(tree)
+    unpacked = archived && bounded_capture2e("tar", "-xf", tar, "-C", tree).last.success?
+    return [nil, "could not extract #{CHANGELOG_FRAGMENT_DIR}/ at origin/#{ACCEPTED_BRANCH} to compile it"] unless unpacked
+
+    state, out = run_changelog_compiler(tree)
+    return [text, nil] if state == :none
+    if state == :failed
+      return [nil, "its #{CHANGELOG_FRAGMENT_DIR}/ fragments do not compile (#{CHANGELOG_COMPILER}): " \
+                   "#{out.strip.lines.last(4).join(' ').squeeze(' ')} — fix the fragment on #{ACCEPTED_BRANCH}, " \
+                   "then re-run `bin/release prepare`"]
+    end
+
+    [File.read(File.join(tree, CHANGELOG_FILE), encoding: "UTF-8"), nil]
+  end
+end
+
+# THE WRITE-PHASE COMPILE, in the ship workspace. true when fragments were compiled
+# (stage changelog.d/), false when there were none, :failed when the compiler refused
+# — unreachable after compiled_changelog_at passed in the decide phase, so it fails
+# LOUDLY rather than rolling a changelog that left fragments behind.
+def compile_changelog_fragments!(repo, workspace, failures)
+  state, out = run_changelog_compiler(workspace)
+  case state
+  when :none then false
+  when :compiled
+    step("  gem #{repo}: #{out.strip.lines.last.to_s.strip}")
+    # The compiler reports "no fragments" as success: nothing to stage.
+    _, clean = git_capture("-C", workspace, "diff", "--quiet", "--", CHANGELOG_FRAGMENT_DIR, CHANGELOG_FILE)
+    !clean
+  else
+    failures << "gem #{repo}: #{CHANGELOG_COMPILER} failed in the ship workspace even though the decide phase " \
+                "compiled the same fragments (#{out.strip.lines.last(3).join(' ').squeeze(' ')}). Nothing was committed"
+    :failed
+  end
+end
 SECRET_PREWARM_DEADLINE = 120
 
 # THE ROLL — the step that was missing, and the whole point of this change.
