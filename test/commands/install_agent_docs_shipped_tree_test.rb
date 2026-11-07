@@ -29,6 +29,9 @@ class InstallAgentDocsShippedTreeTest < Minitest::Test
 
     copy("bin/install-agent-docs")
     copy("bin/lib/projects_root.rb")
+    copy("bin/install-claude-agents")
+    copy("bin/lib/claude_agent_definitions.rb")
+    write("docs/agents/agents/amy/claude-agent.md", "---\nname: amy\n---\n\nshipped\n")
     write("docs/agents/index.md", "# Entry map, shipped\n")
     write("docs/agents/claude.md", "# Adapter, shipped\n")
     write("docs/agents/skills/wrap/SKILL.md", "wrap skill, shipped\n")
@@ -50,6 +53,7 @@ class InstallAgentDocsShippedTreeTest < Minitest::Test
   def test_a_docs_merge_after_the_ship_does_not_fail_the_check
     write("docs/agents/index.md", "# Entry map, merged after the ship\n")
     write("docs/agents/skills/wrap/SKILL.md", "wrap skill, merged after the ship\n")
+    write("docs/agents/agents/amy/claude-agent.md", "---\nname: amy\n---\n\nmerged after the ship\n")
     git("commit", "-qam", "docs merge")
 
     out, err, status = check
@@ -57,7 +61,20 @@ class InstallAgentDocsShippedTreeTest < Minitest::Test
     assert status.success?, "a docs merge since the ship must not fail check:\n#{out}\n#{err}"
     assert_includes out, "the tree the last ship published (#{@shipped[0, 12]})"
     assert_includes out, "#{File.join(@projects, "AGENTS.md")} matches docs/agents/index.md at #{@shipped[0, 12]}"
+    assert_includes out, "#{File.join(@home, ".claude/agents/amy.md")} matches docs/agents/agents/amy/claude-agent.md at #{@shipped[0, 12]}"
     refute_match(/^ERROR:/, err)
+  end
+
+  # [integration] The control for the subagent definitions: a definition that differs
+  # from the PUBLISHED tree fails the check.
+  def test_a_subagent_definition_that_differs_from_the_published_tree_fails
+    File.write(File.join(@home, ".claude/agents/amy.md"), "hand edited\n")
+
+    _out, err, status = check
+
+    refute status.success?, "a drifted subagent definition must fail check"
+    assert_includes err, "ERROR: #{File.join(@home, ".claude/agents/amy.md")} differs from " \
+                         "docs/agents/agents/amy/claude-agent.md at #{@shipped[0, 12]}"
   end
 
   # [integration] The control: an installed copy that differs from the PUBLISHED tree
@@ -108,6 +125,9 @@ class InstallAgentDocsShippedTreeTest < Minitest::Test
       FileUtils.mkdir_p(File.dirname(dest))
       FileUtils.cp(File.join(@repo, "docs/agents/skills/wrap/SKILL.md"), dest)
     end
+    agent = File.join(@home, ".claude", "agents", "amy.md")
+    FileUtils.mkdir_p(File.dirname(agent))
+    FileUtils.cp(File.join(@repo, "docs/agents/agents/amy/claude-agent.md"), agent)
     tree = File.join(@projects, ".agents", "tooling", @shipped)
     FileUtils.mkdir_p(File.join(tree, "bin"))
     File.write(File.join(tree, "bin", "submit"), "#!/bin/sh\n")

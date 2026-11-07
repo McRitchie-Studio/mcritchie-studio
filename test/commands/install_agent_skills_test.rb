@@ -121,7 +121,9 @@ class InstallAgentSkillsTest < Minitest::Test
   # every command falls back to `hub`.
   def run_exported_installer(hub)
     exported = File.join(@sandbox, "exported-tree")
-    %w[bin/install-agent-docs bin/lib/projects_root.rb docs/agents/index.md docs/agents/claude.md].each do |rel|
+    %w[bin/install-agent-docs bin/lib/projects_root.rb docs/agents/index.md docs/agents/claude.md
+       bin/install-claude-agents bin/lib/claude_agent_definitions.rb
+       docs/agents/agents/pokemon/claude-agent.md].each do |rel|
       FileUtils.mkdir_p(File.dirname(File.join(exported, rel)))
       FileUtils.cp(File.join(ROOT, rel), File.join(exported, rel))
     end

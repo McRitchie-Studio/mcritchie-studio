@@ -1,0 +1,118 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/install-claude-agents [install|check|manifest] [--dest DIR] [--backup-dir DIR] [--rev SHA]
+#
+# Writes the Claude Code subagent definitions from their sources in this repo,
+#   docs/agents/agents/<soul>/claude-agent.md  ->  ~/.claude/agents/<soul>.md
+# and tells when an installed copy differs from its source.
+#
+#   install   write every source; a target whose bytes differ is first backed up to
+#             <backup-dir>/<UTC stamp>/<soul>.md (default: ~/.claude/agents-backup,
+#             OUTSIDE the agents folder so a backup never loads as an agent)
+#   check     exit 1 when any installed definition is missing or differs from its
+#             source; with --rev, the sources are read from that commit (the tree
+#             the last ship published) rather than the working tree
+#   manifest  DRY RUN: write nothing; print "WRITE\t<path>" for every path install
+#             would write
+#
+# Files in the agents folder with no source (hand-made agents, old *.bak copies) are
+# reported and never touched.
+#
+# WHO RUNS INSTALL. The production ship does: bin/install-agent-docs calls this from
+# the ship's sync_agent_docs step (bin/release.rb), the same step that installs the
+# fixed-path tooling at <projects>/.agents/bin. A feature desk refuses to install into
+# the real agents folder, because the folder is global and shared: a desk install
+# pushes unshipped text to every session on the machine. Tests pass --dest.
+#
+# --help writes nothing and exits 1: exit 0 from install and check is read as "the
+# definitions were installed" and "there is no drift".
+
+require "optparse"
+require "etc"
+require_relative "lib/claude_agent_definitions"
+
+ROOT = File.expand_path("..", __dir__)
+MODES = %w[install check manifest].freeze
+
+opts = { dest: nil, backup_dir: nil, rev: nil }
+parser = OptionParser.new do |o|
+  o.banner = "Usage: bin/install-claude-agents [install|check|manifest] [--dest DIR] [--backup-dir DIR] [--rev SHA]"
+  o.on("--dest DIR", "the agents folder (default ~/.claude/agents)") { |v| opts[:dest] = v }
+  o.on("--backup-dir DIR", "where install backs up a file it overwrites") { |v| opts[:backup_dir] = v }
+  o.on("--rev SHA", "check: read the sources from this commit") { |v| opts[:rev] = v }
+  o.on("-h", "--help", "this text; WRITES NOTHING and exits 1") do
+    warn o.help
+    exit 1
+  end
+end
+args = parser.parse(ARGV)
+mode = args.shift || "install"
+unless MODES.include?(mode) && args.empty?
+  warn "install-claude-agents: unrecognized argument(s): #{([mode] + args).reject { |a| MODES.include?(a) }.join(' ')} — NOTHING was written."
+  warn parser.help
+  exit 2
+end
+
+dest = File.expand_path(opts[:dest] || ClaudeAgentDefinitions.default_dest)
+# The real agents folder, from the account's home rather than $HOME, so a sandboxed
+# HOME cannot hide it. The override exists only so the refusal can be tested without
+# pointing a test at the real folder.
+real_dest = File.expand_path(ENV["INSTALL_CLAUDE_AGENTS_REAL_DEST"] || ClaudeAgentDefinitions.default_dest(Etc.getpwuid.dir))
+
+if mode == "install"
+  if ROOT.include?("/.worktrees/") && !ROOT.end_with?("/.worktrees/_ship") && dest == real_dest
+    warn "install-claude-agents: refusing to install from the desk #{ROOT} into #{dest} — NOTHING was written."
+    warn "The production ship installs these definitions (bin/install-agent-docs, from bin/release ship). Test with --dest <tmpdir>."
+    exit 2
+  end
+  armed = !%w[0 false no off].include?(ENV.fetch("TASK_USAGE_SANDBOX", "").downcase) && !ENV.fetch("TASK_USAGE_SANDBOX", "").empty?
+  if armed && dest == real_dest
+    warn "install-claude-agents: TASK_USAGE_SANDBOX is armed and --dest is the real #{real_dest}; refusing — NOTHING was written."
+    exit 3
+  end
+end
+
+begin
+  sources = ClaudeAgentDefinitions.sources(ROOT, rev: (mode == "check" ? opts[:rev] : nil))
+rescue ClaudeAgentDefinitions::SourceError => e
+  warn "ERROR: #{e.message}"
+  exit 1
+end
+if sources.empty?
+  warn "ERROR: no sources found under #{ROOT}/#{ClaudeAgentDefinitions::SOURCE_GLOB}"
+  exit 1
+end
+
+case mode
+when "manifest"
+  sources.each { |s| puts "WRITE\t#{File.join(dest, "#{s.name}.md")}" }
+when "check"
+  status = 0
+  from = opts[:rev] ? "at #{opts[:rev][0, 12]}" : "in #{ROOT}"
+  ClaudeAgentDefinitions.compare(sources, dest).zip(sources).each do |res, src|
+    case res.status
+    when :same then puts "OK: #{res.target} matches #{src.rel} #{from}"
+    when :create
+      warn "ERROR: #{res.target} is missing; its source is #{src.rel} #{from}"
+      status = 1
+    when :differs
+      warn "ERROR: #{res.target} differs from #{src.rel} #{from}"
+      status = 1
+    end
+  end
+  ClaudeAgentDefinitions.unmanaged(sources, dest).each do |name|
+    puts "NOTE: #{File.join(dest, "#{name}.md")} has no source in this repo; left alone"
+  end
+  exit status
+when "install"
+  backup_root = File.expand_path(opts[:backup_dir] || ClaudeAgentDefinitions.default_backup_root(dest))
+  ClaudeAgentDefinitions.install!(sources, dest, backup_root: backup_root).each do |res|
+    line = "  #{res.target} #{res.status}"
+    line += " (previous copy backed up to #{res.backup})" if res.backup
+    puts line
+  end
+  ClaudeAgentDefinitions.unmanaged(sources, dest).each do |name|
+    puts "  NOTE: #{File.join(dest, "#{name}.md")} has no source in this repo; left alone"
+  end
+end
