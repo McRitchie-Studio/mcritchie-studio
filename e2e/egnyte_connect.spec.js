@@ -1,17 +1,11 @@
-// [e2e] The Egnyte connection, as an admin meets it: on /integrations the
-// Egnyte card (in the Connect group; dark, so only an admin sees it) carries a domain
-// field and Connect Egnyte; connecting comes back to /integrations with the
-// domain connected, and /admin/egnyte proves the read: the Shared root's
-// folders and file, and a subfolder one click in. The stand-in's access tokens
-// live inside the refresh margin, so every load refreshes: loading the page
-// twice proves the rotated refresh token was stored (the stand-in honours only
-// the last one it issued). Disconnect revokes and deletes the connection.
-//
-// WHAT THIS DOES NOT PROVE. Nothing here reaches Egnyte: the lane's stand-in
-// (config/initializers/egnyte_connect_stand_in.rb) answers for Egnyte's
-// sign-in page, its token and revoke endpoints and the reads. The callback,
-// the code exchange and refresh code, the stored EgnyteConnection and the
-// pages are real. The real request shapes are pinned in test/services/egnyte/.
+// [e2e] An admin connects an Egnyte domain from the dark /integrations card,
+// browses /admin/egnyte twice (the stand-in's tokens live inside the refresh
+// margin and it honours only its last refresh token, so the second load proves
+// the rotated pair was stored), opens a subfolder, then disconnects.
+// NOT PROVEN: nothing reaches Egnyte; config/initializers/egnyte_connect_stand_in.rb
+// answers its sign-in, token, revoke and read endpoints. The callback, the
+// exchange and refresh code, the row and the pages are real; the request
+// shapes are pinned in test/services/egnyte/.
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 

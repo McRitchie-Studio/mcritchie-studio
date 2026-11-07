@@ -173,4 +173,3 @@ class IntegrationTest < ActiveSupport::TestCase
     assert dark.all?(&:soon?), "a dark entry never says Available"
   end
 end
-

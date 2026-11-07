@@ -9,9 +9,8 @@ require "support/egnyte_connect_fakes"
 # there is more than one. The Google Calendar, Gmail and Drive cards carry a
 # connection for any signed-in user in their action row, never behind
 # Details: Connect, or the account and Disconnect (an admin's the household's,
-# a non-admin's their own); a visitor sees neither. The Fathom card, in the
-# same Connect group, does the same for an admin, and so does the Egnyte
-# card: a domain field and Connect, disabled until the developer key is set.
+# a non-admin's their own); a visitor sees neither. The Fathom and Egnyte
+# cards do the same for an admin only.
 class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
   include FathomConnectFakes
