@@ -36,16 +36,16 @@ module AgentsBackup
   STAMP_FORMAT = "%Y%m%dT%H%M%SZ"
   STAMP_RE = /\A\d{8}T\d{6}Z\z/
 
-  # source name => default root. Override a root with AGENTS_BACKUP_<NAME>_DIR.
-  SOURCES = {
-    "agents" => "/Users/alex/projects/.agents",
-    "memory" => File.join(Dir.home, ".claude/projects/-Users-alex/memory")
-  }.freeze
+  # The two sources. Their default roots live in bin/agents-backup
+  # (default_sources), not here: a shared lib may export no path into the
+  # agent store (test/lib/state_store_containment_test.rb, LAYER 2a).
+  SOURCE_NAMES = %w[agents memory].freeze
 
-  # Directories never entered. .secret-cache holds live tokens; tooling/ and
-  # bin.pre-tooling-* are copies of shipped hub code; locks/ is runtime state.
-  EXCLUDE_DIRS = [".secret-cache", ".git", "node_modules", "tooling", "locks"].freeze
-  EXCLUDE_DIR_GLOBS = ["bin.pre-tooling-*"].freeze
+  # Directories never entered. .secret-* covers the secret cache (live tokens),
+  # should one ever be nested here; tooling/ and bin.pre-tooling-* are copies of
+  # shipped hub code; locks/ is runtime state.
+  EXCLUDE_DIRS = [".git", "node_modules", "tooling", "locks"].freeze
+  EXCLUDE_DIR_GLOBS = [".secret-*", "bin.pre-tooling-*"].freeze
 
   # Files never copied, matched on the basename (File.fnmatch, case-insensitive,
   # dotfiles included). A note ABOUT tokens (memory/hub-entry-tokens.md) is not
@@ -71,8 +71,9 @@ module AgentsBackup
 
   def excluded_file?(name) = EXCLUDE_FILE_GLOBS.any? { |g| File.fnmatch?(g, name, FNM) }
 
-  def sources(env = ENV)
-    SOURCES.to_h { |name, root| [name, env.fetch("AGENTS_BACKUP_#{name.upcase}_DIR", root)] }
+  # +defaults+ is source name => root; AGENTS_BACKUP_<NAME>_DIR overrides a root.
+  def sources(defaults, env = ENV)
+    SOURCE_NAMES.to_h { |name| [name, env.fetch("AGENTS_BACKUP_#{name.upcase}_DIR", defaults.fetch(name))] }
   end
 
   # The relative paths under +root+ a run copies, sorted. Symlinks (to files or
@@ -137,7 +138,7 @@ module AgentsBackup
   class Runner
     attr_reader :log
 
-    def initialize(env:, shell: nil, sources: AgentsBackup.sources, out: $stdout)
+    def initialize(env:, sources:, shell: nil, out: $stdout)
       @env = env
       @shell = shell || method(:system_shell)
       @sources = sources

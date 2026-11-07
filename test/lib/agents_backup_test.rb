@@ -73,10 +73,10 @@ class AgentsBackupTest < Minitest::Test
     assert_equal [], AgentsBackup.plan(File.join(@root, "absent"))
   end
 
-  def test_sources_default_to_the_two_folders_and_take_an_override
-    assert_equal "/Users/alex/projects/.agents", AgentsBackup.sources({})["agents"]
-    assert_match %r{\.claude/projects/-Users-alex/memory\z}, AgentsBackup.sources({})["memory"]
-    assert_equal "/tmp/x", AgentsBackup.sources("AGENTS_BACKUP_MEMORY_DIR" => "/tmp/x")["memory"]
+  def test_sources_take_the_defaults_and_an_env_override
+    defaults = { "agents" => "/a", "memory" => "/m" }
+    assert_equal defaults, AgentsBackup.sources(defaults, {})
+    assert_equal "/tmp/x", AgentsBackup.sources(defaults, "AGENTS_BACKUP_MEMORY_DIR" => "/tmp/x")["memory"]
   end
 
   def test_expired_stamps_returns_only_old_stamp_shaped_names

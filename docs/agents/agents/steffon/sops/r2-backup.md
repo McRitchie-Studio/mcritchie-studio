@@ -406,7 +406,7 @@ repository, so this Mac was their only copy until 2026-11-06 (task
   (`config/launchd/studio.mcritchie.agents-backup.plist`, 03:41 local) runs
   the fixed-path copy `/Users/alex/projects/.agents/bin/agents-backup run`
   in a login shell. The plist header has the one install command. Read a
-  night with `bin/agents-backup status` (the receipt in `~/.agents-backup/`)
+  night with `bin/agents-backup status` (the receipt in `~/.agent-state-backup/`)
   or `~/Library/Logs/agents-backup.log`.
 - **Restore** one file into a folder, never in place:
   `bin/agents-backup restore memory MEMORY.md --to /tmp/restore`. Copy it back

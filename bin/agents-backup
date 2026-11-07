@@ -27,7 +27,7 @@ USAGE = <<~TXT
   restore  copy one backed-up file into <dir> (never back in place).
   status   the last run's receipt.
 
-  Sources: #{AgentsBackup::SOURCES.keys.join(', ')}. Credentials: 1Password item
+  Sources: #{AgentsBackup::SOURCE_NAMES.join(', ')}. Credentials: 1Password item
   #{AgentsBackup::ITEM} in the agent vault (op on PATH, OP_SERVICE_ACCOUNT_TOKEN set).
 TXT
 
@@ -47,8 +47,15 @@ unless COMMANDS.include?(command)
   exit 2
 end
 
-RECEIPT_DIR = File.join(Dir.home, ".agents-backup")
-sources = AgentsBackup.sources
+RECEIPT_DIR = File.join(Dir.home, ".agent-state-backup")
+
+# The default roots. READ-ONLY: a run copies from them and never writes them.
+def default_sources
+  { "agents" => File.join(ENV.fetch("CLAUDE_PROJECTS_DIR", File.join(Dir.home, "projects")), ".agents"),
+    "memory" => File.join(Dir.home, ".claude/projects/-Users-alex/memory") }
+end
+
+sources = AgentsBackup.sources(default_sources)
 
 def creds!
   fields = %w[access-key-id secret-access-key endpoint crypt-password crypt-salt]
