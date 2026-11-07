@@ -218,16 +218,12 @@
   // chips, as many as fit, then "+N more"; 2 every chip in both groups.
   window.castCardDisclosure = function () {
     return {
-      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0, cardFitSeq: 0,
+      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0, cardFitSeq: 0, cardFitState: "",
       init() {
         const d = this.$root.dataset;
         this.cardOrdinal = Number(d.ordinal); this.cardName = d.cardName || "";
         this.cardClear = Number(d.clearCount) || 0; this.cardPartial = Number(d.partialCount) || 0;
         this.cardFit = this.cardClear;
-        // The card element, held in a closure: a method called from a click inside a
-        // nested x-data (the title button) sees THAT scope as $root, not the card.
-        const card = this.$root;
-        this.cardMarkFit = (state) => { card.dataset.cardFit = state; };
       },
       cardOnNamed(detail) {
         if (!detail || detail.ordinal !== this.cardOrdinal) return;
@@ -242,13 +238,15 @@
       // Show every clear chip and let the browser lay them out (two frames, so
       // the x-show changes are painted), then measure once: keep the chips on
       // the first line, less any "+N more" would push off it. Re-run on a resize.
-      // The card's data-card-fit reads "pending" while a pass is measuring and
-      // "settled" once the row is final and painted, so a reader (the e2e spec) waits
-      // on the settled layout instead of polling across the two-frame trim.
+      // cardFitState (bound to the card's data-card-fit) reads "pending" while a pass is
+      // measuring and "settled" once the row is final and painted, so a reader (the e2e
+      // spec) waits on the settled layout instead of polling across the two-frame trim.
+      // Bound, not written to the dataset: a write to the element is lost when the page
+      // is redrawn under the component; a binding is re-applied.
       async cardFitRow() {
         if (this.cardLevel !== 1) { this.cardFitSettled(); return; }
         const mine = ++this.cardFitSeq; // a newer pass (a resize, a re-open) supersedes this one
-        this.cardMarkFit("pending");
+        this.cardFitState = "pending";
         this.cardFit = this.cardClear;
         await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
         if (mine !== this.cardFitSeq) return; // the newer pass settles it
@@ -271,7 +269,7 @@
       },
       cardFitSettled() {
         const mine = this.cardFitSeq;
-        this.$nextTick(() => requestAnimationFrame(() => { if (mine === this.cardFitSeq) this.cardMarkFit("settled"); }));
+        this.$nextTick(() => requestAnimationFrame(() => { if (mine === this.cardFitSeq) this.cardFitState = "settled"; }));
       },
     };
   };
