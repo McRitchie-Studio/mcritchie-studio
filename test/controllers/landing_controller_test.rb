@@ -223,4 +223,30 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_select "section", text: /OpenStreetMap/
     assert_not_includes response.body.downcase, "sprintful"
   end
+  # [component] The portfolio band under the hero carries the logo grid backdrop
+  # (task logo-grid-backdrop): every tile the helper names, each a file that
+  # exists, the Pokémon art kept off this public page, and the grid hidden from
+  # screen readers. logo_grid.js builds the cells in the browser.
+  test "[component] landing renders the portfolio band over the logo grid with every tile" do
+    get root_path
+
+    assert_response :success
+    assert_select "section[data-logo-grid-host][data-test=portfolio-band]", 1 do
+      assert_select "div.logo-grid[data-logo-grid][aria-hidden=true]", 1
+      assert_select "h2", text: "Check Out Our Portfolio"
+      assert_select "a[data-test=portfolio-band-cta][href=?]", websites_path
+    end
+    grid = css_select("div[data-logo-grid]").first
+    tiles = JSON.parse(grid["data-tiles"])
+    assert_equal LogoGridHelper::LOGO_GRID_TILES.map(&:last), tiles.map { |t| t["label"] }
+    assert_operator tiles.length, :>=, 8, "a grid this size repeats too often with fewer tiles"
+    LogoGridHelper::LOGO_GRID_TILES.each do |file, _|
+      assert Rails.root.join("app/assets/images/logo_grid/#{file}.webp").exist?, "missing tile #{file}.webp"
+    end
+    assert tiles.none? { |t| t["src"].include?("pokemon") }, "official Pokémon art stays off the public landing page"
+    # The band sits between the hero and the booking section.
+    body = response.body
+    assert_operator body.index("data-test=\"portfolio-band\""), :<, body.index("data-get-in-touch")
+    assert_operator body.index("hero-title"), :<, body.index("data-test=\"portfolio-band\"")
+  end
 end

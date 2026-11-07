@@ -7,6 +7,8 @@ pin "agent_chat"
 pin "build_chat"
 pin "build_domain"
 pin "cta_glow"
+# The logo grid backdrop (app/views/shared/_logo_grid.html.erb; task logo-grid-backdrop).
+pin "logo_grid"
 pin "build_status"
 pin "build_shell"
 pin "agent_shell"
