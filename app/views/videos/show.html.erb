@@ -224,6 +224,10 @@
         this.cardOrdinal = Number(d.ordinal); this.cardName = d.cardName || "";
         this.cardClear = Number(d.clearCount) || 0; this.cardPartial = Number(d.partialCount) || 0;
         this.cardFit = this.cardClear;
+        // The card element, held in a closure: a method called from a click inside a
+        // nested x-data (the title button) sees THAT scope as $root, not the card.
+        const card = this.$root;
+        this.cardMarkFit = (state) => { card.dataset.cardFit = state; };
       },
       cardOnNamed(detail) {
         if (!detail || detail.ordinal !== this.cardOrdinal) return;
@@ -244,7 +248,7 @@
       async cardFitRow() {
         if (this.cardLevel !== 1) { this.cardFitSettled(); return; }
         const mine = ++this.cardFitSeq; // a newer pass (a resize, a re-open) supersedes this one
-        this.$root.dataset.cardFit = "pending";
+        this.cardMarkFit("pending");
         this.cardFit = this.cardClear;
         await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
         if (mine !== this.cardFitSeq) return; // the newer pass settles it
@@ -267,7 +271,7 @@
       },
       cardFitSettled() {
         const mine = this.cardFitSeq;
-        this.$nextTick(() => requestAnimationFrame(() => { if (mine === this.cardFitSeq) this.$root.dataset.cardFit = "settled"; }));
+        this.$nextTick(() => requestAnimationFrame(() => { if (mine === this.cardFitSeq) this.cardMarkFit("settled"); }));
       },
     };
   };

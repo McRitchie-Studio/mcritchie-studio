@@ -5,7 +5,7 @@ require "yaml"
 require_relative "../../bin/lib/e2e_repeat_changed"
 
 # The determinism check at the door (task deterministic-ci): a PR's changed Playwright
-# specs run five times in its own playwright lane.
+# specs run in five fresh passes in its own playwright lane.
 class E2eRepeatChangedTest < Minitest::Test
   WORKFLOW = File.expand_path("../../.github/workflows/reusable-ci.yml", __dir__)
 
@@ -20,10 +20,17 @@ class E2eRepeatChangedTest < Minitest::Test
     assert_nil E2eRepeatChanged.command([])
   end
 
-  def test_the_command_repeats_five_times_without_a_receipt
-    cmd = E2eRepeatChanged.command(["e2e/a.spec.js"], shard: "2/3")
-    assert_equal %w[npx playwright test e2e/a.spec.js --repeat-each 5 --grep-invert @quarantine --reporter=list --shard=2/3], cmd
+  def test_each_pass_is_one_fresh_run_without_a_receipt
+    cmd = E2eRepeatChanged.command(["e2e/a.spec.js"])
+    assert_equal %w[npx playwright test e2e/a.spec.js --grep-invert @quarantine --reporter=list], cmd
     refute(cmd.any? { |a| a.include?("json") }, "a json reporter would write a second executed-set receipt")
+    refute_includes cmd, "--repeat-each", "repeats inside one boot meet the seed already consumed"
+  end
+
+  def test_five_passes_dealt_round_robin_over_the_shards
+    assert_equal [1, 2, 3, 4, 5], E2eRepeatChanged.passes
+    assert_equal [[1, 4], [2, 5], [3]], %w[1/3 2/3 3/3].map { |s| E2eRepeatChanged.passes(s) }
+    assert_equal [1, 2, 3, 4, 5], %w[1/3 2/3 3/3].flat_map { |s| E2eRepeatChanged.passes(s) }.sort
   end
 
   def test_reads_the_pr_diff_from_the_merge_commits_first_parent

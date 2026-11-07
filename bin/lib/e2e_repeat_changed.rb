@@ -14,14 +14,20 @@ require "open3"
 # WHAT IT RUNS. The PR's merge commit (what `pull_request` checks out) against its
 # first parent, the base tip: the specs under e2e/ the PR added, changed or renamed,
 # minus any it deleted. No spec changed, or not a pull request: it says so and runs
-# nothing. Each shard runs its share (Playwright's own --shard over the repeats), so
-# the check costs the lane a few repeats per shard, not five extra runs of one shard.
+# nothing.
 #
-# IT NEVER NARROWS THE SUITE. It runs in its own step after the whole-suite step, with
-# the list reporter only, so it writes no executed-set receipt and cannot change what
-# e2e_executed_set judges. Guard: test/lib/e2e_repeat_changed_test.rb.
+# FIVE FRESH PASSES, NOT `--repeat-each 5` IN ONE BOOT. The suite's specs share one
+# seeded test database per server boot, and a spec may consume what the seed gave it
+# (an admin claims the subdomain `coin-toss`; a visitor spends the per-IP chat budget).
+# Measured 2026-11-06 on build_funnel and alex_voice_chat: under `--repeat-each` the
+# second repeat met "taken" and "I'm answering a lot of people right now", reds the
+# spec never meets in the lane. So each pass is its own `npx playwright test`, whose
+# webServer re-runs db:test:prepare and e2e/seed.rb: five runs exactly as the lane
+# runs them once. The passes are dealt round-robin over the shards (shard 1 of 3 runs
+# passes 1 and 4), so no shard boots more than twice.
+#
 module E2eRepeatChanged
-  REPEATS = 5
+  PASSES = 5
   SPEC = %r{\Ae2e/.+\.spec\.js\z}
 
   module_function
@@ -38,15 +44,23 @@ module E2eRepeatChanged
     end.uniq.sort
   end
 
-  # PURE. The Playwright command for the specs, or nil when there are none.
-  def command(specs, shard: nil)
+  # PURE. The passes (1..PASSES) this shard runs: dealt round-robin, so shard K of N
+  # runs passes K, K+N, … Unsharded, every pass.
+  def passes(shard = nil)
+    all = (1..PASSES).to_a
+    return all unless shard
+
+    k, n = shard.split("/").map(&:to_i)
+    all.select { |p| (p - 1) % n == k - 1 }
+  end
+
+  # PURE. One pass's Playwright command, or nil when there are no specs.
+  # @quarantine stays out exactly as in the suite step: a quarantined spec is already
+  # known red. The list reporter only, so no pass writes an executed-set receipt.
+  def command(specs)
     return nil if specs.empty?
 
-    # @quarantine stays out exactly as it does in the suite step: a quarantined spec is
-    # already known red, and repeating it proves nothing new.
-    cmd = ["npx", "playwright", "test", *specs, "--repeat-each", REPEATS.to_s, "--grep-invert", "@quarantine", "--reporter=list"]
-    cmd << "--shard=#{shard}" if shard
-    cmd
+    ["npx", "playwright", "test", *specs, "--grep-invert", "@quarantine", "--reporter=list"]
   end
 
   # The diff the PR brings, read from the merge commit's first parent. A shallow

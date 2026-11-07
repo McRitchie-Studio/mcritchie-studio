@@ -1,12 +1,13 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# bin/e2e-repeat-changed — run every Playwright spec this PR adds or changes five times
-# (`--repeat-each 5`). The why and the rules: bin/lib/e2e_repeat_changed.rb.
+# bin/e2e-repeat-changed — run every Playwright spec this PR adds or changes in five
+# fresh passes (each its own server boot and seed), this shard's share of them. The why
+# and the rules: bin/lib/e2e_repeat_changed.rb.
 #
 #   Usage: bin/e2e-repeat-changed [--shard=K/N]
 #
-# Exit: Playwright's own status, or 0 when there is nothing to repeat (said on stdout).
+# Exit 0 when every pass is green or there is nothing to run (said on stdout), else 1.
 require_relative "lib/e2e_repeat_changed"
 
 shard = ARGV.find { |a| a.start_with?("--shard=") }&.delete_prefix("--shard=")
@@ -17,12 +18,26 @@ if diff.nil?
 end
 
 specs = E2eRepeatChanged.changed_specs(diff)
-cmd = E2eRepeatChanged.command(specs, shard: shard)
+cmd = E2eRepeatChanged.command(specs)
 if cmd.nil?
   puts "e2e-repeat-changed: this PR changes no e2e spec; nothing to repeat"
   exit 0
 end
 
-puts "e2e-repeat-changed: #{specs.size} changed spec(s), each run #{E2eRepeatChanged::REPEATS} times#{" (shard #{shard})" if shard}:"
+mine = E2eRepeatChanged.passes(shard)
+puts "e2e-repeat-changed: #{specs.size} changed spec(s), #{E2eRepeatChanged::PASSES} fresh passes in all; " \
+     "this shard runs pass(es) #{mine.join(', ')}:"
 specs.each { |s| puts "  #{s}" }
-exec(*cmd)
+red = mine.reject do |pass|
+  puts "::group::pass #{pass} of #{E2eRepeatChanged::PASSES}"
+  ok = system(*cmd)
+  puts "::endgroup::"
+  ok
+end
+if red.empty?
+  puts "e2e-repeat-changed: every pass green"
+  exit 0
+end
+puts "::error::e2e-repeat-changed: pass(es) #{red.join(', ')} of #{E2eRepeatChanged::PASSES} went red. " \
+     "A spec that is red one run in five is a defect with a cause, not a retry."
+exit 1

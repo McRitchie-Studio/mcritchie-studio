@@ -989,8 +989,10 @@ nobody files it under "flaky". The system holds that line in five places:
   occurrence of the same cause folds into the open card. History:
   `REPO=<owner/repo> DAYS=14 bin/rails ci:causes:sweep` (`DRY_RUN=1` to list only).
 - **Five runs at the door.** The `playwright` lane runs every spec a PR adds or changes
-  five times (`bin/e2e-repeat-changed`, `--repeat-each 5`), after the whole suite and
-  outside the executed-set receipt.
+  in five fresh passes (`bin/e2e-repeat-changed`), after the whole suite and outside the
+  executed-set receipt. Each pass boots and seeds its own server: under `--repeat-each`
+  in one boot, a spec meets the seed its first repeat consumed (a claimed subdomain, a
+  spent chat budget), a red the lane never meets.
 - **No race spellings.** A fixed sleep (`waitForTimeout`) and a one-time visibility
   branch (`if (await x.isVisible())`, `isVisible().catch(...)`) are banned in `e2e/`:
   wait on the state (`expect(locator)`, `expect.poll`, a product marker such as
