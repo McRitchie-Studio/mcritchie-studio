@@ -8152,7 +8152,7 @@ def compiled_changelog_at(repo, tip, text)
                               CHANGELOG_FILE, CHANGELOG_FRAGMENT_DIR, "bin")
     tree = File.join(dir, "tree")
     FileUtils.mkdir_p(tree)
-    unpacked = archived && system("tar", "-xf", tar, "-C", tree, out: File::NULL, err: File::NULL)
+    unpacked = archived && bounded_capture2e("tar", "-xf", tar, "-C", tree).last.success?
     return [nil, "could not extract #{CHANGELOG_FRAGMENT_DIR}/ at origin/#{ACCEPTED_BRANCH} to compile it"] unless unpacked
 
     state, out = run_changelog_compiler(tree)
