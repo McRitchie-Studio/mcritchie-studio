@@ -1,10 +1,15 @@
 <%# The hub's page header: studio-engine's studio/_page_header (its docs/PAGE_HEADER.md)
     with the hub's registry wired in. The crumb trail comes from the page's parents in
-    config/navigation.yml, a section sub-nav becomes the links line under the title, and
-    a block renders on the right, for the page's own controls. Render it as a layout to
-    pass one:
+    config/navigation.yml, and a section sub-nav becomes the links line under the title.
 
-      render layout: "components/page_header", locals: { title: "Stages", page: :stages } do ... end
+    The controls on the right follow the engine's four kinds of control (Alex McRitchie
+    2026-11-06, docs/PAGE_HEADER.md "The four kinds of control"), passed straight through:
+    tabs: for views of the same data, menu: for pages elsewhere, one action:, and
+    tools_html: for developer-only controls. There is no free-HTML slot: this partial
+    takes no block, so a control that fits no kind goes on the page, not in the header.
+
+      render "components/page_header", title: "Triage", page: :triage,
+             tabs: board_view_tabs(current: :triage), label: "Board views"
 
     Call it from the page's long container: the row is sticky, and a sticky row travels
     only as far as its parent.
@@ -13,19 +18,25 @@
       title        the page title, the page's one h1
       page         the page's key in config/navigation.yml, for the crumb trail
                    (optional; the sub-nav's current page by default)
-      eyebrow      a short kicker beside the title (optional)
+      eyebrow      a short kicker beside the title (optional; the engine's meta:)
       description  the lead paragraph, text or captured markup, under the row (optional)
       sub_nav      { nav:, current: } for the links line (optional)
-      class        classes for the description (optional) %>
+      class        classes for the description (optional)
+      tabs, label, anchors, menu, menu_label, action, tools_html
+                   the engine's controls, as studio/_page_header names them (optional) %>
 <% sub_nav = local_assigns[:sub_nav] %>
 <% page = local_assigns[:page] || sub_nav&.dig(:current) %>
-<% block = yield %>
-<% actions = tag.div(block, class: "flex flex-wrap items-center justify-end gap-2") if block.present? %>
 <%= render "studio/page_header",
       title: title,
       crumbs: (page ? studio_crumbs(page) : []),
       meta: local_assigns[:eyebrow].presence,
-      actions_html: actions,
+      label: local_assigns[:label],
+      tabs: local_assigns[:tabs] || [],
+      anchors: local_assigns[:anchors] || [],
+      menu: local_assigns[:menu] || [],
+      menu_label: local_assigns[:menu_label] || "Links",
+      action: local_assigns[:action],
+      tools_html: local_assigns[:tools_html],
       links: (sub_nav ? sub_nav_links(sub_nav[:nav], current: sub_nav[:current]) : []),
       links_label: (Navigation.sub_nav(sub_nav[:nav]).label if sub_nav),
       data: { test: "page-header" } %>
