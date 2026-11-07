@@ -73,8 +73,8 @@ class AgentPortraitAssetsTest < ActiveSupport::TestCase
 
   private
 
-  # Portraits hardcoded in markup rather than seeded — alex-photo.webp on the landing
-  # page, alex.webp in the chat widget. Scanned, not listed, so adding one to a view
+  # Portraits hardcoded in markup rather than seeded, such as alex.webp in the chat
+  # widget. Scanned, not listed, so adding one to a view
   # is enough to make it legitimate here.
   def view_portrait_paths
     Dir[Rails.root.join("app/views/**/*.erb")].flat_map do |file|
