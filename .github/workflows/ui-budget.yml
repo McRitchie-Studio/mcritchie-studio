@@ -51,6 +51,10 @@ jobs:
       credentials:
         username: ${{ github.actor }}
         password: ${{ github.token }}
+      # --init: a real PID 1 (tini) reaps killed children, as a VM does; without it a
+      # killed process stays a zombie and the process-group tests read it as alive.
+      # --shm-size: Chrome crashes in a container's default 64 MB /dev/shm.
+      options: --init --shm-size=2g
     steps:
       - uses: actions/checkout@v4
 

@@ -69,6 +69,7 @@ class CiLaneImageTest < Minitest::Test
       container = all.fetch(lane).fetch("container") { flunk "#{lane} runs on the bare runner" }
       assert_equal LANE_IMAGE_EXPR, container["image"], "#{lane} must run in the lane-image input"
       assert_equal "${{ github.token }}", container.dig("credentials", "password"), "#{lane} pulls ghcr.io with the run token"
+      assert_includes container["options"].to_s, "--init", "#{lane} needs a PID 1 that reaps killed children"
     end
   end
 
