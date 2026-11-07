@@ -1,7 +1,7 @@
 <%# locals: (app:, admin:, current:) %>
 <%# The app page's one header (task app-page-tabs, Alex McRitchie 2026-11-07): the app's badge and name as the title, the crumb trail over it (ApplicationsHelper#app_page_crumbs), and the tabs Overview | Pipeline | Chat on the right, each its own URL (/applications/:slug, /pipeline, /chat). studio-engine's studio/_page_header, docs/PAGE_HEADER.md. The width is the same on every tab, so a switch never moves the header. %>
 <% title = capture do %><span class="inline-flex items-center gap-3 min-w-0 align-middle" data-test="app-page-title"><%= render "applications/app_badge", app: app %><span class="min-w-0 break-words"><%= app.name %></span></span><% end %>
-<div class="max-w-5xl mx-auto px-4 pt-3 sm:pt-4" data-test="app-page-header" data-app="<%= app.slug %>" data-tab="<%= current %>">
+<div class="app-page-header max-w-5xl mx-auto px-4 pt-3 sm:pt-4" data-test="app-page-header" data-app="<%= app.slug %>" data-tab="<%= current %>">
   <%= render "studio/page_header", title: title, crumb_label: app.name, crumbs: app_page_crumbs(admin: admin),
                                    label: "#{app.name} views", tabs: app_page_tabs(app, admin: admin, current: current) %>
 </div>

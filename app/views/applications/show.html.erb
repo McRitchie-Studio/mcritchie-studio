@@ -1,6 +1,6 @@
 <%# /applications/:slug: the app page's Overview tab (applications/_page_header: Overview | Pipeline | Chat). Its health (a lazy frame), brand kits, CTO and usage. Owner or admin only. docs/agents/system/app-owners.md %>
 <%= render "applications/page_header", app: @app, admin: @admin, current: :overview %>
-<section class="max-w-3xl mx-auto px-4 pt-4 pb-10 space-y-6" data-test="application-page" data-app="<%= @app.slug %>">
+<section class="max-w-5xl mx-auto px-4 pt-4 pb-10 space-y-6" data-test="application-page" data-app="<%= @app.slug %>">
   <% if @app.description.present? %><p class="text-secondary" data-test="application-description"><%= @app.description %></p><% end %>
 
   <div class="card p-4 space-y-2 text-sm" data-test="application-health-card">

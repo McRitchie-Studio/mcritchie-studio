@@ -46,12 +46,15 @@ test("an app with no CTO answers its Chat tab with the no-CTO state", async ({ p
   await expect(page.locator("[data-test='cto-chat-no-cto'] [data-test='application-no-cto']")).toHaveText("This app has no CTO yet.");
 });
 
-test("each tab fits a 390px phone, with the tabs in reach", async ({ page }) => {
+test("each tab fits a 390px phone, with all three tabs in sight", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   for (const tab of TABS) {
     await page.goto(tab.path);
     await expectOpen(page, tab.key);
-    await expect(page.locator(`[data-test='app-page-header'] a[data-test='app-tab'][data-tab='${tab.key}']`)).toBeInViewport();
+    // On a phone the tabs take their own line, so all three stay in sight.
+    for (const key of ["overview", "pipeline", "chat"]) {
+      await expect(page.locator(`[data-test='app-page-header'] a[data-test='app-tab'][data-tab='${key}']`)).toBeInViewport({ ratio: 1 });
+    }
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
     expect(overflow, `${tab.key}: nothing runs off the side at 390px`).toBeLessThanOrEqual(0);
   }

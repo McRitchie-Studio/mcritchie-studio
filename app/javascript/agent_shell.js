@@ -53,9 +53,13 @@ export function turnCount(log) {
 //   content     the thread's full height (scrollHeight), px
 //   room        the shell's room: the window below where it starts, px
 //   overflowing the thread scrolls at the current step
-export function sizeFor(current, { turns = 0, content = 0, room = 0, overflowing = false } = {},
+//   cramped     under a page header, the shell's own parts do not fit it even with
+//               no thread (the app page's Chat tab on a phone): one step on, turns
+//               or none, so the chat box is in the window on arrival
+export function sizeFor(current, { turns = 0, content = 0, room = 0, overflowing = false, cramped = false } = {},
                         { mediumShare = 0.3, compactShare = 0.55 } = {}) {
   const at = Math.max(0, SIZES.indexOf(current));
+  if (cramped) return SIZES[Math.min(SIZES.length - 1, at + 1)];
   if (turns <= 0 || !(room > 0)) return SIZES[at];
   const share = content / room;
   let want = 0;
@@ -82,6 +86,7 @@ export function metrics(shell, windowHeight = window.innerHeight) {
     content: log.scrollHeight,
     room: windowHeight - top,
     overflowing: log.scrollHeight > log.clientHeight + SLACK,
+    cramped: Boolean(shell.hasAttribute?.("data-shell-under-header")) && shell.scrollHeight > shell.clientHeight + SLACK,
   };
 }
 
@@ -277,7 +282,12 @@ function load({ morphed = false } = {}) {
   watch(shell);
   const log = shell.querySelector(LOG);
   if (log) follow(log);
-  requestAnimationFrame(() => requestAnimationFrame(() => shell.classList.remove("agent-shell-instant")));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    shell.classList.remove("agent-shell-instant");
+    // Under a page header a short phone leaves the chat box below the window even at
+    // the compact step: the page scrolls it into view on arrival.
+    if (shell.hasAttribute("data-shell-under-header")) keepComposerInView(shell);
+  }));
 }
 
 if (typeof document !== "undefined") {
