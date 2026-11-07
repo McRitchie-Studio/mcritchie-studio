@@ -169,7 +169,6 @@ pages:
   admin_desk:           { page: "admin/desk#index",           audience: admin, label: Desk, parent: admin_basement }
   communications:       { page: "communications#index",       audience: admin, label: Communications, parent: admin_basement }
   usages:               { page: "usages#index",               audience: admin, label: Usage, parent: admin_basement }
-  admin_model_pricing:  { page: "admin/model_pricing#index",  audience: admin, label: Model Pricing, parent: admin_dashboard }
   activities_agents:    { page: "agents#activities",   audience: admin, label: Activities, emoji: "🎭", hover_emoji: "🎬", desc: Cross-session agent activity feed, icon: activity, parent: admin_dashboard }
 
   # ── Data ─────────────────────────────────────────────────────────────────

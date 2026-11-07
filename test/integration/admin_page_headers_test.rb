@@ -59,7 +59,7 @@ class AdminPageHeadersTest < ActionDispatch::IntegrationTest
       "broadcasts" => [ broadcasts_path, "Broadcasts", [ ADMIN, BASEMENT ] ],
       "contacts" => [ contacts_path, "Contacts", [ ADMIN, BASEMENT ] ],
       "email analytics" => [ broadcast_analytics_path, "Email analytics", [ ADMIN, BASEMENT, "Broadcasts" ] ],
-      "model pricing" => [ admin_model_pricing_path, "Model Pricing", [ ADMIN ] ],
+      "model pricing" => [ admin_model_pricing_path, "Model Pricing", [ ADMIN, "Deployments" ] ],
       "body archetypes" => [ body_archetypes_path, "Body archetypes", [ ADMIN, BASEMENT ] ],
       "characters" => [ characters_path, "Characters", [ ADMIN, BASEMENT ] ],
       "email images" => [ email_images_path, "Email images", [ ADMIN, BASEMENT ] ],
