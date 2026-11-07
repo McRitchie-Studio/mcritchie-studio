@@ -14,7 +14,6 @@ require "open3"
 require "tmpdir"
 require "fileutils"
 require "rbconfig"
-require "etc"
 require_relative "../support/session_env"
 require_relative "../../bin/lib/claude_agent_definitions"
 
@@ -195,15 +194,26 @@ class InstallClaudeAgentsTest < Minitest::Test
     refute Dir.exist?(@dest)
   end
 
+  # A copy of the installer stood up inside a fake desk. The "real" folder is pointed
+  # at the sandbox, so even a regressed refusal could not write to ~/.claude/agents.
   def test_integration_a_desk_refuses_to_install_into_the_real_agents_folder
-    skip "only meaningful from a desk" unless ROOT.include?("/.worktrees/") && !ROOT.end_with?("/_ship")
-    real = File.join(Etc.getpwuid.dir, ".claude", "agents")
-    before = Dir.exist?(real) ? Dir.children(real).sort.map { |n| [n, File.mtime(File.join(real, n))] } : nil
-    _o, err, st = run_cli("install", "--dest", real)
+    desk = File.join(@tmp, "hub", ".worktrees", "some-desk")
+    %w[bin/install-claude-agents bin/lib/claude_agent_definitions.rb
+       docs/agents/agents/pokemon/claude-agent.md].each do |rel|
+      FileUtils.mkdir_p(File.dirname(File.join(desk, rel)))
+      FileUtils.cp(File.join(ROOT, rel), File.join(desk, rel))
+    end
+    real = File.join(@tmp, "real-agents")
+    env = { "INSTALL_CLAUDE_AGENTS_REAL_DEST" => real }
+    _o, err, st = Open3.capture3(SessionEnv.neutralized(env), RbConfig.ruby,
+                                 File.join(desk, "bin", "install-claude-agents"), "install", "--dest", real)
     assert_equal 2, st.exitstatus
     assert_match(/refusing to install from the desk/, err)
-    after = Dir.exist?(real) ? Dir.children(real).sort.map { |n| [n, File.mtime(File.join(real, n))] } : nil
-    assert_equal before, after
+    refute Dir.exist?(real), "the refusal writes nothing"
+
+    _o, err, st = Open3.capture3(SessionEnv.neutralized(env), RbConfig.ruby,
+                                 File.join(desk, "bin", "install-claude-agents"), "install", "--dest", @dest)
+    assert st.success?, "a desk may install into any other folder: #{err}"
   end
 
   # ── integration: bin/install-agent-docs runs it (the ship's sync step) ────

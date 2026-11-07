@@ -55,7 +55,10 @@ unless MODES.include?(mode) && args.empty?
 end
 
 dest = File.expand_path(opts[:dest] || ClaudeAgentDefinitions.default_dest)
-real_dest = File.expand_path(ClaudeAgentDefinitions.default_dest(Etc.getpwuid.dir))
+# The real agents folder, from the account's home rather than $HOME, so a sandboxed
+# HOME cannot hide it. The override exists only so the refusal can be tested without
+# pointing a test at the real folder.
+real_dest = File.expand_path(ENV["INSTALL_CLAUDE_AGENTS_REAL_DEST"] || ClaudeAgentDefinitions.default_dest(Etc.getpwuid.dir))
 
 if mode == "install"
   if ROOT.include?("/.worktrees/") && !ROOT.end_with?("/.worktrees/_ship") && dest == real_dest
