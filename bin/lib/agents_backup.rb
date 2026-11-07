@@ -58,7 +58,10 @@ module AgentsBackup
     "*.lock",
     # The op read log names every 1Password item and field read on this Mac: a
     # map of the credentials, worthless to restore.
-    "op-reads.log*"
+    "op-reads.log*",
+    # The admin-login session marker holds a live board bearer token
+    # (bin/lib/admin_login.rb).
+    "*.admin-login"
   ].freeze
 
   FNM = File::FNM_CASEFOLD | File::FNM_DOTMATCH

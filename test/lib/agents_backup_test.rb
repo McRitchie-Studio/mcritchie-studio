@@ -40,6 +40,7 @@ class AgentsBackupTest < Minitest::Test
     bin.pre-tooling-20260925163609/gh-app-mint-token.rb
     locks/release.lock.json
     op-reads.log
+    sessions/abc.admin-login
   ].freeze
 
   def setup
