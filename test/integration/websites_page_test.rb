@@ -27,19 +27,21 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     BuildGallery.examples.each do |example|
       assert_select "#{carousel} .carousel-slide[aria-label=?] [data-test='build-example']", example.name, count: 1
     end
-    # The spotlight opens on the middle app (studio/_carousel start: :middle by default), so
-    # both arrows are live and both halves of the row hold an app at load. Its arrows move one slide.
+    # The row loops (both arrows always live). It opens on the first app once the engine's
+    # visual wrap is installed (a looping spotlight starts at slide 0); an engine before it
+    # opens a spotlight on the middle app. Either opening passes; the dots must agree with it.
     middle = BuildGallery.examples.size / 2
-    assert_select "#{carousel} .carousel-slide[data-current]", count: 1
-    assert_select "#{carousel} .carousel-slide[data-current][aria-label=?]", BuildGallery.examples[middle].name, count: 1
     assert_operator middle, :>, 0, "one app has no middle to open on, so this measures nothing"
+    assert_select "#{carousel} .carousel-slide[data-current]", count: 1
+    opened_name = css_select("#{carousel} .carousel-slide[data-current]").first["aria-label"]
+    opened = BuildGallery.examples.index { |example| example.name == opened_name }
+    assert_includes [ 0, middle ], opened, "the row opened on #{opened_name}, neither the first nor the middle app"
     assert_select "#{carousel} button[aria-label='Previous slide'][aria-controls='websites-apps'][aria-disabled='false']", count: 1
     assert_select "#{carousel} button[aria-label='Next slide'][aria-controls='websites-apps']", count: 1
-    # Next is dead at load only when the middle is also the last app (two apps).
-    assert_select "#{carousel} button[aria-label='Next slide'][aria-disabled='true']", count: middle == BuildGallery.examples.size - 1 ? 1 : 0
+    assert_select "#{carousel} button[aria-label='Next slide'][aria-disabled='true']", count: 0
     assert_select "#{carousel} button.carousel-dot", count: BuildGallery.examples.size
     assert_select "#{carousel} button.carousel-dot[aria-current='true']", count: 1
-    assert_select "#{carousel} button.carousel-dot[aria-current='true'][aria-label=?]", "Go to slide #{middle + 1}", count: 1
+    assert_select "#{carousel} button.carousel-dot[aria-current='true'][aria-label=?]", "Go to slide #{opened + 1}", count: 1
     assert_select "[data-test='websites-grid']", count: 0
   end
 

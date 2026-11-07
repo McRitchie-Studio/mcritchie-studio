@@ -20,9 +20,11 @@
 # `lead` names the apps shown first, in this order, by subdomain (the URL's
 # first label: "turfmonster" for turfmonster.media); every other
 # app follows in its usual order (this list, then showcase apps newest first).
+# Alex McRitchie, 2026-11-07: Turf Monster, Commercial Welding, Cyvasse, then the rest.
 lead:
-  - cyvasse
   - turfmonster
+  - commercialwelding
+  - cyvasse
   - prisoners-dilemma
   - rantly
 
@@ -64,6 +66,11 @@ palettes:
   weekly-lock: { panel: "#0f1114", primary: "#e0ad4a", name: "#e0ad4a", text: "#9aa0a8" }
   portfolio: { panel: "#121316", primary: "#7fb2f0", name: "#7fb2f0", text: "#a3a7af" }
   10and5: { panel: "#121012", primary: "#e48a9c", name: "#e48a9c", text: "#a39ca0" }
+  # Engine app: theme_primary #2D5E8E (commercial-welding config/initializers/studio.rb).
+  # #2D5E8E is too dark on the dark page, so the name takes its dark
+  # --color-primary-ink #9AB2C9, with --color-page and --color-text-muted as
+  # https://commercialwelding.llc serves them.
+  commercialwelding: { panel: "#0B1824", primary: "#2D5E8E", name: "#9AB2C9", text: "#A0A5AA" }
 
 examples:
   - name: Cyvasse
@@ -93,3 +100,9 @@ examples:
     blurb: The social network with a 140-character minimum, for people who need more room to rant.
     image: build_gallery/rantly.webp
     motion: build_gallery/rantly.mp4
+  - name: Commercial Welding
+    url: https://commercialwelding.llc
+    emoji: "🔥"
+    blurb: Colorado's commercial pipe welding team, with its projects, services and a proposal request.
+    image: build_gallery/commercial-welding.webp
+    motion: build_gallery/commercial-welding.mp4
