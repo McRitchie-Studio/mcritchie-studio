@@ -17,18 +17,27 @@ async function openCarousel(browser, viewport) {
 const scrolled = (track) => track.evaluate((element) => element.scrollLeft);
 const currentDot = (dots) => dots.evaluateAll((all) => all.findIndex((dot) => dot.getAttribute("aria-current") === "true"));
 
-// The spotlight opens on the middle app (studio/_carousel start: :middle), so both arrows are
-// live at load and each moves one slide.
-test("on a wide row, the middle app leads, Next moves one, a dot jumps, and Home goes to the first", async ({ browser }) => {
-  const { context, page, errors, carousel, track, dots } = await openCarousel(browser, { width: 1280, height: 800 });
+// The row loops, so both arrows are live at load and each moves one slide. It opens on the
+// first app (Turf Monster, Alex McRitchie's lead, 2026-11-07) once the engine's visual wrap
+// is installed (a looping spotlight starts at slide 0, the last app on its left); an engine
+// before it opens a spotlight on the middle app. Either opening passes; the move from it is
+// what is measured.
+const openingDot = async (dots) => {
   const middle = Math.floor((await dots.count()) / 2);
-  await expect(dots.nth(middle)).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => currentDot(dots)).toBeGreaterThanOrEqual(0);
+  const opened = await currentDot(dots);
+  expect([0, middle], `the row opened on dot ${opened}, neither the first nor the middle app`).toContain(opened);
+  return opened;
+};
+
+test("on a wide row, the lead app opens, Next moves one, a dot jumps, and Home goes to the first", async ({ browser }) => {
+  const { context, page, errors, carousel, track, dots } = await openCarousel(browser, { width: 1280, height: 800 });
+  const opened = await openingDot(dots);
   await expect(carousel.getByRole("button", { name: "Previous slide", exact: true })).toHaveAttribute("aria-disabled", "false");
   const start = await scrolled(track);
-  expect(start, "the row did not open on the middle app").toBeGreaterThan(0);
   await carousel.getByRole("button", { name: "Next slide", exact: true }).click();
   await expect.poll(() => scrolled(track)).toBeGreaterThan(start);
-  await expect.poll(() => currentDot(dots)).toBe(middle + 1);
+  await expect.poll(() => currentDot(dots)).toBe(opened + 1);
   await dots.last().click();
   await expect(dots.last()).toHaveAttribute("aria-current", "true");
   await track.focus();
@@ -40,13 +49,12 @@ test("on a wide row, the middle app leads, Next moves one, a dot jumps, and Home
 
 test("on a phone, the arrow key moves one app and the dots follow", async ({ browser }) => {
   const { context, page, errors, track, dots } = await openCarousel(browser, { width: 390, height: 844 });
-  const middle = Math.floor((await dots.count()) / 2);
-  await expect(dots.nth(middle)).toHaveAttribute("aria-current", "true");
+  const opened = await openingDot(dots);
   const start = await scrolled(track);
   await track.focus();
   await page.keyboard.press("ArrowRight");
   await expect.poll(() => scrolled(track)).toBeGreaterThan(start);
-  await expect(dots.nth(middle + 1)).toHaveAttribute("aria-current", "true");
+  await expect(dots.nth(opened + 1)).toHaveAttribute("aria-current", "true");
   expect(errors.pageErrors, errors.report()).toEqual([]);
   await context.close();
 });

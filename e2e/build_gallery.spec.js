@@ -1,7 +1,7 @@
 // [e2e] /build — the "Built with McRitchie Studio" gallery, as a visitor sees it.
 //
-// e2e/seed.rb seeds three LIVE showcase apps (plus Cyvasse and Turf Monster
-// from config/build_examples.yml). What only a browser proves: the row really scrolls
+// e2e/seed.rb seeds three LIVE showcase apps (plus the hand-kept entries in
+// config/build_examples.yml: Turf Monster, Commercial Welding, Cyvasse, ...). What only a browser proves: the row really scrolls
 // sideways, a still really loads, the edge fade follows the scroll, and a card's
 // motion loop plays on hover (and not under reduced motion).
 const { test, expect } = require("@playwright/test");
@@ -17,7 +17,7 @@ test("the gallery scrolls sideways, its still loads, and the fade follows the sc
 
   const row = page.locator("[data-test='build-gallery-row']");
   await expect(row).toBeVisible();
-  await expect(page.locator("[data-test='build-gallery-item']")).toHaveCount(5);
+  await expect(page.locator("[data-test='build-gallery-item']")).toHaveCount(6); // 5 listed + 1 seeded showcase not listed
   await expect(page.locator("[data-test='build-gallery-all']")).toHaveCount(0); // visitors see no admin button
 
   // About 3.3 cards: one card is roughly 30% of the row.
