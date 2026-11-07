@@ -69,12 +69,14 @@ RUN for bin in convert ffmpeg ffprobe git node npm npx pg_dump psql rsvg-convert
 # suites hold permission-based tests (an unwritable /etc, a process group) to a
 # non-root user, as on the VM. Passwordless sudo, as there. Git trusts every
 # directory system-wide, because the suites run git under their own sandboxed HOME,
-# where actions/checkout's per-user safe.directory does not reach.
+# where actions/checkout's per-user safe.directory does not reach. ruby/setup-ruby's
+# prebuilt Rubies install under /opt/hostedtoolcache (their fixed prefix), so runner owns it.
 # CI_LANE_IMAGE tells a suite it is inside this container (Chrome needs --no-sandbox
 # here: test/application_system_test_case.rb).
 RUN useradd --uid 1001 --create-home --shell /bin/bash runner \
  && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner \
- && git config --system --add safe.directory '*'
+ && git config --system --add safe.directory '*' \
+ && mkdir -p /opt/hostedtoolcache && chown runner:runner /opt/hostedtoolcache
 ENV CI_LANE_IMAGE=1
 
 LABEL org.opencontainers.image.source="https://github.com/mcritchie-studio/mcritchie-studio" \
