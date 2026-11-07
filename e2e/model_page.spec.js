@@ -10,8 +10,12 @@ test("admin opens a Release model page and jumps to a random sample", async ({ p
   await page.goto("/deployments/all");
   await expect(page.getByRole("heading", { name: "All Deployments" })).toBeVisible();
 
-  // The admin-only "Model" link jumps to the latest release's model page.
-  await page.getByRole("link", { name: "Model", exact: true }).click();
+  // The admin-only "Model" link, in the header's Links menu, jumps to the latest
+  // release's model page.
+  await page.locator(".page-header .page-header-menu-button").click();
+  const model = page.locator(".page-header-menu-list").getByRole("link", { name: "Model", exact: true });
+  await expect(model).toBeVisible();
+  await model.click();
   await expect(page).toHaveURL(/\/models\/release\/.+/);
 
   // v1 renders exactly two things: the console command and the record JSON.
