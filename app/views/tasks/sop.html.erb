@@ -1,16 +1,11 @@
 <% content_for(:title, "DevOps SOP — Infographic") %>
 
 <section class="min-h-screen">
-  <div class="flex items-center gap-3 text-xs mb-3">
-    <%= link_to "← Stages", stages_path, class: "text-muted hover:text-primary" %>
-    <span class="text-subtle">·</span>
-    <%= link_to "Deployments", deployments_path, class: "text-muted hover:text-primary" %>
-  </div>
-
-  <div class="flex items-center gap-4 mb-2 flex-wrap">
-    <h2 class="text-2xl font-bold text-heading">DevOps SOP</h2>
-    <span class="text-xs text-muted uppercase tracking-wide">accountability swimlanes</span>
-  </div>
+  <%# The engine page header (docs/PAGE_HEADER.md): the old "Stages" and "Deployments"
+      links are the crumb trail, Admin, Deployments, Stages. %>
+  <%= render "studio/page_header", title: "DevOps SOP", meta: "accountability swimlanes",
+        crumbs: studio_crumbs(parent: :stages) %>
+  <div class="mb-3"></div>
   <p class="text-muted text-sm mb-3 max-w-3xl leading-relaxed">
     The cycle as <b class="text-secondary">accountability lanes</b> — one row per owner, steps flowing
     left → right. Node colors mark the <b class="text-secondary">kind</b> of step; amber

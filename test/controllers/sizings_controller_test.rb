@@ -16,7 +16,7 @@ class SizingsControllerTest < ActionDispatch::IntegrationTest
   test "show renders sizing page for an admin" do
     get task_sizing_path(@task)
     assert_response :success
-    assert_select "h2", @task.title
+    assert_select "h1.page-header-title", @task.title
   end
 
   test "show renders all four size inputs" do

@@ -78,7 +78,7 @@ class NewsControllerTest < ActionDispatch::IntegrationTest
   test "workflow renders workflow page" do
     get workflow_news_index_path
     assert_response :success
-    assert_select "h2", "News Workflow"
+    assert_select "h1.page-header-title", "News Workflow"
   end
 
   # Mack is the CFO since 2026-10-28 (the accountability chart); the slug-linking

@@ -65,22 +65,22 @@ class AgentFileLinksTest < ActionDispatch::IntegrationTest
     get doc_path("agents/steffon/HEARTBEAT.md")
     assert_response :success
 
-    assert_select ".prose-themed h1", text: "Steffon Heartbeat"
+    assert_select ".page-header h1.page-header-title", text: "Steffon Heartbeat"
 
     get doc_path("agents/avi/sops/qa-release.md")
     assert_response :success
 
-    assert_select ".prose-themed h1", text: "QA Release"
+    assert_select ".page-header h1.page-header-title", text: "QA Release"
 
     get doc_path("agents/steffon/sops/production-deploy.md")
     assert_response :success
 
-    assert_select ".prose-themed h1", text: "Production Deploy"
+    assert_select ".page-header h1.page-header-title", text: "Production Deploy"
 
     get doc_path("agents/mason/sops/full-cycle.md")
     assert_response :success
 
-    assert_select ".prose-themed h1", text: "Full Cycle"
+    assert_select ".page-header h1.page-header-title", text: "Full Cycle"
   end
 
   test "agent show renders the agent docs file tree" do

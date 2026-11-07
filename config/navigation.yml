@@ -194,6 +194,10 @@ pages:
   heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃", parent: mason_heartbeat }
   mason_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡", parent: deployments }
   mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline, parent: deployments }
+  # Pages that are in no nav but carry the crumb trail (task task-pages-standard-header).
+  review_events_hub:        { page: "tasks#review_events_hub",  audience: admin, label: Review Process Hub, crumb: Review hub, parent: deployments }
+  admin_model_pricing:      { page: "admin/model_pricing#index", audience: admin, label: Model Pricing, parent: deployments }
+  dreams:                   { page: "dreams#index",             audience: admin, label: Dreams, parent: agents }
 
 sidebar:
   # The main areas (Alex McRitchie, 2026-11-04). The short words are this section's
