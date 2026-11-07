@@ -4,8 +4,10 @@
 # bin/sop-registry — generate the SOP registry from the SOP files.
 #
 #   bin/sop-registry           check: exit 1 naming each generated doc that is stale
-#   bin/sop-registry --write   rewrite the generated blocks in docs/agents/index.md
-#                              (the SOP Registry) and docs/agents/start-here.md
+#   bin/sop-registry --write   rewrite the generated block in docs/agents/start-here.md
+#
+# The registry left AGENTS.md (docs/agents/index.md) to hold the boot budget; an
+# agent resolves a name with bin/sop, which reads the same source.
 #
 # The rule for what is registered lives in bin/lib/sop_registry.rb. Run --write after
 # adding, renaming or deleting an SOP file or changing its `<!-- registry: … -->` line.
@@ -16,7 +18,7 @@ require_relative "lib/sop_registry"
 write = false
 OptionParser.new do |opts|
   opts.banner = "usage: bin/sop-registry [--write]"
-  opts.on("--write", "rewrite the generated blocks") { write = true }
+  opts.on("--write", "rewrite the generated block") { write = true }
   opts.on("-h", "--help", "print this help") do
     puts opts
     exit 0
@@ -27,8 +29,7 @@ abort "usage: bin/sop-registry [--write] (unexpected: #{ARGV.join(" ")})" unless
 root = File.expand_path("..", __dir__)
 if write
   SopRegistry.write!(root)
-  puts "wrote #{SopRegistry::REGISTRY_PATH} and #{SopRegistry::START_HERE_PATH} " \
-       "(#{SopRegistry.entries(root).size} entries)"
+  puts "wrote #{SopRegistry::START_HERE_PATH} (#{SopRegistry.entries(root).size} entries)"
   exit 0
 end
 

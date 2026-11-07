@@ -818,17 +818,13 @@ class ApplicationHelperTest < ActionView::TestCase
   # button pointing at a phrase no SOP file answers is a dead end the operator
   # only discovers by pressing it.
   test "[unit] every launcher act resolves to a registered SOP file" do
-    registry = Rails.root.join("docs/agents/index.md").read
-    docs_root = Rails.root.join("docs/agents")
+    require Rails.root.join("bin/lib/sop_registry").to_s
+    entries = SopRegistry.entries(Rails.root.to_s)
 
     heartbeat_launchers.flat_map { |l| l[:actions] }.each do |act|
-      row = registry[/^\|\s*`#{Regexp.escape(act)}`.*$/]
-      assert row.present?, "#{act} is a launcher act but has no row in the SOP registry"
-
-      path = row[%r{`(mcritchie-studio/)?(docs/agents/\S+?\.md)`}, 2]
-      assert path.present?, "#{act}'s registry row names no SOP file"
-      assert docs_root.join(path.sub("docs/agents/", "")).exist?,
-             "#{act} points at #{path}, which does not exist"
+      entry = SopRegistry.resolve(entries, act)
+      assert entry.present?, "#{act} is a launcher act but bin/sop cannot resolve it in the SOP registry"
+      assert Rails.root.join(entry.path).exist?, "#{act} points at #{entry.path}, which does not exist"
     end
   end
 

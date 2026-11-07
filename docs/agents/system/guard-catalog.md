@@ -51,9 +51,9 @@ A KEEP row needs nothing; its cell reads `kept`.
 | 6. Review flow | 33 | 1 | 2 | 30 |
 | 7. Release | 102 | 0 | 13 | 89 |
 | 8. Docs and citation guards | 42 | 9 | 24 | 9 |
-| 9. Registry guards and ratchets | 34 | 1 | 15 | 18 |
+| 9. Registry guards and ratchets | 35 | 1 | 15 | 19 |
 | 10. App validations and API refusals | 50 | 2 | 9 | 39 |
-| **Total** | **498** | **29** | **94** | **375** |
+| **Total** | **499** | **29** | **94** | **376** |
 
 Fires: no store counts refusals. Every `bin/dor-check` verdict writes a
 `GateRun` row, and `/Users/alex/projects/.agents/worktree-registry.json` records
@@ -220,12 +220,13 @@ created before the snapshot is the kept part of decision 8.
 | `test/lib`: app ids, `.env.example` pointers, remedy hints | Same, for config | 2026-08-30; 2026-09-20 | 3 | BY CONSTRUCTION: ids in config; `.env.example` from the inventory; one hint helper | applied: `guards-docs-and-citations` (ids, `.env.example`); remedy hints: `remedy-hints-through-one-helper` (every hub-only remedy prints through `bin/lib/remedy.rb`; the sweep is deleted) |
 | Behavioural docs tests: rotation shell, orphan shell variables, fast-lane hub paths, throwaway worktrees, zap freshness; `engine_version_claims_test.rb`, `retired_names_sweep_test.rb` | An SOP whose shell fails, or a ban on restating a generated fact | 2026-09-09, ten Heroku apps and 57 `.env` files | 7 | KEEP | kept: `guards-docs-and-citations` |
 
-## 9. Registry guards and ratchets (34)
+## 9. Registry guards and ratchets (35)
 
 | Guard | Refuses → prevents | Trigger · fires | n | Disposition | Mark |
 |---|---|---|---|---|---|
 | Stale-entry timings guard | See decision 4 | 2026-10-06 | 1 | DELETE | applied: `guards-registries-and-ratchets` |
 | `sop_registry_docs_test.rb`, `sop_registry_install_test.rb`, `start_here_label_guard_test.rb` | Index, `claude.md`, Start Here and disk disagreeing | 2026-09-04 | 3 | BY CONSTRUCTION: generate the tables from the SOP files | applied: `guards-registries-and-ratchets` (`bin/sop-registry`; the install test keeps its sandbox proofs) |
+| `boot_budget_test.rb` | The boot docs (`claude.md` + `index.md`, installed as `CLAUDE.md` + `AGENTS.md`) growing past 40,000 bytes | 2026-11-06 | 1 | KEEP: a ratchet on Alex McRitchie's ruling of 2026-11-06; the SOP table moved to Start Here and `bin/sop` | applied: `boot-budget-and-sop-resolver` |
 | `task_block_kinds_parity_test.rb`; seed ⊆ `Task::SOUL_ROSTER`; open-intents SQL and Ruby parity; devops identifier keys; comma-list flags; `app_registry_test.rb`; QA_ENV declared; Rails lane matrix; `bin_help_flag_class_test.rb` | Two hand copies drifting | 2026-09-15; 2026-10-06 | 9 | BY CONSTRUCTION: one source each (model validates block kinds; roster from the seed; one implementation; one key map; registries from `config/apps.yml`; loader sets QA_ENV; matrix from `config/rails_lane.yml`; a shared argv parser) | applied in part: `guards-registries-and-ratchets` for seven of nine (block kinds, roster, one implementation, one key map for both list guards, QA_ENV, Rails matrix); kept: `app_registry_test.rb` and `bin_help_flag_class_test.rb`, each its own migration |
 | Skip count (exact), frozen hotspot sizes | Any change, up or down; 26 commits of ceiling edits | 2026-08-14 | 2 | BY CONSTRUCTION: compare with the merge base, store nothing | applied: `guards-registries-and-ratchets` |
 | Comment blocks over eight lines in tests (grandfathered); test-line ceiling only falls; test-line budget (report-only) | New essays in tests; the cut refilling within a month | 2026-11-01 | 3 | BY CONSTRUCTION: compare with the merge base; only the ceiling is stored | applied: `line-budget-ratchet` |

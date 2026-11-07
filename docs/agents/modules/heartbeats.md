@@ -38,7 +38,7 @@ a **prompt-like row 1** plus **copyable action rows**:
 
 **Every row is independently copyable**, and any of them, pasted into a fresh
 session run from `/Users/alex/projects`, launches that heartbeat. All rows are
-registered in the root `AGENTS.md` SOP registry and in
+registered in the SOP registry (`bin/sop <name>` resolves each) and in
 [`devops-cycle-design.md` §1.4](../system/devops-cycle-design.md); each act wraps
 one release **atom**, except Mason's learning-loop acts. Each soul's procedure lives
 with that soul ([`Carl`](../agents/carl/HEARTBEAT.md),
