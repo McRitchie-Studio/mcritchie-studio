@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The nightly encrypted backup of /Users/alex/projects/.agents and Claude Code's
+  memory folder (bin/agents-backup; task safety-floor-settings). Install once
+  per Mac, as Alex McRitchie (launchd is outside an agent's lane):
+
+    cp /Users/alex/projects/mcritchie-studio/config/launchd/studio.mcritchie.agents-backup.plist ~/Library/LaunchAgents/ \
+      && launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/studio.mcritchie.agents-backup.plist
+
+  It runs 03:41 local time (off the hour). A Mac asleep at 03:41 runs it at
+  wake. The login shell (zsh -l) loads ~/.zprofile: the agent vault's
+  OP_SERVICE_ACCOUNT_TOKEN and Homebrew's PATH (rclone, op). The script is the
+  fixed-path tooling copy, which every production ship refreshes. LANG/LC_ALL:
+  launchd passes no locale, and Ruby then reads UTF-8 file names as US-ASCII.
+  Check a night: bin/agents-backup status, or the log below.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>studio.mcritchie.agents-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>exec /Users/alex/projects/.agents/bin/agents-backup run</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/alex/projects</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>LANG</key>
+    <string>en_US.UTF-8</string>
+    <key>LC_ALL</key>
+    <string>en_US.UTF-8</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>41</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>ProcessType</key>
+  <string>Background</string>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/alex/Library/Logs/agents-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/alex/Library/Logs/agents-backup.log</string>
+</dict>
+</plist>

@@ -48,8 +48,13 @@ typical_build_minutes: 8
 #   max_attempts   builder runs per card; a failed run is retried after 10 minutes
 #                  until this many, then left for a session (the floor alert says so)
 #   model          the builder's model
+# OFF since 2026-11-06 (task safety-floor-settings, Alex McRitchie's call): it had run 0
+# times, and stays off until it runs sandboxed (11-02 system audit, finding 3: a
+# headless claude with the operator's own permissions). Turning it back on is its own
+# task: sandbox the run (sandbox-exec or a separate user), then flip this and the pin in
+# test/services/change_builds_test.rb.
 change_builder:
-  enabled: true
+  enabled: false
   run_minutes: 90
   max_turns: 400
   max_attempts: 2

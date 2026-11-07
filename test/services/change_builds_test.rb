@@ -1,10 +1,12 @@
 require "test_helper"
+require_relative "../support/change_builder_on"
 
 # [unit] ChangeBuilds, the board side of the launcher starting chat-sourced change
 # cards: which designed cards it may start (a confirmed web-chat proposal on a
 # studio or product app, never a title match), the start record, and the one
 # message back in the card's thread.
 class ChangeBuildsTest < ActiveSupport::TestCase
+  include ChangeBuilderOn
   include ActionCable::TestHelper
 
   include ActiveJob::TestHelper
@@ -438,7 +440,20 @@ class ChangeBuildsTest < ActiveSupport::TestCase
   test "[unit] the config switch: a missing section is off, enabled true is on" do
     ClientBuilds.stub(:config, { "max_attempts" => 3 }) { refute ChangeBuilds.builder_enabled? }
     ClientBuilds.stub(:config, { "change_builder" => { "enabled" => "yes" } }) { refute ChangeBuilds.builder_enabled? }
-    assert ChangeBuilds.builder_enabled?, "config/client_builds.yml ships it on"
+    ClientBuilds.stub(:config, { "change_builder" => { "enabled" => true } }) { assert ChangeBuilds.builder_enabled? }
     assert_equal 2, ChangeBuilds.builder_max_attempts
+  end
+end
+
+# safety-floor-settings (2026-11-06): the headless builder ships OFF until it runs
+# sandboxed. Turning it back on is a deliberate edit that must also edit this test.
+# Its own class, so ChangeBuilderOn (included above) does not switch it on here.
+class ChangeBuildsShippedSwitchTest < ActiveSupport::TestCase
+  teardown { ChangeBuilderOn.restore! }
+
+  test "[unit] config/client_builds.yml ships the change builder off" do
+    ChangeBuilderOn.restore!
+    assert_equal false, YAML.safe_load_file(ClientBuilds::CONFIG_PATH).dig("change_builder", "enabled")
+    refute ChangeBuilds.builder_enabled?, "config/client_builds.yml ships it off"
   end
 end

@@ -374,6 +374,49 @@ held few other objects; if the next run refuses, confirm and use
 - Close the activity:
   `bin/agent-activity end --outcome "r2-backup <act> for <app>"`.
 
+## 7. Agent state backup (`mcritchie-agents-backup`)
+
+A separate store with its own tool. `/Users/alex/projects/.agents` and Claude
+Code's memory folder (`~/.claude/projects/-Users-alex/memory`) live in no git
+repository, so this Mac was their only copy until 2026-11-06 (task
+`safety-floor-settings`; 11-02 system audit, finding 8).
+
+- **Bucket** `mcritchie-agents-backup`, private, `enam`. **Token**
+  `r2-mcritchie-agents-backup`: Bucket Item Write on that bucket alone; it is
+  refused (403) on every other bucket. **Item** `r2.mcritchie-agents-backup` in
+  `studio-agents`: `access-key-id`, `secret-access-key`, `endpoint`, `region`,
+  `bucket`, and the rclone `crypt-password` and `crypt-salt`. **Losing the
+  two crypt fields makes every copy unreadable**; never rotate them in place.
+- **Encrypted.** `bin/agents-backup` writes through an rclone `crypt` remote:
+  contents and file and folder names are encrypted, so a raw listing of the
+  bucket shows only random names, and each object begins `RCLONE`.
+- **What it copies.** `bin/agents-backup plan` lists it, with no credential and
+  no network. Regular files only; symlinks are never followed. Never copied:
+  `.secret-cache/`, `tooling/`, `bin.pre-tooling-*`, `locks/`, and any file
+  named like a token or secret (`*.token`, `token.json`, `*tokens.json`,
+  `.env*`, `*.pem`, `*.key`, `keys.txt`, `harness-key.json`,
+  `*credentials*.json`, `*secret*.json`, `*.lock`, `op-reads.log`). The list is
+  `AgentsBackup::EXCLUDE_*` in `bin/lib/agents_backup.rb`, held by
+  `test/lib/agents_backup_test.rb`.
+- **Layout.** `current/<agents|memory>/…` holds the latest copy of every file
+  ever backed up: a run uses `rclone copy`, never `sync`, so a file deleted on
+  the Mac stays backed up. `archive/<stamp>/…` holds what a run overwrote, and a
+  good run deletes stamps older than 30 days.
+- **Nightly.** launchd job `studio.mcritchie.agents-backup`
+  (`config/launchd/studio.mcritchie.agents-backup.plist`, 03:41 local) runs
+  the fixed-path copy `/Users/alex/projects/.agents/bin/agents-backup run`
+  in a login shell. The plist header has the one install command. Read a
+  night with `bin/agents-backup status` (the receipt in `~/.agent-state-backup/`)
+  or `~/Library/Logs/agents-backup.log`.
+- **Restore** one file into a folder, never in place:
+  `bin/agents-backup restore memory MEMORY.md --to /tmp/restore`. Copy it back
+  by hand after you read it.
+- **Proven 2026-11-06.** First run: 2,796 + 502 files, 0 failures; a raw listing
+  showed 0 plaintext names and objects that begin `RCLONE`; the token was refused
+  (403) on `mcritchie-studio-production`. Restore of `memory/MEMORY.md` and
+  `agents/character-sheet-recipe.md` into a scratch folder matched the originals
+  by SHA-256. A second run archived the 2 files it overwrote.
+
 ## Background — not needed to execute
 
 R2's gaps against the S3 rules (no versioning, why this act exists), the tiers,
