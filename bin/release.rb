@@ -4304,11 +4304,11 @@ end
 #                   heals mid-sweep), so it aborts on the first read with the remedy.
 #   * else        — a :pending/:none/:unverified verdict that never reached green before
 #                   the poll timed out: let CI finish and re-run. None is ever a pass.
-def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout)
+def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout, label: "pre-QA gate")
   case ci[:state]
   when :red
     named = Array(ci[:failing]).join(", ")
-    "pre-QA gate FAILED for #{repo}: GitHub CI called #{short(sha)} RED#{named.empty? ? '' : " (#{named})"} — a " \
+    "#{label} FAILED for #{repo}: GitHub CI called #{short(sha)} RED#{named.empty? ? '' : " (#{named})"} — a " \
       "regression is riding origin/#{RELEASE_BRANCH}. Identify the offending task, eject it " \
       "(`#{RELEASE_SELF_CMD} eject <task> --feedback \"…\"`), revert its merge commit on `#{RELEASE_BRANCH}` " \
       "(git revert -m 1 <merge-sha>; push), then re-run `bin/release prepare` — the sweep self-heals and the " \
@@ -4316,12 +4316,12 @@ def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout)
   when :unreadable
     # `release_grain: true` — STATED, never defaulted. G3 is RELEASE-grain, so the
     # remedy names `bin/release prepare` rather than a `<task>` this gate cannot fill.
-    "pre-QA gate FAILED for #{repo}: GitHub CI is UNREADABLE for #{short(sha)} (#{ci_detail(ci)}). CI is the G3 " \
+    "#{label} FAILED for #{repo}: GitHub CI is UNREADABLE for #{short(sha)} (#{ci_detail(ci)}). CI is the G3 " \
       "verdict now and FAILS CLOSED — an :unreadable verdict is a credential/token fault, NOT a missing or still-" \
       "running CI, so the gate does NOT poll it (a refused token never heals mid-sweep). " \
       "#{CiStatus.unreadable_remedy(repo_name_with_owner(repo), cause: ci[:cause], release_grain: true)}"
   else
-    "pre-QA gate HELD for #{repo}: GitHub CI reached NO green verdict for #{short(sha)} (#{ci_detail(ci)}) before " \
+    "#{label} HELD for #{repo}: GitHub CI reached NO green verdict for #{short(sha)} (#{ci_detail(ci)}) before " \
       "the poll timed out. CI is the G3 verdict now and FAILS CLOSED on anything but green — a still-pending or " \
       "absent verdict never certifies a SHA. The gate POLLED origin/#{RELEASE_BRANCH} until ~#{budget}s " \
       "elapsed; let CI conclude (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release prepare`."
@@ -4647,6 +4647,85 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   { ci: ci, credited: !credit.nil?, diagnostic: (credit ? nil : diagnostic), diverged: diverged }
 end
 
+# ONE app's CI verdict for its origin/#{RELEASE_BRANCH} SHA, as the pre-QA gate and the
+# pre-publish gate both read it. nil when the app registers no qa_test_cmd (it
+# self-gates) or in a dry run (the plan line is printed instead). Otherwise
+# { repo:, sha:, cmd:, verdict:, ci:, budget: }; the caller judges and records.
+def release_app_ci_verdict(repo, label:)
+  cmd = qa_gate_cmd(repo)
+  if cmd.empty?
+    say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
+    return nil
+  end
+  # Validate the registry command even though the suite is DEMOTED (Phase 3): a
+  # malformed value must still abort a preview, and it is recorded on the release
+  # below, so it may not be garbage. test_cmd_argv aborts on an unbalanced quote.
+  test_cmd_argv(cmd)
+  if DRY
+    say("  [dry-run] #{label} #{repo}: GitHub CI verdict for origin/#{RELEASE_BRANCH} " \
+        "(#{cmd} ran in CI; recorded, not run)")
+    return nil
+  end
+
+  path = repo_path(repo)
+  abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+  out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+  abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the #{label} — fetch, then re-run") unless ok
+  sha = out.strip
+
+  # DevOps v2 Phase 3+4: the pre-QA suite no longer runs on the conductor's machine.
+  # GitHub CI's verdict for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now
+  # (poll_ci_verdict -> ci_pass?), so the whole local-cert flakiness class (a lazily-
+  # autoloaded suite torn by a concurrent checkout) retired with it.
+  #
+  # G3 DEDUPE (task dedupe-hub-release-suite): the hub registers the same full
+  # suite at the accepted seam (the batch PR's pull_request run on the accepted
+  # head) and again on the release push (the promote's merge commit), so the
+  # verdict resolution below credits the IDENTICAL TREE already earned instead of
+  # re-running it — fail-closed into the poll on any non-credit. Repo-generic; see
+  # resolve_release_ci_verdict.
+  budget  = ci_poll_budget_for(repo, sha)
+  verdict = resolve_release_ci_verdict(repo, path, sha, budget: budget)
+  { repo: repo, sha: sha, cmd: cmd, verdict: verdict, ci: verdict[:ci], budget: budget }
+end
+
+# THE PRE-PUBLISH GATE (task ci-retry-killers). A RubyGems version can never be
+# re-pushed, so a gem published before a red gate is BURNED: 0.129.0 and 0.131.0 went
+# that way, 2 of 17 final-flow versions. The gem's OWN tip already earns a clean-env
+# verdict before the push (gem_ci_failure: Engine CI plus Consumer CI, which tests the
+# consumers against that tip). What was missing is the swept APPS' own verdict: it was
+# read only at the pre-QA gate, after the publish. So it is read here first, on each
+# app's origin/#{RELEASE_BRANCH} BEFORE the lock bump, and a red aborts with NOTHING
+# published.
+#
+# CHEAP BY CONSTRUCTION. That tree is the promoted `accepted` head, whose green the
+# G3 dedupe credits without a fresh run (resolve_release_ci_verdict), so this costs a
+# read, not a CI cycle, on a normal sweep. Records nothing: the pre-QA gate after the
+# bump is still G3, still reads the post-bump SHA QA deploys, and still records it.
+# A red THERE now means the lock bump itself or a flake, and a re-run at the same gem
+# tip reuses the live final (publish_gems_for_qa's reuse path), so nothing burns.
+def pre_publish_gate(app_groups, gem_plan)
+  # Nothing to burn when nothing would be pushed: no gem, or every final already live.
+  return if app_groups.empty? || gem_plan.empty? || gem_plan.all? { |gem| gem["already_live"] }
+
+  say("")
+  step("pre-publish gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
+       "(before any gem is published)")
+  app_groups.each do |group|
+    read = release_app_ci_verdict(group["repo"], label: "pre-publish gate")
+    next unless read
+
+    repo, sha, ci, budget = read.values_at(:repo, :sha, :ci, :budget)
+    step("pre-publish gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}" \
+         "#{read[:verdict][:credited] ? ' (credited)' : ''} @ #{short(sha)}")
+    next if ci_pass?(ci)
+
+    abort!("#{pre_qa_ci_abort(repo, sha, ci, budget, label: "pre-publish gate")} NOTHING was published, so no gem " \
+           "version is burned.")
+  end
+end
+
 # The pre-QA gate (G3 candidate). `app_groups` gate on their registered
 # qa_test_cmd's CI; `gem_groups` (keyword — old positional callers keep the
 # (app_groups, rel_slug) arity) adds the SELF-GATED-GEM pass for a GEM-ONLY
@@ -4664,46 +4743,12 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
   step("pre-QA gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
        "(before any QA deploy)")
   app_groups.each do |group|
-    repo = group["repo"]
-    cmd  = qa_gate_cmd(repo)
-    if cmd.empty?
-      say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
-      next
-    end
-    # Validate the registry command even though the suite is DEMOTED (Phase 3): a
-    # malformed value must still abort a preview, and it is recorded on the release
-    # below, so it may not be garbage. test_cmd_argv aborts on an unbalanced quote.
-    test_cmd_argv(cmd)
-    if DRY
-      say("  [dry-run] pre-QA gate #{repo}: GitHub CI verdict for origin/#{RELEASE_BRANCH} " \
-          "(#{cmd} ran in CI; recorded, not run)")
-      next
-    end
+    read = release_app_ci_verdict(group["repo"], label: "pre-QA gate")
+    next unless read
 
-    path = repo_path(repo)
-    abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
-    sh("git", "-C", path, "fetch", "origin", "--quiet")
-    out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
-    sha = out.strip
-
-    # DevOps v2 Phase 3+4: the pre-QA suite no longer runs on the conductor's machine.
-    # GitHub CI's verdict for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now
-    # (poll_ci_verdict -> ci_pass?), so the whole local-cert flakiness class (a lazily-
-    # autoloaded suite torn by a concurrent checkout) retired with it.
-    #
-    # G3 DEDUPE (task dedupe-hub-release-suite): the hub registers the same full
-    # suite at the accepted seam (the batch PR's pull_request run on the accepted
-    # head) and again on the release push (the promote's merge commit), so the
-    # verdict resolution below credits the IDENTICAL TREE already earned instead of
-    # re-running it — fail-closed into the poll on any non-credit. Repo-generic; see
-    # resolve_release_ci_verdict.
-    budget   = ci_poll_budget_for(repo, sha)
-    verdict  = resolve_release_ci_verdict(repo, path, sha, budget: budget)
-    ci       = verdict[:ci]
-    credited = verdict[:credited]
+    repo, sha, cmd, verdict, ci, budget = read.values_at(:repo, :sha, :cmd, :verdict, :ci, :budget)
     ok = ci_pass?(ci)
-    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{credited ? ' (credited)' : ''} @ #{short(sha)} " \
+    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{verdict[:credited] ? ' (credited)' : ''} @ #{short(sha)} " \
          "(#{cmd} ran in CI; recorded, not run here)")
     # The G3 gate run's own SOP names the verdict's SOURCE (the credited accepted
     # head / tree, or the SHA's own polled run) — the same line the G4 read records.
@@ -5334,13 +5379,17 @@ def prepare
   merge_forward_release_branches(app_groups, gem_groups: gem_groups)
 
   # 4d. GEM PUBLISH + CONSUMER LOCK BUMP — AFTER the merge-forward (4c), so every
-  #     gem is built from the post-merge release tree, and BEFORE the pre-QA gate
-  #     and any QA deploy (docs/agents/system/gem-release-flow.md).
+  #     gem is built from the post-merge release tree, AFTER the pre-publish gate
+  #     (every swept app's CI green on its promoted tree, and the gem's own tip green),
+  #     and BEFORE the pre-QA gate on the post-bump SHA and any QA deploy
+  #     (docs/agents/system/gem-release-flow.md).
   #
   #     THE DEFAULT (Release::GemFlow :final) publishes the FINAL x.y.z here, tagged
   #     v<x.y.z>, and the consumer bump locks it, so the ship deploys the SHAs QA
   #     gated and re-locks nothing. A red QA that moves the gem burns x.y.z; the
-  #     next prepare allocates the next patch and records the burn.
+  #     next prepare allocates the next patch and records the burn. The pre-publish
+  #     gate moved every red it can see AHEAD of the push, so a burn now needs a red
+  #     that only the post-bump tree or QA itself shows.
   #
   #     PHASE 0 ALLOCATES each swept gem's final version from its members and
   #     commits it (with its Gemfile.lock and its rolled CHANGELOG.md) onto
@@ -5371,6 +5420,10 @@ def prepare
   # operator could have fixed for free. Then the burn record (a version this
   # release supersedes before it ships), then the publish.
   refuse_stray_locks_before_publish!(app_groups, gem_plan)
+  # THE GATE BEFORE THE PUSH (task ci-retry-killers): every swept app's own CI must be
+  # green on its promoted tree before any version goes to RubyGems, so a red aborts
+  # with nothing published and nothing burned. See pre_publish_gate.
+  pre_publish_gate(app_groups, gem_plan)
   record_burned_finals!(gem_plan)
   published_gems = publish_gems_for_qa(gem_plan)
   # The stamp a ship with this flow checks its candidates against. Before the
