@@ -1,20 +1,11 @@
 require "test_helper"
 
-# [integration] The friendly not-found page (task friendly-not-found-page). Alex
-# McRitchie, 2026-11-07: "When users get lost they have a friendly page to land on
-# and link back to the root app they are working on." He had hit Rails' bare "The
-# page you were looking for doesn't exist" on /applications/alex-build/chat.
-#
-# The hub opts in with config.exceptions_app = Studio::ExceptionsApp.new
-# (config/application.rb; studio-engine docs/NOT_FOUND_PAGE.md). The line is
-# guarded until the release relocks an engine that has the primitive, so these
-# read whichever engine is locked: the engine's page inside the hub's layout on one
-# that has it, and the restyled public/404.html, the static last resort, on one
-# that does not. Both carry the same words, the same data-test hooks and the same
-# button home, and both answer exactly 404: never a 200, never a redirect.
-#
-# The test environment hides exceptions (show_exceptions :rescuable, every request
-# local), so each request runs with the production values, then restores them.
+# [integration] The friendly not-found page (task friendly-not-found-page): a lost
+# visitor gets a 404 with the hub's name and a button home, never a 200 or redirect.
+# config.exceptions_app is guarded until the release relocks an engine that has it,
+# so these read whichever engine is locked: the engine page in the hub layout, or the
+# restyled public/404.html (same words, same data-test hooks). The test env hides
+# exceptions, so each request runs with production's exception settings.
 class NotFoundPageTest < ActionDispatch::IntegrationTest
   ENGINE_PAGE = defined?(Studio::ExceptionsApp)
 

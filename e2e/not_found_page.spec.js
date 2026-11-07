@@ -1,15 +1,8 @@
-// [e2e] The friendly not-found page (task friendly-not-found-page). Alex McRitchie,
-// 2026-11-07: "When users get lost they have a friendly page to land on and link back
-// to the root app they are working on."
-//
-// A signed-out visitor types an address the hub does not have. The answer is a 404,
-// the page names the hub and offers one button home, and the button lands on /.
-// The e2e server runs with ENABLE_ERROR_PAGES=1 (playwright.config.js), so it shows
-// what a visitor sees, not the test environment's debug report.
-//
-// On an engine that has Studio::ExceptionsApp this is the engine's page inside the
-// hub's layout; until the release relocks one, it is public/404.html. Both carry the
-// same words and the same data-test hooks, so this reads whichever engine is locked.
+// [e2e] The friendly not-found page (task friendly-not-found-page). A signed-out
+// visitor on an unknown address gets a 404 naming the hub, and the home button lands
+// on /. The e2e server runs ENABLE_ERROR_PAGES=1 (playwright.config.js) to show the
+// visitor's page, not the debug report. Engine page or public/404.html, whichever
+// engine is locked: both carry the same words and data-test hooks.
 const { test, expect } = require("@playwright/test");
 const { watchPageErrors, VISITOR } = require("./helpers");
 
