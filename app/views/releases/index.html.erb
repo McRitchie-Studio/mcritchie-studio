@@ -1,15 +1,13 @@
 <div class="max-w-7xl mx-auto px-4 py-6">
-  <% header_actions = capture do %>
-    <div class="flex items-center gap-2">
-      <%# Model-page protocol (studio-engine): admin-only jump to the newest release's model page. %>
-      <% if admin? && @latest_release %>
-        <%= link_to "Model", studio_model_path("release", @latest_release.slug), class: "btn btn-neutral btn-sm" %>
-      <% end %>
-      <%= link_to "Back to Dashboard", deployments_path, class: "btn btn-neutral btn-sm" %>
-    </div>
+  <%# Both controls are pages elsewhere: the Links menu (docs/PAGE_HEADER.md, "The four
+      kinds of control"). Model is the model-page protocol (studio-engine): an admin-only
+      jump to the newest release's model page. %>
+  <% header_menu = [{ label: "Deployments dashboard", href: deployments_path, data: { test: "releases-link-dashboard" } }] %>
+  <% if admin? && @latest_release %>
+    <% header_menu << { label: "Model", href: studio_model_path("release", @latest_release.slug), data: { test: "releases-link-model" } } %>
   <% end %>
   <%= render "studio/page_header", title: "All Deployments", crumbs: studio_crumbs(:all_deployments),
-        actions_html: header_actions %>
+        menu: header_menu %>
   <div class="mb-6"></div>
 
   <% stage_averages = @deployment_dashboard["stages"] || {} %>

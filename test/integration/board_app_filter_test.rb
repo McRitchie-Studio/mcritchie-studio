@@ -38,8 +38,9 @@ class BoardAppFilterTest < ActionDispatch::IntegrationTest
     # progression tester moved OUT of the app-filter row and UP beside the board's
     # own actions (New Task / Links), so a demo is driven from one row instead of
     # two. This assertion pair is the record of that decision, not a leftover.
-    header_actions = doc.at_css("[data-test='board-header-actions']")
-    assert header_actions, "the board header actions container should remain present"
+    # Since the four kinds of control (docs/PAGE_HEADER.md) they are the header's tools.
+    header_actions = doc.at_css(".page-header-tools [data-test='board-header-tools']")
+    assert header_actions, "the board header's tools should hold the progression testers"
     assert header_actions.at_css("[data-test='dev-board-tools']"),
            "the TASK tester group belongs beside New Task / Links"
     assert header_actions.at_css("[data-test='dev-deploy-tools']"),

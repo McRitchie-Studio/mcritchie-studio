@@ -126,11 +126,9 @@ class SubNavTest < ActionView::TestCase
   # registry wired in: crumbs from the pages' parents, the sub-nav as the links line.
   test "[component] the page header draws the crumbs, one h1, the links line, the eyebrow and the description" do
     view.define_singleton_method(:admin?) { true }
-    render layout: "components/page_header",
+    render partial: "components/page_header",
            locals: { title: "Triage", eyebrow: "Findings Inbox", description: "Promote what deserves one.",
-                     sub_nav: { nav: :board_sections, current: :triage } } do
-      "<span id='beside-title'>controls</span>".html_safe
-    end
+                     sub_nav: { nav: :board_sections, current: :triage } }
 
     row = "[data-test=page-header].page-header"
     assert_select "header", 0, "the row is never a <header>: the pinned stack takes the first one as the navbar"
@@ -141,10 +139,35 @@ class SubNavTest < ActionView::TestCase
     assert_select "#{row} .page-header-crumbs a[data-page-transition-back]", 2
     assert_select "#{row} .page-header-crumb-current[aria-current=page]", text: "Triage"
     assert_select "#{row} .page-header-meta", text: "Findings Inbox"
-    assert_select "#{row} .page-header-actions #beside-title", text: "controls"
+    assert_select "#{row} .page-header-actions", 0, "no controls passed, so no control cluster"
     assert_select "#{row} nav.page-header-links[aria-label='Board sections'] a", text: "Epics"
     assert_select "#{row} nav.page-header-links a", text: /Admin dashboard/, count: 0
     assert_select "p[data-test=page-header-description]", text: "Promote what deserves one."
+  end
+
+  # Alex McRitchie 2026-11-06 (studio-engine docs/PAGE_HEADER.md, "The four kinds of
+  # control"): the wrapper passes the engine's kinds straight through and has no
+  # free-HTML slot, so nothing reaches the deprecated actions_html.
+  test "[component] the page header passes tabs, the Links menu, the action and the tools through" do
+    view.define_singleton_method(:admin?) { true }
+    render partial: "components/page_header",
+           locals: { title: "Triage", page: :triage, label: "Board views",
+                     tabs: [ { label: "Deployments", href: deployments_path },
+                             { label: "Triage", href: triage_path, current: "page" } ],
+                     menu: [ { label: "Stages", href: stages_path } ],
+                     action: { label: "New Task", href: new_task_path },
+                     tools_html: "<span id='dev-tool'>tool</span>".html_safe }
+
+    row = "[data-test=page-header].page-header"
+    assert_select "#{row} nav.page-header-tabs[aria-label='Board views'][data-page-header-kind=tabs] a.page-header-tab", 2
+    assert_select "#{row} nav.page-header-tabs a[href=?][aria-current=page]", triage_path, text: "Triage"
+    assert_select "#{row} .page-header-menu-button", text: "Links"
+    assert_select "#{row} .page-header-menu-list a.page-header-menu-item[href=?]", stages_path, text: "Stages"
+    assert_select "#{row} a.page-header-action.btn-primary[href=?]", new_task_path, text: "New Task"
+    assert_select "#{row} .page-header-tools #dev-tool", text: "tool"
+    assert_equal %w[page-header-menu page-header-action page-header-tools],
+                 css_select("#{row} .page-header-actions > *").map { |el| el["class"].split.first },
+                 "the engine draws menu, action, tools in that order, with no free HTML before them"
   end
 
   test "[component] the page header needs only a title" do
