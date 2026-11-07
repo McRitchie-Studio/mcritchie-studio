@@ -44,7 +44,7 @@ RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https:
  && apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl ffmpeg git gnupg imagemagick jq libffi-dev \
       libjemalloc2 libpq-dev librsvg2-bin libssl-dev libvips libyaml-dev pkg-config \
-      postgresql-client python3 python3-venv redis-tools ruby sudo tzdata unzip xz-utils \
+      postgresql-client python3 python3-venv redis-tools ruby sqlite3 sudo tzdata unzip xz-utils \
       zlib1g-dev zstd \
  && rm -rf /var/lib/apt/lists/*
 
@@ -57,12 +57,25 @@ RUN curl -fsSL --retry 5 "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_
 
 # The check the weekly build runs on itself: every binary a lane calls, and the
 # libraries ruby-vips and the pg gem load, are present.
-RUN for bin in convert ffmpeg ffprobe git node npm npx pg_dump psql rsvg-convert python3 redis-cli ruby; do \
+RUN for bin in convert ffmpeg ffprobe git node npm npx pg_dump psql rsvg-convert python3 redis-cli ruby sqlite3; do \
       command -v "$bin" >/dev/null || { echo "missing: $bin" >&2; exit 1; }; \
     done \
  && for lib in libvips.so.42 libpq.so.5 libjemalloc.so.2; do \
       ldconfig -p | grep -q "$lib" || { echo "missing: $lib" >&2; exit 1; }; \
     done
+
+# The lanes run as `runner`, uid 1001, the hosted runner's own user (the job container
+# is started `--user 1001`): the workspace the runner mounts is owned by 1001, and the
+# suites hold permission-based tests (an unwritable /etc, a process group) to a
+# non-root user, as on the VM. Passwordless sudo, as there. Git trusts every
+# directory system-wide, because the suites run git under their own sandboxed HOME,
+# where actions/checkout's per-user safe.directory does not reach.
+# CI_LANE_IMAGE tells a suite it is inside this container (Chrome needs --no-sandbox
+# here: test/application_system_test_case.rb).
+RUN useradd --uid 1001 --create-home --shell /bin/bash runner \
+ && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner \
+ && git config --system --add safe.directory '*'
+ENV CI_LANE_IMAGE=1
 
 LABEL org.opencontainers.image.source="https://github.com/mcritchie-studio/mcritchie-studio" \
       org.opencontainers.image.description="CI lane image: Ubuntu 24.04 with every lane's apt packages pre-installed"
