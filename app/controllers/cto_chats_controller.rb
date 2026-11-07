@@ -3,7 +3,12 @@
 # Phase 7 step 3 of .agents/epics/domain-agents.md). The views are the shared
 # agent chat (app/views/agent_chats); this controller supplies the CTO and its thread.
 #
-#   show    a newly launched app's FIRST visit by its owner (AppCto
+# The page is the app page's Chat tab (applications/_page_header: Overview |
+# Pipeline | Chat, task app-page-tabs); the launch panel plays inside it too.
+#
+#   show    an app with no CTO yet (AppOwnership.cto_for_app nil): the tab's
+#           "This app has no CTO yet" state, 200 (cto_chats/no_cto). Else a
+#           newly launched app's FIRST visit by its owner (AppCto
 #           launch_animation_pending, task build-sign-in-modal): the launch
 #           animation (build/_launch), which then visits this same page; else
 #           the user's own thread with this app's CTO (newest WebChat::HISTORY
@@ -50,6 +55,8 @@ class CtoChatsController < ApplicationController
   helper_method :composer_locals
 
   def show
+    @admin = AppOwnership.admin?(current_user)
+    return render(:no_cto) unless @cto
     return if play_launch_animation
 
     @available = AgentMessages::WebIngest.available?(@cto)
@@ -57,7 +64,6 @@ class CtoChatsController < ApplicationController
     @meter = AgentUsage.chat_meter(@app, user: current_user, soul: @cto.soul).without_cost
     @stream = AgentMessages::WebChat.stream_name(@app.slug, current_user.id)
     @answered = answered?
-    @admin = AppOwnership.admin?(current_user)
     @board = AppDevopsStages.board_for(@app, admin: @admin)
     @avatar_owner = avatar_owner?
   end
@@ -243,6 +249,8 @@ class CtoChatsController < ApplicationController
     raise ActiveRecord::RecordNotFound, "no such app" unless @app && AppOwnership.manage_app?(current_user, @app.slug)
 
     @cto = AppOwnership.cto_for_app(@app.slug)
-    raise ActiveRecord::RecordNotFound, "no CTO" unless @cto
+    # The page answers an app with no CTO yet with its no-CTO state (#show,
+    # cto_chats/no_cto); every other action needs a CTO to talk to.
+    raise ActiveRecord::RecordNotFound, "no CTO" unless @cto || action_name == "show"
   end
 end

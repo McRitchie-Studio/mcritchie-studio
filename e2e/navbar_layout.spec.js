@@ -282,7 +282,7 @@ test("below 768px at rest, the bar's hidden pair takes no Tab stop, and the row 
 test("a visitor's phone row draws the theme toggle left of the gear", async ({ browser }) => {
   const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE, reducedMotion: "reduce" });
   const page = await context.newPage();
-  await page.goto("/about");
+  await page.goto("/marketing-kit");
   await expectPhoneRowOrder(page);
   await context.close();
 });
@@ -375,7 +375,7 @@ test("a visitor's phone row gear lights on hover too", async ({ browser }) => {
   const context = await browser.newContext({ storageState: VISITOR, viewport: PHONE });
   const page = await context.newPage();
   await page.emulateMedia({ reducedMotion: "no-preference" });
-  await page.goto("/about");
+  await page.goto("/marketing-kit");
   await page.locator(ROW_GEAR).hover();
   await expectGearLit(page, { group: false });
   await context.close();

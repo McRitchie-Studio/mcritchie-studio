@@ -52,6 +52,17 @@
   overscroll-behavior: contain;
 }
 
+/* Under a page header (the app page's Chat tab, task app-page-tabs) the header takes
+   the window's top, so on a short window the column's room could leave the thread a
+   sliver. There the column keeps a floor of 32rem (a compact head, the status card,
+   a few lines of thread and the chat box): on a window shorter than that it
+   runs past the bottom and the page scrolls to its end (agent_shell.js,
+   keepComposerInView), and the thread still scrolls inside it. */
+.agent-shell[data-shell-under-header] {
+  max-height: max(32rem, calc(100vh - var(--agent-shell-top, 9rem)));
+  max-height: max(32rem, calc(100dvh - var(--agent-shell-top, 9rem)));
+}
+
 .agent-shell [data-cto-chat-form],
 .agent-shell [data-build-first-form] {
   flex: none;
