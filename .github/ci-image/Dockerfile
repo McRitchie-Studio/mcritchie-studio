@@ -17,8 +17,13 @@
 #     so a lane installs only the browser itself, from Playwright's CDN, never apt;
 #   - what a hosted runner has and a bare image lacks: git (actions/checkout needs it
 #     for a real .git), build tools for native gems, a UTF-8 locale, sudo, tzdata.
-# Ruby and Node are NOT baked in: ruby/setup-ruby and actions/setup-node install the
-# version each repo pins, as they did on the bare runner.
+# Ruby and Node: ruby/setup-ruby and actions/setup-node still install the version each
+# repo pins. The image also carries what a hosted runner has on PATH before those steps
+# run, because suites and early steps rely on it: Node 22 (the engine's versions.json
+# major; Rails suites shell out to `node` for their JavaScript unit tests) and Ubuntu's
+# system Ruby (stdlib scripts that run before setup-ruby, such as the engine's
+# hub-e2e-subset resolver). Measured 2026-11-06 on the engine's Consumer CI: without them
+# every consumer suite failed `Errno::ENOENT - node` and the browser subset exited 127.
 #
 # THE BASE is the hub's own ghcr.io copy of ubuntu:24.04 (mirror-ci-images.yml's
 # IMAGES), so the build never pulls from Docker Hub's anonymous quota.
@@ -39,21 +44,20 @@ RUN printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https:
  && apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl ffmpeg git gnupg imagemagick jq libffi-dev \
       libjemalloc2 libpq-dev librsvg2-bin libssl-dev libvips libyaml-dev pkg-config \
-      postgresql-client python3 python3-venv redis-tools sudo tzdata unzip xz-utils \
+      postgresql-client python3 python3-venv redis-tools ruby sudo tzdata unzip xz-utils \
       zlib1g-dev zstd \
  && rm -rf /var/lib/apt/lists/*
 
-# Chromium's libraries, from Playwright's own list for this release. A throwaway Node
-# runs the installer and is removed; the lanes bring their own Node.
-RUN curl -fsSL --retry 5 https://nodejs.org/dist/v22.11.0/node-v22.11.0-linux-x64.tar.xz \
-      | tar -xJ -C /tmp \
- && PATH="/tmp/node-v22.11.0-linux-x64/bin:$PATH" \
-      npx -y "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
- && rm -rf /tmp/node-v22.11.0-linux-x64 /root/.npm /var/lib/apt/lists/*
+# Node 22 on PATH, then Chromium's libraries from Playwright's own list for this release.
+ARG NODE_VERSION=22.11.0
+RUN curl -fsSL --retry 5 "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.xz" \
+      | tar -xJ -C /usr/local --strip-components=1 \
+ && npx -y "playwright@${PLAYWRIGHT_VERSION}" install-deps chromium \
+ && rm -rf /root/.npm /var/lib/apt/lists/*
 
 # The check the weekly build runs on itself: every binary a lane calls, and the
 # libraries ruby-vips and the pg gem load, are present.
-RUN for bin in convert ffmpeg ffprobe git pg_dump psql rsvg-convert python3 redis-cli; do \
+RUN for bin in convert ffmpeg ffprobe git node npm npx pg_dump psql rsvg-convert python3 redis-cli ruby; do \
       command -v "$bin" >/dev/null || { echo "missing: $bin" >&2; exit 1; }; \
     done \
  && for lib in libvips.so.42 libpq.so.5 libjemalloc.so.2; do \
