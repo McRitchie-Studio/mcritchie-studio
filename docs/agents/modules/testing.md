@@ -73,7 +73,8 @@ The lanes check out the app's tree, so each script a lane runs is the app's own.
 | `postgres-image` | `ghcr.io/mcritchie-studio/postgres:17` | The app's production major, on the same mirror (`.github/workflows/mirror-ci-images.yml` copies `postgres:17`, `postgres:18` and `redis:8`; the packages are public, so any app's run token pulls them) |
 | `gem-audit-command` | empty | `bin/bundler-audit`, as one more static check |
 | `importmap-audit-command` | `bin/importmap-audit-ci` | `bin/importmap audit` |
-| `system-packages` | the hub's apt list | The app's apt list |
+| `lane-image` | `ghcr.io/mcritchie-studio/ci-rails:24.04` | Rarely changed. The image the `island_animator`, `playwright` and `rails` lanes run inside, every package pre-installed (`.github/ci-image/Dockerfile`, built weekly by `mirror-ci-images.yml`). Those lanes run no apt |
+| `system-packages` | the hub's apt list | The app's apt list. The `system` lane is the one lane still on the bare runner, with a bounded, retried apt step |
 | `system-setup-command` | empty | An asset build before the suite (`bin/rails tailwindcss:build`) |
 | `system-command` | `bin/rails db:test:prepare test:system` | The app's whole suite when it is one command |
 
@@ -968,6 +969,39 @@ UI, ERB, CSS and browser-verification traps live in
 - A Node shim must use `Object.defineProperty(globalThis, "navigator", …)` and check that it took; plain assignment is a no-op where `navigator` is built in.
 - `playwright.config.js` binds `E2E_PORT`, default 3000, and adopts any server already listening there, so pass a free port and restart the server after a view edit. A spec owns its fixtures: mint rows through the board API (`meta[name=e2e-api-token]`) and delete them in a `finally`, because a card added to `e2e/seed.rb` changes the input of specs that measure the board.
 - A red that errors before its assertion, in machinery the diff cannot reach, is environmental; a `result not reported` with no backtrace is a dead worker. Say both halves before re-running. A flake whose failure looks like its subject is urgent: wait on a postcondition, never a sleep.
+
+## A Red Then Green Is A Defect With A Cause
+
+Alex McRitchie, 2026-11-06: "Flaky is a terrible way to describe a system." A test
+that goes red and then green at the same SHA has a cause. Nobody retries it, and
+nobody files it under "flaky". The system holds that line in five places:
+
+- **No retries.** No spec-level retry in any lane (`retries: 0` in the engine's
+  Playwright base). Turf's `retries: 2` goes to 0 once its seed causes are fixed.
+- **No apt on the PR path.** The lanes that need packages run in the lane image (the
+  `lane-image` input above); the apt mirror stall was the top red-then-green cause.
+  The container runs `--init --shm-size=2g --user 1001`, as close to the hosted VM as a
+  container gets: a reaping PID 1, room for Chrome, and the runner's own user. The
+  `system` lane stays on the VM for now: in a container every app's Selenium driver
+  needs Chrome's `--no-sandbox`, and the hub's click-certification tests met a 17px
+  scroll the VM does not show. Guard: `test/lib/ci_lane_image_test.rb`.
+- **A cause card for every flip.** When a run goes green at a SHA where a run of the
+  same workflow (or an earlier attempt of the same run, a re-run) went red,
+  `GithubWorkflowRunIngestJob` enqueues `CiCauseCardJob`. It reads the red jobs' logs
+  and files one `designed` card per cause, slug `ci-cause-<repo>-<key>`, classed
+  `infra`, `harness`, `test` or `product` (`bin/lib/ci_cause_detector.rb`). A later
+  occurrence of the same cause folds into the open card. History:
+  `REPO=<owner/repo> DAYS=14 bin/rails ci:causes:sweep` (`DRY_RUN=1` to list only).
+- **Five runs at the door.** The `playwright` lane runs every spec a PR adds or changes
+  in five fresh passes (`bin/e2e-repeat-changed`), after the whole suite and outside the
+  executed-set receipt. Each pass boots and seeds its own server: under `--repeat-each`
+  in one boot, a spec meets the seed its first repeat consumed (a claimed subdomain, a
+  spent chat budget), a red the lane never meets.
+- **No race spellings.** A fixed sleep (`waitForTimeout`) and a one-time visibility
+  branch (`if (await x.isVisible())`, `isVisible().catch(...)`) are banned in `e2e/`:
+  wait on the state (`expect(locator)`, `expect.poll`, a product marker such as
+  `data-placed`). Files that held them keep a ceiling in `config/e2e_race_patterns.yml`
+  that may only fall. Guard: `test/lib/e2e_race_patterns_test.rb`.
 
 ## Test Suite Catalog
 

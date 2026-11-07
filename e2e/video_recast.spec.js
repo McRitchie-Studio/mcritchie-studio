@@ -64,22 +64,19 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(recast(page, 1).locator("input[type='checkbox']")).toHaveCount(0);
   // Replace with is at the top, above the sightings (folded behind the title, so open them); the bottom
   // block (swap toggle, then naming) is under them.
-  // Opening reflows the card for two frames: cardFitRow shows EVERY clear chip, waits two
-  // frames, measures, then trims to one row, so everything under the sightings jumps up.
-  // Four separate boundingBox round-trips straddled that trim (CI, 2026-10-27: card-bottom
-  // read at 688.86 before it, performer-resolution, which sits INSIDE card-bottom, at 605.86
-  // after). So all four tops are read in one evaluate, from one layout, and retried until
-  // the fit has settled.
+  // Opening reflows the card for two frames (cardFitRow shows every chip, then trims to
+  // one row), and reads that straddled the trim went red in CI. So the spec waits for the
+  // card's data-card-fit="settled" (castCardDisclosure#cardFitRow) and reads all four tops
+  // once, from one layout. No polling retry: a wrong order after "settled" is a defect.
   const tops = (...names) => card(page, 1).evaluate((el, ts) => Object.fromEntries(
     ts.map((t) => [t, el.querySelector(`[data-test='${t}']`).getBoundingClientRect().top])), names);
   await card(page, 1).locator("[data-test='performer-title']").click();
   await expect(card(page, 1).locator("[data-test='card-details']")).toBeVisible();
-  await expect(async () => {
-    const t = await tops("replace-with", "card-details", "card-bottom", "performer-resolution");
-    expect(t["replace-with"]).toBeLessThan(t["card-details"]);
-    expect(t["card-details"]).toBeLessThan(t["card-bottom"]);
-    expect(t["card-bottom"]).toBeLessThan(t["performer-resolution"]);
-  }).toPass();
+  await expect(card(page, 1)).toHaveAttribute("data-card-fit", "settled");
+  const t = await tops("replace-with", "card-details", "card-bottom", "performer-resolution");
+  expect(t["replace-with"]).toBeLessThan(t["card-details"]);
+  expect(t["card-details"]).toBeLessThan(t["card-bottom"]);
+  expect(t["card-bottom"]).toBeLessThan(t["performer-resolution"]);
   await card(page, 1).locator("[data-test='performer-title']").click();
   await expect(card(page, 1).locator("[data-test='card-details']")).toBeHidden();
   await expect(recast(page, 1).locator("[data-test='swap-athlete']")).toBeHidden();
@@ -94,6 +91,10 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await expect(option).toContainText("Test Athlete Alpha");
   await expect(option.locator("[data-test='search-row-badge']")).toHaveText("2 looks");
   await expect(option.locator("[data-test='search-row-look-name']")).toHaveText("Home Blue");
+  // The options' text is in the DOM a tick before the list is shown (the results land,
+  // then `open`), and toContainText does not wait for visibility: a box read then is
+  // null (pass 7 of 20, 2026-11-06). Wait on the list's own word that it is placed.
+  await expect(recast(page, 1).locator("[data-test='recast-results']")).toHaveAttribute("data-placed", "true");
   const list = await recast(page, 1).locator("[data-test='recast-results']").boundingBox();
   const field = await combo.boundingBox();
   expect(list.width).toBeGreaterThan(field.width);
@@ -245,7 +246,9 @@ test("operator picks an athlete from Replace with, keeps the original, swaps bac
   await search(page, 1).fill("test athlete");
   const results = recast(page, 1).locator("[data-test='recast-results']");
   await expect(results.locator("[data-test='recast-option']").first()).toBeVisible();
-  await page.waitForTimeout(300);
+  // swapCard#fitList marks the list placed once it has measured the painted box and
+  // shifted it on screen; the box is read after that, never after a guessed sleep.
+  await expect(results).toHaveAttribute("data-placed", "true");
   const box = await results.boundingBox();
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(390);

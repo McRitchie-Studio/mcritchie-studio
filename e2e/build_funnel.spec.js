@@ -24,7 +24,7 @@
 //
 // NOT @qa-readonly: it writes requests and agent messages. Nothing here talks to Claude.
 const { test, expect } = require("@playwright/test");
-const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
+const { blockThirdPartyRequests, capturedMagicLink, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
 const { CONTRAST, eachTheme, TEXT_ON_SURFACE } = require("./contrast");
 
 // What a visitor sees: signed out, not the suite's default admin session.
@@ -361,12 +361,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
     modal.getByRole("button", { name: "Email me a sign-in link" }).click(),
   ]);
 
-  let link;
-  for (let attempt = 0; attempt < 10 && !link; attempt += 1) {
-    const inbox = await page.request.get("/_studio/local_emails.json").then((r) => r.json());
-    link = inbox.deliveries.find((d) => d.to === email && d.action_url);
-    if (!link) await page.waitForTimeout(200);
-  }
+  const link = await capturedMagicLink(page, email);
   expect(link, "the sign-in email was sent").toBeTruthy();
 
   // The emailed link signs in and lands on the app being built: the draft is
@@ -574,15 +569,21 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
   // have config/satellites.yml rows, so their subdomains are reserved.
   for (const name of ["coin-toss", "chess-club"]) {
     await page.goto("/build");
-    if (await onboarding.isVisible().catch(() => false)) {
-      await onboarding.getByRole("button", { name: "Skip for now" }).click();
-      await expect(onboarding).toBeHidden();
-    }
+    // The first-name ask never opens here: the seed names this admin "Alex Test", and
+    // the ask is only for an account with no first name. Asserted, not branched on: a
+    // one-time `isVisible()` check of a dialog is a snapshot the page never promised
+    // (lint: bin/lib/e2e_race_patterns.rb; task deterministic-ci).
+    await expect(onboarding, "Alex Test has a first name; the ask never opens").toHaveCount(0);
     await page.getByLabel("Tell Alex what you want to build").fill(`Rebuild of my old ${name} app`);
     await page.getByLabel("Tell Alex what you want to build").press("Enter");
     await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
-    // An admin skips the checklist through the name step under the chat.
-    await page.locator("[data-test='build-admin-claim'] summary").click();
+    // An admin skips the checklist through the name step under the chat. The claim is
+    // drawn by the first message's stream for an admin session only, so its absence is
+    // named here rather than read as a 30s click timeout (7 CI reds at the click).
+    const claim = page.locator("[data-test='build-admin-claim']");
+    await expect(claim, "the draft's chat was drawn for an admin session").toHaveCount(1);
+    await claim.locator("summary").click();
+    await expect(claim, "the name step stays open").toHaveAttribute("open", "");
 
     const field = page.locator("[data-test='build-subdomain']");
     const width = await field.evaluate((el) => el.getBoundingClientRect().width);

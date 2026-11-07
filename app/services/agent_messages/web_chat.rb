@@ -66,13 +66,15 @@ module AgentMessages
 
     # `phase`: "thinking" or "typing" (AgentMessage.typing_phase; the job has
     # already allow-listed it, and it is allow-listed again here).
-    def broadcast_typing(message, phase: "typing", now: Time.current)
+    # `at`: when the dispatcher sent the pulse (epoch seconds; the job's queue time).
+    # Jobs do not run in queue order, so the row keeps the phase of the NEWEST pulse.
+    def broadcast_typing(message, phase: "typing", now: Time.current, at: nil)
       phase = AgentMessage.typing_phase(phase)
       # A /build thread's page, and a satellite chat (AgentChat), show typing
       # from the poll instead (deliver! below), so the phase is kept on the row
       # for the poll's next read.
       if polled?(message.thread_key)
-        record_phase(message, phase)
+        record_phase(message, phase, at: at || now.to_f)
         return false
       end
 
@@ -88,12 +90,13 @@ module AgentMessages
 
     # The phase on a still-claimed row's run_meta (build/_turn reads it through
     # AgentMessage#typing_phase), in one statement that matches nothing once the
-    # answer is in: complete! replaces run_meta with the run's own summary, and a
-    # late pulse cannot write into a finished row.
-    def record_phase(message, phase)
+    # answer is in (complete! replaces run_meta, so a late pulse cannot write into a
+    # finished row) and nothing when a NEWER pulse already wrote (typing_phase_at).
+    def record_phase(message, phase, at:)
       AgentMessage.where(id: message.id, status: "claimed")
-                  .where("agent_messages.run_meta->>'typing_phase' IS DISTINCT FROM ?", phase)
-                  .update_all([ "run_meta = jsonb_set(COALESCE(run_meta, '{}'::jsonb), '{typing_phase}', to_jsonb(?::text))", phase ])
+                  .where("COALESCE((agent_messages.run_meta->>'typing_phase_at')::float8, 0) <= ?", at.to_f)
+                  .update_all([ "run_meta = COALESCE(run_meta, '{}'::jsonb) || " \
+                                "jsonb_build_object('typing_phase', ?::text, 'typing_phase_at', ?::float8)", phase, at.to_f ])
     end
 
     # The CTO the indicator's portrait shows (applications/_cto_avatar), or nil.

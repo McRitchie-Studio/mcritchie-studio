@@ -270,7 +270,8 @@ module Api
         message = agent_message!
         post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
 
-        assert_enqueued_with(job: AgentMessageTypingJob, args: [ message.id, "d1", "typing" ]) do
+        # The fourth argument is the pulse's queue time (a late job cannot overwrite a newer phase).
+        assert_enqueued_with(job: AgentMessageTypingJob, args: ->(a) { a.first(3) == [ message.id, "d1", "typing" ] && a[3].is_a?(Float) }) do
           post typing_api_v1_agent_message_url(message), params: { worker: "d1" }, headers: @shared, as: :json
         end
         assert_response :success
@@ -296,7 +297,7 @@ module Api
         post claim_api_v1_agent_messages_url, params: { soul: "avi", worker: "d1" }, headers: @shared, as: :json
 
         { "thinking" => "thinking", "typing" => "typing", "sleeping" => "typing", "" => "typing", "<b>" => "typing" }.each do |sent, queued|
-          assert_enqueued_with(job: AgentMessageTypingJob, args: [ message.id, "d1", queued ]) do
+          assert_enqueued_with(job: AgentMessageTypingJob, args: ->(a) { a.first(3) == [ message.id, "d1", queued ] && a[3].is_a?(Float) }) do
             post typing_api_v1_agent_message_url(message), params: { worker: "d1", phase: sent }, headers: @shared, as: :json
           end
           assert_equal "queued", response.parsed_body.dig("meta", "typing"), sent.inspect
