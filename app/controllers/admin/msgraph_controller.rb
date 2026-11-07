@@ -1,8 +1,7 @@
 module Admin
   # The hub's Microsoft 365 tenant connections (the `admin_grant` method of
   # config/integrations.yml): app-only Microsoft Graph, one row per tenant, read
-  # only. Its first use is the tenant McRitchie Industries takes over at an
-  # acquisition close; it ships dark until the Entra app is registered.
+  # only. It ships dark until the Entra app is registered.
   #
   # /admin/msgraph (show) is the standing page: each connected tenant by its
   # name, and a live read proving it (the first page of users, the Teams, the
