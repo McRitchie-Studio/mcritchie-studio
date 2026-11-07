@@ -1613,7 +1613,7 @@ bin/dispatcher (every channel) ─▶ claim ─▶ typing pulse ─▶ AgentMess
 
 | Piece | Where |
 |-------|-------|
-| The page and the post | `CtoChatsController`, `app/views/cto_chats/show.html.erb`; signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin |
+| The page and the post | `CtoChatsController`, `app/views/cto_chats/show.html.erb`, the app page's Chat tab (`applications/_page_header`); signed-in (`AdminWall::SIGNED_IN`), 404 unless the viewer owns the app or is an admin. An app with no CTO yet answers the page with its no-CTO state (`cto_chats/no_cto`, 200); the post and the other actions stay 404 |
 | The chat itself | the shared agent chat, `app/views/agent_chats/` (`_shell`: the one page structure /build, /build/:token and this page share, portrait, status card, then chat; `_header`: the agent's portrait, centered, and its name; `_devops_card`: this page's status card, its `_devops_stages` frame (the app's Building · Releasing · Deploying pills with a count per lane and the newest five open tasks, from `AppDevopsStages.board_for`; an admin's titles link to the board, an owner's are plain and sanitized) and its `_tokens_bar`; `_chat`: stream, thread, typing slot, composer for any agent and stream; `_attachments_slot`: empty, rendered inside the composer for chat media) and `app/javascript/agent_chat.js` (`cto_chat` stays pinned to it) |
 | Inbound | `AgentMessages::WebIngest` |
 | Outbound, typing, the stream | `AgentMessages::WebChat`; `CtoChatChannel` |

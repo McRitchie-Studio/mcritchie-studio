@@ -417,9 +417,13 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
   expect(again.status()).toBe(303);
   expect(new URL(again.headers().location, page.url()).pathname).toBe(`/applications/${address}/chat`);
   await expect(page.locator("[data-test='agent-shell'][data-shell='app'] [data-test='agent-caption']")).toContainText("Marbles");
+  // The chat is the app page's Chat tab (task app-page-tabs): the shared header, Chat open; the send below runs inside it.
+  await expect(page.locator("[data-test='app-page-header'] a[data-test='app-tab'][data-tab='chat']")).toHaveAttribute("aria-current", "page");
   await expect(page.locator("[data-test='agent-portrait'] [data-test='client-cto-portrait']")).toHaveAttribute("data-animal", tappedAnimal.replace("animal:", ""));
   const head = page.locator("[data-test='cto-chat-head'][data-client-cto='true']");
-  await expect(head.locator("h1")).toBeVisible();
+  // The app's name is the tab header's h1 now; the status card carries no title of its own.
+  await expect(page.locator("[data-test='app-page-header'] h1")).toBeVisible();
+  await expect(head.getByRole("heading")).toHaveCount(0);
   await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toHaveAttribute("data-state", "live");
   // The build task is designed and no launcher is live: the lane reads Prepping as its label, no count, no "no builder" (task cto-chat-quality-pass).
   await expect(head.locator("[data-test='devops-stage'][data-stage='building']")).toHaveAttribute("data-prepping", "true");
@@ -451,7 +455,7 @@ test("a signed-out visitor's first message answers in place, taps alone reach Bu
     // The live stage glows in the app's colours, not the studio's (build_launch.css).
     await expect(head.locator("[data-test='devops-stage'][data-stage='building'] .devops-stage-pill"))
       .toHaveCSS("border-top-color", theme === "dark" ? "rgb(74, 222, 128)" : "rgb(21, 128, 61)");
-    for (const selector of ["[data-test='cto-chat-handover'] p", "[data-test='cto-chat-reply'] p", "[data-test='cto-chat-head'] h1"]) {
+    for (const selector of ["[data-test='cto-chat-handover'] p", "[data-test='cto-chat-reply'] p", "[data-test='cto-chat-head'] [data-test='usage-meter-tokens']"]) {
       const measured = await page.evaluate(CONTRAST, selector);
       expect(measured.length, `${theme}: ${selector} renders`).toBeGreaterThan(0);
       for (const m of measured) expect(m.ratio, `${theme}: ${selector} "${m.text}"`).toBeGreaterThanOrEqual(TEXT_ON_SURFACE);
