@@ -183,11 +183,11 @@ class TasksControllerTest < ActionDispatch::IntegrationTest
     # tracker and no stage-ownership layout (that pairing was the rejected design; the
     # tracker stays in the Next Release card).
     # Each avatar links to the soul's /agents/<slug> page.
-    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] a[data-test='heartbeat-avatar-link'][href='/agents/carl']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex']"
-    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] a[data-test='heartbeat-avatar-link'][href='/agents/turf-monster']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='carl'] a[data-test='heartbeat-avatar-link'][href='/agents/carl'][target='_blank'][rel~='noopener']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='avi'] a[data-test='heartbeat-avatar-link'][href='/agents/avi'][target='_blank'][rel~='noopener']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='steffon'] a[data-test='heartbeat-avatar-link'][href='/agents/steffon'][target='_blank'][rel~='noopener']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='alex'] a[data-test='heartbeat-avatar-link'][href='/agents/alex'][target='_blank'][rel~='noopener']"
+    assert_select "[data-test='heartbeat-launcher'][data-agent='turf-monster'] a[data-test='heartbeat-avatar-link'][href='/agents/turf-monster'][target='_blank'][rel~='noopener']"
     # Each launcher exposes a prompt-like heartbeat row (row 1) plus its atom action rows —
     # Carl owns pr-review + pr-review-slow, Avi owns qa-release, Steffon owns
     # production-deploy + clean-infra, Mason carries full-cycle, Turf Monster watches scores.

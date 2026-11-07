@@ -141,6 +141,13 @@ test("the Workflows sidebar opens on the soul the card has in frame", async ({ p
   const cardLink = summary.locator("[data-test='soul-slide'][data-place='active'] a[data-test='heartbeat-agent-link']");
   await expect(cardLink).toHaveAttribute("href", "/agents/carl");
   await expect(cardLink).toHaveAttribute("target", "_blank");
+  // A click opens the agent page in a NEW tab and leaves the board and sidebar alone.
+  const [tab] = await Promise.all([page.context().waitForEvent("page"), cardLink.click()]);
+  await tab.waitForLoadState("domcontentloaded");
+  expect(new URL(tab.url()).pathname).toBe("/agents/carl");
+  await tab.close();
+  expect(new URL(page.url()).pathname).toBe("/deployments");
+  await expect(page.locator("#deploy-sidebar-agents")).toBeHidden();
 
   await openDeploySidebar(page, "agents");
   const card = page.locator("#deploy-sidebar-agents [data-test='heartbeats-card']");
