@@ -41,6 +41,7 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
     studio/links#consume studio/links#show
     studio/local_emails#index
     studio/local_reviews#show
+    studio/not_found#show
     tasks#local_review
     team_grades#show
     websites#index
@@ -131,7 +132,8 @@ class AdminWallPublicSetTest < ActionDispatch::IntegrationTest
   test "[unit] every public action in either source is a routed action the wall governs" do
     routed = governed_actions.map { |controller, action| "#{controller}##{action}" }
 
-    assert_empty EXPECTED_PUBLIC - routed, "listed public, yet no wall-governed route serves it"
+    assert_empty EXPECTED_PUBLIC - routed - AdminWall::UNROUTED_PUBLIC, "listed public, yet no wall-governed route serves it"
+    assert_equal %w[studio/not_found#show], AdminWall::UNROUTED_PUBLIC, "the exceptions app's page, and nothing else"
   end
 
   test "[unit] every registry page marked admin is behind the wall" do

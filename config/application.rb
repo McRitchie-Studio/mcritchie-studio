@@ -61,6 +61,16 @@ module McritchieStudio
     config.middleware.insert_after ActionDispatch::Static, Rack::Deflater,
                                    if: ->(_env, _status, headers, _body) { !headers["content-type"].to_s.start_with?("application/zip") }
 
+    # THE FRIENDLY NOT-FOUND PAGE (studio-engine docs/NOT_FOUND_PAGE.md, task
+    # friendly-not-found-page). A lost visitor, on an unknown address or a record
+    # that is not there (/applications/<unknown>/chat), gets the hub's name, mark and
+    # a button home inside the hub's layout, with status 404. JSON keeps Rails' 404
+    # JSON. If the page cannot render, public/404.html answers instead. AdminWall
+    # lists "studio/not_found" so a signed-out visitor sees it.
+    # Guarded so it switches on when the release relocks an engine that has it, and
+    # public/404.html answers until then.
+    config.exceptions_app = Studio::ExceptionsApp.new if defined?(Studio::ExceptionsApp)
+
     # Active Record Encryption (Fact#value, TiktokConnection#refresh_token).
     # Production and QA must set all three names. Where each app's set is filed,
     # and what its config holds, is recorded in docs/agents/modules/credentials.md

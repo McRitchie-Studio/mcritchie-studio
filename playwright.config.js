@@ -146,6 +146,10 @@ const config = studioPlaywrightConfig({
       // so e2e/cto_web_chat.spec.js sees typing and the answer stream in live
       // (config/initializers/e2e_web_chat_jobs.rb; the test adapter only records them).
       E2E_WEB_CHAT_JOBS: "1",
+      // A lost visitor sees the page a visitor sees, not the test environment's
+      // debug report: the friendly not-found page (e2e/not_found_page.spec.js;
+      // config/environments/test.rb).
+      ENABLE_ERROR_PAGES: "1",
       // Deterministic CI check counts for the board's CI progress bars (feature:
       // visual-ci-progress-bars), keyed by the SHAs e2e/seed.rb assigns to the demo
       // task branch + the release-branch CI run — so the reader folds real numbers

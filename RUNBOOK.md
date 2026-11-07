@@ -96,7 +96,7 @@ Troubleshooting guide for autonomous agents. Format: problem, diagnosis, fix.
 
 **Missing route**
 - Diagnosis: `ActionController::RoutingError: No route matches`.
-- Fix: `bin/rails routes | grep <path>`. Ensure `Studio.routes(self)` is in `config/routes.rb`. Engine routes are drawn at the point of the `Studio.routes(self)` call -- order matters.
+- Fix: `bin/rails routes | grep <path>`. Ensure `Studio.routes(self)` is in `config/routes.rb`. Engine routes are drawn at the point of the `Studio.routes(self)` call -- order matters. In QA and production a visitor sees the friendly not-found page (status 404), not the error: `config.exceptions_app = Studio::ExceptionsApp.new` in config/application.rb (studio-engine docs/NOT_FOUND_PAGE.md). If that page cannot render, public/404.html answers, and the log says `[studio.not_found] the page fell back to public/404.html`.
 
 **CSRF token mismatch (422 on POST)**
 - Diagnosis: `ActionController::InvalidAuthenticityToken` after form submission. Common with Turbo Drive or stale browser tabs.
