@@ -107,7 +107,7 @@ class AppOwnersFlowTest < ActionDispatch::IntegrationTest
 
     get application_path("turf-monster")
     assert_response :success
-    assert_select "h1", text: "Turf Monster"
+    assert_select "h1", text: /\A\W*Turf Monster\z/
     assert_select "turbo-frame#application-health[src=?]", health_application_path("turf-monster")
     assert_select "[data-test='application-cto-name']", text: "Turf"
     assert_select "a[href=?]", settings_agent_path("turf-monster")

@@ -77,15 +77,24 @@ A CTO's name is its domain's `reply_name` in `config/agent_domains.yml`
 
 ## The pages
 
+The app's own page is one page with three tabs, **Overview | Pipeline | Chat**, under
+one header (`applications/_page_header`, on studio-engine's `studio/_page_header`; task
+`app-page-tabs`, Alex McRitchie 2026-11-07). The header carries the app's badge and
+name, the crumb trail (an admin's from the hub's parent map, an owner's Applications
+alone) and the tabs. Each tab keeps its own URL, below, with no redirect. The Pipeline
+tab is hidden from an owner of an unannounced app (`AppCatalog::UNANNOUNCED`), where
+the pipeline is a 404. An app with no CTO yet answers its Chat tab with "This app has
+no CTO yet." (200), the Overview's words.
+
 | Path | What it shows |
 |------|---------------|
-| `/applications` | The visible apps in two tables (`ApplicationsWatchList`): **Live** on the left (a live `config/apps.yml` status and a production URL; health lazy-loaded per row from the daily report, Workspace mail on the app's own domain, warnings for a delinquent account, a missing backup or a blocked task) and **Pending launch** on the right (every other app but libraries and archived ones, each with why and its open tasks by stage). Each app shows its emoji circle with its CTO's avatar on top (the emoji alone without a CTO), and clicking it opens the app's pipeline, its todos and steps. An owner sees the same split over their own apps, with task counts but no titles. An admin reaches it from the sidebar's Studio section (config/navigation.yml, audience `signed_in`); an owner from their own sidebar links |
-| `/applications/:slug` | Name, emoji and colour, health, the CTO card, and agent usage (the meter, this month's and today's totals); owners listed for admins, and for admins the tier and cap-lift form |
-| `/applications/:slug/pipeline` | The app's tasks by lane, read-only and sanitized for an owner; the building lanes in use. Detail: [`client-pipeline.md`](client-pipeline.md) |
+| `/applications` | The visible apps in two tables (`ApplicationsWatchList`): **Live** on the left (a live `config/apps.yml` status and a production URL; health lazy-loaded per row from the daily report, Workspace mail on the app's own domain, warnings for a delinquent account, a missing backup or a blocked task) and **Pending launch** on the right (every other app but libraries and archived ones, each with why and its open tasks by stage). Each app shows its emoji circle with its CTO's avatar on top (the emoji alone without a CTO), and clicking it opens the app's Overview tab. An owner sees the same split over their own apps, with task counts but no titles. An admin reaches it from the sidebar's Studio section (config/navigation.yml, audience `signed_in`); an owner from their own sidebar links |
+| `/applications/:slug` | The **Overview** tab: health, the CTO card, and agent usage (the meter, this month's and today's totals); owners listed for admins, and for admins the tier and cap-lift form |
+| `/applications/:slug/pipeline` | The **Pipeline** tab: the app's tasks by lane, read-only and sanitized for an owner; the building lanes in use. Detail: [`client-pipeline.md`](client-pipeline.md) |
 | `/applications/:slug/health` | The lazy health frame, cached 15 minutes per app; `?compact=1` is the index's one-badge cell |
 | `/applications/:slug/usage` | The usage meter as JSON |
 | `/applications/:slug/usage_cap` | `PATCH`, admin only (the wall refuses anyone else): the app's package tier and the cap lift |
-| `/applications/:slug/chat` | `GET` and `POST`: the viewer's own live chat with the app's CTO, with typing, the answer streamed in, and the usage meter in tokens. Detail: [`agent-message-loop.md`](agent-message-loop.md#web-chat-the-ctos-answer-on-mcritchie-studio-phase-7-step-3) |
+| `/applications/:slug/chat` | `GET` and `POST`: the **Chat** tab, the viewer's own live chat with the app's CTO (or the no-CTO state), with typing, the answer streamed in, and the usage meter in tokens. Detail: [`agent-message-loop.md`](agent-message-loop.md#web-chat-the-ctos-answer-on-mcritchie-studio-phase-7-step-3) |
 | `/agents/settings` | The visible CTOs and where each one reports. No page links it now; each CTO's own settings page is linked from its app's page |
 | `/agents/:slug/settings` | The CTO's name, avatar and app, its report setting, and the app's usage meter |
 

@@ -1,14 +1,8 @@
-<%# /applications/:slug/pipeline: one app's tasks by lane. Owner or admin only, read-only. Cards come from ClientPipeline, which sanitizes them for an owner. docs/agents/system/client-pipeline.md %>
+<%# /applications/:slug/pipeline: the app page's Pipeline tab (applications/_page_header): one app's tasks by lane. Owner or admin only, read-only. Cards come from ClientPipeline, which sanitizes them for an owner. docs/agents/system/client-pipeline.md %>
 <% lanes_status = @pipeline.lanes_status %>
-<section class="max-w-5xl mx-auto px-4 py-8 sm:py-10 space-y-6" data-test="pipeline-page" data-app="<%= @app.slug %>" data-admin="<%= @admin %>">
-  <div class="flex items-center gap-4 min-w-0">
-    <%= render "applications/app_badge", app: @app, size: "lg" %>
-    <div class="min-w-0">
-      <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words"><%= @app.name %> pipeline</h1>
-      <p class="text-secondary mt-1 text-sm">Your app's work, from the queue to shipped. Read-only.</p>
-    </div>
-  </div>
-  <%= link_to "← #{@app.name}", application_path(@app.slug), class: "text-sm underline text-secondary hover:text-heading inline-block", data: { test: "pipeline-back" } %>
+<%= render "applications/page_header", app: @app, admin: @admin, current: :pipeline %>
+<section class="max-w-5xl mx-auto px-4 pt-4 pb-10 space-y-6" data-test="pipeline-page" data-app="<%= @app.slug %>" data-admin="<%= @admin %>">
+  <p class="text-secondary text-sm">Your app's work, from the queue to shipped. Read-only.</p>
 
   <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="card p-4 space-y-2 text-sm" data-test="pipeline-lanes" data-in-use="<%= lanes_status.in_use %>" data-cap="<%= lanes_status.cap %>">

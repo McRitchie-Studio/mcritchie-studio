@@ -47,8 +47,8 @@ class ApplicationsIndexTest < ActionDispatch::IntegrationTest
       assert_select "[data-test='app-badge']", 1
       assert_select "[data-test='app-avatar-agent']", 0
     end
-    assert_select "[data-app='turf-monster'] a[data-test='application-link'][href=?]", pipeline_application_path("turf-monster")
-    assert_select "[data-app='pawsome'] a[data-test='application-link'][href=?]", pipeline_application_path("pawsome")
+    assert_select "[data-app='turf-monster'] a[data-test='application-link'][href=?]", application_path("turf-monster")
+    assert_select "[data-app='pawsome'] a[data-test='application-link'][href=?]", application_path("pawsome")
     assert_select "[data-app='pawsome'] a[data-test='application-next-task'][href=?]", task_path(Task.find_by!(title: "Pawsome signup").slug)
   end
 

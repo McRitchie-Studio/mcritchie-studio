@@ -1,4 +1,4 @@
-<%# locals: (page:, head:, status:, chat:, turns: 0) %>
+<%# locals: (page:, head:, status:, chat:, turns: 0, under_header: false) %>
 <%#
   ONE structure for every page where a visitor talks to an agent
   (.agents/epics/build-with-ray-v2.md, section 6): /build, /build/:token and
@@ -29,7 +29,8 @@
   app/assets/tailwind/agent_shell.css draws each step, animated unless the visitor
   prefers reduced motion.
 %>
-<section class="agent-shell max-w-3xl mx-auto px-4 pt-4 sm:pt-8 flex flex-col gap-6" data-test="agent-shell" data-shell="<%= page %>"
+<%# under_header: the shell sits under a page header (the app page's Chat tab, applications/_page_header), which already spaces it from the navbar, so it starts close under it and keeps the room for the thread; there the thread keeps a floor of its own (agent_shell.css), so a short window scrolls the page rather than shut the thread. %>
+<section class="agent-shell max-w-3xl mx-auto px-4 <%= under_header ? "pt-1" : "pt-4 sm:pt-8" %> flex flex-col gap-6" data-test="agent-shell" data-shell="<%= page %>"<%= " data-shell-under-header".html_safe if under_header %>
          data-agent-shell data-shell-size="<%= agent_shell_size(turns) %>"
          data-shell-medium-share="<%= AgentShellHelper::MEDIUM_SHARE %>" data-shell-compact-share="<%= AgentShellHelper::COMPACT_SHARE %>">
   <div class="agent-shell-head" data-test="agent-shell-head"><%= head %></div>
