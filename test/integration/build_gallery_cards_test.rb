@@ -24,7 +24,7 @@ class BuildGalleryCardsTest < ActionDispatch::IntegrationTest
     end
 
     hosts = css_select("[data-test='build-example']").map { |a| URI.parse(a["href"]).host }
-    assert_equal %w[cyvasse.xyz turfmonster.media], hosts.first(2), "the two lead the row"
+    assert_equal %w[turfmonster.media commercialwelding.llc cyvasse.xyz], hosts.first(3), "Alex McRitchie's order leads the row (2026-11-07)"
     refute_includes hosts, "cyvasse.mcritchie.studio", "the redirecting host is gone"
   end
 end
