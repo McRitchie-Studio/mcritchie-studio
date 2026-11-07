@@ -59,9 +59,11 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       # The fixed-path tooling the docs name carries bin/sop, and it resolves a name.
       sop = File.join(projects, ".agents", "bin", "sop")
       assert File.executable?(sop), "the installed fixed-path tooling has no executable bin/sop"
-      found, sop_err, sop_status = Open3.capture3(env, sop, "--root", Rails.root.to_s, "clean-up", chdir: sandbox)
+      # No --root: the tooling tree carries docs/agents/dreams, so it must read the hub beside it.
+      File.symlink(Rails.root.to_s, File.join(projects, "mcritchie-studio"))
+      found, sop_err, sop_status = Open3.capture3(env, sop, "clean-up", chdir: sandbox)
       assert sop_status.success?, "the installed bin/sop failed:\n#{sop_err}"
-      assert_equal Rails.root.join("docs/agents/agents/mason/sops/clean-up.md").to_s, found.strip
+      assert_equal Rails.root.join("docs/agents/agents/mason/sops/clean-up.md").realpath.to_s, File.realpath(found.strip)
 
       # ATTRIBUTABLE sandbox proof (replaces the differential digest of the runtime-
       # written skills dirs). Ask the installer, in dry-run manifest mode under the SAME

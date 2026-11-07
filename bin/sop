@@ -12,9 +12,9 @@
 # bin/lib/sop_registry.rb walks the SOP files on disk. An unknown name exits 1 and
 # names the closest registered names.
 #
-# The docs tree is this script's own repo when it carries docs/agents (a desk or the
-# hub primary), else the hub primary beside the projects root (the fixed-path tooling
-# install carries bin/ but no docs). --root overrides both, for tests.
+# The docs tree is this script's own repo when it carries docs/agents/agents (a desk or
+# the hub primary), else the hub primary beside the projects root (the fixed-path tooling
+# install carries bin/ and docs/agents/dreams, but no SOP files). --root overrides both, for tests.
 
 require "optparse"
 require_relative "lib/sop_registry"
@@ -36,9 +36,9 @@ end
 parser.parse!(ARGV)
 
 own = ProjectsRoot::REPO_ROOT
-root ||= File.directory?(File.join(own, "docs/agents")) ? own : ProjectsRoot.hub_checkout
+root ||= File.directory?(File.join(own, "docs/agents/agents")) ? own : ProjectsRoot.hub_checkout
 root = File.expand_path(root)
-abort "bin/sop: no SOP docs under #{root}/docs/agents" unless File.directory?(File.join(root, "docs/agents"))
+abort "bin/sop: no SOP docs under #{root}/docs/agents/agents" unless File.directory?(File.join(root, "docs/agents/agents"))
 
 entries = SopRegistry.entries(root)
 
