@@ -154,7 +154,7 @@ style, script or Leaflet of its own.
   page that already shows the inline frame (`/`, `/schedule`) the click scrolls
   to that frame instead. The href stays `/schedule`, the fallback. Call sites:
   the footer's Contact column (marked `{ booking: true }` in the facts),
-  `landing/about`, and `PackagesHelper#package_cta_link`.
+  `integrations/index`, and `PackagesHelper#package_cta_link`.
 - **The map** is Leaflet 1.9.4 on OpenStreetMap's keyless tiles, served by the
   engine through the asset pipeline (`/assets/studio/leaflet-*.js` and `.css`).
   It is fetched only once the map is within 400px of the viewport, after
