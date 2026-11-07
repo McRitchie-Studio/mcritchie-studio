@@ -6,14 +6,7 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # test that runs after it in the same browser, in whatever order the seed picks.
   SCREEN_SIZE = [ 1400, 1400 ].freeze
 
-  # CI runs this lane inside the lane image (reusable-ci.yml `system`, CI_LANE_IMAGE set),
-  # where Chrome's sandbox cannot start (a container has no user namespaces to give it).
-  CONTAINER_CHROME_FLAGS = %w[--no-sandbox --disable-dev-shm-usage].freeze
-  def self.in_container? = ENV["CI_LANE_IMAGE"] == "1" || Process.uid.zero?
-
-  driven_by :selenium, using: :headless_chrome, screen_size: SCREEN_SIZE do |options|
-    CONTAINER_CHROME_FLAGS.each { |flag| options.add_argument(flag) } if in_container?
-  end
+  driven_by :selenium, using: :headless_chrome, screen_size: SCREEN_SIZE
 
   # The board sits behind the admin wall (AdminWall), so every system test starts as the
   # seeded admin, signed in through the same magic-link door a person uses: the confirm
@@ -49,7 +42,6 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     booted = clock.call
     options = Selenium::WebDriver::Chrome::Options.new
     options.add_argument("--headless")
-    CONTAINER_CHROME_FLAGS.each { |flag| options.add_argument(flag) } if in_container?
     http = Selenium::WebDriver::Remote::Http::Default.new(read_timeout: COLD_START_READ_TIMEOUT)
     driver = Selenium::WebDriver.for(:chrome, options: options, http_client: http)
     launched = clock.call

@@ -16,7 +16,10 @@ class CiLaneImageTest < Minitest::Test
   MIRROR = File.join(ROOT, ".github/workflows/mirror-ci-images.yml")
   DOCKERFILE = File.join(ROOT, ".github/ci-image/Dockerfile")
   LANE_IMAGE_EXPR = "${{ inputs.lane-image }}"
-  IMAGE_LANES = %w[island_animator playwright rails system].freeze
+  IMAGE_LANES = %w[island_animator playwright rails].freeze
+  # The one job still on the bare runner, and why: reusable-ci.yml's comment on it.
+  # Its apt step stays bounded and retried (test/lib/ci_apt_step_timeout_test.rb).
+  APT_EXCEPTIONS = { "reusable-ci.yml" => %w[system] }.freeze
 
   # What the lanes installed with apt before they moved into the image. Each must be
   # in the image, or the lane that needed it now fails at a missing binary.
@@ -45,7 +48,7 @@ class CiLaneImageTest < Minitest::Test
   def test_no_workflow_step_fetches_from_apt
     refute_empty WORKFLOWS
     offenders = WORKFLOWS.flat_map do |path|
-      jobs(path).flat_map do |name, job|
+      jobs(path).reject { |name, _| APT_EXCEPTIONS.fetch(File.basename(path), []).include?(name) }.flat_map do |name, job|
         Array(job["steps"]).select { |step| self.class.apt_fetch?(step["run"]) }
                            .map { |step| "#{File.basename(path)} #{name}: #{step['name'] || step['run'].to_s[0, 60]}" }
       end
@@ -56,6 +59,8 @@ class CiLaneImageTest < Minitest::Test
   def test_setup_chrome_installs_no_apt_dependencies
     WORKFLOWS.each do |path|
       jobs(path).each do |name, job|
+        next if APT_EXCEPTIONS.fetch(File.basename(path), []).include?(name)
+
         Array(job["steps"]).select { |s| s["uses"].to_s.start_with?("browser-actions/setup-chrome") }.each do |step|
           assert_equal false, step.dig("with", "install-dependencies"), "#{name}: setup-chrome's install-dependencies runs apt"
         end
@@ -96,9 +101,11 @@ class CiLaneImageTest < Minitest::Test
   # Inside a container job the Postgres service is reached by its label, and
   # `${{ github.workspace }}` names the HOST path, which the container cannot see.
   def test_container_lanes_reach_postgres_by_label_and_use_workspace_relative_paths
-    text = File.read(REUSABLE)
-    refute_match %r{postgres@localhost}, text
-    refute_includes text, "${{ github.workspace }}"
+    IMAGE_LANES.each do |lane|
+      text = jobs(REUSABLE).fetch(lane).to_yaml
+      refute_match %r{postgres@localhost}, text, lane
+      refute_includes text, "${{ github.workspace }}", lane
+    end
   end
 
   def test_the_classifier_sees_each_apt_spelling

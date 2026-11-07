@@ -71,7 +71,7 @@ on:
         default: bin/importmap-audit-ci
       # ---- the system lane ----
       system-packages:
-        description: The packages the system lane needs; the lane checks the lane image carries each one (it installs nothing).
+        description: The apt packages the system lane installs (the one lane still on the bare runner).
         type: string
         default: curl libvips postgresql-client imagemagick librsvg2-bin
       system-setup-command:
@@ -739,20 +739,11 @@ jobs:
     if: ${{ inputs.system }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
-    # package step was the top red-then-green cause (refactor-review-2026-11-06,
-    # lane-health 2f); the image carries every package, so the job runs no apt at all.
-    # Guard: test/lib/ci_lane_image_test.rb.
-    container:
-      image: ${{ inputs.lane-image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ github.token }}
-      # --init: a real PID 1 (tini) reaps killed children, as a VM does; without it a
-      # killed process stays a zombie and the process-group tests read it as alive.
-      # --shm-size: Chrome crashes in a container's default 64 MB /dev/shm.
-      # --user 1001: the hosted runner's own user, who owns the mounted workspace.
-      options: --init --shm-size=2g --user 1001
+    # THE ONE LANE STILL ON THE BARE RUNNER, and so the one apt step left (task
+    # deterministic-ci). In the lane image every app's Selenium system tests need Chrome's
+    # --no-sandbox, and the hub's click-certification tests measured a 17px scroll the VM
+    # does not show; moving it waits on that cause and on each satellite's system-test
+    # driver. Named in test/lib/ci_lane_image_test.rb's APT_EXCEPTIONS.
 
     services:
       postgres:
@@ -778,6 +769,9 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
+      # CHECKOUT FIRST — .github/scripts/apt-retry is a file in THIS repo, so the apt
+      # step below cannot run before the tree exists. Ordering, not preference.
+      #
       # `fetch-depth: 0` here is INHERITED, not required, and saying so beats leaving the
       # next reader to guess. The `rails` shards need full history because
       # test/lib/e2e_quarantine_ratchet_test.rb reads its baseline from `origin/release`
@@ -793,15 +787,47 @@ jobs:
         with:
           fetch-depth: 0
 
-      # The lane installs nothing: it checks that the lane image carries every package
-      # this caller names, offline, and names any that are missing. `libjemalloc2` is
-      # deliberately absent from the default: it is a production memory allocator, and
-      # nothing on the test path loads it. `postgresql-client` and `libvips` stay —
-      # test/commands/agent_worktree_test.rb shells `psql`, and libvips is required by
-      # Active Storage's boot. `imagemagick` and `librsvg2-bin` are for
-      # test/lib/workspace_icon_render_test.rb (ImageMagick 6 reads SVG through rsvg-convert).
-      - name: Check the lane image carries the system packages
-        run: dpkg-query -W ${{ inputs.system-packages }}
+      # The .debs come from cache first; .github/scripts/apt-retry points apt at
+      # ~/apt-archives, so a warm run fetches only the package index from a mirror
+      # that stalls (2026-10-26). Keyed on the runner image + this package list; a
+      # new image week restores the last entry and fetches only what changed.
+      - name: Read runner image
+        id: runner-image
+        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
+
+      - name: Restore apt package cache
+        uses: actions/cache@v4
+        with:
+          path: ~/apt-archives
+          key: apt-${{ steps.runner-image.outputs.id }}-${{ inputs.system-packages }}
+          restore-keys: |
+            apt-${{ steps.runner-image.outputs.id }}-
+            apt-ubuntu24-
+
+      - name: Install packages
+        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
+        # incident, the measured budgets, and why the loop lives in a script rather
+        # than inline here (short version: the step stays one literal, readable
+        # invocation, and the budgets live in one tested place).
+        #
+        # This bound is the backstop, not the mechanism: the script's own escalating
+        # budgets total ~22 minutes, and 25 sits above that and well below the
+        # 45-minute job bound, so a step that blows through its retries still fails
+        # long before it can take the whole job down with it.
+        #
+        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
+        # carry it: it is a production memory allocator, and nothing on the test path
+        # loads it. `curl`,
+        # `postgresql-client` and `libvips` all stay — measured, not assumed:
+        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
+        # and bin/agent-worktree shells `psql` to do it, and libvips is required
+        # outright by image_processing + Active Storage's boot-time
+        # Vips.block_untrusted call. `imagemagick` and `librsvg2-bin` are for
+        # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
+        # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
+        # ImageMagick 6 reads SVG only through rsvg-convert.
+        timeout-minutes: 25
+        run: .github/scripts/apt-retry ${{ inputs.system-packages }}
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
@@ -827,13 +853,12 @@ jobs:
         with:
           chrome-version: stable
           install-chromedriver: false
-          # Chrome's libraries are in the lane image; `true` would run apt.
-          install-dependencies: false
+          install-dependencies: true
 
       - name: Evict any chromedriver on PATH so Selenium Manager fetches a matched one
         run: |
-          for bin in $(which -a chromedriver 2>/dev/null); do rm -f "$bin"; done
-          rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
+          for bin in $(which -a chromedriver 2>/dev/null); do sudo rm -f "$bin"; done
+          sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
       - name: Await RubyGems propagation for locked gems
@@ -860,13 +885,13 @@ jobs:
         if: ${{ inputs.system-setup-command != '' }}
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@postgres:5432
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
         run: ${{ inputs.system-setup-command }}
 
       - name: Run system tests
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@postgres:5432
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432
         run: ${{ inputs.system-command }}
 
       - name: Keep screenshots from failed system tests
@@ -874,5 +899,5 @@ jobs:
         if: failure()
         with:
           name: screenshots
-          path: tmp/screenshots
+          path: ${{ github.workspace }}/tmp/screenshots
           if-no-files-found: ignore
