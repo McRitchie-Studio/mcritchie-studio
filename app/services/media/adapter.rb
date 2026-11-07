@@ -35,7 +35,7 @@ module Media
     def deliver_reply(_message) = raise(NotImplementedError, "#{self.class.name}#deliver_reply")
 
     # One typing pulse. A medium without :typing does nothing.
-    def typing(_message, phase:) = nil
+    def typing(_message, phase:, at: nil) = nil
 
     def message_url(_message, _message_id = nil) = nil
 

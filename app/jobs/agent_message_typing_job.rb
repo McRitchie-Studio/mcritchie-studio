@@ -35,12 +35,15 @@ class AgentMessageTypingJob < ApplicationJob
   # `phase`: the web chat's "thinking" or "typing" (AgentMessage.typing_phase
   # allow-lists it again here; a job queued before phases has none: typing).
   # A Discord pulse looks the same whatever it says.
-  def perform(message_id, worker, phase = nil)
+  # `pulsed_at`: when the endpoint queued the pulse, so a pulse that runs late cannot
+  # overwrite a newer one (AgentMessages::WebChat#record_phase). nil on a job queued
+  # before the argument existed, which then counts as now.
+  def perform(message_id, worker, phase = nil, pulsed_at = nil)
     message = AgentMessage.find_by(id: message_id)
     return if message.nil? || message.typing_refusal(worker: worker)
     return unless Media.supports?(message.channel, :typing) # unregistered, Email, Slack or Teams (no typing yet)
 
-    Media.adapter(message.channel).typing(message, phase: AgentMessage.typing_phase(phase))
+    Media.adapter(message.channel).typing(message, phase: AgentMessage.typing_phase(phase), at: pulsed_at)
   rescue Media::Error => e
     # The class only: DiscordBot already keeps the token out of its errors, and
     # a dropped pulse needs no more than this.
