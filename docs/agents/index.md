@@ -40,8 +40,8 @@ When Alex McRitchie names one (`pr-review`, `qa-release`, `production-deploy`, `
 and read the HEARTBEAT.md or SOP file it prints. Do this before queue inspection,
 `--help` probing, GitHub PR discovery, or tool/plugin selection. Then execute it.
 `bin/sop <name> --cat` prints the file itself; an unknown name exits non-zero and
-names the closest registered names. Each SOP stands alone; a design doc is
-background, never an execution path.
+names the closest registered names. The hub's `bin/sop` is the fallback. Each SOP
+stands alone; a design doc is background, never an execution path.
 
 ## The pipeline
 
