@@ -8,7 +8,9 @@ Rails.application.routes.draw do
   root "landing#index"
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
-  get "about",   to: "landing#about",   as: :about
+  # Alex McRitchie's about page moved to alex.build on 2026-11-06 (task
+  # hub-drops-about-section); the old address sends visitors there for good.
+  get "about", to: redirect("https://alex.build/about", status: 301), as: nil
   get "marketing-kit", to: "marketing_kit#index", as: :marketing_kit
   get "websites", to: "websites#index", as: :websites
   get "packages", to: "packages#index", as: :packages

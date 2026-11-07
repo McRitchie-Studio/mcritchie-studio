@@ -58,7 +58,6 @@ apps:
       - { path: /, landing: true }
       - { path: /build }
       - { path: /packages }
-      - { path: /about }
       - { path: /nfl }
       - { path: /signin, sign_in: true }
   turf-monster:

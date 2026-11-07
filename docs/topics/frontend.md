@@ -116,10 +116,10 @@ defaults.
 
 ## About page
 
-`/about` (`landing#about`) is the studio's company page: what it does, how a
-launch works, who runs it, and the ways to get in touch. Public, static, and
-linked from the footer's Company column. Its copy restates the home page and
-`/packages`; keep the three in step when one changes.
+The hub has no about page of its own. Alex McRitchie's about page lives on
+alex.build: `/about` is a 301 to `https://alex.build/about`, and the footer's
+Company column links there directly. The home page's old `#about` section went
+with it (task hub-drops-about-section, 2026-11-06).
 
 ## Site footer and booking (public pages)
 
