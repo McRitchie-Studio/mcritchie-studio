@@ -485,8 +485,10 @@ Gems and apps are handled differently at both ends of the Deploy workflow:
   touching a registered `version_file` (`lib/studio/version.rb` for
   studio-engine, `lib/solana_studio/version.rb` for solana-studio) at the merge
   gate; the `build`
-  gate is exempt, and `CHANGELOG.md` is deliberately **not** refused — a PR still
-  writes its entries under `## Unreleased`; only the *heading* is release-owned.
+  gate is exempt, and `CHANGELOG.md` is deliberately **not** refused. A studio-engine
+  PR adds a `changelog.d/` fragment that prepare compiles into `## Unreleased`
+  before the roll; a gem without `changelog.d/` writes under `## Unreleased`. Only
+  the *heading* is release-owned.
   The bump is
   derived from the candidate's membership — `breaking` risk tag → major, else a
   `feature` member → minor, else patch — by `Release::GemVersion`

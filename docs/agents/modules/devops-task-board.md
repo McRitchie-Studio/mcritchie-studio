@@ -1223,8 +1223,11 @@ gem's `accepted` that the batch promote carries to `release`. Nothing assembles 
 release's members, so refusing changelog edits would leave the file un-editable with
 no writer and no manual path.
 
-**But the HEADING is release-owned, as of 2026-09-09.** Write your entries under
-`## Unreleased` and **never write a version heading yourself**. What prepare does
+**But the HEADING is release-owned, as of 2026-09-09.** In studio-engine, add a
+`changelog.d/<slug>.<kind>.md` fragment instead of editing the file (its
+`changelog.d/README.md`); prepare compiles the fragments into `## Unreleased` in the
+version commit, before the roll. In a gem without `changelog.d/`, write your entries under
+`## Unreleased`. **Never write a version heading yourself**. What prepare does
 with the bucket depends on the gem's allocation outcome, in the shared **ALLOCATE /
 SKIP / REFUSE** terms (`qa-release.md` step 4d):
 
