@@ -73,9 +73,11 @@ class CiAptStepTimeoutTest < Minitest::Test
     steps = apt_steps
 
     # Vacuity guard: green must mean "every fetch checked", never "no fetches found".
-    assert_operator steps.length, :>=, 3,
-                    "expected at least the three known apt steps (test, playwright, island_animator); " \
-                    "found #{steps.length}. If a fetch moved, follow it here — do not delete the guard."
+    # Since task deterministic-ci only the `system` lane fetches from apt; the rest run in
+    # the lane image (test/lib/ci_lane_image_test.rb).
+    assert_operator steps.length, :>=, 1,
+                    "expected the system lane's apt step; found #{steps.length}. " \
+                    "If a fetch moved, follow it here — do not delete the guard."
 
     unbounded = steps.reject { |s| s[:step]["timeout-minutes"] }
                      .map { |s| "#{s[:file]} :: #{s[:job]} :: #{s[:step]['name']}" }
@@ -116,9 +118,7 @@ class CiAptStepTimeoutTest < Minitest::Test
 
   def test_every_with_deps_fetch_is_hardened_first
     with_deps = apt_steps.select { |s| self.class.with_deps?(s[:step]) }
-    assert_operator with_deps.length, :>=, 2,
-                    "expected the playwright lanes' `--with-deps` installs (reusable-ci, ui-budget); " \
-                    "found #{with_deps.length}. If one moved, follow it here."
+    # None left: the Playwright lanes install the browser only, in the lane image.
 
     unhardened = with_deps.reject { |s| s[:before].any? { |b| self.class.conf_hardening?(b["run"]) } }
                           .map { |s| "#{s[:file]} :: #{s[:job]} :: #{s[:step]['name']}" }

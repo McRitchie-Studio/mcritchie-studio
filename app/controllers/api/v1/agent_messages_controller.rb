@@ -124,7 +124,7 @@ module Api
 
         if refusal.nil?
           AgentMessageTypingJob.perform_later(@message.id, params[:worker].to_s.strip,
-                                              AgentMessage.typing_phase(params[:phase]))
+                                              AgentMessage.typing_phase(params[:phase]), Time.current.to_f)
         end
         render_data({ "id" => @message.id }, meta: { typing: refusal || "queued" })
       end

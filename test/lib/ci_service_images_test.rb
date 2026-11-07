@@ -52,7 +52,7 @@ class CiServiceImagesTest < Minitest::Test
 
       why = if !image.start_with?(MIRROR) then "is an anonymous pull (bare, docker.io or another registry's name)"
             elsif image.end_with?(":latest") then "pins latest, not a major"
-            elsif !image.match?(/:\d+\z/) then "carries no major tag"
+            elsif !image.match?(/:\d+(?:\.\d+)?\z/) then "carries no major tag" # ubuntu:24.04 is a release, the major's equivalent
             end
       "#{where}: #{image.inspect} #{why}" if why
     end
@@ -106,7 +106,7 @@ class CiServiceImagesTest < Minitest::Test
     CONSUMER_ROWS.each do |row|
       assert_includes mirrored, row, "mirror-ci-images.yml no longer copies #{row}, which a consumer CI pulls"
     end
-    assert mirrored.all? { |row| row.match?(/\A[a-z0-9-]+:\d+\z/) }, "every mirror row is `<name>:<major>`: #{mirrored.inspect}"
+    assert mirrored.all? { |row| row.match?(/\A[a-z0-9-]+:\d+(?:\.\d+)?\z/) }, "every mirror row is `<name>:<major>` (or an Ubuntu release): #{mirrored.inspect}"
   end
 
   def test_no_image_anywhere_in_the_workflow_is_an_anonymous_pull

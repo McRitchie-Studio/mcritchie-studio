@@ -1,3 +1,19 @@
+// The newest captured sign-in email to `email`, polled until it lands (the mailer may
+// deliver after the POST answers). Polling the inbox, never a fixed sleep: the wait
+// ends the moment the email is there (lint: bin/lib/e2e_race_patterns.rb).
+async function capturedMagicLink(page, email, { timeout = 10_000 } = {}) {
+  const { expect } = require("@playwright/test");
+  let link;
+  await expect
+    .poll(async () => {
+      const inbox = await page.request.get("/_studio/local_emails.json").then((r) => r.json());
+      link = inbox.deliveries.find((item) => item.to === email && item.action_url);
+      return Boolean(link);
+    }, { message: `a magic link captured for ${email}`, timeout })
+    .toBe(true);
+  return link;
+}
+
 async function loginWithMagicLink(page, email) {
   // The sign-in path ends on `/`, whose landing template loads a third-party
   // widget script. `page.goto` below waits until "load", so that script — not
@@ -14,17 +30,7 @@ async function loginWithMagicLink(page, email) {
     page.click('form:has(input[name="email"]) button[type="submit"]'),
   ]);
 
-  let magicLink;
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const inbox = await page.request.get("/_studio/local_emails.json").then((r) => r.json());
-    magicLink = inbox.deliveries.find((item) => item.to === email && item.action_url);
-    if (magicLink) break;
-    await page.waitForTimeout(200);
-  }
-
-  if (!magicLink) {
-    throw new Error(`No magic link captured for ${email}`);
-  }
+  const magicLink = await capturedMagicLink(page, email);
 
   const url = new URL(magicLink.action_url, page.url()).pathname;
   await page.goto(url);
@@ -470,5 +476,5 @@ async function studioControllerConnected(page, selector, identifier) {
 }
 
 module.exports = {
-  loginWithMagicLink, watchPageErrors, openDeploySidebar, blockThirdPartyRequests, studioControllerConnected, VISITOR,
+  loginWithMagicLink, capturedMagicLink, watchPageErrors, openDeploySidebar, blockThirdPartyRequests, studioControllerConnected, VISITOR,
 };

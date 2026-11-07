@@ -55,7 +55,7 @@ module Media
     # One pulse: POST /channels/{id}/typing as the bot the reply will use. A
     # soul bot already refused (for typing or the reply) is skipped. A pulse
     # looks the same whatever its phase says.
-    def typing(message, phase: nil)
+    def typing(message, phase: nil, at: nil)
       skip_soul = message.events.exists?(kind: [ TYPING_REFUSED_EVENT, REPLY_REFUSED_EVENT ])
       AgentMessages::BotSelector.post(message.soul_slug, skip_soul: skip_soul,
                                                          on_refused: ->(_error, env) { typing_refused!(message, env) }) do |bot, _via|

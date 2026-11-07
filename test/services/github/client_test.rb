@@ -208,4 +208,30 @@ class Github::ClientTest < ActiveSupport::TestCase
     error = assert_raises(Github::Client::RateLimitError) { client.get("/test") }
     assert_includes error.message, "secondary rate limit"
   end
+
+  test "get_text follows a log read's redirect to the signed blob without our token" do
+    requests = []
+    client = Github::Client.new(
+      token: "secret-token", logger: nil,
+      executor: ->(uri, request) {
+        requests << [uri.to_s, request["Authorization"]]
+        if uri.host == "api.github.com"
+          FakeResponse.new("302", "", { "location" => "https://blob.example.test/log?sig=1" })
+        else
+          FakeResponse.new("200", "line one\nline two\n", {})
+        end
+      }
+    )
+
+    assert_equal "line one\nline two\n", client.get_text("/repos/o/r/actions/jobs/9/logs")
+    assert_equal [["https://api.github.com/repos/o/r/actions/jobs/9/logs", "Bearer secret-token"],
+                  ["https://blob.example.test/log?sig=1", nil]], requests
+  end
+
+  test "get_text raises on a refusal" do
+    client = Github::Client.new(logger: nil, executor: ->(_uri, _request) { FakeResponse.new("410", "gone", {}) })
+
+    assert_raises(Github::Client::HttpError) { client.get_text("/repos/o/r/actions/jobs/9/logs") }
+  end
+
 end

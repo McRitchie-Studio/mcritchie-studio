@@ -31,12 +31,18 @@ class ContactFlaggedDigestJobTest < ActiveJob::TestCase
     end
   end
 
+  # The row sits one second before the window, wherever the clock is. It was
+  # `2.days.ago`, which the window (24 to 48 hours, 49 across the fall-back day) let in
+  # between 13:00 and 14:00 UTC on the day DST ends: five reds on 2026-11-01, each
+  # green on re-run (task deterministic-ci). Pinned to that hour, so the test proves it.
   test "[integration] a flag older than the window does not send" do
-    old = submission(spam_reason: "too_fast")
-    ContactSubmission.where(id: old.id).update_all(created_at: 2.days.ago)
+    travel_to Time.utc(2026, 11, 1, 13, 30) do
+      old = submission(spam_reason: "too_fast")
+      ContactSubmission.where(id: old.id).update_all(created_at: ContactFlaggedDigestJob.window_start - 1.second)
 
-    assert_no_emails do
-      perform_enqueued_jobs { ContactFlaggedDigestJob.perform_now }
+      assert_no_emails do
+        perform_enqueued_jobs { ContactFlaggedDigestJob.perform_now }
+      end
     end
   end
 
