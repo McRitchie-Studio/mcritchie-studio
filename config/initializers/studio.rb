@@ -246,7 +246,9 @@ Studio.configure do |config|
                          [ "Contact", view.chat_index_path ] ] ],
         [ "Solutions", [ [ "Packages", view.packages_path ], [ "Integrations", view.integrations_path ], [ "Build an app", view.build_path ] ] ],
         # Career has no page yet: a nil path renders the label disabled.
-        [ "Company",   [ [ "Home", view.root_path ], [ "About", view.about_path ], [ "Marketing Kit", view.marketing_kit_path ], [ "Career", nil ] ] ],
+        # About is Alex McRitchie's page on alex.build (task hub-drops-about-section);
+        # the hub's own /about redirects there.
+        [ "Company",   [ [ "Home", view.root_path ], [ "About", "https://alex.build/about" ], [ "Marketing Kit", view.marketing_kit_path ], [ "Career", nil ] ] ],
         [ "Legal",     [ [ "Privacy Policy", view.privacy_path ], [ "Terms of Service", view.terms_path ] ] ]
       ],
       legal: [ [ "Privacy Policy", view.privacy_path ], [ "Terms of Service", view.terms_path ] ],

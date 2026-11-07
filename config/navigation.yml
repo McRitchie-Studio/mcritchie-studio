@@ -66,7 +66,6 @@ pages:
   root:           { page: "landing#index",           audience: public, label: Home }
   terms:          { page: "landing#terms",           audience: public, label: Terms of Service }
   privacy:        { page: "landing#privacy",         audience: public, label: Privacy Policy }
-  about:          { page: "landing#about",           audience: public, label: About }
   marketing_kit:  { page: "marketing_kit#index",     audience: public, label: Marketing Kit }
   packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Builder, Pro and Team tiers, and Enterprise", icon: package }
   packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
