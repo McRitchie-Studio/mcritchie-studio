@@ -152,6 +152,22 @@ groups:
         abilities:
           - { key: read_meeting_notes, name: Read your meeting notes and transcripts, via: [sign_in] }
 
+      # One person's own Intuit sign-in per QuickBooks Online company
+      # (QuickbooksConnection). Built and dark on our own hub (/admin/quickbooks)
+      # until the Intuit app is set up, so `soon` stays honest; an admin sees
+      # the card's Connect (disabled until then) or each company's Disconnect
+      # (IntegrationsController::QUICKBOOKS_CARD).
+      - key: quickbooks
+        name: QuickBooks Online
+        icon: "📒"
+        tagline: "Your agents read your company info and profit and loss. Read only."
+        blurb: Sign in with Intuit and your agents read your QuickBooks company info and reports, such as profit and loss. Read only, so they cannot change your books.
+        status: soon
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: read_reports, name: Read your company info and reports, via: [sign_in] }
+
       - key: google_workspace_connect
         name: Google Workspace
         icon: google

@@ -18,6 +18,10 @@ class IntegrationsController < ApplicationController
   # The Fathom card carries the hub's own Fathom connection for an admin
   # (Admin::FathomController), in its action row, the same way.
   FATHOM_CARD = "fathom".freeze
+  # The QuickBooks card carries the hub's own QuickBooks Online companies for
+  # an admin (Admin::QuickbooksController), the same way; its Connect renders
+  # disabled until the Intuit app is set on this server.
+  QUICKBOOKS_CARD = "quickbooks".freeze
 
   def index
     @groups = Integration.groups
@@ -25,6 +29,7 @@ class IntegrationsController < ApplicationController
 
     load_google_connections
     load_fathom_connection if admin?
+    load_quickbooks_connections if admin?
   end
 
   # /integrations/discord — the guide the Discord card's Connect opens: what a
@@ -53,5 +58,11 @@ class IntegrationsController < ApplicationController
   def load_fathom_connection
     @fathom = { connection: FathomConnection.readable,
                 connectable: Fathom::OAuthClient.connectable? && FathomConnection.encryption_ready? }
+  end
+
+  # { connections: every readable QuickbooksConnection, newest first, connectable: }.
+  def load_quickbooks_connections
+    @quickbooks = { connections: QuickbooksConnection.readable,
+                    connectable: Quickbooks::OAuthClient.connectable? && QuickbooksConnection.encryption_ready? }
   end
 end
