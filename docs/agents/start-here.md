@@ -4,8 +4,8 @@ Every agent doc, by the need it answers. The entry map
 ([`index.md`](index.md), installed as `AGENTS.md`) links here instead of carrying
 this table, so a session loads it only when it goes looking. Every SOP and
 heartbeat has a row under [SOPs and heartbeats](#sops-and-heartbeats), generated
-by `bin/sop-registry` from the same files as the SOP Registry, so each row names
-its invocation exactly.
+by `bin/sop-registry` from the SOP files, so each row names its invocation exactly.
+`bin/sop <name>` resolves a name from the same files.
 
 ## Start Here
 

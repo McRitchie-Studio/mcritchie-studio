@@ -14,9 +14,11 @@ require_relative "../../bin/lib/sop_registry"
 # are produced by bin/install-agent-docs, and until that runs, a newly registered
 # SOP is invisible to every agent no matter how correct the source is.
 #
-# The registry table itself is generated from the SOP files (bin/sop-registry,
-# test/docs/sop_registry_generated_test.rb); this file pins that the installer carries
-# that generated block into AGENTS.md, and that the installer stays in its sandbox.
+# The registry is the SOP files, and an agent resolves a name with bin/sop
+# (test/docs/sop_registry_generated_test.rb). The table left AGENTS.md to hold the
+# boot budget, so this file pins that the installed entry docs tell the agent to run
+# bin/sop, that the installed fixed-path tooling carries bin/sop and resolves a name,
+# and that the installer stays in its sandbox.
 #
 # SANDBOXED: bin/install-agent-docs writes to $PROJECTS_DIR *and* to $HOME/.claude
 # and $HOME/.codex (user-global skills). We point BOTH at temp dirs, so the real
@@ -33,7 +35,7 @@ require_relative "../../bin/lib/sop_registry"
 # asserts not one escapes the sandbox — a deterministic property that owes nothing to
 # what the runtime did to the real dirs meanwhile.
 class SopRegistryInstallTest < ActiveSupport::TestCase
-  test "install-agent-docs carries the generated SOP registry into AGENTS.md" do
+  test "install-agent-docs installs the bin/sop resolver the entry docs name" do
     Dir.mktmpdir("sop-install") do |sandbox|
       projects = File.join(sandbox, "projects")
       home     = File.join(sandbox, "home")
@@ -49,12 +51,20 @@ class SopRegistryInstallTest < ActiveSupport::TestCase
       assert_path_exists agents
       assert_path_exists claude
 
-      # The installed AGENTS.md carries the generated registry block verbatim, so what
-      # bin/sop-registry wrote is what an agent resolves an invocation through.
-      registry = Rails.root.join("docs/agents/index.md").read
-      block = registry[/#{Regexp.escape(SopRegistry.begin_marker)}.*?#{Regexp.escape(SopRegistry.end_marker)}/m]
-      refute_nil block, "docs/agents/index.md lost its generated SOP registry block"
-      assert_includes File.read(agents), block, "the installed AGENTS.md does not carry the generated registry"
+      # The installed entry docs name the resolver, and no longer carry the table.
+      [agents, claude].each do |doc|
+        assert_includes File.read(doc), "/Users/alex/projects/.agents/bin/sop <name>",
+                        "#{File.basename(doc)} no longer tells an agent how to resolve an SOP name"
+        refute_includes File.read(doc), SopRegistry.begin_marker,
+                        "#{File.basename(doc)} carries the generated registry table again; it lives in start-here.md"
+      end
+
+      # The fixed-path tooling the docs name carries bin/sop, and it resolves a name.
+      sop = File.join(projects, ".agents", "bin", "sop")
+      assert File.executable?(sop), "the installed fixed-path tooling has no executable bin/sop"
+      found, sop_err, sop_status = Open3.capture3(env, sop, "--root", Rails.root.to_s, "clean-up", chdir: sandbox)
+      assert sop_status.success?, "the installed bin/sop failed:\n#{sop_err}"
+      assert_equal Rails.root.join("docs/agents/agents/mason/sops/clean-up.md").to_s, found.strip
 
       # ATTRIBUTABLE sandbox proof (replaces the differential digest of the runtime-
       # written skills dirs). Ask the installer, in dry-run manifest mode under the SAME

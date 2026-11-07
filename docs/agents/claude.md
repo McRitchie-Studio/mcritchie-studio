@@ -9,9 +9,9 @@ The long form this adapter replaced is in git history:
 
 McRitchie SOPs live in `/Users/alex/projects/AGENTS.md`'s **SOP Invocation
 Standard**. SOPs are first-class registered commands with finite names and stable
-files. If Alex McRitchie's prompt names an SOP or heartbeat act (any invocation in the SOP
-Registry table at the end of `AGENTS.md`), resolve that phrase through the
-registry, read the mapped SOP, then execute it. For example, `pr-review`
+files. If Alex McRitchie's prompt names an SOP or heartbeat act, run
+`/Users/alex/projects/.agents/bin/sop <name>` and read the file it prints, then
+execute it. `bin/sop --list` prints every registered name. For example, `pr-review`
 means read `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` first; do
 not start with `bin/pr-review --help`, `bin/qa-intake`, or GitHub PR discovery.
 

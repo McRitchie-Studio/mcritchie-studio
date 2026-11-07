@@ -83,7 +83,9 @@ class BinHelpFlagClassTest < Minitest::Test
     "x-post"                 => :optparse,
     # Leftover positionals beyond <soul> <dir> abort with the usage line.
     "openclaw-workspace"     => :optparse,
-    # Generates the SOP registry blocks; --write is the only mutation and --help exits first.
+    # Resolves an SOP name to its file; read-only, and --help exits first.
+    "sop"                    => :optparse,
+    # Generates the SOP registry block; --write is the only mutation and --help exits first.
     "sop-registry"           => :optparse,
     # Stamps a T0 board note (start) and writes the ledger (record); OptionParser
     # parses every flag, so --help exits and an unknown flag refuses before any read.
