@@ -121,7 +121,7 @@
           crumb_label: "Player impact", crumbs: studio_crumbs(parent: :team_rankings, team: @team),
           meta: (tag.span(class: "inline-block w-4 h-4 rounded-full align-middle", style: "background-color: #{@team.color_primary}", aria: { hidden: true }) if @team.color_primary.present?) %>
     <p class="text-secondary text-sm mt-2">Player Impact Simulator — 2025 Season</p>
-    <div class="mt-4 mb-8">
+    <div class="mt-4 mb-8 max-w-xs">
       <select onchange="if(this.value) window.location = '<%= nfl_player_impact_path(player_id: @person.slug, team_id: '__TEAM__') %>'.replace('__TEAM__', this.value);"
               class="input-field text-sm px-4 py-2 rounded-lg" style="min-width: 200px;" data-test="player-impact-team">
         <% Team.nfl.order(:name).each do |team| %>
