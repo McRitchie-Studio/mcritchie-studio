@@ -42,6 +42,9 @@
 #             instead of the contact form; the guide's own button then goes to
 #             the form. One of Integration::GUIDES.
 #
+#   dark      optional: true for an entry built but not offered yet. Only an
+#             admin's /integrations lists it (to connect the hub's own
+#             account); the public page does not show it at all.
 #   connects  optional: the ways this entry connects (keys of connection_methods
 #             below), in the order the card lists them
 #   abilities optional: what the entry can do once connected, each
@@ -151,6 +154,24 @@ groups:
         connects: [sign_in]
         abilities:
           - { key: read_meeting_notes, name: Read your meeting notes and transcripts, via: [sign_in] }
+
+      # One person's sign-in to one Egnyte domain (EgnyteConnection), built dark:
+      # the public page does not list it; an admin's does, with the card's
+      # Connect (a domain field) or each domain and its Disconnect, and a
+      # disabled Connect until the server holds the developer key
+      # (IntegrationsController::EGNYTE_CARD).
+      - key: egnyte
+        name: Egnyte
+        icon: egnyte
+        tagline: "Your agents browse your Egnyte folders and file documents."
+        blurb: Sign in to your Egnyte domain and your agents can browse its folders, read what each file is, and upload a document where you point them.
+        status: soon
+        dark: true
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: browse_files, name: Browse your folders and read file details, via: [sign_in], status: soon }
+          - { key: upload_files, name: Upload a document to a folder you choose, via: [sign_in], status: soon }
 
       - key: google_workspace_connect
         name: Google Workspace
