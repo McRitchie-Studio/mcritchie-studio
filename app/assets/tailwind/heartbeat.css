@@ -5,8 +5,11 @@
   re-serialized inline on every HTML response; compiling them once into
   tailwind.css serves them from a cached stylesheet instead. Every rule is
   scoped under #mason-heartbeat or #mason-insights (the Insight Bank's section;
-  the page-header rules below use :is(#mason-heartbeat, #mason-insights)), so
-  global inclusion is inert on other pages.
+  the page-header rules below use :is(#mason-heartbeat, #mason-insights)), with
+  one exception: the activities table's rules also match the engine's
+  .sticky-table-header-clone, which the engine attaches to document.body, so
+  they reach it as .sticky-table-header-clone table.aa-tbl. Each selector is
+  specific to these pages, so global inclusion is inert on other pages.
   Imported from application.css. Keep this file static — the genuinely dynamic
   style blocks (deployments_live_fx, lineup_graphics) stay inline by design.
 */
