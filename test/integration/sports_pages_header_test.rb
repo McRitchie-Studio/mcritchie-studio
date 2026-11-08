@@ -1,15 +1,10 @@
 require "test_helper"
 
 # [component] The hub's NFL and people pages on the engine page header (task
-# hub-remaining-page-headers, split 1 of Alex McRitchie's "the UI cleanup for all the
-# apps"). Each page drew its own header: an "NFL Hub" back link over a gradient hero
-# (the rankings and contracts), a centred hero (the hub, the season, a week), a back link
-# over a body hero and no h1 at all (a game, a team's grades), or a title inside a card
-# (a person, the rename, photo scouting). Each now renders
-# studio/page_header with the old back link as the trail's last crumb and its title as
-# the page's one h1, in the engine's four kinds of control (studio-engine
-# docs/PAGE_HEADER.md), never actions_html. The pattern is task-pages-standard-header's
-# (test/integration/task_pages_header_test.rb).
+# hub-remaining-page-headers). Each hand-rolled header (back link plus hero, centred
+# hero, or a title in a card) is now studio/page_header: the old back link ends the
+# trail, the title is the page's one h1, and no header passes actions_html. Pattern:
+# test/integration/task_pages_header_test.rb.
 class SportsPagesHeaderTest < ActionDispatch::IntegrationTest
   ROW = ".page-header".freeze
   KINDS = %w[page-header-menu page-header-action page-header-tools].freeze

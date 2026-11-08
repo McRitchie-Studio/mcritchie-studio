@@ -1,18 +1,10 @@
 const { test, expect } = require("@playwright/test");
 
-// [e2e] The hub's NFL and people pages on the engine page header (task
-// hub-remaining-page-headers). /nfl-coaches was an "NFL Hub" back link over a gradient
-// hero; /people/:slug was the name as an h1 inside the profile card. Each now renders
-// studio/page_header as a direct child of the page's long container, so the row stays
-// pinned under the navbar for the length of the page. Two lessons from the review of
-// admin-pages-standard-header: sticky ends where the row's parent ends, so the pin is
-// read after a 1500px scroll on two pages; and headless Chrome will not shrink a window
-// below 500px, so the phone tests emulate a 390px device and assert window.innerWidth.
-// The seeded pages are short, so each pin test lengthens the page's CONTENT first: a
-// spacer after the page's last content block, in that block's own parent. A row that sits
-// in a wrapper apart from the content still scrolls away, and the test reads it.
-// The person pages are admin pages and use the suite's shared admin session
-// (e2e/global-setup.js); the NFL page is public and runs signed out.
+// [e2e] NFL and people pages on the engine page header (hub-remaining-page-headers).
+// Sticky ends where the row's parent ends, so each pin test puts a spacer after the page
+// content and reads the row after a 1500px scroll. Headless Chrome will not go below
+// 500px, so phone tests emulate a 390px device and assert window.innerWidth.
+// /nfl-coaches is public and runs signed out; /people/:slug uses the admin session.
 
 const COACHES_CONTENT = "main .card";
 const PERSON_CONTENT = "main .card";
