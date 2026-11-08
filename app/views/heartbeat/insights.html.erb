@@ -14,7 +14,6 @@
     padding:18px 22px 60px; font-size:13px; line-height:1.5;
   }
   #mason-insights .hb-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
-  #mason-insights h1 { margin:0; font-size:19px; font-weight:700; }
   #mason-insights .hb-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:70ch; }
   #mason-insights .hb-back { color:var(--hb-accent); text-decoration:none; font-size:12.5px; white-space:nowrap; }
   #mason-insights .hb-back:hover { text-decoration:underline; }
@@ -38,7 +37,9 @@
   <%# The engine page header (studio-engine docs/PAGE_HEADER.md), the dark section's first
       child so it pins the length of the page, in the surface's palette (heartbeat.css,
       "the page header on the fixed-dark surfaces"). -mx-3 px-3 fits the section's
-      narrowest gutter (12px on a phone). The old "back to the heartbeat" link is the Links menu: the trail's parent is DevOps (navigation.yml). hub-ops-page-headers. %>
+      narrowest gutter (12px on a phone). The old "back to the heartbeat" link is the Links menu: the trail's parent is DevOps (navigation.yml). hub-ops-page-headers.
+      The engine sizes the title, and the Links button and its list take the dark palette
+      from heartbeat.css (dark-devops-header-polish). %>
   <%= render "studio/page_header", title: "💡 Insight Bank", crumb_label: "Insight Bank", crumbs: studio_crumbs(:mason_insights),
         menu: [ { label: "Per-session heartbeat", href: mason_heartbeat_path, data: { test: "insights-heartbeat-link", turbo: false } } ],
         row_class: "-mx-3 px-3" %>

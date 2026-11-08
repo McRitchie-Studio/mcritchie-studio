@@ -45,4 +45,9 @@ class HeartbeatStylesDeinlinedTest < ActiveSupport::TestCase
     # It is a plain stylesheet now — no ERB, no <style> wrapper.
     assert_no_match(/<style\b|<%/, css, "heartbeat.css must be plain static CSS (no <style> tag, no ERB)")
   end
+
+  test "[component] no heartbeat rule sizes an h1: the engine's page header title owns it (dark-devops-header-polish)" do
+    css = HEARTBEAT_CSS.read.gsub(%r{/\*.*?\*/}m, "")
+    assert_no_match(/\bh1\s*[,{]/, css, "heartbeat.css restyles an h1 the engine's .page-header-title sizes")
+  end
 end
