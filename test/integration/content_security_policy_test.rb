@@ -138,19 +138,19 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
 
   # [unit] hub-post-engine-cleanup: since studio-engine 0.136.0 the engine's
   # studio/_cropper_assets serves cropper.js and its CSS from this app's asset
-  # pipeline, so the policy names no cdnjs file and no page loads one. /profile
-  # renders the avatar cropper, so it is the page that would still show one.
+  # pipeline, so the policy names no cdnjs file and no page loads one.
+  # /profile/edit renders the avatar cropper, so it would still show one.
   test "the cropper loads from this app's own assets, and the policy names no cdnjs file" do
     directives = Rails.application.config.content_security_policy.directives
     refute(directives.values.flatten.any? { _1.to_s.include?("cdnjs") }, "a directive still names cdnjs")
 
     log_in_as(users(:alex))
-    get profile_path
+    get edit_profile_path
     assert_response :success
     page = Nokogiri::HTML5(response.body)
     script = page.at_css('script[src*="studio/cropper-1.6.2"]')
     style = page.at_css('link[rel="stylesheet"][href*="studio/cropper-1.6.2"]')
-    assert script && style, "control: /profile rendered no cropper tags, so the cdnjs check below would prove nothing"
+    assert script && style, "control: /profile/edit rendered no cropper tags, so the cdnjs check below would prove nothing"
     refute_match(%r{\Ahttps?://}, script["src"], "the cropper script must come from this app")
     refute_match(%r{\Ahttps?://}, style["href"], "the cropper style must come from this app")
     refute_includes response.body, "cdnjs.cloudflare.com"
