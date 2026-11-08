@@ -151,7 +151,7 @@ class LayerScaleAdoptionTest < ActionDispatch::IntegrationTest
   test "the stack is not nested inside the pinned header" do
     layout = markup_of(LAYOUT)
     stack  = layout.index(%(render "studio/banners/stack"))
-    header = layout.index("hub_navbar(")
+    header = layout.index("<%= hub_navbar %>")
 
     refute_nil stack, "the layout must render the engine bar stack"
     assert_operator stack, :<, header,

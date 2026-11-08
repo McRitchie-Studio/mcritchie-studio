@@ -42,9 +42,9 @@
         header from scrollY once per animation frame. data-pin publishes --pin-nav-h / --pin-nav-bottom,
         which the app strip and the board's lane headers position off (see
         _app_ladder_row and _deploy_board). It renders the link sidebar too,
-        because Studio.sidebar_sections is set. ShellHelper#hub_navbar adds the
-        heading rule: the brand is the h1 only on a page with none of its own. %>
-    <%= hub_navbar(page_html: yield) %>
+        because Studio.sidebar_sections is set. The engine keeps one h1 per page:
+        the brand is the h1 only on a page with none of its own. %>
+    <%= hub_navbar %>
 
     <%# The page's one main landmark: everything between the header and the
         footer (axe landmark-one-main and region). A page that draws its own

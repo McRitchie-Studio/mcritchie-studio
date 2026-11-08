@@ -159,7 +159,7 @@ class SportsPagesHeaderTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=search-queries], [data-test=search-unconfigured]"
   end
 
-  test "[component] the brand is not an h1 on a converted page (ShellHelper#page_heading?)" do
+  test "[component] the brand is not an h1 on a converted page (the engine's studio_page_has_h1?)" do
     get nfl_quarterback_rankings_path
 
     assert_select "nav h1", count: 0

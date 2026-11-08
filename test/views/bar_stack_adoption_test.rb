@@ -46,7 +46,7 @@ class BarStackAdoptionTest < ActionDispatch::IntegrationTest
   test "the stack is rendered before the header, not inside it" do
     layout = LAYOUT.read
 
-    assert_operator layout.index(%(render "studio/banners/stack")), :<, layout.index("hub_navbar("),
+    assert_operator layout.index(%(render "studio/banners/stack")), :<, layout.index("<%= hub_navbar %>"),
                     "the stack must precede the header — nesting it is what this replaced"
     assert_no_match(/render\s*\(?\s*"studio\/banners/, NAVBAR.read, "the engine's navbar must not render a bar inside the header")
   end
