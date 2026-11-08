@@ -13,9 +13,13 @@
     --hb-muted:#8b949e; --hb-faint:#5c6573; --hb-accent:#58a6ff; --hb-good:#3fb950;
     --hb-not:#f85149; --hb-bank:#fbbf24; --hb-mcr:#a371f7;
     min-height:calc(100vh - var(--nav-h, 7rem)); background:var(--hb-bg); color:var(--hb-txt);
-    padding:18px 22px 60px; font-size:13px; line-height:1.5; }
+    padding:18px 22px 60px; font-size:13px; line-height:1.5;
+    /* The heartbeat dashboard's fixed height (heartbeat.css) is for its own internal scroll.
+       This page scrolls the document, so the section grows with its content: a sticky
+       page header ends where its parent ends, and at a fixed height it let go of the top
+       once the columns stacked under 1000px (dark-devops-header-polish). */
+    height:auto; }
   #mason-heartbeat .pl-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
-  #mason-heartbeat h1 { margin:0; font-size:19px; font-weight:700; }
   #mason-heartbeat .pl-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:78ch; }
   #mason-heartbeat .pl-nav { display:flex; gap:8px; flex-wrap:wrap; }
   #mason-heartbeat .pl-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; align-items:start; }
