@@ -146,6 +146,7 @@ class VideosIndexTest < ActionDispatch::IntegrationTest
     log_in_as users(:alex)
     get video_path(tiled)
 
-    assert_select "[data-test='all-videos-link'][href='#{videos_path}']", /All videos/
+    # The old "All videos" link is the page header's trail parent (hub-ops-page-headers).
+    assert_select ".page-header a.page-header-parent[href='#{videos_path}']", /Videos/
   end
 end

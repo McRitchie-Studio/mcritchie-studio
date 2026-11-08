@@ -42,6 +42,14 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom admin/egnyte admin/quickbooks].include?(params["controller"].to_s)
   end,
+  # The Microsoft 365 admin-consent callback's tenant id (MsgraphConnection
+  # stores it encrypted). Filtered by key, not by controller: the "Started GET"
+  # line's URL is filtered one query pair at a time, as a one-key hash with no
+  # controller to scope by (see realmId above). Exact key, String values only:
+  # the Teams ingest's `tenant` is a nested Hash, and the String check spares it.
+  lambda do |key, value, _params = nil|
+    value.replace("[FILTERED]") if key.to_s == "tenant" && value.is_a?(String)
+  end,
   # The satellite visitor's IP the agent chat API takes for its per-IP cap
   # (Api::V1::AgentChatsController): hashed there, never stored, and kept out of
   # the request log here. Scoped to that controller: a bare :ip would partial-match

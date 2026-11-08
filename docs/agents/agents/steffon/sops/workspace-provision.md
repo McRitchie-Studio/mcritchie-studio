@@ -636,6 +636,47 @@ production questionnaire. Rotate either through
 `QUICKBOOKS_STAND_IN=1` walks the whole flow against a stand-in
 (`config/initializers/quickbooks_connect_stand_in.rb`) whose token endpoint
 honours only the last refresh token it issued; nothing reaches Intuit.
+## 12. Microsoft 365 by admin approval — users, Teams and SharePoint (dark)
+
+The `admin_grant` method for a Microsoft 365 tenant (`MsgraphConnection`,
+`Msgraph::OAuthClient`, `Msgraph::Reader`): app-only Microsoft Graph, read only.
+A tenant administrator presses **Connect** on **`/admin/msgraph`** (admin only),
+approves the app once on Microsoft's admin-consent page, and the callback stores
+one row per tenant: the tenant id encrypted and never rendered, the
+organization's name, who connected it and when. The hub's own request log
+filters the callback's `tenant` parameter, but Heroku's router log still records
+the full callback query, tenant id included. Reads then use the
+client-credentials grant; no refresh token exists, and the access token is
+cached in process memory only. The page shows each tenant's live read (users,
+Teams, the root site and its drives) or Microsoft's error, and a Disconnect per
+tenant. The Microsoft 365 card in the Connect group of `/integrations` is
+`dark: true`: the public page does not list it. An admin's page lists it as
+Coming soon, with the tenants and a Connect that is disabled until the server
+can take one. `?return_to=` is honoured only for `/integrations` and
+`/admin/msgraph`.
+
+**It ships dark.** Nothing is registered yet. To go live:
+
+1. Check the tenant first: a tenant bought as "Microsoft 365 from GoDaddy" is
+   federated to GoDaddy and blocks admin consent until it is defederated.
+2. Register one **multi-tenant** app in Microsoft Entra (Accounts in any
+   organizational directory). Its web redirect URIs are
+   `https://mcritchie.studio/admin/msgraph/callback` and
+   `https://qa.mcritchie.studio/admin/msgraph/callback`. Add these Microsoft
+   Graph **application** permissions, every one a read:
+   `User.Read.All`, `Team.ReadBasic.All`, `Sites.Read.All`, `Files.Read.All`,
+   `Organization.Read.All` (`Msgraph::OAuthClient::PERMISSIONS`).
+3. Make a client secret. File the app id and secret as
+   `microsoft.industries.applications` through
+   [`credential-filing`](credential-filing.md), then set `MSGRAPH_CLIENT_ID` and
+   `MSGRAPH_CLIENT_SECRET` on the app. These are not the Teams bot's
+   `TEAMS_BOT_*` values.
+4. A global administrator of the tenant presses Connect and approves.
+
+**No revoke.** Consent is removed in the tenant (Enterprise applications), so
+Disconnect deletes the row and the cached token here and says so. Locally,
+`MSGRAPH_STAND_IN=1` walks the whole flow against a stand-in
+(`config/initializers/msgraph_connect_stand_in.rb`); nothing reaches Microsoft.
 
 ## Switching a workspace off — and back on
 

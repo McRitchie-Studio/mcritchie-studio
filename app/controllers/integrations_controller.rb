@@ -26,6 +26,11 @@ class IntegrationsController < ApplicationController
   # an admin (Admin::QuickbooksController), the same way; its Connect renders
   # disabled until the Intuit app is set on this server.
   QUICKBOOKS_CARD = "quickbooks".freeze
+  # The Microsoft 365 card carries the hub's own tenant connections for an
+  # admin (Admin::MsgraphController), in its action row, the same way. It stays
+  # Coming soon for everyone else, and its Connect stays disabled until the
+  # server can take a connection.
+  MSGRAPH_CARD = "microsoft_365".freeze
 
   def index
     @groups = Integration.groups(admin: admin?)
@@ -37,6 +42,7 @@ class IntegrationsController < ApplicationController
     load_fathom_connection
     load_egnyte_connections
     load_quickbooks_connections
+    load_msgraph_connections
   end
 
   # /integrations/discord — the guide the Discord card's Connect opens: what a
@@ -77,5 +83,11 @@ class IntegrationsController < ApplicationController
   def load_quickbooks_connections
     @quickbooks = { connections: QuickbooksConnection.readable,
                     connectable: Quickbooks::OAuthClient.connectable? && QuickbooksConnection.encryption_ready? }
+  end
+
+  # { connections: every readable MsgraphConnection, newest first, connectable: }.
+  def load_msgraph_connections
+    @msgraph = { connections: MsgraphConnection.readable,
+                 connectable: Msgraph::OAuthClient.connectable? && MsgraphConnection.encryption_ready? }
   end
 end

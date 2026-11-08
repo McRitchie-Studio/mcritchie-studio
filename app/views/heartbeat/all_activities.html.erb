@@ -12,10 +12,15 @@
 <%= render "heartbeat/scripts" %>
 
 <section id="mason-heartbeat" data-test="heartbeat-all-activities" x-data="heartbeatDrawer()" @keydown.escape.window="closeDrawer()">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), the dark section's first
+      child so it pins the length of the page, in the surface's palette (heartbeat.css,
+      "the page header on the fixed-dark surfaces"). -mx-3 px-3 fits the section's
+      narrowest gutter (12px on a phone). The stats and the lead stay in the topbar. hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "All Activities · Mason Heartbeat", crumb_label: "All Activities",
+        crumbs: studio_crumbs(:heartbeat_all_activities), row_class: "-mx-3 px-3" %>
   <div class="hb-head">
     <header class="hb-topbar">
       <div class="hb-title">
-        <h1>All Activities &middot; Mason Heartbeat</h1>
         <p>
           Every narrated activity across all sessions, newest &rarr; oldest.
           Expand an activity to drill into the raw actions it framed; grade it inline or open one to grade the McRitchie audit.

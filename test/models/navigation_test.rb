@@ -221,7 +221,7 @@ class NavigationTest < ActiveSupport::TestCase
 
   test "[unit] the basement group holds the moved pages, every one an admin page placed nowhere in the sidebar" do
     assert_equal %w[admin_schema admin_emails admin_link_preview asset_browser stack credentials broadcasts contacts broadcast_analytics
-                    error_logs admin_tiktok admin_google admin_fathom admin_egnyte admin_quickbooks admin_agent_messages admin_report_destinations admin_csp_reports admin_upgrade_proposals
+                    error_logs admin_tiktok admin_google admin_fathom admin_egnyte admin_msgraph admin_quickbooks admin_agent_messages admin_report_destinations admin_csp_reports admin_upgrade_proposals
                     teams people builders docs admin_ai_builder_multiple workflow_news_index merge_people duplicates_people
                     news_index contents model_pipeline body_archetypes videos alt_videos],
                  Navigation.sidebar(:basement).flat_map(&:pages).map(&:key)
@@ -270,6 +270,37 @@ class NavigationTest < ActiveSupport::TestCase
     assert_nil Navigation.page(:deployments).parent, "the DevOps board home is a root"
     assert_equal "Admin", Navigation.page(:admin_dashboard).crumb_label
     assert_nil Navigation.page(:admin_dashboard).parent, "the admin dashboard is the root"
+  end
+
+  # hub-remaining-page-headers: each NFL page's old back link read "NFL Hub", so the
+  # registry names nfl_hub as its parent, and the hub is a root.
+  test "[unit] the real registry gives every page under the NFL Hub the trail NFL Hub" do
+    crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
+    %i[nfl_rosters nfl_quarterback_rankings nfl_offensive_line_rankings nfl_receiving_rankings nfl_rushing_rankings
+       nfl_defense_rankings nfl_pass_rush_rankings nfl_coverage_rankings nfl_prospects nfl_coaches
+       nfl_pass_first_rankings nfl_contracts].each do |key|
+      assert_equal %i[nfl_hub], crumbs.chain(key)[0...-1], key
+    end
+    assert_nil Navigation.page(:nfl_hub).parent, "the NFL Hub is a root"
+  end
+
+  # The record pages the initializer draws after the registry: a team's rankings, a
+  # season and its weeks under the NFL Hub, a person under People.
+  test "[unit] the record crumbs: team rankings and a season under the NFL Hub, a person under People" do
+    assert_equal %i[nfl_hub team_rankings], Studio.crumbs.chain(:team_rankings)
+    assert_equal %i[nfl_hub season], Studio.crumbs.chain(:season)
+    assert_equal %i[nfl_hub season week], Studio.crumbs.chain(:week)
+    assert_equal %i[admin_dashboard admin_basement people person], Studio.crumbs.chain(:person)
+  end
+
+  # hub-ops-page-headers: the full stack's old "Back to packages" link is its parent, and
+  # a source video (drawn after the registry) sits under Videos, as its alt videos' parent.
+  test "[unit] the ops crumbs: the full stack under Packages, a video under Videos" do
+    crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
+    assert_equal %i[packages], crumbs.chain(:packages_stack)[0...-1]
+    assert_nil Navigation.page(:packages).parent, "Packages is a root"
+    assert_equal %i[admin_dashboard admin_basement videos video], Studio.crumbs.chain(:video)
+    assert_equal %i[deployments mason_heartbeat], crumbs.chain(:heartbeat_all_activities)[0...-1]
   end
 
   test "[unit] the agent pages keep their own section, out of the DevOps trail" do

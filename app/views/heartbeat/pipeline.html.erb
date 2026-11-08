@@ -15,11 +15,18 @@
     min-height:calc(100vh - var(--nav-h, 7rem)); background:var(--hb-bg); color:var(--hb-txt);
     padding:18px 22px 60px; font-size:13px; line-height:1.5; }
   #mason-heartbeat .pl-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; margin-bottom:18px; }
-  #mason-heartbeat h1 { margin:0; font-size:19px; font-weight:700; }
   #mason-heartbeat .pl-sub { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:78ch; }
   #mason-heartbeat .pl-nav { display:flex; gap:8px; flex-wrap:wrap; }
   #mason-heartbeat .pl-grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:14px; align-items:start; }
-  @media (max-width:1000px) { #mason-heartbeat .pl-grid { grid-template-columns:1fr; } }
+  /* Stacked under 1000px, the three columns outgrow the dashboard's fixed height
+     (heartbeat.css, height:calc(100vh - nav)). A sticky page header ends where its parent
+     ends, so the section grows with its content there; the desktop keeps the fixed height
+     and each column's own scroll. Each stacked column keeps its bounded list, so a long
+     column never pushes the next one a screen away (dark-devops-header-polish). */
+  @media (max-width:1000px) {
+    #mason-heartbeat { height:auto; }
+    #mason-heartbeat .pl-grid { grid-template-columns:1fr; }
+  }
   #mason-heartbeat .pl-col { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:12px; overflow:hidden; }
   #mason-heartbeat .pl-colhd { padding:12px 14px; border-bottom:1px solid var(--hb-line); position:sticky; top:0; background:var(--hb-panel); z-index:1; }
   #mason-heartbeat .pl-colhd .pl-step { font-family:ui-monospace,"SF Mono",Menlo,monospace; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--hb-faint); }
@@ -76,9 +83,15 @@
 </style>
 
 <section id="mason-heartbeat" data-test="mason-pipeline">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), the dark section's first
+      child so it pins the length of the page, in the surface's palette (heartbeat.css,
+      "the page header on the fixed-dark surfaces"). -mx-3 px-3 fits the section's
+      narrowest gutter (12px on a phone). The lead and the heartbeat chips stay in the topbar. hub-ops-page-headers.
+      The engine sizes the title: no rule here restyles the h1 (dark-devops-header-polish). %>
+  <%= render "studio/page_header", title: "🍽️ Distillation Pipeline", crumb_label: "Pipeline", crumbs: studio_crumbs(:mason_pipeline),
+        row_class: "-mx-3 px-3" %>
   <header class="pl-topbar">
     <div>
-      <h1>&#127869;&#65039; Distillation Pipeline</h1>
       <p class="pl-sub">
         The learning loop, left to right: narrated <strong>Activities</strong> &rarr; Mason's
         distilled <strong>Insights</strong> &rarr; the <strong>Confirmations</strong> you keep.

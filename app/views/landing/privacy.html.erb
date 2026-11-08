@@ -4,8 +4,11 @@
     consent wording must stay in step with ContactSubmission. %>
 
 <section class="max-w-3xl mx-auto px-4 py-10 prose-custom" data-test="privacy-page">
-  <h1 class="text-3xl font-bold text-heading mb-2">Privacy Policy and Messaging Terms and Conditions</h1>
-  <p class="text-muted text-sm mb-8">Last updated: November 1, 2026</p>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), drawn directly rather
+      than through the engine's studio/_legal_page, which is not released yet. A root
+      page: no trail. hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Privacy Policy and Messaging Terms and Conditions" %>
+  <p class="text-muted text-sm mt-2 mb-8">Last updated: November 1, 2026</p>
 
   <div class="space-y-6 text-body leading-relaxed">
     <section>

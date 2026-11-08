@@ -6,23 +6,19 @@
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="alt-video" data-number="<%= @alt_video.number %>"
          data-links-url="<%= links_video_alt_video_path(@video, @alt_video) %>" data-links-ttl="<%= AltVideosController::SIGNED_URL_TTL %>"
          data-links-signed-at="<%= (@signed_at.to_f * 1000).round %>">
-  <header class="mb-6 min-w-0">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), a direct child of the
+      page's section so it stays pinned the length of the page: the source video is the
+      title, the alt video ends the trail under it, and Download all assets is the page's
+      one action (every clip's hand-off in one zip, one folder per clip:
+      AltVideoDownloadsController, admin only like the page). hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: @video.title, crumb_label: @alt_video.name,
+        crumbs: studio_crumbs(parent: :video, video: @video),
+        action: ({ label: "Download all assets", href: video_alt_video_download_path(@video, @alt_video),
+                   data: { test: "alt-video-download-all", turbo: false } } if @clips.any?) %>
+  <header class="mt-2 mb-6 min-w-0">
     <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2" data-test="alt-video-kicker">
       Source video · <%= @alt_video.name %>
     </p>
-    <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 mb-2 min-w-0">
-      <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words min-w-0"><%= @video.title %></h1>
-      <% if @clips.any? %>
-        <%# The page's primary action: every clip's hand-off in one zip, one folder per clip (AltVideoDownloadsController). %>
-        <%= link_to video_alt_video_download_path(@video, @alt_video), download: "",
-                    class: "btn btn-primary w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2",
-                    title: "The source clips, prompts, A/B/C frames and sheets, one folder per clip",
-                    data: { test: "alt-video-download-all", turbo: false } do %>
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 21h16"/></svg>
-          <span>Download all assets</span>
-        <% end %>
-      <% end %>
-    </div>
     <p class="text-sm text-muted flex flex-wrap items-center gap-x-3 gap-y-1">
       <span data-test="alt-video-clip-count"><%= pluralize(@clips.size, "clip") %></span>
       <span>built <%= l(@alt_video.created_at, format: :short) %></span>

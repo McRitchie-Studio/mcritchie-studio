@@ -1,11 +1,12 @@
 <% content_for :title, "Videos · McRitchie Studio" %>
 
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="videos-index">
-  <header class="mb-6 min-w-0">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Video pipeline</p>
-    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2">Videos</h1>
-    <p class="text-sm text-muted">Every digested source video (music video, cinematic or movie scene), newest first: its cast, its A/B/C frames and the alt videos built from it. <%= link_to "All alt videos", alt_videos_path, class: "text-primary hover:underline" %></p>
-  </header>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), a direct child of the
+      page's section so it stays pinned the length of the page: the trail is the
+      Basement, where the "Video pipeline" eyebrow pointed.
+      hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Videos", crumbs: studio_crumbs(:videos) %>
+  <p class="text-sm text-muted mt-2 mb-6 min-w-0">Every digested source video (music video, cinematic or movie scene), newest first: its cast, its A/B/C frames and the alt videos built from it. <%= link_to "All alt videos", alt_videos_path, class: "text-primary hover:underline" %></p>
 
   <% if @rows.empty? %>
     <div class="empty-state text-muted" data-test="videos-empty">No videos yet. Digest one with <span class="font-mono">bin/digest-video</span>.</div>

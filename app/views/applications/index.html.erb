@@ -1,11 +1,12 @@
 <%# /applications: live apps on the left, apps pending launch on the right (ApplicationsWatchList). An admin sees every app; an owner only theirs. docs/agents/system/app-owners.md %>
 <section class="max-w-6xl mx-auto px-4 py-10 space-y-6" data-test="applications-page">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">Applications</h1>
-    <p class="text-secondary mt-2">
-      <%= @admin ? "Every app on the platform: live on the left, waiting to launch on the right. Owners see only their own." : "The apps you own. Open one to see its health and its CTO." %>
-    </p>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md). An admin's trail is the
+      Admin dashboard; for an owner Applications is the root, so no trail (as
+      ApplicationsHelper#app_page_crumbs). hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Applications", crumbs: (@admin ? studio_crumbs(:applications) : []) %>
+  <p class="text-secondary">
+    <%= @admin ? "Every app on the platform: live on the left, waiting to launch on the right. Owners see only their own." : "The apps you own. Open one to see its health and its CTO." %>
+  </p>
 
   <div class="grid gap-6 lg:grid-cols-5 items-start">
     <%# LEFT: the main list, apps running for someone today. %>
