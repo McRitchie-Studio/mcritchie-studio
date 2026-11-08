@@ -575,6 +575,68 @@ whole flow against a stand-in (`config/initializers/egnyte_connect_stand_in.rb`)
 that accepts any domain and honours only the last refresh token it issued;
 nothing reaches Egnyte.
 
+## 11. QuickBooks Online by sign-in — company info and reports, read only
+
+The same `sign_in` method for QuickBooks Online (`QuickbooksConnection`,
+`Quickbooks::OAuthClient`, `Quickbooks::Reader`): an Intuit sign-in per company,
+one ability (read the company's info and its reports). Intuit's only scope that
+reads a company's books is `com.intuit.quickbooks.accounting`, and it also allows
+writes; the hub uses it read only, because `Quickbooks::Reader` holds no write
+path (a unit test pins that). The hub dogfoods it at **`/admin/quickbooks`**
+(admin only): each connected company, its Intuit environment, and a live read
+(the company's name from CompanyInfo, and this year's profit and loss to date:
+its period, basis, sections and net income) or Intuit's error said plainly.
+Connect adds a company; each company has its own Disconnect. The QuickBooks card
+on `/integrations` carries the same buttons for an admin; `?return_to=` is
+honoured only for `/integrations` and `/admin/quickbooks`.
+
+**Built dark.** The card is `dark` in `config/integrations.yml`: a visitor and a
+client never see it, and an admin sees it with Connect disabled until the Intuit
+app is set on the server. When the connector is offered to clients, drop `dark`
+and set `status` to `live` in the same change.
+
+**One row per company.** `realm_id` (Intuit's company id, sent on the callback as
+`realmId`) is unique, so one owner can connect a new company file and an older
+one for history, each its own grant. The realm id is never rendered, and it is
+filtered by key (`realmId`) in `config/initializers/filter_parameter_logging.rb`,
+so neither the "Started GET" line's URL nor the Parameters line logs it. The
+callback's `code` is filtered from the Parameters line only (a controller-scoped
+filter, as for the other sign-ins); the URL line still carries it, and it is
+single-use and spent by the callback.
+
+**Refresh tokens rotate.** Access tokens last an hour. A refresh may answer a new
+refresh token, and Intuit says to keep the one its latest answer gave (the
+previous one lapses about a day later). So `Quickbooks::OAuthClient.access_token`
+refreshes only under the row's lock and stores the answered token before the
+access token is used. The stored token also lapses on its own: the row keeps the
+expiry Intuit states (`x_refresh_token_expires_in`), and the page shows it.
+Intuit also caps every refresh token at five years. A lapsed or revoked token
+reads as "Intuit no longer accepts this connection"; the fix is Disconnect, then
+Connect.
+
+**Revoke.** Intuit has a revoke endpoint. Disconnect calls it with the company's
+refresh token, then deletes the row either way, and says whether Intuit
+confirmed. When it did not, remove the app's access in QuickBooks (Settings,
+Manage apps).
+
+**The Intuit app.** One Intuit developer app has two key sets. Its Development
+keys reach sandbox companies only: set them on QA (`mcritchie-studio-qa`) as
+`INTUIT_CLIENT_ID` and `INTUIT_CLIENT_SECRET`, with `INTUIT_ENVIRONMENT` unset or
+`sandbox`, and register `https://qa.mcritchie.studio/admin/quickbooks/callback`
+as a Development redirect URI. Its Production keys reach real companies: set them
+on production (`mcritchie-studio`) with `INTUIT_ENVIRONMENT=production`, and
+register `https://mcritchie.studio/admin/quickbooks/callback` as a Production
+redirect URI. Any value of `INTUIT_ENVIRONMENT` other than `production` means the
+sandbox, so a typo never points sandbox keys at live books. Each connection
+stores the environment it was made in, and its reads go to the matching API
+host. The pairs live in `intuit.industries.applications` (`studio-applications`):
+the Development pair is filed (2026-11-08); the Production pair waits on Intuit's
+production questionnaire. Rotate either through
+[`credential-filing`](credential-filing.md). Locally,
+`QUICKBOOKS_STAND_IN=1` walks the whole flow against a stand-in
+(`config/initializers/quickbooks_connect_stand_in.rb`) whose token endpoint
+honours only the last refresh token it issued; nothing reaches Intuit.
+
 ## Switching a workspace off — and back on
 
 ```bash

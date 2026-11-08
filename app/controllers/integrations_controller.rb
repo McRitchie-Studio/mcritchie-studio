@@ -22,6 +22,10 @@ class IntegrationsController < ApplicationController
   # (Admin::EgnyteController): each domain and its Disconnect, and Connect
   # (a domain field), disabled until the server holds the developer key.
   EGNYTE_CARD = "egnyte".freeze
+  # The QuickBooks card carries the hub's own QuickBooks Online companies for
+  # an admin (Admin::QuickbooksController), the same way; its Connect renders
+  # disabled until the Intuit app is set on this server.
+  QUICKBOOKS_CARD = "quickbooks".freeze
 
   def index
     @groups = Integration.groups(admin: admin?)
@@ -32,6 +36,7 @@ class IntegrationsController < ApplicationController
 
     load_fathom_connection
     load_egnyte_connections
+    load_quickbooks_connections
   end
 
   # /integrations/discord — the guide the Discord card's Connect opens: what a
@@ -66,5 +71,11 @@ class IntegrationsController < ApplicationController
   def load_egnyte_connections
     @egnyte = { connections: EgnyteConnection.readable,
                 connectable: Egnyte::OAuthClient.connectable? && EgnyteConnection.encryption_ready? }
+  end
+
+  # { connections: every readable QuickbooksConnection, newest first, connectable: }.
+  def load_quickbooks_connections
+    @quickbooks = { connections: QuickbooksConnection.readable,
+                    connectable: Quickbooks::OAuthClient.connectable? && QuickbooksConnection.encryption_ready? }
   end
 end

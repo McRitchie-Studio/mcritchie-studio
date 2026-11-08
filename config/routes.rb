@@ -557,6 +557,14 @@ Rails.application.routes.draw do
     post "egnyte/connect", to: "egnyte#connect", as: :egnyte_connect
     delete "egnyte/connection", to: "egnyte#disconnect", as: :egnyte_disconnect
     get "egnyte/callback", to: "egnyte#callback", as: :egnyte_callback
+
+    # The QuickBooks Online connections (Admin::QuickbooksController), one row
+    # per company. The callback path is the redirect URI registered on the
+    # Intuit app (production and development keys): keep it exactly.
+    get "quickbooks", to: "quickbooks#show", as: :quickbooks
+    get "quickbooks/connect", to: "quickbooks#connect", as: :quickbooks_connect
+    delete "quickbooks/connections/:id", to: "quickbooks#disconnect", as: :quickbooks_disconnect
+    get "quickbooks/callback", to: "quickbooks#callback", as: :quickbooks_callback
   end
 
   # HTML
