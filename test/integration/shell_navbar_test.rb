@@ -25,7 +25,7 @@ class ShellNavbarTest < ActionDispatch::IntegrationTest
   test "the layout writes no header of its own" do
     layout = LAYOUT.read
 
-    assert_includes layout, "hub_navbar("
+    assert_includes layout, "<%= hub_navbar %>"
     refute_match(/<header\b/, layout, "the layout draws its own header beside the engine's")
     refute_includes layout, "navCollapse()", "the header binds the Alpine shim, not the engine's controller"
     refute_includes layout, 'render "components/user_nav"'

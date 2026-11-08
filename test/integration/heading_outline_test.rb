@@ -2,7 +2,8 @@ require "test_helper"
 require_relative "../support/navbar_brand"
 
 # A page has one h1. The navbar's brand is the h1 on a page with no heading of
-# its own, and a div on a page that brings one (ShellHelper#hub_navbar). The
+# its own, and a div on a page that brings one (the engine's
+# studio_page_has_h1?, since studio-engine 0.136.0). The
 # brand is the title words or, once the engine draws it, the kit's lockup
 # (test/support/navbar_brand.rb).
 class HeadingOutlineTest < ActionDispatch::IntegrationTest

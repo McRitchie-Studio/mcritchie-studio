@@ -4,7 +4,12 @@
   (Design System epic, item 4). Both blocks are 100% static and were being
   re-serialized inline on every HTML response; compiling them once into
   tailwind.css serves them from a cached stylesheet instead. Every rule is
-  #mason-heartbeat-scoped, so global inclusion is inert on other pages.
+  scoped under #mason-heartbeat or #mason-insights (the Insight Bank's section;
+  the page-header rules below use :is(#mason-heartbeat, #mason-insights)), with
+  one exception: the activities table's rules also match the engine's
+  .sticky-table-header-clone, which the engine attaches to document.body, so
+  they reach it as .sticky-table-header-clone table.aa-tbl. Each selector is
+  specific to these pages, so global inclusion is inert on other pages.
   Imported from application.css. Keep this file static — the genuinely dynamic
   style blocks (deployments_live_fx, lineup_graphics) stay inline by design.
 */
@@ -571,6 +576,16 @@ html[data-surface-style="glass"] :is(#mason-heartbeat, #mason-insights) > [data-
   --btn-neutral-bg-hover: var(--hb-panel2, #1c2330);
   color: var(--hb-txt);
   border-color: var(--hb-faint);
+}
+/* Under the glass surfaces the engine lights a neutral button with an overlay on ::after
+   (--lit-inset): the theme's glass line as a 1px ring, plus a soft top highlight. On the
+   default light glass that ring is a dark tint, which brings the button's --hb-faint
+   border to 2.6-2.8:1 on the dark bar, and the highlight draws a white stripe on its top
+   edge. On the dark bar the ring is the dark glass line instead, with no highlight:
+   every edge measures about 4:1 (Shannon, dark-devops-header-polish). */
+html[data-surface-style="glass"] :is(#mason-heartbeat, #mason-insights) > .page-header .page-header-menu-button {
+  --lit-inset: inset 0 0 0 1px rgb(255 255 255 / .1);
+  --lit-inset-pressed: inset 0 0 0 1px rgb(255 255 255 / .1);
 }
 :is(#mason-heartbeat, #mason-insights) > .page-header .page-header-menu-list {
   background-color: var(--hb-panel);

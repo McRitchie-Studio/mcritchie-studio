@@ -15,10 +15,10 @@
 #   script-src   'self' (importmap modules, the engine's vendored Alpine, confetti,
 #                Leaflet, SortableJS), the request's nonce (every inline <script>
 #                renders nonce="<%= content_security_policy_nonce %>"; importmap-rails
-#                and the engine's head nonce their own tags), and ONE third-party
-#                file, named by path rather than host because cdnjs mirrors every
-#                npm package: cropper.js (studio/_cropper_assets, the avatar and
-#                banner croppers). And Google's API loader host, apis.google.com:
+#                and the engine's head nonce their own tags; cropper.js, which
+#                studio/_cropper_assets serves from the engine's own assets since
+#                studio-engine 0.136.0, so cdnjs is named nowhere), and Google's
+#                API loader host, apis.google.com:
 #                the Drive card's Google Picker (drive_picker.js) loads
 #                /js/api.js from it, and that loader fetches the Picker's own
 #                scripts from the same host (/tasks/drive-files-you-pick).
@@ -66,8 +66,6 @@
 module HubCsp
   REPORT_PATH = "/csp_reports".freeze
 
-  CROPPER_JS = "https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js".freeze
-  CROPPER_CSS = "https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css".freeze
   R2_PUBLIC = "https://assets.mcritchie.studio".freeze
   R2_PRESIGNED = "https://*.r2.cloudflarestorage.com".freeze
   GOOGLE_CALENDAR = "https://calendar.google.com".freeze
@@ -137,8 +135,8 @@ end
 Rails.application.configure do
   config.content_security_policy do |policy|
     policy.default_src     :self
-    policy.script_src      :self, :unsafe_eval, :report_sample, HubCsp::CROPPER_JS, HubCsp::GOOGLE_APIS, HubCsp::TRANSFORMERS_JS, *HubCsp::PINNED_SCRIPT_HASHES.values
-    policy.style_src       :self, :unsafe_inline, HubCsp::CROPPER_CSS
+    policy.script_src      :self, :unsafe_eval, :report_sample, HubCsp::GOOGLE_APIS, HubCsp::TRANSFORMERS_JS, *HubCsp::PINNED_SCRIPT_HASHES.values
+    policy.style_src       :self, :unsafe_inline
     policy.img_src         :self, :data, :blob, :https
     policy.media_src(*HubCsp.media_sources)
     policy.font_src        :self, :data

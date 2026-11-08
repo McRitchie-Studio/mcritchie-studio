@@ -170,6 +170,41 @@ test("the pipeline at ~900px: the columns stack and the header stays pinned afte
   expect(await pinGapAfterScroll(page, "#mason-heartbeat > *")).toBe(0);
 });
 
+// The Links button's painted edge against the bar beside it, per side. Under glass the
+// engine paints an overlay on the button's ::after (inset: -1px, so its outer pixel is
+// the button's border pixel) from --lit-inset: a 1px ring and a top highlight. Each edge
+// is the border colour with every inset shadow that reaches that edge laid over it,
+// last listed first; the bar is the header's fill over --hb-bg. Returns each side's
+// ratio and colour (hub-post-engine-cleanup, Shannon's dark-devops-header-polish note).
+function linksBorderInPage(page, selector) {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    const parse = (c) => { const [r, g, b, a = 1] = c.match(/[\d.]+/g).map(Number); return [r, g, b, a]; };
+    const over = ([r, g, b, a], [br, bg, bb]) => [r * a + br * (1 - a), g * a + bg * (1 - a), b * a + bb * (1 - a)];
+    const lum = (rgb) => rgb.map((v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; })
+      .reduce((sum, v, i) => sum + v * [0.2126, 0.7152, 0.0722][i], 0);
+    const ratio = (x, y) => { const [hi, lo] = [lum(x), lum(y)].sort((a, b) => b - a); return (hi + 0.05) / (lo + 0.05); };
+    const surface = [13, 17, 23]; // --hb-bg
+    const bar = over(parse(getComputedStyle(el.closest(".page-header")).backgroundColor), surface);
+    const raw = getComputedStyle(el, "::after").boxShadow;
+    const shadows = raw === "none" ? [] : raw.split(/,(?![^(]*\))/).map((s) => s.trim()).filter((s) => s.includes("inset")).map((s) => {
+      const colour = s.match(/rgba?\([^)]*\)/)[0];
+      const [x, y, , spread = 0] = s.replace(colour, "").match(/-?[\d.]+px/g).map(parseFloat);
+      return { colour: parse(colour), x, y, spread };
+    });
+    const reaches = { top: (s) => s.spread > 0 || s.y > 0, bottom: (s) => s.spread > 0 || s.y < 0,
+      left: (s) => s.spread > 0 || s.x > 0, right: (s) => s.spread > 0 || s.x < 0 };
+    const style = getComputedStyle(el);
+    const sides = {};
+    for (const side of ["top", "right", "bottom", "left"]) {
+      let edge = over(parse(style.getPropertyValue(`border-${side}-color`)), bar);
+      for (const s of [...shadows].reverse()) if (reaches[side](s)) edge = over(s.colour, edge);
+      sides[side] = { ratio: Math.round(ratio(edge, bar) * 100) / 100, edge: edge.map(Math.round).join(",") };
+    }
+    return { sides, shadow: raw };
+  }, selector);
+}
+
 async function darkLinksMenu(page, theme) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript((t) => localStorage.setItem("theme", t), theme);
@@ -179,6 +214,14 @@ async function darkLinksMenu(page, theme) {
   expect(await button.evaluate((el) => getComputedStyle(el).color)).toBe("rgb(230, 237, 243)");
   const ratio = await contrastInPage(page, "#mason-insights > .page-header .page-header-menu-button");
   expect(ratio).toBeGreaterThanOrEqual(4.5);
+  // The button's border reads at 3:1 or better on every edge, and the top edge is the
+  // same colour as the rest: no light stripe from the engine's glass highlight.
+  await expect(page.locator("html")).toHaveAttribute("data-surface-style", "glass");
+  const border = await linksBorderInPage(page, "#mason-insights > .page-header .page-header-menu-button");
+  for (const [side, { ratio: edgeRatio }] of Object.entries(border.sides)) {
+    expect(edgeRatio, `${theme} ${side} edge ${JSON.stringify(border)}`).toBeGreaterThanOrEqual(3);
+  }
+  expect(new Set(Object.values(border.sides).map((s) => s.edge)).size, `one edge colour: ${JSON.stringify(border)}`).toBe(1);
   await button.click();
   const list = row.locator(".page-header-menu-list");
   await expect(list).toBeVisible();

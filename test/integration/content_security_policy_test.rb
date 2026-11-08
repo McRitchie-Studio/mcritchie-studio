@@ -21,8 +21,8 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
     hashes = HubCsp::PINNED_SCRIPT_HASHES.values.map { |hash| "'#{hash}'" }.join(" ")
     [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-eval' 'report-sample' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js https://apis.google.com https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/ #{hashes} 'nonce-#{nonce}'",
-      "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css",
+      "script-src 'self' 'unsafe-eval' 'report-sample' https://apis.google.com https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.7.6/ #{hashes} 'nonce-#{nonce}'",
+      "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https:",
       "media-src 'self' blob: https://assets.mcritchie.studio https://*.r2.cloudflarestorage.com",
       "font-src 'self' data:",
@@ -134,6 +134,26 @@ class ContentSecurityPolicyTest < ActionDispatch::IntegrationTest
       refute_match(/nonce/, source.lines.grep(/<script|tag\.script|javascript_tag/).join,
                    "#{file} now renders a nonce: drop #{name} from ENGINE_PENDING_NONCE (keep its hash for Turbo visits)")
     end
+  end
+
+  # [unit] hub-post-engine-cleanup: since studio-engine 0.136.0 the engine's
+  # studio/_cropper_assets serves cropper.js and its CSS from this app's asset
+  # pipeline, so the policy names no cdnjs file and no page loads one.
+  # /profile/edit renders the avatar cropper, so it would still show one.
+  test "the cropper loads from this app's own assets, and the policy names no cdnjs file" do
+    directives = Rails.application.config.content_security_policy.directives
+    refute(directives.values.flatten.any? { _1.to_s.include?("cdnjs") }, "a directive still names cdnjs")
+
+    log_in_as(users(:alex))
+    get edit_profile_path
+    assert_response :success
+    page = Nokogiri::HTML5(response.body)
+    script = page.at_css('script[src*="studio/cropper-1.6.2"]')
+    style = page.at_css('link[rel="stylesheet"][href*="studio/cropper-1.6.2"]')
+    assert script && style, "control: /profile/edit rendered no cropper tags, so the cdnjs check below would prove nothing"
+    refute_match(%r{\Ahttps?://}, script["src"], "the cropper script must come from this app")
+    refute_match(%r{\Ahttps?://}, style["href"], "the cropper style must come from this app")
+    refute_includes response.body, "cdnjs.cloudflare.com"
   end
 
   # [unit] drive-files-you-pick: the Google Picker's loader host may run scripts

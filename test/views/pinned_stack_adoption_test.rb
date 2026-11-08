@@ -50,7 +50,7 @@ class PinnedStackAdoptionTest < ActiveSupport::TestCase
     layout = LAYOUT.read
     navbar = Pathname(Gem.loaded_specs["studio-engine"].full_gem_path).join("app/views/layouts/_navbar.html.erb").read
 
-    assert_includes layout, "hub_navbar(", "the header must be the engine's navbar"
+    assert_includes layout, "<%= hub_navbar %>", "the header must be the engine's navbar"
     assert_includes navbar, 'data-studio-controller="nav-collapse"',
                     "the header must own the engine's scroll-linked collapse"
     assert_includes navbar, 'data-pin="nav"',
