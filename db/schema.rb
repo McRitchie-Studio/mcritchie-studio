@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_203710) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_08_234215) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2563,6 +2563,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_203710) do
     t.index ["contact_id"], name: "index_staged_emails_on_contact_id"
     t.index ["delivery_token"], name: "index_staged_emails_on_delivery_token", unique: true, where: "(delivery_token IS NOT NULL)"
     t.check_constraint "status::text = ANY (ARRAY['staged'::character varying::text, 'approved'::character varying::text, 'sent'::character varying::text, 'cancelled'::character varying::text, 'skipped'::character varying::text])", name: "staged_emails_status_known"
+  end
+
+  create_table "studio_connections", force: :cascade do |t|
+    t.datetime "access_expires_at"
+    t.text "access_token"
+    t.string "account_key", null: false
+    t.text "account_secret"
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "label"
+    t.datetime "last_refreshed_at"
+    t.json "metadata", default: {}, null: false
+    t.string "provider", null: false
+    t.datetime "refresh_expires_at"
+    t.text "refresh_token"
+    t.datetime "updated_at", null: false
+    t.index ["provider", "account_key"], name: "index_studio_connections_on_provider_and_account_key", unique: true
   end
 
   create_table "studio_email_deliveries", force: :cascade do |t|
