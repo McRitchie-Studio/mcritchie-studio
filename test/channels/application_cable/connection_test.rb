@@ -86,4 +86,20 @@ class ApplicationCable::ConnectionTest < ActionCable::Connection::TestCase
       assert_empty seen
     end
   end
+
+  test "[unit] on an engine without the helper the guard is a no-op: a valid session connects" do
+    klass = Studio::UserSession.singleton_class
+    had = klass.method_defined?(:ended?)
+    klass.alias_method(:ended_hidden?, :ended?) if had
+    klass.remove_method(:ended?) if had
+    assert_not Studio::UserSession.respond_to?(:ended?)
+
+    connect session: session_for(@viewer)
+    assert_equal @viewer, connection.current_user
+  ensure
+    if had
+      klass.alias_method(:ended?, :ended_hidden?)
+      klass.remove_method(:ended_hidden?)
+    end
+  end
 end
