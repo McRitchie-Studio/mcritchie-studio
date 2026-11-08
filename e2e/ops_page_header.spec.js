@@ -150,7 +150,7 @@ test("the heartbeat dashboard at desktop keeps its fixed height and internal scr
   await page.goto("/devops/pipeline");
   const pipe = await page.evaluate(() => {
     const s = document.querySelector("#mason-heartbeat");
-    const l = s.querySelector(".pl-list");
+    const l = s.querySelector(".pl-grid .pl-list");
     return { height: s.getBoundingClientRect().height, inner: window.innerHeight,
       overflow: getComputedStyle(l).overflowY, max: getComputedStyle(l).maxHeight };
   });
