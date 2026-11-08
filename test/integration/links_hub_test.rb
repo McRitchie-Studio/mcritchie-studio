@@ -102,7 +102,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
       credentials_path => "vault icons", broadcasts_path => "Compose, send",
       contacts_path => "mailing list", broadcast_analytics_path => "Delivery, opens",
       error_logs_path => "Captured errors", admin_tiktok_path => "Connected account", admin_google_path => "Calendar",
-      admin_fathom_path => "Meeting notes", admin_egnyte_path => "Document store", admin_quickbooks_path => "Company info", admin_agent_messages_path => "Messages to agents",
+      admin_fathom_path => "Meeting notes", admin_egnyte_path => "Document store", admin_msgraph_path => "Tenants", admin_quickbooks_path => "Company info", admin_agent_messages_path => "Messages to agents",
       admin_report_destinations_path => "Discord channel", admin_csp_reports_path => "Content-Security-Policy",
       builders_path => "commit pace", teams_path => "All teams", people_path => "Players + staff", docs_path => "Documentation",
       admin_ai_builder_multiple_path => "commit pace backtest", workflow_news_index_path => "Intake", merge_people_path => "Resolve duplicate",
@@ -127,7 +127,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     assert_select "#studio-link-sidebar a[href=?]", admin_basement_path, text: /Basement/
     [ admin_schema_path, admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
       broadcasts_path, contacts_path, broadcast_analytics_path, error_logs_path, admin_tiktok_path, admin_google_path,
-      admin_fathom_path, admin_egnyte_path, admin_quickbooks_path, admin_agent_messages_path, admin_report_destinations_path, admin_csp_reports_path ].each do |href|
+      admin_fathom_path, admin_egnyte_path, admin_msgraph_path, admin_quickbooks_path, admin_agent_messages_path, admin_report_destinations_path, admin_csp_reports_path ].each do |href|
       assert_select "#studio-link-sidebar a[href=?]", href, count: 0
     end
   end
@@ -137,7 +137,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
 
     [ admin_schema_path, admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
       broadcasts_path, contacts_path, broadcast_analytics_path, logos_path, build_requests_path, books_path,
-      activities_agents_path, error_logs_path, admin_tiktok_path, admin_google_path, admin_fathom_path, admin_egnyte_path, admin_quickbooks_path, admin_agent_messages_path,
+      activities_agents_path, error_logs_path, admin_tiktok_path, admin_google_path, admin_fathom_path, admin_egnyte_path, admin_msgraph_path, admin_quickbooks_path, admin_agent_messages_path,
       admin_report_destinations_path, admin_csp_reports_path ].each do |href|
       get href
       assert_response :success, "#{href} must still answer"
@@ -157,7 +157,7 @@ class LinksHubTest < ActionDispatch::IntegrationTest
     end
     [ admin_schema_path, admin_emails_path, admin_link_preview_path, asset_browser_path, stack_path, credentials_path,
       broadcasts_path, contacts_path, broadcast_analytics_path, error_logs_path, admin_tiktok_path, admin_google_path,
-      admin_fathom_path, admin_egnyte_path, admin_quickbooks_path, admin_agent_messages_path, admin_report_destinations_path, admin_csp_reports_path ].each do |href|
+      admin_fathom_path, admin_egnyte_path, admin_msgraph_path, admin_quickbooks_path, admin_agent_messages_path, admin_report_destinations_path, admin_csp_reports_path ].each do |href|
       assert_select "[data-link-hub] a[href=?]", href
     end
   end

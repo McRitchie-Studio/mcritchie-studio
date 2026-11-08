@@ -1,0 +1,101 @@
+<%# The standing Microsoft 365 page (/admin/msgraph): every connected tenant by its name, and a live read proving each (the first page of users, the Teams, the root site and its drives), or Microsoft's error said plainly. One Connect button, and a Disconnect per tenant (by row id). The app registration and encryption setup shows only while one is missing, by NAME only. It renders no tenant id, no token, and no value of any env var. %>
+<% can_connect = @configured && @encryption_ready %>
+<% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
+<section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="msgraph-connection-page" data-count="<%= @tenants.size %>">
+  <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+    <div class="min-w-0">
+      <h1 class="text-3xl font-bold text-heading">Microsoft 365 connections</h1>
+      <p class="text-secondary mt-2">
+        The Microsoft 365 tenants this server reads, each approved once by a tenant administrator. It reads users, Teams and SharePoint files and nothing else. No tenant id or token is shown here.
+      </p>
+    </div>
+    <% if can_connect %>
+      <%= link_to "Connect Microsoft 365", admin_msgraph_connect_path,
+                  class: "btn btn-primary btn-sm w-full sm:w-auto shrink-0 text-center", data: { test: "msgraph-connect", turbo: false } %>
+    <% end %>
+  </div>
+
+  <% if @unreadable.positive? %>
+    <p class="card p-4 text-sm text-body" data-test="msgraph-unreadable">
+      <span class="font-semibold text-warning-ink">Stored but unreadable:</span> <%= pluralize(@unreadable, "tenant") %>. It was encrypted with keys this server no longer has; connecting the tenant again replaces it.
+    </p>
+  <% end %>
+
+  <% if @tenants.empty? %>
+    <div class="card p-4 text-sm" data-test="msgraph-section" data-state="none">
+      <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="msgraph-badge">Not connected</span>
+      <p class="text-muted mt-2" data-test="msgraph-detail">
+        <%= can_connect ? "No tenant is connected. Connect sends a tenant administrator to Microsoft to approve read-only access." : "Connect is off until the setup below is done." %>
+      </p>
+    </div>
+  <% end %>
+
+  <% @tenants.each do |tenant| %>
+    <% connection = tenant.connection %>
+    <div class="card p-4 space-y-3 text-sm" data-test="msgraph-section" data-state="<%= tenant.error ? 'read_failed' : 'connected' %>">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div class="min-w-0 space-y-1">
+          <h2 class="font-semibold text-heading text-base break-words" data-field="display-name"><%= connection.display_name %></h2>
+          <% if tenant.error %>
+            <span class="badge text-xs bg-warning/10 text-warning-ink border-warning/40" data-test="msgraph-badge">Connected, but the read failed</span>
+          <% else %>
+            <span class="badge text-xs bg-success/10 text-success-ink border-success/40" data-test="msgraph-badge">Connected</span>
+          <% end %>
+          <span class="block text-muted text-xs" data-field="connected">Connected <%= stamp.(connection.connected_at) %><% if connection.connected_by.present? %> by <%= connection.connected_by %><% end %></span>
+        </div>
+        <%= button_to "Disconnect", admin_msgraph_disconnect_path(connection), method: :delete, class: "btn btn-danger btn-sm w-full sm:w-auto",
+                      form: { class: "shrink-0", data: { test: "msgraph-disconnect", turbo_confirm: "Disconnect Microsoft 365 for #{connection.display_name}?" } } %>
+      </div>
+
+      <% if tenant.error %>
+        <p class="text-body" data-test="msgraph-read-error"><%= tenant.error %></p>
+      <% else %>
+        <% read = tenant.read %>
+        <dl class="grid grid-cols-1 sm:grid-cols-[auto_1fr] gap-x-4 gap-y-1" data-test="msgraph-read">
+          <dt class="text-muted text-xs">Users</dt>
+          <dd class="text-body" data-field="users" data-count="<%= read.users.items.size %>" data-more="<%= read.users.more? %>">
+            <%= pluralize(read.users.items.size, "user") %> on the first page<%= read.users.more? ? ", and more after it" : "" %>
+          </dd>
+          <dt class="text-muted text-xs">Teams</dt>
+          <dd class="text-body" data-field="teams" data-count="<%= read.teams.items.size %>" data-more="<%= read.teams.more? %>">
+            <%= pluralize(read.teams.items.size, "team") %><%= read.teams.more? ? " on the first page, and more after it" : "" %>
+          </dd>
+          <dt class="text-muted text-xs">Root site</dt>
+          <dd class="text-heading break-words min-w-0" data-field="site"><%= read.site.display_name.presence || "(unnamed)" %></dd>
+          <dt class="text-muted text-xs">Its drives</dt>
+          <dd class="text-body" data-field="drives" data-count="<%= read.drives.items.size %>">
+            <%= read.drives.items.empty? ? "None" : read.drives.items.map(&:name).compact_blank.to_sentence %>
+          </dd>
+        </dl>
+      <% end %>
+    </div>
+  <% end %>
+
+  <% unless can_connect %>
+    <dl class="card p-4 space-y-3 text-sm border-warning/40" data-test="msgraph-server">
+      <% unless @configured %>
+        <div>
+          <dt class="text-muted text-xs mb-1">App registration</dt>
+          <dd class="text-body break-words" data-field="client" data-set="false">
+            <span class="font-semibold text-warning-ink">Not set.</span>
+            Register a multi-tenant app in Microsoft Entra, then set <span class="font-mono text-xs">MSGRAPH_CLIENT_ID</span> and <span class="font-mono text-xs">MSGRAPH_CLIENT_SECRET</span>.
+            <span class="block text-muted mt-1">Its redirect URI must be <span class="font-mono text-xs break-all"><%= @callback_url %></span></span>
+            <span class="block text-muted mt-1">Its Microsoft Graph application permissions, every one a read: <span class="font-mono text-xs"><%= @permissions.join(", ") %></span></span>
+          </dd>
+        </div>
+      <% end %>
+      <% unless @encryption_ready %>
+        <div>
+          <dt class="text-muted text-xs mb-1">Encryption</dt>
+          <dd class="text-body break-words" data-field="encryption" data-ready="false">
+            <span class="font-semibold text-warning-ink">Not ready.</span> Set <span class="font-mono text-xs"><%= MsgraphConnection::ENCRYPTION_ENV.join(", ") %></span>: without them no connection can be stored.
+          </dd>
+        </div>
+      <% end %>
+    </dl>
+  <% end %>
+
+  <p class="text-xs text-muted" data-test="msgraph-federation-note">
+    A tenant bought through GoDaddy is federated to GoDaddy, and Microsoft blocks admin approval there until the tenant is defederated. Check the tenant in the Microsoft 365 admin center before you connect it.
+  </p>
+</section>

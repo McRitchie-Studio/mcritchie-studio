@@ -57,6 +57,7 @@
           <% fathom_here = @fathom && entry.key == IntegrationsController::FATHOM_CARD %>
           <% egnyte_here = @egnyte && entry.key == IntegrationsController::EGNYTE_CARD %>
           <% quickbooks_here = @quickbooks && entry.key == IntegrationsController::QUICKBOOKS_CARD %>
+          <% msgraph_here = @msgraph && entry.key == IntegrationsController::MSGRAPH_CARD %>
           <% shows_blurb = entry.line != entry.blurb %>
           <% details = shows_blurb || entry.tier_note.present? || entry.connection_methods.any? || entry.price_note.present? || entry.price_label %>
           <article class="flex flex-col rounded-xl border border-subtle bg-surface p-4" data-test="integration-entry" data-entry="<%= entry.key %>" data-status="<%= entry.status %>">
@@ -95,7 +96,7 @@
             <% end %>
 
             <%# The action row: a signed-in user's real Connect or Disconnect on a
-                Google tile (an admin's on the Fathom, Egnyte and QuickBooks tiles), else the tile's button.
+                Google tile (an admin's on the Fathom, Egnyte, Microsoft 365 and QuickBooks tiles), else the tile's button.
                 The Details toggle is a native <details> (no script) whose summary
                 sits at the row's right edge; its panel drops over the tiles below,
                 so opening one never stretches the other tiles in its row. %>
@@ -105,6 +106,8 @@
                   <div class="min-w-0 flex-1 text-xs"><%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable], own: @google[:own] %></div>
                 <% elsif fathom_here %>
                   <div class="min-w-0 flex-1 text-xs"><%= render "integrations/fathom_connection", connection: @fathom[:connection], connectable: @fathom[:connectable] %></div>
+                <% elsif msgraph_here %>
+                  <div class="min-w-0 flex-1 text-xs"><%= render "integrations/msgraph_connection", connections: @msgraph[:connections], connectable: @msgraph[:connectable] %></div>
                 <% elsif egnyte_here %>
                   <div class="min-w-0 flex-1 text-xs"><%= render "integrations/egnyte_connection", connections: @egnyte[:connections], connectable: @egnyte[:connectable] %></div>
                 <% elsif quickbooks_here %>

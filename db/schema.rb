@@ -1931,6 +1931,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_000000) do
     t.index ["model"], name: "index_model_rate_overrides_on_model", unique: true
   end
 
+  create_table "msgraph_connections", force: :cascade do |t|
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "display_name", null: false
+    t.text "tenant_id", null: false
+    t.string "tenant_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["connected_at"], name: "index_msgraph_connections_on_connected_at"
+    t.index ["tenant_key"], name: "index_msgraph_connections_on_tenant_key", unique: true
+  end
+
   create_table "news", force: :cascade do |t|
     t.datetime "archived_at"
     t.string "article_image_url"

@@ -162,6 +162,7 @@ pages:
   error_logs:           { page: "error_logs#index",    audience: admin, label: Error logs, emoji: "🚨", hover_emoji: "🔍", desc: Captured errors, parent: admin_basement }
   admin_tiktok: { page: "admin/tiktok#show", audience: admin, label: TikTok connection, emoji: "🎵", hover_emoji: "🔐", desc: Connected account · sign in · disconnect, parent: admin_basement }
   admin_google: { page: "admin/google#show", audience: admin, label: Google connection, emoji: "🔗", hover_emoji: "🔐", desc: Calendar · Gmail · Drive · connect · disconnect, parent: admin_basement }
+  admin_msgraph: { page: "admin/msgraph#show", audience: admin, label: Microsoft 365 connection, emoji: "🏢", hover_emoji: "🔐", desc: Tenants · users · Teams · SharePoint · connect · disconnect, parent: admin_basement }
   admin_fathom: { page: "admin/fathom#show", audience: admin, label: Fathom connection, emoji: "🎙️", hover_emoji: "🔐", desc: Meeting notes · transcripts · connect · disconnect, parent: admin_basement }
   admin_egnyte: { page: "admin/egnyte#show", audience: admin, label: Egnyte connection, emoji: "🗄️", hover_emoji: "🔐", desc: Document store · folders · upload · connect · disconnect, parent: admin_basement }
   admin_quickbooks: { page: "admin/quickbooks#show", audience: admin, label: QuickBooks connection, emoji: "📒", hover_emoji: "🔐", desc: Company info · profit and loss · read only · connect · disconnect, parent: admin_basement }
@@ -219,7 +220,7 @@ sidebar:
   - { title: Clients,   group: basement, pages: [stack, credentials] }
   # The mailing list and what is sent to it.
   - { title: Email,     group: basement, pages: [broadcasts, contacts, broadcast_analytics] }
-  - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_egnyte, admin_quickbooks, admin_agent_messages, admin_report_destinations, admin_csp_reports, admin_upgrade_proposals] }
+  - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_egnyte, admin_msgraph, admin_quickbooks, admin_agent_messages, admin_report_destinations, admin_csp_reports, admin_upgrade_proposals] }
   # Who is who, and the docs.
   - { title: Directory, group: basement, pages: [teams, people, builders, docs] }
   - { title: Data,      group: basement, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
