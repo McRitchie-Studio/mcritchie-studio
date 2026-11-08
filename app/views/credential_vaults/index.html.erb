@@ -1,14 +1,15 @@
 <% content_for :title, "Credentials · McRitchie Studio" %>
 
 <section class="max-w-6xl mx-auto px-4 py-10" data-test="credentials-page">
-  <header class="mb-8">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Credentials</p>
-    <h1 class="text-3xl font-bold text-heading mb-2">Software by entity</h1>
-    <p class="text-muted max-w-2xl">
-      Which software each entity holds credentials for. Hover an icon for the 1Password items behind
-      it. Records only, never the secrets themselves.
-    </p>
-  </header>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), a direct child of the
+      page's section so it stays pinned the length of the page: the old eyebrow
+      "Credentials" ends the trail.
+      hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Software by entity", crumb_label: "Credentials", crumbs: studio_crumbs(:credentials) %>
+  <p class="text-muted max-w-2xl mt-2 mb-8">
+    Which software each entity holds credentials for. Hover an icon for the 1Password items behind
+    it. Records only, never the secrets themselves.
+  </p>
 
   <%# The table scrolls sideways inside its own box on a phone; the page never does. %>
   <div class="overflow-x-auto rounded-2xl border border-subtle bg-surface" data-test="credential-matrix">

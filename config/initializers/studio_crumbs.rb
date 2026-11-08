@@ -20,5 +20,8 @@ Rails.application.config.to_prepare do
          parent: :news_index
     page :broadcast, ->(broadcast:) { truncate(broadcast.subject.presence || broadcast.slug, length: 40) },
          ->(broadcast:) { edit_broadcast_path(broadcast) }, parent: :broadcasts
+    # A source video (hub-ops-page-headers): its alt videos' parent.
+    page :video, ->(video:) { truncate(video.title, length: 40) }, ->(video:) { video_path(video) },
+         parent: :videos
   end
 end
