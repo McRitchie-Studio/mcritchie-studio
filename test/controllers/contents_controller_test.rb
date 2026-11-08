@@ -19,7 +19,7 @@ class ContentsControllerTest < ActionDispatch::IntegrationTest
   test "index renders content page" do
     get contents_path
     assert_response :success
-    assert_select "h2", "Content Pipeline"
+    assert_select "h1.page-header-title", "Content Pipeline"
   end
 
   test "index renders the studio board primitive with card and dropzone contract" do

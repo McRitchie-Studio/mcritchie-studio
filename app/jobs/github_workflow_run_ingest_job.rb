@@ -12,8 +12,10 @@
 #   * `pull_request` (closed + merged)     — refreshes the merged column of the
 #                                            task(s) that PR belongs to (devops-v3
 #                                            4c-i: the board derives `merged`, no
-#                                            agent stamps it). Every other action
-#                                            is ignored.
+#                                            agent stamps it), and moves a task
+#                                            still `submitted` on to `reviewed`
+#                                            when the PR is its own. Every other
+#                                            action is ignored.
 #
 # IDEMPOTENT + MONOTONIC by design. GitHub delivers webhooks AT-LEAST-ONCE and
 # OUT OF ORDER, so this job:
@@ -29,6 +31,8 @@
 # re-raised for non-transient failures — GitHub (or a backfill) will re-deliver,
 # and the upsert is idempotent, so we don't want ApplicationJob's retry_on to
 # storm on a malformed payload. A genuine INSERT race is the one thing we retry.
+require Rails.root.join("bin/lib/ci_cause_detector").to_s
+
 class GithubWorkflowRunIngestJob < ApplicationJob
   def perform(event_name, payload)
     payload = stringify(payload)
@@ -86,6 +90,10 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       # that failed, or pinning the row RED after a re-run went green.
       return if record.persisted? && incoming_attempt && incoming_attempt < record.run_attempt.to_i
 
+      # The verdict this row held before this delivery: a re-run that turns it green
+      # proves the earlier attempt's red had a cause (#file_cause_cards_on_a_flip).
+      earlier = { conclusion: record.conclusion, attempt: record.run_attempt.to_i }
+
       apply_descriptive_fields(record, run, repo)
       record.status = incoming if incoming.present?
 
@@ -119,7 +127,33 @@ class GithubWorkflowRunIngestJob < ApplicationJob
       # missed trigger is picked up by the action's own recheck chain
       # (ReviewPendingActionExecutionJob) within minutes.
       trigger_review_autopilot(record) if record.conclusion.present?
+      file_cause_cards_on_a_flip(record, earlier)
     end
+  end
+
+  # A SAME-SHA RED THEN GREEN IS A DEFECT WITH A CAUSE (Alex McRitchie, 2026-11-06),
+  # so the green that proves it enqueues the card filing for each red it proves:
+  # this run's own earlier attempt (a re-run that passed), and every other run of the
+  # same workflow at the same SHA that failed. CiCauseCardJob reads the logs and files
+  # one card per cause; this only spots the flip. Best-effort, like the autopilot
+  # trigger: a missed card must never break CI ingestion.
+  def file_cause_cards_on_a_flip(record, earlier)
+    return unless record.conclusion == "success" && record.repo.present? && record.head_sha.present?
+
+    reds = []
+    if CiCauseDetector::RED.include?(earlier[:conclusion].to_s) && record.run_attempt.to_i > earlier[:attempt]
+      reds << [record.run_id, [earlier[:attempt], 1].max]
+    end
+    GithubWorkflowRun.where(repo: record.repo, head_sha: record.head_sha, workflow_name: record.workflow_name,
+                            conclusion: CiCauseDetector::RED).where.not(run_id: record.run_id).find_each do |red|
+      reds << [red.run_id, [red.run_attempt.to_i, 1].max]
+    end
+    reds.uniq.each do |run_id, attempt|
+      CiCauseCardJob.perform_later(record.repo, run_id, attempt, record.run_id, record.run_attempt)
+    end
+  rescue StandardError => e
+    Rails.logger.warn("[GithubWorkflowRunIngestJob] cause-card trigger failed for run #{record.run_id}: #{e.class}: #{e.message}")
+    nil
   end
 
   def trigger_review_autopilot(record)
@@ -217,7 +251,9 @@ class GithubWorkflowRunIngestJob < ApplicationJob
     return if url.blank? && branch.blank?
 
     tasks_for_pull_request(url, branch).each do |task|
-      TaskMergedRungRefreshJob.perform_now(task.slug)
+      # pr_url: lets the stage follow the merge — a `submitted` task whose OWN PR
+      # this is moves to `reviewed` (Task#follow_pull_request_merge!).
+      TaskMergedRungRefreshJob.perform_now(task.slug, pr_url: url)
     end
   end
 

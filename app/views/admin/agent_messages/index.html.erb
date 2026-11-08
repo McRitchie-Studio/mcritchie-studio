@@ -1,17 +1,16 @@
 <%# /admin/agent_messages — the agent mailbox: every message, its soul, claim and reply. %>
 <%= render "admin/agent_messages/styles" %>
 
-<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-  <h1 class="text-xl font-semibold">Agent inbox</h1>
-  <div class="text-sm opacity-70">
-    <%= @status_counts.fetch("received", 0) %> waiting ·
-    <%= @status_counts.fetch("claimed", 0) %> claimed ·
-    <%= @status_counts.fetch("held", 0) %> held ·
-    <%= @status_counts.fetch("dead", 0) %> dead
-  </div>
-</div>
+<%# The engine page header (studio-engine docs/PAGE_HEADER.md). The tallies are a count, not a control:
+    the header's meta, beside the title. The engine hides the meta under 40rem, so a phone gets them
+    on a line of their own under the row. %>
+<% tallies = "#{@status_counts.fetch("received", 0)} waiting · #{@status_counts.fetch("claimed", 0)} claimed · " \
+             "#{@status_counts.fetch("held", 0)} held · #{@status_counts.fetch("dead", 0)} dead" %>
+<%= render "studio/page_header", title: "Agent inbox", crumbs: studio_crumbs(:admin_agent_messages),
+      meta: tag.span(tallies, data: { test: "am-tallies" }) %>
+<p class="sm:hidden mt-2 text-sm opacity-70" data-test="am-tallies-phone"><%= tallies %></p>
 
-<p class="text-sm opacity-70 mb-4">
+<p class="text-sm opacity-70 mt-4 mb-4">
   Messages to the agents from Discord, routed by mention. The dispatcher
   (<code>bin/dispatcher</code> on Alex McRitchie's Mac; <code>bin/heartbeat &lt;soul&gt;</code> by hand) claims one,
   answers it, renews its lease while it works, and the reply posts back once.

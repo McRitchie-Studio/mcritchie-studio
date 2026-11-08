@@ -1,7 +1,7 @@
 <%# The standing QuickBooks Online connection page (/admin/quickbooks): each connected company, its Intuit environment, and a live read proving it: the company's name from CompanyInfo, and this year's profit and loss to date (its period, basis, top-level sections and net income); or Intuit's error said plainly. Connect adds a company; each company has its own Disconnect. Until the Intuit app and encryption keys are set, Connect renders disabled and the missing setup shows by NAME only. It renders no token and no part of one, and no value of any env var. %>
 <% can_connect = @configured && @encryption_ready %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %Y, %-l:%M %p %Z") } %>
-<% money = ->(value, currency) { value.nil? ? "unknown" : "#{number_with_delimiter(format('%.2f', value))}#{" #{currency}" if currency}" } %>
+<% money = ->(value, currency) { value.nil? ? "unknown" : "#{number_to_currency(value, unit: "", precision: 2)}#{" #{currency}" if currency}" } %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="quickbooks-connection-page" data-count="<%= @reads.size %>">
   <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
     <div class="min-w-0">

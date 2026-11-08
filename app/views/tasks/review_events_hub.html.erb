@@ -1,23 +1,16 @@
 <section data-test="review-process-hub">
-  <div class="mb-6 flex flex-wrap items-center justify-between gap-3">
-    <div class="flex items-center gap-3">
-      <%= link_to "&larr; Deployments".html_safe, deployments_path, class: "text-secondary hover:text-heading text-sm transition" %>
-      <%= link_to "Tasks", tasks_path, class: "text-secondary hover:text-heading text-sm transition" %>
-    </div>
-    <span class="text-xs text-muted font-mono">review-process</span>
-  </div>
+  <%# THE HEADER: the engine page header (docs/PAGE_HEADER.md). The old "Deployments" back
+      link and the "Task Board" button are the crumb trail's Deployments; Tasks is a page
+      elsewhere, in the Links menu. %>
+  <%= render "studio/page_header", title: "Review Process Hub",
+        crumbs: studio_crumbs(:review_events_hub), meta: "Review process",
+        menu: [{ label: "Tasks", href: tasks_path, data: { test: "review-hub-link-tasks" } }] %>
+  <div class="mb-6"></div>
 
   <div class="card p-6">
-    <div class="mb-5 flex flex-wrap items-start justify-between gap-4">
-      <div>
-        <p class="label-upper">Review Process</p>
-        <h2 class="mt-1 text-2xl font-bold text-heading">Review Process Hub</h2>
-        <p class="mt-2 max-w-3xl text-sm text-muted">
-          Heavy and light review lanes show the expected checkpoint order, recent role owners, and the tasks currently moving through submitted, reviewed, assembled, and shipped.
-        </p>
-      </div>
-      <%= link_to "Task Board", deployments_path, class: "rounded border border-primary/30 bg-primary/10 px-2.5 py-1 text-xs font-semibold uppercase tracking-wide text-primary hover:bg-primary/15 transition" %>
-    </div>
+    <p class="mb-5 max-w-3xl text-sm text-muted">
+      Heavy and light review lanes show the expected checkpoint order, recent role owners, and the tasks currently moving through submitted, reviewed, assembled, and shipped.
+    </p>
 
     <div class="grid grid-cols-1 gap-4 xl:grid-cols-2" data-test="review-process-lanes">
       <% review_process_lanes(@review_process).each do |lane| %>

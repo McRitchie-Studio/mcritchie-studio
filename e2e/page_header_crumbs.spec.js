@@ -20,34 +20,36 @@ async function visitBy(page, action) {
   await load;
 }
 
-test("/deployments wears the crumb header: trail, h2-size title, actions right, links under it", async ({ page }) => {
+// /devops is the root of the DevOps trail (devops-namespace), so it draws no trail of its
+// own; the pages under it start theirs at DevOps.
+test("/devops wears the page header: no trail at the root, h2-size title, actions right, links under it", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/deployments");
+  await page.goto("/devops");
   const row = page.locator(".page-header");
-  await expect(row.locator(".page-header-crumbs li")).toHaveText(["Admin", "Deployments"]);
-  await expect(row.locator(".page-header-crumbs a")).toHaveAttribute("href", "/admin/dashboard");
+  await expect(row.locator(".page-header-crumbs")).toHaveCount(0);
   const title = row.locator("h1.page-header-title");
   await expect(title).toHaveText("Deployments");
   expect(await title.evaluate((el) => getComputedStyle(el).fontSize)).toBe("30px");
-  await expect(row.locator(".page-header-actions a", { hasText: "New Task" })).toBeVisible();
+  await expect(row.locator(".page-header-actions a.page-header-action", { hasText: "New Task" })).toBeVisible();
   for (const name of ["Epics", "Intelligence", "Pokédex", "Pipeline", "Insights", "Recent"]) {
     await expect(row.locator(".page-header-links a", { hasText: name })).toHaveCount(1);
   }
-  const [crumb, heading] = [await row.locator(".page-header-crumbs").boundingBox(), await title.boundingBox()];
-  expect(crumb.y + crumb.height).toBeLessThanOrEqual(heading.y + 1);
 });
 
-test("a depth-3 page trails Admin, Deployments, All Deployments, and a phone gets one parent link", async ({ page }) => {
+test("a release-list page trails DevOps, All Deployments, and a phone gets one parent link", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/deployments/all");
-  await expect(page.locator(".page-header-crumbs li")).toHaveText(["Admin", "Deployments", "All Deployments"]);
+  await page.goto("/devops/deployments");
+  await expect(page.locator(".page-header-crumbs li")).toHaveText(["DevOps", "All Deployments"]);
+  await expect(page.locator(".page-header-crumbs a").first()).toHaveAttribute("href", "/devops");
+  const [crumb, heading] = [await page.locator(".page-header-crumbs").boundingBox(), await page.locator("h1.page-header-title").boundingBox()];
+  expect(crumb.y + crumb.height).toBeLessThanOrEqual(heading.y + 1);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".page-header-crumbs")).toBeHidden();
   const parent = page.locator(".page-header-parent");
   await expect(parent).toBeVisible();
-  await expect(parent).toHaveText(/Deployments/);
-  await expect(parent).toHaveAttribute("href", "/deployments");
+  await expect(parent).toHaveText(/DevOps/);
+  await expect(parent).toHaveAttribute("href", "/devops");
   expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });
 
@@ -55,16 +57,19 @@ test("forward slides left; a crumb up the trail and browser Back slide right", a
   await page.emulateMedia({ reducedMotion: "no-preference" });
   await recordMoves(page);
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto("/deployments");
+  await page.goto("/devops");
   await page.waitForFunction(() => window.Turbo);
 
   await visitBy(page, () => page.locator(".page-header-links a", { hasText: "Epics" }).click());
-  await expect(page).toHaveURL(/\/epics$/);
-  await visitBy(page, () => page.locator(".page-header-crumbs a", { hasText: "Deployments" }).click());
-  await expect(page).toHaveURL(/\/deployments$/);
-  await page.waitForTimeout(200); // Turbo ignores a popstate during the page's own load.
+  await expect(page).toHaveURL(/\/devops\/epics$/);
+  await visitBy(page, () => page.locator(".page-header-crumbs a", { hasText: "DevOps" }).click());
+  await expect(page).toHaveURL(/\/devops$/);
+  // Turbo ignores a popstate until the window's load has fired and one microtask has
+  // passed (its History#pageLoaded); wait on that state, then one frame, not a clock.
+  await page.waitForFunction(() => document.readyState === "complete");
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done())));
   await visitBy(page, () => page.goBack());
-  await expect(page).toHaveURL(/\/epics$/);
+  await expect(page).toHaveURL(/\/devops\/epics$/);
 
   expect(await page.evaluate(() => window.__moves)).toEqual(["slide-left", "slide-right", "slide-right"]);
 });

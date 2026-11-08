@@ -1,16 +1,8 @@
 <%# THE GENERATOR PAGE'S KIT LIST: one row per brand kit, with the character
     that fronts it. Admin only (EmailImageGeneratorsController#index). %>
 <div class="max-w-4xl mx-auto px-4 py-6 space-y-5">
-  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
-    <%= link_to "Email images", email_images_path, class: "hover:text-primary" %>
-    <span aria-hidden="true">/</span>
-    <span class="text-heading font-bold">Generator</span>
-  </nav>
-
-  <div class="min-w-0">
-    <h1 class="text-xl sm:text-2xl font-bold text-heading">Email image generator</h1>
-    <p class="text-sm text-secondary">Pick a brand: its model, a few examples, and the prompt to paste into a Claude Code session.</p>
-  </div>
+  <%= render "studio/page_header", title: "Email image generator", crumbs: studio_crumbs(:email_image_generators), crumb_label: "Generator" %>
+  <p class="text-sm text-secondary">Pick a brand: its model, a few examples, and the prompt to paste into a Claude Code session.</p>
 
   <ul class="card divide-y divide-subtle" data-test="generator-kits">
     <% @kits.each do |kit| %>

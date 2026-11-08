@@ -2,13 +2,11 @@
 <% content_for(:title, "CSP reports") %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%b %-d, %-l:%M %p") } %>
 <section class="max-w-6xl mx-auto px-4 py-10 space-y-6" data-test="csp-reports-page">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">CSP reports</h1>
-    <p class="text-secondary mt-2">
-      Violations of the hub's Content-Security-Policy, reported by browsers. The policy is report-only, so nothing is blocked yet.
-      It can be enforced once a 7-day window shows no genuine violation. Rows not seen for 30 days are deleted.
-    </p>
-  </div>
+  <%= render "studio/page_header", title: "CSP reports", crumbs: studio_crumbs(:admin_csp_reports) %>
+  <p class="text-secondary">
+    Violations of the hub's Content-Security-Policy, reported by browsers. The policy is report-only, so nothing is blocked yet.
+    It can be enforced once a 7-day window shows no genuine violation. Rows not seen for 30 days are deleted.
+  </p>
 
   <div class="flex flex-wrap items-center gap-2" data-test="csp-window">
     <% Admin::CspReportsController::WINDOWS.each_key do |days| %>

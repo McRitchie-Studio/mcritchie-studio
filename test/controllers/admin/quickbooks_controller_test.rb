@@ -243,11 +243,22 @@ class Admin::QuickbooksControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[integration] the callback's code and realmId are filtered from the request log" do
+  test "[integration] the callback's code is filtered from its Parameters line, and realmId everywhere" do
     filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
     filtered = filter.filter("controller" => "admin/quickbooks", "action" => "callback", "code" => "secret-code", "realmId" => REALM, "state" => "s")
     assert_equal "[FILTERED]", filtered["code"]
     assert_equal "[FILTERED]", filtered["realmId"]
-    assert_equal REALM, filter.filter("controller" => "pages", "realmId" => REALM)["realmId"], "the control: other pages keep it"
+    assert_equal "secret-code", filter.filter("controller" => "pages", "code" => "secret-code")["code"], "the control: other pages keep code"
+    assert_equal "[FILTERED]", filter.filter("controller" => "pages", "realmId" => REALM)["realmId"], "realmId is filtered by key, on any page"
+  end
+
+  test "[integration] the Started GET line's URL never carries the realmId" do
+    env = Rack::MockRequest.env_for("/admin/quickbooks/callback?code=c0de&realmId=#{REALM}&state=s",
+                                    "action_dispatch.parameter_filter" => Rails.application.config.filter_parameters)
+    path = ActionDispatch::Request.new(env).filtered_path
+
+    assert_includes path, "realmId=[FILTERED]"
+    assert_not_includes path, REALM
+    assert_includes path, "state=s", "the control: the query string is still logged"
   end
 end

@@ -31,7 +31,7 @@ class BuildGalleryTest < ActiveSupport::TestCase
     apps = BuildGallery.examples
 
     assert_operator apps.size, :>=, 4, "Cyvasse, Turf Monster and at least two more"
-    assert_equal [ "Cyvasse", "Turf Monster", "Prisoner's Dilemma", "Rantly" ], apps.first(4).map(&:name)
+    assert_equal [ "Turf Monster", "Commercial Welding", "Cyvasse", "Prisoner's Dilemma", "Rantly" ], apps.first(5).map(&:name)
     { "Prisoner's Dilemma" => "prisoners-dilemma", "Rantly" => "rantly" }.each do |name, slug|
       app = apps.find { |example| example.name == name }
       assert_equal "build_gallery/#{slug}.webp", app.image, "#{name} has its dark still"
@@ -73,5 +73,22 @@ class BuildGalleryTest < ActiveSupport::TestCase
     light = rgb(cyvasse.fetch("panel")).zip([ 255, 255, 255 ]).map { |p, b| 0.85 * p + 0.15 * b }
 
     assert_operator contrast(rgb(cyvasse.fetch("name")), light), :<, 4.5
+  end
+
+  # [component] Commercial Welding's new site joins the portfolio (Alex McRitchie,
+  # 2026-11-07): a hand-kept entry on its own domain, after Rantly, with a still
+  # and a loop that exist, and a palette the card can paint.
+  test "[component] Commercial Welding is listed with a still, a loop and a palette" do
+    welding = BuildGallery.examples.find { |example| example.name == "Commercial Welding" }
+
+    assert welding, "Commercial Welding is in the portfolio"
+    assert_equal "https://commercialwelding.llc", welding.url
+    %w[image motion].each do |field|
+      assert Rails.root.join("app/assets/images", welding.public_send(field)).exist?, "#{field} file exists"
+    end
+    assert_equal({ "panel" => "#0B1824", "primary" => "#2D5E8E", "name" => "#9AB2C9", "text" => "#A0A5AA" },
+                 BuildGallery.palette_for("commercialwelding"))
+    # Alex McRitchie's order: Turf Monster, Commercial Welding, Cyvasse, then the rest.
+    assert_equal [ "Turf Monster", "Commercial Welding", "Cyvasse" ], BuildGallery.examples.first(3).map(&:name)
   end
 end

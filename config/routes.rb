@@ -8,7 +8,9 @@ Rails.application.routes.draw do
   root "landing#index"
   get "terms",   to: "landing#terms",   as: :terms
   get "privacy", to: "landing#privacy", as: :privacy
-  get "about",   to: "landing#about",   as: :about
+  # Alex McRitchie's about page moved to alex.build on 2026-11-06 (task
+  # hub-drops-about-section); the old address sends visitors there for good.
+  get "about", to: redirect("https://alex.build/about", status: 301), as: nil
   get "marketing-kit", to: "marketing_kit#index", as: :marketing_kit
   get "websites", to: "websites#index", as: :websites
   get "packages", to: "packages#index", as: :packages
@@ -114,19 +116,105 @@ Rails.application.routes.draw do
   get "dashboard", to: "dashboard#index"
   # Task-development trends dashboard (stage speed, cycle time, tokens, cost,
   # estimate-vs-actual). Admin-only like the other board surfaces (AdminWall).
-  get "intelligence", to: "intelligence#index", as: :intelligence
   # Pokédex — read-only spawn/activity surface for session mascots.
   get "pokedex", to: "pokemon#index", as: :pokedex
-  # Board split: /tasks is the Build lane, /deployments is the Deploy lane (+ the
-  # current-release module), /stages is the two-workflow stage guide. All three
-  # are admin-only, reads included (AdminWall).
-  # The findings TRIAGE inbox — agent follow-ups wait here for an operator call.
-  # Admin-only like the boards (AdminWall); promote MINTS a task
-  # (the operator's lane, mirrored by the API's file/list-only split).
-  get "triage", to: "triage#index", as: :triage
-  post "triage/:slug/promote", to: "triage#promote", as: :promote_triage_finding
-  post "triage/:slug/dismiss", to: "triage#dismiss", as: :dismiss_triage_finding
-  get "deployments", to: "tasks#deployments", as: :deployments
+  # ── THE DEVOPS NAMESPACE (devops-namespace, Alex McRitchie 2026-11-07) ──────
+  # The board and its insight pages live under /devops; the crumb trail roots at
+  # "DevOps" (config/navigation.yml). The ROUTE NAMES did not change
+  # (deployments_path, task_path, triage_path, ...): navigation.yml keys on them and
+  # the controllers stay un-namespaced, because AdminWall reads controller#action.
+  # Every page is admin-only, reads included (AdminWall), except the task's
+  # local_review CTA (TasksController::PUBLIC_ACTIONS).
+  scope "devops" do
+    # /devops is the board home: the Deploy lane (+ the current-release module).
+    get "/", to: "tasks#deployments", as: :deployments
+    # Every release (the old /deployments/all), then one release.
+    get "deployments", to: "releases#index", as: :all_deployments
+    get "deployments/:slug", to: "releases#show", as: :deployment
+    # The operator's production-authority GRANT (design section 6): the Approve
+    # button on the Next Release card posts here while a timed `bin/release ship`
+    # waits on its window. Admin-gated in ReleasesController; records the one
+    # `ship_authorized completed` event through Release#grant_ship_authorization!.
+    post "deployments/:slug/ship_authorization", to: "releases#authorize_ship", as: :authorize_ship_deployment
+    # The findings TRIAGE inbox — agent follow-ups wait here for an operator call.
+    # Promote MINTS a task (the operator's lane, mirrored by the API's
+    # file/list-only split).
+    get "triage", to: "triage#index", as: :triage
+    post "triage/:slug/promote", to: "triage#promote", as: :promote_triage_finding
+    post "triage/:slug/dismiss", to: "triage#dismiss", as: :dismiss_triage_finding
+    # /devops/stages is the two-workflow stage guide; /devops/stages/sop the
+    # operator's DevOps SOP as an accountability-swimlane infographic.
+    get "stages", to: "tasks#stages", as: :stages
+    get "stages/sop", to: "tasks#sop", as: :sop
+    # The epic view: every epic with its progress by stage, and one epic's tasks
+    # grouped by stage on the board's own card (EpicsController).
+    get "epics", to: "epics#index", as: :epics
+    get "epics/:slug", to: "epics#show", as: :epic
+    get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
+    # Task-development trends (stage speed, cycle time, tokens, cost,
+    # estimate-vs-actual).
+    get "intelligence", to: "intelligence#index", as: :intelligence
+    # The Insight Bank, and the OPSD distillation pipeline, left→right:
+    # Activities → Insights (Mason's grades) → Confirmations (McRitchie's mcr
+    # grades). `confirm` records the McRitchie (mcr) confirmation of an insight and
+    # redirects back (a no-JS form action). The per-session heartbeat stays at
+    # /mason/heartbeat.
+    get  "insights", to: "heartbeat#insights", as: :mason_insights
+    get  "pipeline", to: "heartbeat#pipeline", as: :mason_pipeline
+    post "pipeline/confirm/:id", to: "heartbeat#confirm", as: :mason_pipeline_confirm
+    # The Build lane board (/devops/tasks) and every task page under it.
+    resources :tasks, param: :slug do
+      collection do
+        post :reorder
+        # /devops/tasks/recent — flat recency list surfacing testing-phase durations +
+        # gate verdicts per task. Admin-only like the board; declared on the
+        # collection so "recent" is never swallowed as a :slug by #show.
+        get :recent
+      end
+      member do
+        # Stages move through PATCH update (one path shared by the board drag-drop,
+        # bin/task, and the API). `comment` posts task-conversation activities.
+        get :review_events
+        # The board's WAITING APPROVAL CTA — PUBLIC (TasksController::PUBLIC_ACTIONS),
+        # because a logged-out click must still reach the review. It mints nothing:
+        # it 302s to the LOCAL stack's loopback-only mint endpoint, with no email.
+        get :local_review
+        post :comment
+        # Block/unblock are `building` ATTRIBUTE toggles (not stage moves) — the
+        # show-page Block/Resume controls, routed through Task#block!/#unblock!.
+        patch :block
+        patch :unblock
+      end
+      resource :sizing, only: [:show, :update]
+    end
+    end
+
+  # LEGACY board URLs (before devops-namespace, 2026-11-07). Every GET 301s to its
+  # /devops address, PATH SUFFIX AND QUERY STRING INCLUDED, so a printed task link,
+  # a Discord or Slack post, a doc, or a bookmarked ?epic= / ?session_id= deep link
+  # still lands on the page it named. These are routing redirects, not controller
+  # actions, so they answer before the admin wall: a logged-out click on an old
+  # /tasks/:slug/local_review CTA reaches the public action at its new address.
+  # The writes (PATCH/POST) are form and fetch actions the pages render, never a
+  # printed URL, so they moved without a shim (as the /ray and /xan ones did).
+  # Order matters: /deployments/all before /deployments/:slug.
+  legacy_board = lambda do |from, to|
+    redirect(status: 301) { |_params, request| request.fullpath.sub(from, to) }
+  end
+  get "deployments",          to: legacy_board.call(%r{\A/deployments}, "/devops"), as: nil
+  get "deployments/all",      to: legacy_board.call(%r{\A/deployments/all}, "/devops/deployments"), as: nil
+  get "deployments/*rest",    to: legacy_board.call(%r{\A/deployments}, "/devops/deployments"), format: false, as: nil
+  get "tasks",                to: legacy_board.call(%r{\A/tasks}, "/devops/tasks"), as: nil
+  get "tasks/*rest",          to: legacy_board.call(%r{\A/tasks}, "/devops/tasks"), format: false, as: nil
+  get "triage",               to: legacy_board.call(%r{\A/triage}, "/devops/triage"), as: nil
+  get "stages",               to: legacy_board.call(%r{\A/stages}, "/devops/stages"), as: nil
+  get "stages/*rest",         to: legacy_board.call(%r{\A/stages}, "/devops/stages"), format: false, as: nil
+  get "epics",                to: legacy_board.call(%r{\A/epics}, "/devops/epics"), as: nil
+  get "epics/*rest",          to: legacy_board.call(%r{\A/epics}, "/devops/epics"), format: false, as: nil
+  get "review_events",        to: legacy_board.call(%r{\A/review_events}, "/devops/review_events"), as: nil
+  get "intelligence",         to: legacy_board.call(%r{\A/intelligence}, "/devops/intelligence"), as: nil
+  get "mason/insights",       to: legacy_board.call(%r{\A/mason/insights}, "/devops/insights"), as: nil
+  get "mason/pipeline",       to: legacy_board.call(%r{\A/mason/pipeline}, "/devops/pipeline"), as: nil
   # THE MODEL PIPELINE BOARD — every character model in flight across five lanes
   # (designed → defined → source → model → generation), admin-only like the boards
   # above (AdminWall), reads and writes alike.
@@ -139,24 +227,9 @@ Rails.application.routes.draw do
   get "model_pipeline", to: "model_pipeline#index", as: :model_pipeline
   post "model_pipeline/reorder", to: "model_pipeline#reorder", as: :reorder_model_pipeline
   patch "model_pipeline/:slug", to: "model_pipeline#update", as: :model_pipeline_look
-  # The epic view: every epic with its progress by stage, and one epic's tasks
-  # grouped by stage on the board's own card (EpicsController, admin-only).
-  get "epics", to: "epics#index", as: :epics
-  get "epics/:slug", to: "epics#show", as: :epic
-  get "deployments/all", to: "releases#index", as: :all_deployments
-  get "deployments/:slug", to: "releases#show", as: :deployment
-  # The operator's production-authority GRANT (design section 6): the Approve
-  # button on the Next Release card posts here while a timed `bin/release ship`
-  # waits on its window. Admin-gated in ReleasesController; records the one
-  # `ship_authorized completed` event through Release#grant_ship_authorization!.
-  post "deployments/:slug/ship_authorization", to: "releases#authorize_ship", as: :authorize_ship_deployment
   # The operator's answer to an admin login request (the board's Approve and Decline).
   post "agent_logins/:slug/approve", to: "agent_login_requests#approve", as: :approve_agent_login
   post "agent_logins/:slug/refuse", to: "agent_login_requests#refuse", as: :refuse_agent_login
-  get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
-  get "stages", to: "tasks#stages", as: :stages
-  # /stages/sop — the operator's DevOps SOP as an accountability-swimlane infographic.
-  get "stages/sop", to: "tasks#sop", as: :sop
   # Model-page protocol routes (/models/:model/:id, /models/:model/random) are
   # drawn by studio-engine's Studio.routes — see config/initializers/model_pages.rb
   # for the per-model registry (Release enabled).
@@ -354,12 +427,6 @@ Rails.application.routes.draw do
   # Every AgentActivity across ALL sessions, newest-first, paginated 100/page —
   # the cross-session analogue of the per-session heartbeat.
   get  "mason/heartbeat/activities", to: "heartbeat#all_activities", as: :heartbeat_all_activities
-  get  "mason/insights", to: "heartbeat#insights", as: :mason_insights
-  # The OPSD distillation pipeline, left→right: Activities → Insights (Mason's
-  # grades) → Confirmations (McRitchie's mcr grades). `confirm` records the McRitchie
-  # (mcr) confirmation of an insight and redirects back (a no-JS form action).
-  get  "mason/pipeline", to: "heartbeat#pipeline", as: :mason_pipeline
-  post "mason/pipeline/confirm/:id", to: "heartbeat#confirm", as: :mason_pipeline_confirm
 
   # LEGACY /ray/* and /xan/* — the seat's slug was `xan` from 2026-09-24 to
   # 2026-10-18 and `ray` until 2026-10-25 (ritch-renamed-alex). The learning
@@ -374,8 +441,10 @@ Rails.application.routes.draw do
   %w[ray xan].each do |old|
     get "#{old}/heartbeat",       to: legacy_seat
     get "#{old}/heartbeat/*rest", to: legacy_seat, format: false
-    get "#{old}/insights",        to: legacy_seat
-    get "#{old}/pipeline",        to: legacy_seat
+    # The Insight Bank and the pipeline moved to /devops (devops-namespace): one
+    # hop straight there, never /ray -> /mason -> /devops.
+    get "#{old}/insights",        to: legacy_board.call(%r{\A/(?:ray|xan)/insights}, "/devops/insights"), as: nil
+    get "#{old}/pipeline",        to: legacy_board.call(%r{\A/(?:ray|xan)/pipeline}, "/devops/pipeline"), as: nil
   end
 
   resources :chat, only: [:index, :create]
@@ -481,6 +550,13 @@ Rails.application.routes.draw do
     get "fathom/connect", to: "fathom#connect", as: :fathom_connect
     delete "fathom/connection", to: "fathom#disconnect", as: :fathom_disconnect
     get "fathom/callback", to: "fathom#callback", as: :fathom_callback
+    # The Egnyte connections, one per domain (Admin::EgnyteController). The
+    # callback path is the redirect registered on the Egnyte developer key:
+    # keep it exactly.
+    get "egnyte", to: "egnyte#show", as: :egnyte
+    post "egnyte/connect", to: "egnyte#connect", as: :egnyte_connect
+    delete "egnyte/connection", to: "egnyte#disconnect", as: :egnyte_disconnect
+    get "egnyte/callback", to: "egnyte#callback", as: :egnyte_callback
 
     # The QuickBooks Online connections (Admin::QuickbooksController), one row
     # per company. The callback path is the redirect URI registered on the
@@ -557,30 +633,6 @@ Rails.application.routes.draw do
       # #activities render.
       get :activities_filter
     end
-  end
-  resources :tasks, param: :slug do
-    collection do
-      post :reorder
-      # /tasks/recent — flat recency list surfacing testing-phase durations +
-      # gate verdicts per task. Admin-only like the board; declared on the
-      # collection so "recent" is never swallowed as a :slug by #show.
-      get :recent
-    end
-    member do
-      # Stages move through PATCH update (one path shared by the board drag-drop,
-      # bin/task, and the API). `comment` posts task-conversation activities.
-      get :review_events
-      # The board's WAITING APPROVAL CTA — PUBLIC (TasksController::PUBLIC_ACTIONS),
-      # because a logged-out click must still reach the review. It mints nothing:
-      # it 302s to the LOCAL stack's loopback-only mint endpoint, with no email.
-      get :local_review
-      post :comment
-      # Block/unblock are `building` ATTRIBUTE toggles (not stage moves) — the
-      # show-page Block/Resume controls, routed through Task#block!/#unblock!.
-      patch :block
-      patch :unblock
-    end
-    resource :sizing, only: [:show, :update]
   end
   resources :news, param: :slug do
     collection do

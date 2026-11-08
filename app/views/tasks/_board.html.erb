@@ -168,7 +168,7 @@ function taskBoardChrome() {
       try {
         await this.boardExit(card, 'archive');
         const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-        const resp = await fetch('/tasks/' + slug + '.json', {
+        const resp = await fetch('<%= tasks_path %>/' + slug + '.json', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': csrf },
           body: JSON.stringify({ task: { stage: 'archived' } })
@@ -197,7 +197,7 @@ function taskBoardChrome() {
       try {
         await this.boardExit(card, 'delete');
         const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-        const resp = await fetch('/tasks/' + slug + '.json', {
+        const resp = await fetch('<%= tasks_path %>/' + slug + '.json', {
           method: 'DELETE',
           headers: { 'Accept': 'application/json', 'X-CSRF-Token': csrf }
         });
@@ -240,26 +240,23 @@ document.addEventListener('turbo:before-cache', function() {
   <% end %>
 
   <%# THE HEADER: the engine page header (studio/_page_header), as on /deployments:
-      crumbs from config/navigation.yml, the board switcher and actions on the right,
-      the board's sibling pages on the links line. %>
+      crumbs from config/navigation.yml, the board's sibling pages on the links line, and
+      the four kinds of control on the right (docs/PAGE_HEADER.md): the board views as
+      tabs, New Task as the one action, and the local-only progression testers as tools. %>
   <%= render "agent_login_requests/pending" %>
-  <% header_actions = capture do %>
-    <div class="flex items-center gap-2 flex-wrap justify-end" data-test="board-header-actions">
-      <%= render "components/sub_nav", nav: :board_views, current: current_page %>
-      <% if logged_in? %>
-        <%= link_to "New Task", new_task_path, class: "btn btn-sm btn-primary" %>
-      <% end %>
-      <% if Rails.env.local? %>
-        <%# Local-only progression testers (self-contained Alpine components). %>
-        <%= render "dev_board_tools" %>
-        <%= render "dev_deploy_tools" %>
-      <% end %>
+  <% header_tools = capture do %>
+    <div class="flex items-center gap-2 flex-wrap justify-end" data-test="board-header-tools">
+      <%= render "dev_board_tools" %>
+      <%= render "dev_deploy_tools" %>
     </div>
-  <% end %>
+  <% end if Rails.env.local? %>
   <%= render "studio/page_header",
         title: title,
         crumbs: studio_crumbs(current_page),
-        actions_html: header_actions,
+        label: "Board views",
+        tabs: board_view_tabs(current: current_page),
+        action: ({ label: "New Task", href: new_task_path, data: { test: "board-new-task" } } if logged_in?),
+        tools_html: header_tools,
         links: sub_nav_links(:board_sections, current: current_page),
         links_label: Navigation.sub_nav(:board_sections).label %>
   <div class="mb-6"></div>
@@ -323,7 +320,7 @@ document.addEventListener('turbo:before-cache', function() {
         card_locals: ->(task) { { preloads: @task_cards.preloads_for(task), crew_board: crew_board } },
         reorder_url: reorder_tasks_path(format: :json),
         reorder_payload: :slugs,
-        move_url: "/tasks/:id.json",
+        move_url: "#{tasks_path}/:id.json",
         move_param: { resource: :task, attr: :stage },
         group: "kanban",
         id_attr: "slug",

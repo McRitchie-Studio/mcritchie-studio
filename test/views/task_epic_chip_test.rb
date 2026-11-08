@@ -20,7 +20,7 @@ class TaskEpicChipTest < ActionView::TestCase
   test "[component] the chip prints the epic and links to the filtered board" do
     render partial: "tasks/epic_chip", locals: { epic_slug: "devops-v3" }
 
-    assert_select "a[data-test='task-epic-chip'][data-epic='devops-v3'][href='/tasks?epic=devops-v3']", text: "devops-v3"
+    assert_select "a[data-test='task-epic-chip'][data-epic='devops-v3'][href='/devops/tasks?epic=devops-v3']", text: "devops-v3"
   end
 
   test "[component] the chip renders nothing for a blank epic" do
@@ -50,7 +50,7 @@ class TaskEpicChipTest < ActionView::TestCase
     render_task_card(task.reload, crew_board: :build)
 
     assert_select "#card-#{task.slug} [data-test='task-slug-row'] code", text: task.slug
-    assert_select "#card-#{task.slug} [data-test='task-slug-row'] [data-test='task-epic-chip'][href='/tasks?epic=devops-v3']",
+    assert_select "#card-#{task.slug} [data-test='task-slug-row'] [data-test='task-epic-chip'][href='/devops/tasks?epic=devops-v3']",
                   text: "devops-v3"
   end
 

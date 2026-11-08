@@ -1,9 +1,12 @@
-<div class="mb-6">
-  <%= link_to "\u2190 Back to Docs", docs_path, class: "text-primary hover:text-primary-300 text-sm font-medium transition" %>
-</div>
+<%# The engine page header (docs/PAGE_HEADER.md): the old "Back to Docs" link is the crumb
+    trail. The doc's own first heading is the page's one h1 (DocsController#lift_title);
+    the doc's path is the meta. %>
+<%= render "studio/page_header", title: @title, crumbs: studio_crumbs(parent: :docs),
+      meta: tag.span("#{@path}.md", class: "font-mono normal-case tracking-normal", data: { test: "doc-path" }) %>
+<div class="mb-6"></div>
 
 <div class="card p-6 sm:p-8">
-  <p class="text-muted text-xs font-mono mb-4"><%= @path %>.md</p>
+  <p class="text-muted text-xs font-mono mb-4 sm:hidden"><%= @path %>.md</p>
   <div class="prose-themed">
     <%= @content %>
   </div>

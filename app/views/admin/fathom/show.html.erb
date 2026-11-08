@@ -3,12 +3,10 @@
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
 <% state = if @connection.nil? then "none" elsif @error then "read_failed" else "connected" end %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="fathom-connection-page">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">Fathom connection</h1>
-    <p class="text-secondary mt-2">
-      The Fathom account this server reads, connected by signing in. It can read meeting notes and transcripts and nothing else. No token is shown here.
-    </p>
-  </div>
+  <%= render "studio/page_header", title: "Fathom connection", crumbs: studio_crumbs(:admin_fathom) %>
+  <p class="text-secondary">
+    The Fathom account this server reads, connected by signing in. It can read meeting notes and transcripts and nothing else. No token is shown here.
+  </p>
 
   <% if @unreadable.any? %>
     <p class="card p-4 text-sm text-body" data-test="fathom-unreadable">

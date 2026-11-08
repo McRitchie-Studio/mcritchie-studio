@@ -8,7 +8,7 @@
          x-data="castCardDisclosure()" @naming-saved.window="cardOnNamed($event.detail)" @resize.window.debounce.200ms="cardFitRow()"
          data-card-name="<%= title_name %>" data-clear-count="<%= clear_sightings.size %>" data-partial-count="<%= partial_sightings.size %>"
          data-test="performer-card" data-ordinal="<%= performer.ordinal %>" data-resolved="<%= performer.resolved? %>" data-named="<%= performer.named? %>"
-         data-level="0" :data-level="cardLevel">
+         data-level="0" :data-level="cardLevel" :data-card-fit="cardFitState">
   <div class="grid <%= performer.still_object_keys.size > 1 ? 'grid-cols-2' : 'grid-cols-1' %> gap-px bg-inset rounded-t-xl overflow-hidden">
     <% performer.still_object_keys.each do |key| %>
       <% url = still_urls[key] %>

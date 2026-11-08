@@ -21,7 +21,7 @@ class EpicsPagesTest < ActionDispatch::IntegrationTest
     assert_response :success
 
     assert_select "[data-test='epic-row'][data-epic='devops-v3']" do
-      assert_select "a[href='/epics/devops-v3']", text: "devops-v3"
+      assert_select "a[href='/devops/epics/devops-v3']", text: "devops-v3"
       assert_select "[data-test='epic-stage-count'][data-stage='building']", text: /1/
       assert_select "[data-test='epic-stage-count'][data-stage='shipped']", text: /1/
       assert_select "[data-test='epic-progress'][data-done='1'][data-total='2']"
@@ -46,7 +46,7 @@ class EpicsPagesTest < ActionDispatch::IntegrationTest
   end
 
   test "[integration] the epic page normalizes the handle like the board filter" do
-    get "/epics/DevOps-V3"
+    get "/devops/epics/DevOps-V3"
     assert_response :success
     assert_select "[data-test='epic-header'][data-epic='devops-v3']"
   end
@@ -58,9 +58,9 @@ class EpicsPagesTest < ActionDispatch::IntegrationTest
 
   test "[integration] both boards link to /epics" do
     get tasks_path
-    assert_select "a[data-test='board-link-epics'][href='/epics']"
+    assert_select "a[data-test='board-link-epics'][href='/devops/epics']"
     get deployments_path
-    assert_select "a[data-test='board-link-epics'][href='/epics']"
+    assert_select "a[data-test='board-link-epics'][href='/devops/epics']"
   end
 
   test "[integration] the conductor's release notes nest a release's tasks under their epic" do
@@ -73,6 +73,6 @@ class EpicsPagesTest < ActionDispatch::IntegrationTest
     message = Release::Conductor.post_release_notes(release: rel.reload, dry_run: true)[:message]
 
     assert_includes message, "🪎 McRitchie Studio\n• [Epic page plain task]"
-    assert_includes message, "\n🧩 devops-v3\n  • [Epic page building task](https://mcritchie.studio/tasks/#{@building.slug})"
+    assert_includes message, "\n🧩 devops-v3\n  • [Epic page building task](https://mcritchie.studio/devops/tasks/#{@building.slug})"
   end
 end

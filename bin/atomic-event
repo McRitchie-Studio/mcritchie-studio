@@ -605,7 +605,7 @@ class AgentActivityCli
     unless present?(data["slug"]) && present?(data["collect_key"])
       if res && res.code.to_i == 409
         return warn_note("atomic-event: admin login not requested — #{refusal_of(res)}. This session does not hold that " \
-                         "request: the operator should NOT approve it, and should Decline it on #{@api.base_url}/tasks")
+                         "request: the operator should NOT approve it, and should Decline it on #{@api.base_url}/devops/tasks")
       end
       return warn_note("atomic-event: admin login not requested — #{refusal_of(res)}")
     end
@@ -613,7 +613,7 @@ class AgentActivityCli
     request = { "soul" => soul, "request" => data["slug"], "collect_key" => data["collect_key"], "ends_at" => data["ends_at"] }
     AdminLogin.write(sid, projects_dir, request, env: @api.env)
     @out.puts("atomic-event: admin login #{data['slug']} requested for #{soul}, pending until #{data['ends_at']}. " \
-              "Operator: on #{@api.base_url}/tasks find the row that reads #{data['slug']} and answer only that row: " \
+              "Operator: on #{@api.base_url}/devops/tasks find the row that reads #{data['slug']} and answer only that row: " \
               "Approve it, or give this session its one-time code for `heartbeat #{soul} --code <code>`. " \
               "Decline any other row for #{soul}")
     request

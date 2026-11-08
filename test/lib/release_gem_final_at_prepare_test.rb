@@ -55,6 +55,44 @@ class ReleaseGemFinalAtPrepareTest < ReleaseCliHarness
     assert_operator gate, :<, deploy
   end
 
+  # ── the pre-publish gate (task ci-retry-killers) ──────────────────────────
+  # A RubyGems version can never be re-pushed, so a red read AFTER the publish burned it
+  # (0.129.0, 0.131.0). Every swept app's own CI is now read before the push.
+
+  # An app whose OWN CI is red on its promoted tree; the gem's tip stays green.
+  RED_APP_VERDICT = <<~'RUBY'
+    self.singleton_class.prepend(Module.new do
+      def resolve_release_ci_verdict(repo, path, sha, budget:)
+        return super unless repo == "mcritchie-studio"
+
+        { ci: { state: :red, failing: ["rails (2)"] }, credited: nil }
+      end
+    end)
+  RUBY
+
+  def test_prepare_reads_the_app_gate_before_it_publishes_the_final
+    out = run_cli(["--yes"], call: "prepare", setup: gem_publish_stub(version: "1.0.0") + PUSH_LEDGER)
+
+    pre_publish = out.index("pre-publish gate mcritchie-studio: GitHub CI GREEN")
+    publish     = out.index("PUSHED release-studio-engine-1.0.0.gem")
+    gate        = out.index("pre-QA gate mcritchie-studio")
+    assert pre_publish && publish && gate, out
+    assert_operator pre_publish, :<, publish, "the app's CI is green before the irreversible push"
+    assert_operator publish, :<, gate, "the pre-QA gate still reads the post-bump SHA QA deploys"
+  end
+
+  def test_a_red_app_at_the_pre_publish_gate_publishes_nothing_and_burns_nothing
+    out = run_cli(["--yes"], call: %{begin; prepare; rescue SystemExit => e; puts("ABORTED: " + e.message); end},
+                             setup: gem_publish_stub(version: "1.0.0") + PUSH_LEDGER + RED_APP_VERDICT)
+
+    assert_match(/pre-publish gate FAILED for mcritchie-studio: GitHub CI called \S+ RED \(rails \(2\)\)/, out)
+    assert_includes out, "NOTHING was published, so no gem version is burned."
+    assert_empty out.lines.grep(/^PUSHED /), "a red gate must stop the gem push: #{out}"
+    assert_empty out.lines.grep(/^TAG-PUSHED /), "no version tag, and no burn tag"
+    refute_includes out, "BUNDLE-LOCK", "no consumer locks a version that was never published"
+    refute_includes out, "QA-DEPLOY"
+  end
+
   # A re-run at the same gem tip: the final is live and tagged there, so nothing is
   # pushed and the version is not burned.
   # The reuse path still checks what RubyGems serves against this tree, and puts

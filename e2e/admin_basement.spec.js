@@ -18,6 +18,7 @@ const MOVED = [
   { href: "/admin/tiktok", label: "TikTok connection", desc: "Connected account" },
   { href: "/admin/google", label: "Google connection", desc: "Calendar" },
   { href: "/admin/fathom", label: "Fathom connection", desc: "Meeting notes" },
+  { href: "/admin/egnyte", label: "Egnyte connection", desc: "Document store" },
   { href: "/admin/quickbooks", label: "QuickBooks connection", desc: "Company info" },
   { href: "/admin/agent_messages", label: "Agent inbox", desc: "Messages to agents" },
   { href: "/admin/report_destinations", label: "Report destinations", desc: "Discord channel" },
@@ -96,7 +97,7 @@ test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, 
   await expect(sidebar).toBeVisible();
   for (const [href, word] of [
     ["/admin/dashboard", "Dashboard"],
-    ["/deployments", "DevOps"],
+    ["/devops", "DevOps"],
     ["/admin/style", "Design"],
     ["/logos", "Branding Kits"],
     ["/build/requests", "App Requests"],
@@ -108,7 +109,7 @@ test("the sidebar reads Dashboard, DevOps, Design, Branding Kits, App Requests, 
   }
   for (const { href } of MOVED) await expect(sidebar.locator(`a[href='${href}']`)).toHaveCount(0);
   // Dropped from every list (Alex McRitchie, 2026-11-04); the admin dashboard links the last three.
-  for (const href of ["/dashboard", "/applications", "/agents", "/tasks"]) {
+  for (const href of ["/dashboard", "/applications", "/agents", "/devops/tasks"]) {
     await expect(sidebar.locator(`a[href='${href}']`)).toHaveCount(0);
   }
   for (const [href, word] of [

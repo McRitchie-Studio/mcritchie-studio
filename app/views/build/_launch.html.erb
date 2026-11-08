@@ -1,4 +1,4 @@
-<%# locals: (app_cto:, cto:, href:) %>
+<%# locals: (app_cto:, cto:, href:, heading_tag: :h1) %>
 <%#
   The launch panel (task build-launch-handoff, Alex McRitchie 2026-10-18): the app's
   initial load. The first visit by its owner to the new CTO's chat renders it
@@ -26,7 +26,8 @@
     <p class="text-sm text-secondary break-words" style="view-transition-name: agent-caption;" data-vt-morph="agent-caption" data-test="build-launch-caption">
       <span class="font-semibold text-heading"><%= app_cto.name %></span> · CTO of <%= app_cto.app.name %>
     </p>
-    <h1 class="text-2xl sm:text-3xl font-bold text-heading break-words" data-test="build-launch-app"><%= app_cto.app.name %></h1>
+    <%# heading_tag: h2 under the app page's header (cto_chats/launch), which holds the page's one h1. %>
+    <%= content_tag heading_tag, app_cto.app.name, class: "text-2xl sm:text-3xl font-bold text-heading break-words", data: { test: "build-launch-app" } %>
   </div>
   <ol class="w-full max-w-sm flex flex-col gap-3 text-left" aria-label="Setting up <%= app_cto.app.name %>" data-test="build-launch-steps">
     <% steps.each_with_index do |label, index| %>

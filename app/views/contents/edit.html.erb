@@ -1,10 +1,10 @@
 <section>
-  <div class="mb-6">
-    <%= link_to "&larr; Back".html_safe, content_path(@content.slug), class: "text-secondary hover:text-heading text-sm transition" %>
-  </div>
+  <%# The engine page header (docs/PAGE_HEADER.md): the old "Back" link is the crumb
+      trail's last link, the content item. %>
+  <%= render "studio/page_header", title: "Edit Content", crumbs: studio_crumbs(parent: :content, content: @content) %>
+  <div class="mb-6"></div>
 
   <div class="max-w-2xl">
-    <h2 class="text-2xl font-bold text-heading mb-6">Edit Content</h2>
     <%= render "form", content: @content %>
   </div>
 </section>

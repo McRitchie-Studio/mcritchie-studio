@@ -2,16 +2,12 @@
 <% d = @directory %>
 <% f = d.params %>
 <div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
-  <div class="flex flex-wrap items-end justify-between gap-3">
-    <div class="min-w-0">
-      <h1 class="text-2xl font-extrabold text-heading">Contacts</h1>
-      <p class="text-secondary text-sm mt-1">The mailing list as it stands: verification results and sends land here as they happen.</p>
-    </div>
-    <div class="flex flex-wrap gap-2">
-      <%= link_to "Broadcasts", broadcasts_path, class: "btn btn-secondary" %>
-      <%= link_to "Analytics", broadcast_analytics_path, class: "btn btn-secondary" %>
-    </div>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): Broadcasts and Analytics are pages
+      elsewhere, in the Links menu. %>
+  <%= render "studio/page_header", title: "Contacts", crumbs: studio_crumbs(:contacts),
+        menu: [{ label: "Broadcasts", href: broadcasts_path, data: { test: "contacts-link-broadcasts" } },
+               { label: "Analytics", href: broadcast_analytics_path, data: { test: "contacts-link-analytics" } }] %>
+  <p class="text-secondary text-sm">The mailing list as it stands: verification results and sends land here as they happen.</p>
 
   <%= render "stats", dashboard: @dashboard, stats: @stats %>
 

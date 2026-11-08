@@ -1,13 +1,11 @@
 <% content_for(:title, "Model Pricing — Admin") %>
 
 <div class="max-w-7xl mx-auto px-4 py-8 space-y-6">
-  <header>
-    <h1 class="text-heading text-2xl font-bold mb-1">Model Pricing</h1>
-    <p class="text-muted text-sm">
-      Per-model rates in USD per 1M tokens, with a summary of the last session to use each model.
-      Click a model to tune its rates.
-    </p>
-  </header>
+  <%= render "studio/page_header", title: "Model Pricing", crumbs: studio_crumbs(:admin_model_pricing) %>
+  <p class="text-muted text-sm">
+    Per-model rates in USD per 1M tokens, with a summary of the last session to use each model.
+    Click a model to tune its rates.
+  </p>
 
   <section class="card overflow-x-auto">
     <table class="w-full text-sm">

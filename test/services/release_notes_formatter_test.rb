@@ -21,18 +21,18 @@ module ReleaseNotes
         sha: "ef693ab1abc",
         url: "https://mcritchie.studio/",
         release_slug: "rel-2026-06-18-devops-tooling",
-        checks: ["production /up 200", "/signin 200", "/tasks 200", "web + worker dynos running"],
+        checks: ["production /up 200", "/signin 200", "/devops/tasks 200", "web + worker dynos running"],
         tasks: [studio_task, turf_task]
       ).message
 
       assert_includes message, "🚀 Production deployed: McRitchie Studio v71 (ef693ab)"
       assert_includes message, "https://mcritchie.studio/\n\n🪎 McRitchie Studio"
       assert_includes message, "🪎 McRitchie Studio"
-      assert_includes message, "• [Sidebar back-navigation production fix](https://mcritchie.studio/tasks/task-ddd444)"
+      assert_includes message, "• [Sidebar back-navigation production fix](https://mcritchie.studio/devops/tasks/task-ddd444)"
       assert_includes message, "\n\n🐊 Turf Monster"
-      assert_includes message, "• [Contest settle button](https://mcritchie.studio/tasks/task-bbb222)"
+      assert_includes message, "• [Contest settle button](https://mcritchie.studio/devops/tasks/task-bbb222)"
       assert_includes message, "💎 Studio Engine\n• No deployed tasks"
-      assert_includes message, "\n\nChecks: production /up 200, /signin 200, /tasks 200, web + worker dynos running."
+      assert_includes message, "\n\nChecks: production /up 200, /signin 200, /devops/tasks 200, web + worker dynos running."
     end
 
     # An archived or repo-less app cannot ship code, so an empty group for one is
@@ -53,7 +53,7 @@ module ReleaseNotes
       task.update!(title: "Tax Studio wind-down notes", metadata: { "devops" => { "repositories" => ["tax-studio"] } })
       named = Formatter.new(app: "mcritchie-studio", environment: "production", release: "v72",
                             sha: "abc1234", url: "", tasks: [task]).message
-      assert_includes named, "📊 Tax Studio\n• [Tax Studio wind-down notes](https://mcritchie.studio/tasks/task-ddd444)"
+      assert_includes named, "📊 Tax Studio\n• [Tax Studio wind-down notes](https://mcritchie.studio/devops/tasks/task-ddd444)"
     end
 
     test "uses selected app group for tasks without repository metadata" do
@@ -69,7 +69,7 @@ module ReleaseNotes
         tasks: [task]
       ).message
 
-      assert_includes message, "🏛️ Turf Vault\n• [Mainnet vault proof](https://mcritchie.studio/tasks/task-eee555)"
+      assert_includes message, "🏛️ Turf Vault\n• [Mainnet vault proof](https://mcritchie.studio/devops/tasks/task-eee555)"
     end
 
     # Both glyph maps derive from config/apps.yml, so every catalog app and
@@ -168,7 +168,7 @@ module ReleaseNotes
       assert_equal(
         {
           title: "Pin session mascot statusline",
-          url: "https://mcritchie.studio/tasks/pin-session-mascot-statusline",
+          url: "https://mcritchie.studio/devops/tasks/pin-session-mascot-statusline",
           color: 6_525_168, # 0x6390F0 — Omanyte's water signature color as a Discord int
           description: "🪎   ·   $0.87\nshipped 3:28 PM",
           thumbnail: { url: "https://s3.us-east-2.amazonaws.com/mcritchie-studio-production/pokemon/138-omanyte.png" }
@@ -316,12 +316,12 @@ module ReleaseNotes
 
       studio = message[/🪎 McRitchie Studio\n(.*?)\n\n/m, 1]
       assert_equal [
-        "• [Loose studio fix task](https://mcritchie.studio/tasks/#{loose.slug})",
+        "• [Loose studio fix task](https://mcritchie.studio/devops/tasks/#{loose.slug})",
         "🧩 devops-v3",
-        "  • [Epic index page task](https://mcritchie.studio/tasks/#{epic_a.slug})",
-        "  • [Epic release notes task](https://mcritchie.studio/tasks/#{epic_b.slug})",
+        "  • [Epic index page task](https://mcritchie.studio/devops/tasks/#{epic_a.slug})",
+        "  • [Epic release notes task](https://mcritchie.studio/devops/tasks/#{epic_b.slug})",
         "🧩 board-polish",
-        "  • [Board polish sweep task](https://mcritchie.studio/tasks/#{polish.slug})"
+        "  • [Board polish sweep task](https://mcritchie.studio/devops/tasks/#{polish.slug})"
       ], studio.split("\n")
       assert_includes message, "🐊 Turf Monster\n🧩 devops-v3\n  • [Turf epic contest task]",
                       "the app stays the outer level; the epic nests inside each app"
@@ -401,7 +401,7 @@ module ReleaseNotes
       assert_equal 2, bodies.size
       bodies.each { |body| assert_operator DiscordClient.discord_length(body[:content]), :<=, DiscordClient::CONTENT_LIMIT }
       REL_20260925_TASKS.each do |slug, _title, _repo|
-        assert_equal 1, bodies.count { |body| body[:content].include?("/tasks/#{slug})") }, "#{slug} posts exactly once"
+        assert_equal 1, bodies.count { |body| body[:content].include?("/devops/tasks/#{slug})") }, "#{slug} posts exactly once"
       end
     end
   end

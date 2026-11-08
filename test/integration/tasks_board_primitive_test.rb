@@ -23,8 +23,8 @@ class TasksBoardPrimitiveTest < ActionDispatch::IntegrationTest
     assert board, "the board renders through studio/board/_board"
     xdata = board["x-data"].to_s
     assert_includes xdata, "studioBoard(", "driven by the studioBoard factory"
-    assert_includes xdata, %q("reorderUrl":"/tasks/reorder.json"), "reorder POSTs to the same route"
-    assert_includes xdata, %q("moveUrl":"/tasks/:id.json"), "a cross-column move PATCHes the task"
+    assert_includes xdata, %q("reorderUrl":"/devops/tasks/reorder.json"), "reorder POSTs to the same route"
+    assert_includes xdata, %q("moveUrl":"/devops/tasks/:id.json"), "a cross-column move PATCHes the task"
     assert_includes xdata, %q("attr":"stage"), "the move param is task[stage]"
     assert_includes xdata, %q("idAttr":"slug"), "cards are keyed by slug"
 

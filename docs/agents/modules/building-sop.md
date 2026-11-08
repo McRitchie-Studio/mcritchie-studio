@@ -205,7 +205,7 @@ are about to hand over. Do not mark a task waiting without a green run.
   wrong port, a desk with no reviewer, and a non-admin reviewer all end on a
   `200`. The command reads each redirect's *destination*, which is the only
   thing that separates these from a working hop. The CTA path is
-  `GET /tasks/<slug>/local_review` (**underscore**; the hyphen is a 404).
+  `GET /devops/tasks/<slug>/local_review` (**underscore**; the hyphen is a 404).
 - **No `?email=`.** The live CTA sends none, and the desk names its own reviewer
   (`Studio::LocalReviewsController`). On studio-engine ≥ 0.36.0 the engine
   find-or-creates that reviewer as an admin before minting.
@@ -222,13 +222,13 @@ are about to hand over. Do not mark a task waiting without a green run.
 On the board, a `--local-url` + `--approval waiting` task floats to the top of its
 stage, pulses, and grows a **WAITING APPROVAL** CTA. Each click mints a FRESH
 single-use `Studio::Link` and lands Alex McRitchie signed in on the local page
-(`GET /tasks/:slug/local_review`).
+(`GET /devops/tasks/:slug/local_review`).
 
 In chat, return the review handoff with exact top-level labels (recipe:
 `mcritchie-studio/docs/agents/modules/communication-style.md`):
 
 ```text
-Task: https://mcritchie.studio/tasks/<slug>
+Task: https://mcritchie.studio/devops/tasks/<slug>
 Magic Link: <the magic link line bin/task begin printed, return_to=/<path>>
 Local Demo: http://localhost:<port>/<path>
 ```

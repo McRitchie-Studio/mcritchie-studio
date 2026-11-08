@@ -48,7 +48,7 @@ class AppRequestDiscordJob < ApplicationJob
       { name: "Tier", value: request_row.tier.to_s.titleize, inline: true },
       { name: "Requested by", value: who, inline: false }
     ]
-    fields << { name: "Board card", value: "#{base}/tasks/#{request_row.task_slug}", inline: false } if request_row.task_slug
+    fields << { name: "Board card", value: "#{base}#{Rails.application.routes.url_helpers.task_path(request_row.task_slug)}", inline: false } if request_row.task_slug
     fields << { name: "All requests", value: "#{base}/build/requests", inline: false }
     {
       title: "🧱 New #{request_row.showcase? ? 'showcase ' : ''}app request: #{request_row.host}",

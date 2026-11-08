@@ -9,11 +9,12 @@
     <b class="text-secondary">Deploy</b> from there. <code class="text-xs">submitted</code> is the
     shared seam, so it appears in both lanes.
   <% end %>
-  <%= render layout: "components/page_header",
-        locals: { title: "Stages", description: description, class: "mb-3",
-                  sub_nav: { nav: :board_sections, current: :stages } } do %>
-    <%= render "components/sub_nav", nav: :board_views, current: :stages %>
-  <% end %>
+  <%# Stages is a reference page, not a board, so the boards are pages elsewhere: the
+      Links menu, not tabs (docs/PAGE_HEADER.md, "The four kinds of control"). %>
+  <%= render "components/page_header",
+        title: "Stages", description: description, class: "mb-3",
+        sub_nav: { nav: :board_sections, current: :stages },
+        menu: board_view_menu %>
   <p class="mb-6">
     <%= link_to sop_path, class: "inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline" do %>
       See the SOP infographic — accountability swimlanes per owner <span aria-hidden="true">→</span>

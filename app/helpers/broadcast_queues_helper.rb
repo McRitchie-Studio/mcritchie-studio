@@ -25,4 +25,17 @@ module BroadcastQueuesHelper
     else "bg-primary/10 text-primary border-primary/40"
     end
   end
+
+  # A broadcast's two views as the engine page header's tabs (studio/_page_header
+  # `tabs:`, docs/PAGE_HEADER.md "The four kinds of control"): the editor and the staged
+  # queue, the current one marked with aria-current="page".
+  def broadcast_view_tabs(broadcast, current:)
+    [
+      { key: :editor, label: "Editor", href: edit_broadcast_path(broadcast) },
+      { key: :queue, label: "Queue", href: broadcast_queue_path(broadcast) }
+    ].map do |tab|
+      { label: tab[:label], href: tab[:href], current: ("page" if tab[:key] == current),
+        data: { test: "broadcast-tab-#{tab[:key]}" } }
+    end
+  end
 end

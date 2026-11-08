@@ -17,6 +17,16 @@ function pngHeader(path) {
 
 const card = (page) => page.locator("[data-test='download-card']");
 
+// Measure a logo's card only once the page has settled: every shown logo image decoded and the web fonts loaded.
+// The card's height is the edit panel's, whose text wraps by the font, and a guide drawing can outgrow it, so a
+// box read before either lands can sit a pixel or two off the settled one.
+async function settled(page) {
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll("img[data-test='logo-image']")].every((img) => !img.offsetParent || (img.complete && img.naturalWidth > 0))
+  );
+  await page.evaluate(() => document.fonts.ready.then(() => true));
+}
+
 // Picks PNG and a size on the card, clicks Download, and answers the file's header and its suggested name.
 async function downloadPng(page, size) {
   await card(page).locator("label").filter({ has: page.locator("input[name='format'][value='png']") }).click();
@@ -218,9 +228,11 @@ test("every tab puts the logo beside Edit and Download beside the controls; one 
   }
 
   await page.goto("/logos/studio?type=stacked");
+  await settled(page);
   const normal = await page.locator("[data-test='logo-example']").boundingBox();
   await page.goto("/logos/studio?type=stacked&guides=1");
   await expect(page.locator("[data-test='logo-type']")).toHaveAttribute("data-layout", "row");
+  await settled(page);
   // the guide drawing takes the row
   const logo = await page.locator("[data-test='logo-example']").boundingBox();
   expect(logo.width).toBeGreaterThan(1000);
@@ -230,8 +242,10 @@ test("every tab puts the logo beside Edit and Download beside the controls; one 
 
   for (const brand of ["studio", "industries", "welding"]) { // the Navbar tab, whose plain logo is short
     await page.goto(`/logos/${brand}`);
+    await settled(page);
     const plain = await page.locator("[data-test='logo-example']").boundingBox();
     await page.goto(`/logos/${brand}?guides=1`);
+    await settled(page);
     const guides = await page.locator("[data-test='logo-example']").boundingBox();
     expect(Math.abs(guides.height - plain.height), brand).toBeLessThan(2);
   }

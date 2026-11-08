@@ -69,7 +69,9 @@
 #          deploys — and BEFORE the gem publish, so gems publish the post-merge
 #          tree. Aborts loudly on a conflict or a push that did not take. A
 #          merge-forward commit is then carried onto `accepted` (a fast-forward).
-#       4d. GEM MEMBERS — prepare publishes the FINAL x.y.z (tagged v<x.y.z>) and
+#       4d. GEM MEMBERS — prepare publishes the FINAL x.y.z (tagged v<x.y.z>) only
+#          after the pre-publish gate (every swept app's CI green on its promoted
+#          tree, and the gem tip's own CI green), and
 #          consumers lock it before the pre-QA gate, so the ship deploys the SHAs QA
 #          gated with no re-lock (Release::GemFlow; docs/agents/system/gem-release-flow.md).
 #          A red QA that changes the gem burns x.y.z: the next prepare allocates the
@@ -4304,11 +4306,11 @@ end
 #                   heals mid-sweep), so it aborts on the first read with the remedy.
 #   * else        — a :pending/:none/:unverified verdict that never reached green before
 #                   the poll timed out: let CI finish and re-run. None is ever a pass.
-def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout)
+def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout, label: "pre-QA gate")
   case ci[:state]
   when :red
     named = Array(ci[:failing]).join(", ")
-    "pre-QA gate FAILED for #{repo}: GitHub CI called #{short(sha)} RED#{named.empty? ? '' : " (#{named})"} — a " \
+    "#{label} FAILED for #{repo}: GitHub CI called #{short(sha)} RED#{named.empty? ? '' : " (#{named})"} — a " \
       "regression is riding origin/#{RELEASE_BRANCH}. Identify the offending task, eject it " \
       "(`#{RELEASE_SELF_CMD} eject <task> --feedback \"…\"`), revert its merge commit on `#{RELEASE_BRANCH}` " \
       "(git revert -m 1 <merge-sha>; push), then re-run `bin/release prepare` — the sweep self-heals and the " \
@@ -4316,12 +4318,12 @@ def pre_qa_ci_abort(repo, sha, ci, budget = ci_poll_timeout)
   when :unreadable
     # `release_grain: true` — STATED, never defaulted. G3 is RELEASE-grain, so the
     # remedy names `bin/release prepare` rather than a `<task>` this gate cannot fill.
-    "pre-QA gate FAILED for #{repo}: GitHub CI is UNREADABLE for #{short(sha)} (#{ci_detail(ci)}). CI is the G3 " \
+    "#{label} FAILED for #{repo}: GitHub CI is UNREADABLE for #{short(sha)} (#{ci_detail(ci)}). CI is the G3 " \
       "verdict now and FAILS CLOSED — an :unreadable verdict is a credential/token fault, NOT a missing or still-" \
       "running CI, so the gate does NOT poll it (a refused token never heals mid-sweep). " \
       "#{CiStatus.unreadable_remedy(repo_name_with_owner(repo), cause: ci[:cause], release_grain: true)}"
   else
-    "pre-QA gate HELD for #{repo}: GitHub CI reached NO green verdict for #{short(sha)} (#{ci_detail(ci)}) before " \
+    "#{label} HELD for #{repo}: GitHub CI reached NO green verdict for #{short(sha)} (#{ci_detail(ci)}) before " \
       "the poll timed out. CI is the G3 verdict now and FAILS CLOSED on anything but green — a still-pending or " \
       "absent verdict never certifies a SHA. The gate POLLED origin/#{RELEASE_BRANCH} until ~#{budget}s " \
       "elapsed; let CI conclude (or widen RELEASE_CI_POLL_TIMEOUT), then re-run `bin/release prepare`."
@@ -4647,6 +4649,85 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   { ci: ci, credited: !credit.nil?, diagnostic: (credit ? nil : diagnostic), diverged: diverged }
 end
 
+# ONE app's CI verdict for its origin/#{RELEASE_BRANCH} SHA, as the pre-QA gate and the
+# pre-publish gate both read it. nil when the app registers no qa_test_cmd (it
+# self-gates) or in a dry run (the plan line is printed instead). Otherwise
+# { repo:, sha:, cmd:, verdict:, ci:, budget: }; the caller judges and records.
+def release_app_ci_verdict(repo, label:)
+  cmd = qa_gate_cmd(repo)
+  if cmd.empty?
+    say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
+    return nil
+  end
+  # Validate the registry command even though the suite is DEMOTED (Phase 3): a
+  # malformed value must still abort a preview, and it is recorded on the release
+  # below, so it may not be garbage. test_cmd_argv aborts on an unbalanced quote.
+  test_cmd_argv(cmd)
+  if DRY
+    say("  [dry-run] #{label} #{repo}: GitHub CI verdict for origin/#{RELEASE_BRANCH} " \
+        "(#{cmd} ran in CI; recorded, not run)")
+    return nil
+  end
+
+  path = repo_path(repo)
+  abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
+  sh("git", "-C", path, "fetch", "origin", "--quiet")
+  out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
+  abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the #{label} — fetch, then re-run") unless ok
+  sha = out.strip
+
+  # DevOps v2 Phase 3+4: the pre-QA suite no longer runs on the conductor's machine.
+  # GitHub CI's verdict for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now
+  # (poll_ci_verdict -> ci_pass?), so the whole local-cert flakiness class (a lazily-
+  # autoloaded suite torn by a concurrent checkout) retired with it.
+  #
+  # G3 DEDUPE (task dedupe-hub-release-suite): the hub registers the same full
+  # suite at the accepted seam (the batch PR's pull_request run on the accepted
+  # head) and again on the release push (the promote's merge commit), so the
+  # verdict resolution below credits the IDENTICAL TREE already earned instead of
+  # re-running it — fail-closed into the poll on any non-credit. Repo-generic; see
+  # resolve_release_ci_verdict.
+  budget  = ci_poll_budget_for(repo, sha)
+  verdict = resolve_release_ci_verdict(repo, path, sha, budget: budget)
+  { repo: repo, sha: sha, cmd: cmd, verdict: verdict, ci: verdict[:ci], budget: budget }
+end
+
+# THE PRE-PUBLISH GATE (task ci-retry-killers). A RubyGems version can never be
+# re-pushed, so a gem published before a red gate is BURNED: 0.129.0 and 0.131.0 went
+# that way, 2 of 17 final-flow versions. The gem's OWN tip already earns a clean-env
+# verdict before the push (gem_ci_failure: Engine CI plus Consumer CI, which tests the
+# consumers against that tip). What was missing is the swept APPS' own verdict: it was
+# read only at the pre-QA gate, after the publish. So it is read here first, on each
+# app's origin/#{RELEASE_BRANCH} BEFORE the lock bump, and a red aborts with NOTHING
+# published.
+#
+# CHEAP BY CONSTRUCTION. That tree is the promoted `accepted` head, whose green the
+# G3 dedupe credits without a fresh run (resolve_release_ci_verdict), so this costs a
+# read, not a CI cycle, on a normal sweep. Records nothing: the pre-QA gate after the
+# bump is still G3, still reads the post-bump SHA QA deploys, and still records it.
+# A red THERE now means the lock bump itself or a flake, and a re-run at the same gem
+# tip reuses the live final (publish_gems_for_qa's reuse path), so nothing burns.
+def pre_publish_gate(app_groups, gem_plan)
+  # Nothing to burn when nothing would be pushed: no gem, or every final already live.
+  return if app_groups.empty? || gem_plan.empty? || gem_plan.all? { |gem| gem["already_live"] }
+
+  say("")
+  step("pre-publish gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
+       "(before any gem is published)")
+  app_groups.each do |group|
+    read = release_app_ci_verdict(group["repo"], label: "pre-publish gate")
+    next unless read
+
+    repo, sha, ci, budget = read.values_at(:repo, :sha, :ci, :budget)
+    step("pre-publish gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}" \
+         "#{read[:verdict][:credited] ? ' (credited)' : ''} @ #{short(sha)}")
+    next if ci_pass?(ci)
+
+    abort!("#{pre_qa_ci_abort(repo, sha, ci, budget, label: "pre-publish gate")} NOTHING was published, so no gem " \
+           "version is burned.")
+  end
+end
+
 # The pre-QA gate (G3 candidate). `app_groups` gate on their registered
 # qa_test_cmd's CI; `gem_groups` (keyword — old positional callers keep the
 # (app_groups, rel_slug) arity) adds the SELF-GATED-GEM pass for a GEM-ONLY
@@ -4664,46 +4745,12 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
   step("pre-QA gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
        "(before any QA deploy)")
   app_groups.each do |group|
-    repo = group["repo"]
-    cmd  = qa_gate_cmd(repo)
-    if cmd.empty?
-      say("  #{repo}: no qa_test_cmd registered — self-gates (suite runs at ship / its own deploy); skip")
-      next
-    end
-    # Validate the registry command even though the suite is DEMOTED (Phase 3): a
-    # malformed value must still abort a preview, and it is recorded on the release
-    # below, so it may not be garbage. test_cmd_argv aborts on an unbalanced quote.
-    test_cmd_argv(cmd)
-    if DRY
-      say("  [dry-run] pre-QA gate #{repo}: GitHub CI verdict for origin/#{RELEASE_BRANCH} " \
-          "(#{cmd} ran in CI; recorded, not run)")
-      next
-    end
+    read = release_app_ci_verdict(group["repo"], label: "pre-QA gate")
+    next unless read
 
-    path = repo_path(repo)
-    abort!("app repo not found at #{path} — clone it as a sibling at the projects root") unless Dir.exist?(path)
-    sh("git", "-C", path, "fetch", "origin", "--quiet")
-    out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
-    abort!("could not resolve origin/#{RELEASE_BRANCH} in #{repo} for the pre-QA gate — fetch, then re-run") unless ok
-    sha = out.strip
-
-    # DevOps v2 Phase 3+4: the pre-QA suite no longer runs on the conductor's machine.
-    # GitHub CI's verdict for this exact origin/#{RELEASE_BRANCH} SHA IS the gate now
-    # (poll_ci_verdict -> ci_pass?), so the whole local-cert flakiness class (a lazily-
-    # autoloaded suite torn by a concurrent checkout) retired with it.
-    #
-    # G3 DEDUPE (task dedupe-hub-release-suite): the hub registers the same full
-    # suite at the accepted seam (the batch PR's pull_request run on the accepted
-    # head) and again on the release push (the promote's merge commit), so the
-    # verdict resolution below credits the IDENTICAL TREE already earned instead of
-    # re-running it — fail-closed into the poll on any non-credit. Repo-generic; see
-    # resolve_release_ci_verdict.
-    budget   = ci_poll_budget_for(repo, sha)
-    verdict  = resolve_release_ci_verdict(repo, path, sha, budget: budget)
-    ci       = verdict[:ci]
-    credited = verdict[:credited]
+    repo, sha, cmd, verdict, ci, budget = read.values_at(:repo, :sha, :cmd, :verdict, :ci, :budget)
     ok = ci_pass?(ci)
-    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{credited ? ' (credited)' : ''} @ #{short(sha)} " \
+    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{verdict[:credited] ? ' (credited)' : ''} @ #{short(sha)} " \
          "(#{cmd} ran in CI; recorded, not run here)")
     # The G3 gate run's own SOP names the verdict's SOURCE (the credited accepted
     # head / tree, or the SHA's own polled run) — the same line the G4 read records.
@@ -5334,13 +5381,17 @@ def prepare
   merge_forward_release_branches(app_groups, gem_groups: gem_groups)
 
   # 4d. GEM PUBLISH + CONSUMER LOCK BUMP — AFTER the merge-forward (4c), so every
-  #     gem is built from the post-merge release tree, and BEFORE the pre-QA gate
-  #     and any QA deploy (docs/agents/system/gem-release-flow.md).
+  #     gem is built from the post-merge release tree, AFTER the pre-publish gate
+  #     (every swept app's CI green on its promoted tree, and the gem's own tip green),
+  #     and BEFORE the pre-QA gate on the post-bump SHA and any QA deploy
+  #     (docs/agents/system/gem-release-flow.md).
   #
   #     THE DEFAULT (Release::GemFlow :final) publishes the FINAL x.y.z here, tagged
   #     v<x.y.z>, and the consumer bump locks it, so the ship deploys the SHAs QA
   #     gated and re-locks nothing. A red QA that moves the gem burns x.y.z; the
-  #     next prepare allocates the next patch and records the burn.
+  #     next prepare allocates the next patch and records the burn. The pre-publish
+  #     gate moved every red it can see AHEAD of the push, so a burn now needs a red
+  #     that only the post-bump tree or QA itself shows.
   #
   #     PHASE 0 ALLOCATES each swept gem's final version from its members and
   #     commits it (with its Gemfile.lock and its rolled CHANGELOG.md) onto
@@ -5371,6 +5422,10 @@ def prepare
   # operator could have fixed for free. Then the burn record (a version this
   # release supersedes before it ships), then the publish.
   refuse_stray_locks_before_publish!(app_groups, gem_plan)
+  # THE GATE BEFORE THE PUSH (task ci-retry-killers): every swept app's own CI must be
+  # green on its promoted tree before any version goes to RubyGems, so a red aborts
+  # with nothing published and nothing burned. See pre_publish_gate.
+  pre_publish_gate(app_groups, gem_plan)
   record_burned_finals!(gem_plan)
   published_gems = publish_gems_for_qa(gem_plan)
   # The stamp a ship with this flow checks its candidates against. Before the
@@ -7741,7 +7796,8 @@ def allocate_gem_versions!(gem_groups, label: nil)
   if DRY
     gem_groups.each do |group|
       step("  gem #{group['repo']}: last published (last v* tag ∪ RubyGems) + the members' bump → rewrite " \
-           "#{gem_meta_for(group['repo'])['version_file']} → roll CHANGELOG.md's '## Unreleased' into the " \
+           "#{gem_meta_for(group['repo'])['version_file']} → compile #{CHANGELOG_FRAGMENT_DIR}/ fragments into " \
+           "'## Unreleased' (when the gem carries #{CHANGELOG_COMPILER}) → roll CHANGELOG.md's '## Unreleased' into the " \
            "allocated version → `bundle lock` → ONE commit of all three onto " \
            "origin/#{ACCEPTED_BRANCH} → promote onto origin/#{RELEASE_BRANCH} (a fast-forward when contained) " \
            "(skips when already advanced, unless the members now earn more or entries arrived after the roll; " \
@@ -7879,6 +7935,9 @@ def gem_allocation_plan(group, failures)
   # already rolled `current` and has gained entries since (Release::GemVersion
   # #reallocation), and the guard below judges the same text.
   changelog = changelog_at(repo, tip)
+  # A fragment merged after the roll is a late entry too: judge the compiled bucket.
+  # A compile failure keeps the bare text; changelog_refusal below names it.
+  changelog = compiled_changelog_at(repo, tip, changelog).first || changelog if changelog
 
   decision = Release::GemVersion.allocation(
     current: current,
@@ -7944,6 +8003,11 @@ def changelog_refusal(repo, tip, published, replaces: nil)
     return nil
   end
 
+  # Judge the file the roll will actually move: the bucket WITH the fragments the
+  # version commit compiles into it (compile_changelog_fragments!), not the bare file.
+  text, refusal = compiled_changelog_at(repo, tip, text)
+  return refusal if refusal
+
   text = Release::Changelog.unroll(text, version: replaces) || text if replaces
   Release::Changelog.refusal(text, published_version: published)
 end
@@ -7990,6 +8054,9 @@ def commit_gem_version!(repo, tip, decision, failures)
     end
     File.write(ws_version, rewritten)
 
+    compiled = compile_changelog_fragments!(repo, workspace, failures)
+    next if compiled == :failed
+
     rolled = roll_changelog!(repo, workspace, version, failures, replaces: decision.replaces)
     next if rolled == :failed
 
@@ -7997,6 +8064,9 @@ def commit_gem_version!(repo, tip, decision, failures)
 
     staged = [version_file, lock_tracked?(workspace) ? "Gemfile.lock" : nil, rolled ? CHANGELOG_FILE : nil].compact
     sh("git", "-C", workspace, "add", "--", *staged)
+    # -A: the compile DELETED the fragments it folded in, and a plain add of a
+    # removed path stages nothing.
+    sh("git", "-C", workspace, "add", "-A", "--", CHANGELOG_FRAGMENT_DIR) if compiled == true
     # NOTHING TO COMMIT IS SAID, NOT SKIPPED IN SILENCE. When origin/accepted already
     # carries the version file, its lock and its changelog at this version (a hand
     # bump the refusal above asks for, or a re-roll that moved nothing), `git commit`
@@ -8039,6 +8109,86 @@ def commit_gem_version!(repo, tip, decision, failures)
 end
 
 CHANGELOG_FILE = "CHANGELOG.md"
+
+# CHANGELOG FRAGMENTS (/tasks/changelog-fragments). An engine PR adds
+# `changelog.d/<slug>.<kind>.md` instead of editing `## Unreleased`, because GitHub's
+# merge check ignores the file's `merge=union` driver and 39 of 40 engine PRs collided
+# on it. The GEM owns the format and the compiler (`bin/changelog-compile`, which folds
+# every fragment into `## Unreleased` by kind and deletes it); the release only calls
+# it, in the version commit, BEFORE the roll, so the fragments land under the
+# allocated version and leave the tree in the same commit.
+#
+# A NO-OP for a tree without both the folder and the compiler: an older engine SHA,
+# solana-studio, turf-vault. Such a tree rolls exactly as it did before.
+CHANGELOG_FRAGMENT_DIR = "changelog.d"
+CHANGELOG_COMPILER = "bin/changelog-compile"
+
+def changelog_fragments?(dir)
+  File.directory?(File.join(dir, CHANGELOG_FRAGMENT_DIR)) &&
+    File.file?(File.join(dir, CHANGELOG_COMPILER)) &&
+    File.file?(File.join(dir, CHANGELOG_FILE))
+end
+
+# Runs the gem's own compiler over `dir`. [:none | :compiled | :failed, output].
+def run_changelog_compiler(dir)
+  return [:none, ""] unless changelog_fragments?(dir)
+
+  out, status = bounded_capture2e(RbConfig.ruby, File.join(dir, CHANGELOG_COMPILER), "--root", dir,
+                                  deadline: command_deadline, chdir: dir)
+  [status.success? ? :compiled : :failed, out.to_s]
+end
+
+# THE DECIDE-PHASE READ. CHANGELOG.md as the version commit will roll it: the gem's
+# CHANGELOG.md, changelog.d/ and bin/ at `tip`, extracted to a scratch directory, and
+# compiled there by the gem's own compiler. [text, nil] on success (the input text
+# when the tree carries no fragments), [nil, refusal] when the fragments do not
+# compile, so a bad fragment aborts the sweep with nothing written.
+def compiled_changelog_at(repo, tip, text)
+  path = repo_path(repo)
+  listed, ok = git_capture("-C", path, "ls-tree", "--name-only", tip, "--", CHANGELOG_FRAGMENT_DIR, CHANGELOG_COMPILER)
+  names = ok ? listed.lines.map(&:strip) : []
+  return [text, nil] unless names.include?(CHANGELOG_FRAGMENT_DIR) && names.include?(CHANGELOG_COMPILER)
+
+  Dir.mktmpdir("changelog-compile") do |dir|
+    tar = File.join(dir, "tree.tar")
+    _, archived = git_capture("-C", path, "archive", "--format=tar", "-o", tar, tip, "--",
+                              CHANGELOG_FILE, CHANGELOG_FRAGMENT_DIR, "bin")
+    tree = File.join(dir, "tree")
+    FileUtils.mkdir_p(tree)
+    unpacked = archived && bounded_capture2e("tar", "-xf", tar, "-C", tree).last.success?
+    return [nil, "could not extract #{CHANGELOG_FRAGMENT_DIR}/ at origin/#{ACCEPTED_BRANCH} to compile it"] unless unpacked
+
+    state, out = run_changelog_compiler(tree)
+    return [text, nil] if state == :none
+    if state == :failed
+      return [nil, "its #{CHANGELOG_FRAGMENT_DIR}/ fragments do not compile (#{CHANGELOG_COMPILER}): " \
+                   "#{out.strip.lines.last(4).join(' ').squeeze(' ')} — fix the fragment on #{ACCEPTED_BRANCH}, " \
+                   "then re-run `bin/release prepare`"]
+    end
+
+    [File.read(File.join(tree, CHANGELOG_FILE), encoding: "UTF-8"), nil]
+  end
+end
+
+# THE WRITE-PHASE COMPILE, in the ship workspace. true when fragments were compiled
+# (stage changelog.d/), false when there were none, :failed when the compiler refused
+# — unreachable after compiled_changelog_at passed in the decide phase, so it fails
+# LOUDLY rather than rolling a changelog that left fragments behind.
+def compile_changelog_fragments!(repo, workspace, failures)
+  state, out = run_changelog_compiler(workspace)
+  case state
+  when :none then false
+  when :compiled
+    step("  gem #{repo}: #{out.strip.lines.last.to_s.strip}")
+    # The compiler reports "no fragments" as success: nothing to stage.
+    _, clean = git_capture("-C", workspace, "diff", "--quiet", "--", CHANGELOG_FRAGMENT_DIR, CHANGELOG_FILE)
+    !clean
+  else
+    failures << "gem #{repo}: #{CHANGELOG_COMPILER} failed in the ship workspace even though the decide phase " \
+                "compiled the same fragments (#{out.strip.lines.last(3).join(' ').squeeze(' ')}). Nothing was committed"
+    :failed
+  end
+end
 SECRET_PREWARM_DEADLINE = 120
 
 # THE ROLL — the step that was missing, and the whole point of this change.

@@ -87,7 +87,8 @@
 #   SHIP_BASE_BRANCH      PR base (default accepted — the ladder's first rung)
 #   SHIP_PROJECTS_DIR     root-guard worktree glob root (tests)
 #   SHIP_CI_WAIT          `off` reads CI once instead of waiting (default: armed)
-#   SHIP_CI_WAIT_TIMEOUT  seconds to wait on a RUNNING CI (default 900)
+#   SHIP_CI_WAIT_TIMEOUT  seconds to wait on a RUNNING CI (default: measured, bin/lib/ci_wait_budget.rb)
+#   SHIP_CI_HISTORY       `off` skips the run-history read; the wait keeps the 900s floor
 #   SHIP_CI_WAIT_APPEARANCE  seconds to wait for a run to EXIST (default 120)
 #   SHIP_CI_WAIT_INTERVAL poll interval, floored at 2s (default 20)
 #   SHIP_CI_STATE         injected CiStatus state (tests — `state:green`)
@@ -114,6 +115,7 @@ require_relative "lib/session_identity"
 require_relative "lib/presence_claim"
 require_relative "lib/ci_status"
 require_relative "lib/ci_wait"
+require_relative "lib/ci_wait_budget"
 require_relative "lib/ci_failure_digest"
 require_relative "lib/desk_claim"
 require_relative "lib/projects_root"
@@ -284,7 +286,7 @@ devops = task.dig("metadata", "devops") || {}
 stage = task["stage"].to_s
 TERMINAL[:stage] = stage
 title = task["title"].to_s
-task_url = "#{BASE_URL}/tasks/#{slug}"
+task_url = "#{BASE_URL}/devops/tasks/#{slug}"
 branch = [devops["branch"], "feat/#{slug}"].find { |v| !v.to_s.strip.empty? }
 
 if PAST_SUBMITTED.include?(stage)
@@ -863,6 +865,24 @@ end
 
 presence!(:ci)
 cfg = CiWait.config(ENV)
+# THE BUDGET IS MEASURED, NOT FIXED (task ci-retry-killers, bin/lib/ci_wait_budget.rb):
+# the p90 of this repo's recent green PR CI plus a margin, floored at the old 900 s and
+# capped by release's own structural budget over the workflow files. An explicit
+# SHIP_CI_WAIT_TIMEOUT still wins; SHIP_CI_HISTORY=off keeps the floor without a read.
+ci_budget = nil
+if CiWait.enabled?(ENV) && CiWait.duration_from(ENV, "SHIP_CI_WAIT_TIMEOUT", nil).nil?
+  ci_repo = CiWaitBudget.repo_from_pr_url(pr_url)
+  history = if ENV["SHIP_CI_HISTORY"].to_s.strip.casecmp?("off") || ci_repo.nil?
+              ""
+            else
+              out, ok = gh_capture(root, "api", CiWaitBudget.runs_path(ci_repo))
+              ok ? out : ""
+            end
+  ci_budget = CiWaitBudget.budget(CiWaitBudget.settle_seconds(history),
+                                  ceiling: CiWaitBudget.ceiling_s(CiWaitBudget.local_workflows(root)))
+  cfg = cfg.merge(timeout_s: ci_budget.timeout_s)
+  say "6/8 ci — budget #{ci_budget.timeout_s}s (#{CiWaitBudget.describe(ci_budget)})"
+end
 if CiWait.enabled?(ENV)
   say "6/8 ci — waiting for CI to settle on the PR (timeout #{cfg[:timeout_s]}s, poll #{cfg[:interval_s]}s)"
 else
@@ -876,6 +896,19 @@ wait = CiWait.settle(
 )
 say "6/8 ci — #{CiWait.summary(wait)}"
 if wait.timed_out?
+  # LEAVE A TRACE. dor-check never runs on this path, so before this note a timeout
+  # left nothing on the board. Best effort: a failed write never changes the exit.
+  # A disarmed wait (SHIP_CI_WAIT=off) read once on purpose; that is no timeout to record.
+  if CiWait.enabled?(ENV)
+    basis = ci_budget ? CiWaitBudget.describe(ci_budget) : "set by SHIP_CI_WAIT_TIMEOUT"
+    note = CiWaitBudget.timeout_note(state: wait.state, waited_s: wait.waited_s, budget_s: cfg[:timeout_s],
+                                     basis: basis, pr_url: pr_url, resume: "#{SHIP_CMD} #{slug}")
+    if system(TASK_BIN, "note", slug, "--comment", note, out: File::NULL, err: File::NULL)
+      say "6/8 ci — recorded the timeout on the board (a comment on #{slug})."
+    else
+      say "6/8 ci — could not record the timeout on the board; carrying on to the refusal."
+    end
+  end
   die!("CI is still #{wait.state} on the PR, and the DoR verdict reads only a settled CI. Nothing about the " \
        "tree is refused: re-run #{SHIP_CMD} #{slug} once CI reports (it resumes at 6/8).")
 elsif wait.absent?

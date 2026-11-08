@@ -9,8 +9,8 @@ class RetiredRoutesTest < ActionDispatch::IntegrationTest
     "/activities"                       => "/agents",
     "/alex/heartbeat"                   => "/mason/heartbeat",
     "/alex/heartbeat/activities"        => "/mason/heartbeat/activities",
-    "/alex/insights"                    => "/mason/insights",
-    "/alex/pipeline"                    => "/mason/pipeline",
+    "/alex/insights"                    => "/devops/insights",
+    "/alex/pipeline"                    => "/devops/pipeline",
     "/mason/heartbeat/spans"              => "/mason/heartbeat/activities"
   }.freeze
 

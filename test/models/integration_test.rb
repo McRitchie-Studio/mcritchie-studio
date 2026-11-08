@@ -163,15 +163,13 @@ class IntegrationTest < ActiveSupport::TestCase
     refute Integration.find(:google_workspace_managed).method_soon?("managed")
   end
 
-  test "[unit] a dark entry is Coming soon and only an admin's groups carry it" do
-    quickbooks = Integration.find(:quickbooks)
-    assert quickbooks.dark?
-    assert quickbooks.soon?
-    assert_not Integration.find(:fathom).dark?, "the control: an offered entry is not dark"
-
-    keys = ->(admin) { Integration.groups_for(admin:).flat_map(&:entries).map(&:key) }
-    assert_includes keys.(true), "quickbooks"
-    assert_not_includes keys.(false), "quickbooks"
-    assert_equal keys.(true) - %w[quickbooks], keys.(false), "nothing else moves"
+  test "[unit] a dark entry is listed only for an admin, and still found by key" do
+    dark = Integration.entries(admin: true).select(&:dark?)
+    assert_equal %w[egnyte quickbooks], dark.map(&:key)
+    assert_empty Integration.entries.map(&:key) & %w[egnyte quickbooks]
+    assert_not_includes Integration.groups.flat_map(&:entries).map(&:key), "egnyte"
+    assert_includes Integration.groups(admin: true).find { _1.key == "connect" }.entries.map(&:key), "egnyte"
+    assert_equal "Egnyte", Integration.find(:egnyte).name, "a contact source naming it still resolves"
+    assert dark.all?(&:soon?), "a dark entry never says Available"
   end
 end

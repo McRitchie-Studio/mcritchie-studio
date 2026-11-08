@@ -2,11 +2,12 @@
 
 # THE SOP REGISTRY, generated from the SOP files.
 #
-# An SOP is invoked by NAME: Alex McRitchie says `clean-up` and the agent resolves that phrase
-# through the registry table in docs/agents/index.md (installed as AGENTS.md) to a file.
-# The table and the Start Here rows used to be hand-kept copies of what the disk already
-# says, held together by tests. They are generated here instead, so a new SOP file is
-# registered by existing:
+# An SOP is invoked by NAME: Alex McRitchie says `clean-up` and the agent runs
+# `bin/sop clean-up`, which resolves that phrase through `entries` below to a file.
+# The table in docs/agents/start-here.md is generated here too. It used to be a
+# hand-kept copy of what the disk already says, and AGENTS.md carried a second copy
+# until the boot budget moved it out (task boot-budget-and-sop-resolver). So a new SOP
+# file is registered by existing:
 #
 #   docs/agents/agents/<soul>/HEARTBEAT.md   `<Soul> Heartbeat`, owned by that soul
 #   docs/agents/agents/<soul>/sops/<sop>.md  `<sop>`, owned by that soul
@@ -19,13 +20,12 @@
 #   <!-- registry (role SOP): the primary reviewer's own steps -->
 #
 # The marker is optional for a soul's files (they are SOPs by where they live) and is
-# what makes a module an SOP. bin/sop-registry writes the generated blocks and checks
-# them; test/docs/sop_registry_generated_test.rb holds the committed blocks to it.
+# what makes a module an SOP. bin/sop-registry writes the generated block and checks
+# it; test/docs/sop_registry_generated_test.rb holds the committed block to it.
 module SopRegistry
   Entry = Struct.new(:invocation, :owner, :path, :note, :summary, :kind, keyword_init: true)
 
   MARKER = /^<!-- registry(?: \((?<note>[^)]+)\))?(?::\s*(?<summary>.*?))?\s*-->\s*$/
-  REGISTRY_PATH = "docs/agents/index.md"
   START_HERE_PATH = "docs/agents/start-here.md"
   BLOCK = "sop-registry"
 
@@ -64,13 +64,26 @@ module SopRegistry
               note: found && found[:note], summary: found && found[:summary].to_s.strip.then { |s| s.empty? ? nil : s })
   end
 
-  # The `## SOP Registry` table rows.
-  def registry_table(entries)
-    rows = entries.map do |e|
-      name = e.note ? "`#{e.invocation}` (#{e.note})" : "`#{e.invocation}`"
-      "| #{name} | #{e.owner} | `mcritchie-studio/#{e.path}` |"
-    end
-    ["| Invocation | Owner | Read |", "|------------|-------|------|", *rows].join("\n")
+  # A name folded for a forgiving match: case, and the space, hyphen or underscore
+  # between words, do not count. `mason heartbeat` finds `Mason Heartbeat`.
+  def fold(name) = name.to_s.downcase.gsub(/[\s_-]+/, "-")
+
+  # The entry `name` invokes: the exact invocation first, then the folded one.
+  def resolve(entries, name)
+    entries.find { |e| e.invocation == name } ||
+      entries.find { |e| fold(e.invocation) == fold(name) }
+  end
+
+  # Up to five registered names close to `name`: spelling neighbours, then names that
+  # contain it or that it contains.
+  def suggest(entries, name)
+    require "did_you_mean"
+    names = entries.map(&:invocation)
+    by_fold = names.to_h { |n| [fold(n), n] }
+    key = fold(name)
+    spelled = DidYouMean::SpellChecker.new(dictionary: by_fold.keys).correct(key)
+    within = key.empty? ? [] : by_fold.keys.select { |k| k.include?(key) || key.include?(k) }
+    (spelled + within).uniq.first(5).map { |k| by_fold.fetch(k) }
   end
 
   # The Start Here rows: a soul SOP reads `<Soul> \`<sop>\` SOP`, a heartbeat
@@ -101,13 +114,10 @@ module SopRegistry
     text[0...start] + begin_marker + "\n" + table + "\n" + text[stop..]
   end
 
-  # { relative path => [current text, generated text] } for both generated docs.
+  # { relative path => [current text, generated text] } for the generated doc.
   def renders(root)
     list = entries(root)
-    {
-      REGISTRY_PATH => registry_table(list),
-      START_HERE_PATH => start_here_table(list)
-    }.to_h do |rel, table|
+    { START_HERE_PATH => start_here_table(list) }.to_h do |rel, table|
       current = File.read(File.join(root, rel))
       [rel, [current, splice(current, table, rel)]]
     end

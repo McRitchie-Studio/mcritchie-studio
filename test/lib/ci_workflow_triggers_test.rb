@@ -124,6 +124,7 @@ class CiWorkflowTriggersTest < Minitest::Test
   SUITE_INPUTS = LANE_INPUTS.to_h { |name| [name, { "type" => "boolean", "default" => true }] }.merge(
     "rubygems" => { "type" => "string", "default" => "default" },
     "await-gem-propagation" => { "type" => "boolean", "default" => true },
+    "lane-image" => { "type" => "string", "default" => "ghcr.io/mcritchie-studio/ci-rails:24.04" },
     "postgres-image" => { "type" => "string", "default" => "ghcr.io/mcritchie-studio/postgres:17" },
     "gem-audit-command" => { "type" => "string", "default" => "" },
     "importmap-audit-command" => { "type" => "string", "default" => "bin/importmap-audit-ci" },
@@ -984,7 +985,7 @@ class CiWorkflowTriggersTest < Minitest::Test
             - name: Run tests
               env:
                 RAILS_ENV: test
-                DATABASE_URL: postgres://postgres:postgres@localhost:5432
+                DATABASE_URL: postgres://postgres:postgres@postgres:5432
               run: #{SUITE_SCRIPT}
     YML
     assert_empty narrowing_env_lanes(yaml), "ordinary RAILS_ENV/DATABASE_URL must not be flagged as narrowing"

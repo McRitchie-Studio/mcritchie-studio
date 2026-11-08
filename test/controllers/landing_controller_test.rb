@@ -7,7 +7,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_response :success
   end
 
-  test "landing page renders acquisition-focused hero and about copy" do
+  test "landing page renders the acquisition-focused hero, and its about copy lives on alex.build" do
     get root_path
 
     assert_response :success
@@ -24,13 +24,12 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_includes response.body, "Your"
     assert_not_includes response.body, "Solutions For"
     assert_includes response.body, "Build a best-in-class website in minutes"
-    # About
-    assert_includes response.body, "Acquisition Entrepreneur"
-    assert_includes response.body, "Over a decade of operational"
-    # Cards
-    assert_includes response.body, "Originating and scaling new business"
-    assert_includes response.body, "Technical Architecture"
-    assert_includes response.body, "Product and engineering design, development"
+    # The About section and its four cards moved to alex.build/about
+    # (task hub-drops-about-section, 2026-11-06).
+    assert_not_includes response.body, "Acquisition Entrepreneur"
+    assert_not_includes response.body, "Over a decade of operational"
+    assert_not_includes response.body, "Originating and scaling new business"
+    assert_not_includes response.body, "Technical Architecture"
     # the consultant-era copy must not return
     assert_not_includes response.body, "supercharge your team"
     assert_not_includes response.body, "Ten years' experience"
@@ -63,7 +62,8 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     end
     assert_select "[data-test='hero-meet-alex']", 0, "the hero has no Meet Alex link"
     assert_select "a", text: "Meet Alex", count: 0
-    assert_select "section#about", 1, "the About section still renders"
+    assert_select "section#about", 0, "the About section moved to alex.build/about"
+    assert_select "a[href='#about']", 0, "no in-page link points at the dropped section"
   end
 
   # Was "shows only the full-width video chat card", pinning the "Chat Over
@@ -222,5 +222,43 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href='https://policies.google.com/privacy']", 1
     assert_select "section", text: /OpenStreetMap/
     assert_not_includes response.body.downcase, "sprintful"
+  end
+  # [component] The portfolio band under the hero carries the logo grid backdrop
+  # (task logo-grid-backdrop): every tile the helper names, each a file that
+  # exists, the Pokémon art kept off this public page, and the grid hidden from
+  # screen readers. logo_grid.js builds the cells in the browser.
+  test "[component] landing renders the portfolio band over the logo grid with every tile" do
+    get root_path
+
+    assert_response :success
+    assert_select "section[data-logo-grid-host][data-test=portfolio-band]", 1 do
+      assert_select "div.logo-grid[data-logo-grid][aria-hidden=true]", 1
+      assert_select "h2", text: "Check Out Our Portfolio"
+      assert_select "a[data-test=portfolio-band-cta][href=?]", websites_path
+    end
+    grid = css_select("div[data-logo-grid]").first
+    tiles = JSON.parse(grid["data-tiles"])
+    assert_equal LogoGridHelper::LOGO_GRID_TILES.map(&:last), tiles.map { |t| t["label"] }
+    assert_operator tiles.length, :>=, 8, "a grid this size repeats too often with fewer tiles"
+    LogoGridHelper::LOGO_GRID_TILES.each do |file, _|
+      assert Rails.root.join("app/assets/images/logo_grid/#{file}.webp").exist?, "missing tile #{file}.webp"
+    end
+    assert tiles.none? { |t| t["src"].include?("pokemon") }, "official Pokémon art stays off the public landing page"
+    # The band sits between the hero and the booking section.
+    body = response.body
+    assert_operator body.index("data-test=\"portfolio-band\""), :<, body.index("data-get-in-touch")
+    assert_operator body.index("hero-title"), :<, body.index("data-test=\"portfolio-band\"")
+  end
+
+  # [component] Reduced motion rests the grid at 0.22 in dark mode too (task
+  # logo-grid-loop-hardening): the dark rule set 0.12 and outranked the
+  # reduced-motion rule, so a dark reduced-motion visitor saw a near-empty band.
+  test "[component] logo grid reduced-motion rest covers dark mode" do
+    css = Rails.root.join("app/assets/tailwind/logo_grid.css").read
+    block = css[/@media \(prefers-reduced-motion: reduce\) \{(.*?)\n\}/m, 1]
+
+    assert block, "the reduced-motion block exists"
+    assert_match(/\.dark \.logo-grid/, block, "the dark rule is overridden too")
+    assert_match(/--logo-grid-rest:\s*0\.22/, block)
   end
 end

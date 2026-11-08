@@ -1,5 +1,5 @@
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6">
-  <h1 class="text-3xl font-bold text-heading">TikTok did not connect</h1>
+  <%= render "studio/page_header", title: "TikTok did not connect", crumbs: studio_crumbs(parent: :admin_tiktok), crumb_label: "Not connected" %>
 
   <div class="card p-4 space-y-3" data-tiktok-refusal>
     <p class="text-body font-semibold"><%= @sentence %></p>

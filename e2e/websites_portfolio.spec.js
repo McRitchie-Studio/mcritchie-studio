@@ -32,7 +32,8 @@ async function measureCards(browser, scheme) {
   const errors = watchPageErrors(page);
   await blockThirdPartyRequests(page);
   await page.goto("/websites");
-  const cards = page.locator("[data-test='websites-carousel'] [data-portfolio-card]");
+  // Real slides only: the engine's visual wrap adds aria-hidden copies at the seam.
+  const cards = page.locator("[data-test='websites-carousel'] .carousel-slide:not([aria-hidden='true']) [data-portfolio-card]");
   expect(await cards.count(), "Cyvasse, Turf Monster and at least two more").toBeGreaterThanOrEqual(4);
 
   const measured = await cards.evaluateAll((all) => all.map((card) => {

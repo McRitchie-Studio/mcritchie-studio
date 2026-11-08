@@ -2,12 +2,10 @@
 <% can_connect = @configured && @encryption_ready %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="google-connection-page">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">Google connection</h1>
-    <p class="text-secondary mt-2">
-      The Google accounts this server reads, connected by signing in: all three at once with Connect Google, or one permission at a time below. Each can read and nothing else. No token is shown here.
-    </p>
-  </div>
+  <%= render "studio/page_header", title: "Google connection", crumbs: studio_crumbs(:admin_google) %>
+  <p class="text-secondary">
+    The Google accounts this server reads, connected by signing in: all three at once with Connect Google, or one permission at a time below. Each can read and nothing else. No token is shown here.
+  </p>
 
   <%= render "integrations/google_connect_all", connections: @sections.to_h { [ _1.ability, _1.connection ] }, connectable: can_connect, return_to: nil %>
 

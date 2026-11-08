@@ -38,7 +38,8 @@ class Integration
                      :connects, :abilities, :connection_methods, :dark, keyword_init: true) do
     def live? = status == "live"
 
-    # Built but not offered yet: only an admin sees the tile (see config/integrations.yml).
+    # A dark entry is built but not offered: only an admin's page lists it, so
+    # the public page promises nothing for it (config `dark: true`).
     def dark? = dark == true
 
     # The one short line a tile shows: the tagline, or the blurb when the
@@ -105,20 +106,17 @@ class Integration
   end
 
   class << self
-    def groups
+    # Every group and its entries; a dark entry only when `admin` (an admin's /integrations).
+    def groups(admin: false)
       methods = connection_methods
       config.fetch("groups").map do |group|
         entries = group.fetch("entries").map { |attrs| build_entry(group["key"], attrs, methods) }
+        entries.reject!(&:dark?) unless admin
         Group.new(key: group["key"], title: group["title"], kicker: group["kicker"], summary: group["summary"], entries: entries)
       end
     end
 
-    def entries = groups.flat_map(&:entries)
-
-    # The groups a viewer sees: a dark entry only for an admin.
-    def groups_for(admin:)
-      groups.each { |group| group.entries = group.entries.reject(&:dark?) unless admin }
-    end
+    def entries(admin: false) = groups(admin:).flat_map(&:entries)
 
     # Every connection method the config defines, keyed by its key.
     def connection_methods
@@ -129,7 +127,8 @@ class Integration
 
     def connection_method(key) = connection_methods.fetch(key.to_s)
 
-    def find(key) = entries.find { |entry| entry.key == key.to_s }
+    # Any entry by key, dark ones included (a contact submission names its card).
+    def find(key) = entries(admin: true).find { |entry| entry.key == key.to_s }
 
     private
 
@@ -158,7 +157,7 @@ class Integration
     # fails the page instead of rendering something it cannot honestly label.
     def validate!(entry)
       raise ArgumentError, "#{entry.key}: unknown status #{entry.status.inspect}" unless STATUSES.include?(entry.status)
-      raise ArgumentError, "#{entry.key}: a dark entry is Coming soon, never offered as live" if entry.dark? && !entry.soon?
+      raise ArgumentError, "#{entry.key}: a dark entry is not offered, so it cannot be live" if entry.dark? && entry.live?
       raise ArgumentError, "#{entry.key}: unknown guide #{entry.guide.inspect}" if entry.guide.present? && !GUIDES.include?(entry.guide)
       raise ArgumentError, "#{entry.key}: unknown tier #{entry.tier.inspect}" if entry.tier.present? && WorkspacePackage.find(entry.tier).nil?
     end

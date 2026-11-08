@@ -35,7 +35,8 @@ class UiBudgetWorkflowTest < Minitest::Test
   end
 
   def test_the_token_reads_code_and_writes_issues_only
-    assert_equal({ "contents" => "read", "issues" => "write" }, doc["permissions"])
+    # packages: read pulls the lane image from ghcr.io (test/lib/ci_lane_image_test.rb).
+    assert_equal({ "contents" => "read", "issues" => "write", "packages" => "read" }, doc["permissions"])
   end
 
   def test_it_runs_the_collector_over_the_whole_config
@@ -47,7 +48,9 @@ class UiBudgetWorkflowTest < Minitest::Test
 
   def test_the_browser_and_node_deps_are_installed_from_the_lockfile
     assert_equal "npm ci", step("Install JS dependencies")["run"]
-    assert_match(/npx playwright install --with-deps chromium/, step("Install Playwright browser")["run"])
+    # The browser only: its libraries are in the lane image, so no `--with-deps` apt fetch.
+    assert_equal "npx playwright install chromium", step("Install Playwright browser")["run"]
+    assert_equal "ghcr.io/mcritchie-studio/ci-rails:24.04", doc.dig("jobs", "budget", "container", "image")
     assert_equal ".tool-versions", step("Set up Node").dig("with", "node-version-file")
     assert_nil step("Set up Node").dig("with", "node-version"), "Node's major is pinned once, in .tool-versions"
   end

@@ -87,7 +87,7 @@ PROJECTS_DIR = File.expand_path(ENV.fetch("PROJECTS_DIR") { ProjectsRoot.default
 HUB_DIR = File.join(PROJECTS_DIR, "mcritchie-studio")
 STACK_ENV = ".env.agent-stack"
 CONTEXT_FILE = ".agent-context.json"
-TASK_BASE_URL = ENV.fetch("AGENT_TASK_BASE_URL", "https://mcritchie.studio/tasks")
+TASK_BASE_URL = ENV.fetch("AGENT_TASK_BASE_URL", "https://mcritchie.studio/devops/tasks")
 # Bound the board read behind the build-claim guard (claim_hold): a hung or black-holed
 # board must never stall a cleanup sweep. A timeout reads as a failed record, so the guard
 # fails open (and warns). A malformed override falls back to the default rather than
@@ -145,7 +145,7 @@ APP_OVERRIDES = {
     "stack" => "rails",
     "ruby_path" => "/opt/homebrew/opt/ruby@3.3/bin:/opt/homebrew/lib/ruby/gems/3.3.0/bin",
     "session_env" => "MCRITCHIE_SESSION_KEY",
-    "session_key" => "_studio_session",
+    "session_key" => "_studio_local_session", # local desks; QA and production: lib/session_cookie.rb
     "sidekiq" => false,
     # Ports a FOREIGN app squats inside this band — never hand them to a worktree
     # even when the squatter is momentarily down (allocate_port's live-listener
@@ -3582,12 +3582,12 @@ def sync_desk_ledger(payload)
   result = DeskLedger.sync(payload, dotenv: File.join(HUB_DIR, ".env"))
   unless result.ok?
     warn "warning: desk ledger sync failed: #{result.error}"
-    warn "         #{DeskLedger.base_url}/deployments will show the previous snapshot until this succeeds."
+    warn "         #{DeskLedger.base_url}/devops will show the previous snapshot until this succeeds."
     return
   end
 
   vanished = result.record.is_a?(Hash) ? result.record["vanished"].to_i : 0
-  puts "synced #{payload.fetch("worktrees").size} desk(s) to #{DeskLedger.base_url}/deployments"
+  puts "synced #{payload.fetch("worktrees").size} desk(s) to #{DeskLedger.base_url}/devops"
   return if vanished.zero?
 
   # A desk with an OPEN ledger episode that this snapshot did not see left without a
@@ -3595,7 +3595,7 @@ def sync_desk_ledger(payload)
   # markdown ledger could never answer — so it is said here rather than left on a panel
   # nobody has open.
   warn "warning: #{vanished} desk(s) have an open ledger record but were not in this snapshot — " \
-       "removed outside `bin/agent-worktree remove`. See #{DeskLedger.base_url}/deployments."
+       "removed outside `bin/agent-worktree remove`. See #{DeskLedger.base_url}/devops."
 end
 
 # The git-eligible worktrees split into [free, withheld], where withheld is
@@ -3848,7 +3848,7 @@ def run_cleanup(app = nil, write: false)
 
   unless write
     puts
-    puts "dry run only. Re-run with --write to file candidates on the desk ledger (#{DeskLedger.base_url}/deployments)."
+    puts "dry run only. Re-run with --write to file candidates on the desk ledger (#{DeskLedger.base_url}/devops)."
     return
   end
 
@@ -3862,7 +3862,7 @@ def run_cleanup(app = nil, write: false)
     result = file_desk_record(record, status: "candidate", source: "cleanup")
     result.ok? || result.queued?
   end
-  puts "filed #{filed} of #{candidates.size} candidate(s) on the desk ledger: #{DeskLedger.base_url}/deployments"
+  puts "filed #{filed} of #{candidates.size} candidate(s) on the desk ledger: #{DeskLedger.base_url}/devops"
   maybe_scale_in
 end
 

@@ -218,7 +218,7 @@
   // chips, as many as fit, then "+N more"; 2 every chip in both groups.
   window.castCardDisclosure = function () {
     return {
-      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0, cardFitSeq: 0,
+      cardOrdinal: 0, cardName: "", cardLevel: 0, cardFit: 0, cardClear: 0, cardPartial: 0, cardFitSeq: 0, cardFitState: "",
       init() {
         const d = this.$root.dataset;
         this.cardOrdinal = Number(d.ordinal); this.cardName = d.cardName || "";
@@ -238,15 +238,22 @@
       // Show every clear chip and let the browser lay them out (two frames, so
       // the x-show changes are painted), then measure once: keep the chips on
       // the first line, less any "+N more" would push off it. Re-run on a resize.
+      // cardFitState (bound to the card's data-card-fit) reads "pending" while a pass is
+      // measuring and "settled" once the row is final and painted, so a reader (the e2e
+      // spec) waits on the settled layout instead of polling across the two-frame trim.
+      // Bound, not written to the dataset: a write to the element is lost when the page
+      // is redrawn under the component; a binding is re-applied.
       async cardFitRow() {
-        if (this.cardLevel !== 1) return;
+        if (this.cardLevel !== 1) { this.cardFitSettled(); return; }
         const mine = ++this.cardFitSeq; // a newer pass (a resize, a re-open) supersedes this one
+        this.cardFitState = "pending";
         this.cardFit = this.cardClear;
         await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-        if (this.cardLevel !== 1 || mine !== this.cardFitSeq) return;
+        if (mine !== this.cardFitSeq) return; // the newer pass settles it
+        if (this.cardLevel !== 1) { this.cardFitSettled(); return; }
         const row = document.getElementById("person-" + this.cardOrdinal + "-clear-row");
         const chips = row ? Array.from(row.querySelectorAll("[data-test='sighting']")) : [];
-        if (chips.length === 0) return;
+        if (chips.length === 0) { this.cardFitSettled(); return; }
         const line = chips[0].getBoundingClientRect().top + 4;
         const first = chips.filter((c) => c.getBoundingClientRect().top < line);
         let fit = first.length;
@@ -258,6 +265,11 @@
           while (fit > 1 && first[fit - 1].getBoundingClientRect().right + gap + moreWidth > right) fit--;
         }
         this.cardFit = fit;
+        this.cardFitSettled();
+      },
+      cardFitSettled() {
+        const mine = this.cardFitSeq;
+        this.$nextTick(() => requestAnimationFrame(() => { if (mine === this.cardFitSeq) this.cardFitState = "settled"; }));
       },
     };
   };
@@ -286,7 +298,10 @@
           // An athlete saved with no look: nothing is previewed as if it were cast.
           if (!this.savedLook && !data.freshLook) this.lookSlug = "";
         }
-        this.$watch("open", (open) => { if (open) this.$nextTick(() => requestAnimationFrame(() => this.fitList())); });
+        this.$watch("open", (open) => {
+          if (this.$refs.results) this.$refs.results.dataset.placed = "false";
+          if (open) this.$nextTick(() => requestAnimationFrame(() => this.fitList()));
+        });
       },
       // Swapping: someone is picked and Keep Original is unchecked.
       get swapping() { return !!this.athlete && !this.keep; },
@@ -379,6 +394,9 @@
         let dx = Math.min(0, window.innerWidth - gutter - box.right);
         if (box.left + dx < gutter) dx = gutter - box.left;
         if (dx) list.style.transform = "translateX(" + dx + "px)";
+        // The list's own word that it now sits where it will stay, so a reader (the
+        // e2e spec) waits on the placement instead of sleeping past it.
+        list.dataset.placed = "true";
       },
     });
   };

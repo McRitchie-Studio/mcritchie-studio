@@ -27,11 +27,11 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     assert_includes out, "task bound"
     env = File.read(File.join(@worktree_dir, ".env.agent-stack"))
     assert_includes env, "TASK_RECORD_SLUG=task-abc123"
-    assert_includes env, "TASK_URL=https://mcritchie.studio/tasks/task-abc123"
+    assert_includes env, "TASK_URL=https://mcritchie.studio/devops/tasks/task-abc123"
 
     context = JSON.parse(File.read(File.join(@worktree_dir, ".agent-context.json")))
     assert_equal "task-abc123", context.fetch("task_record_slug")
-    assert_equal "https://mcritchie.studio/tasks/task-abc123", context.fetch("task_url")
+    assert_equal "https://mcritchie.studio/devops/tasks/task-abc123", context.fetch("task_url")
   end
 
   test "context regeneration preserves a mascot the rebuilt values lack" do
@@ -119,7 +119,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
 
     assert status.success?, err
     assert_includes out, "export AGENT_CONTEXT_TASK_RECORD=task-shell"
-    assert_includes out, "export AGENT_CONTEXT_TASK_URL=https://mcritchie.studio/tasks/task-shell"
+    assert_includes out, "export AGENT_CONTEXT_TASK_URL=https://mcritchie.studio/devops/tasks/task-shell"
     assert_includes out, "printf"
     assert_no_match(%r{touch /tmp/agent-worktree}, out)
   end
@@ -154,7 +154,7 @@ class AgentWorktreeCommandTest < ActiveSupport::TestCase
     registry = JSON.parse(File.read(registry_path))
     record = registry.fetch("worktrees").find { |item| item.fetch("task") == @task }
     assert_equal "task-snapshot", record.fetch("task_record_slug")
-    assert_equal "https://mcritchie.studio/tasks/task-snapshot", record.fetch("task_url")
+    assert_equal "https://mcritchie.studio/devops/tasks/task-snapshot", record.fetch("task_url")
   end
 
   test "snapshot base ref falls back to origin/main without a release branch" do

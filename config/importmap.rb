@@ -7,6 +7,8 @@ pin "agent_chat"
 pin "build_chat"
 pin "build_domain"
 pin "cta_glow"
+# The logo grid backdrop (app/views/shared/_logo_grid.html.erb; task logo-grid-backdrop).
+pin "logo_grid"
 pin "build_status"
 pin "build_shell"
 pin "agent_shell"
@@ -29,6 +31,8 @@ pin "chat_attachments"
 pin "usage_countdown"
 # The app chat status card's live pill countdown (app/views/agent_chats/_devops_stages.html.erb).
 pin "devops_countdown"
+# The /deployments Workflows sidebar's Previous / Next (app/views/tasks/_heartbeats_card.html.erb).
+pin "workflows_cycle"
 # Hold to talk to Alex on /chat (app/views/chat/_voice.html.erb; epic studio-voice card 4).
 pin "voice_chat"
 pin "dreams_filter"

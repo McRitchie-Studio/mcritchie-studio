@@ -9,7 +9,7 @@ class ParkedIdentityEscalationTest < ActionDispatch::IntegrationTest
     log_in_as @member
   end
 
-  def walled = (get("/tasks"); response.status)
+  def walled = (get("/devops/tasks"); response.status)
 
   test "a case variant of a held admin address is refused and grants nothing" do
     patch "/profile", params: { profile: { email: users(:alex).email.capitalize } }

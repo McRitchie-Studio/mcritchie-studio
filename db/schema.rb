@@ -1542,6 +1542,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_07_000000) do
     t.index ["session_id"], name: "index_dream_swaps_on_session_id", unique: true
   end
 
+  create_table "egnyte_connections", force: :cascade do |t|
+    t.datetime "access_expires_at"
+    t.text "access_token", null: false
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "domain", null: false
+    t.datetime "last_refreshed_at"
+    t.text "refresh_token"
+    t.datetime "updated_at", null: false
+    t.string "username"
+    t.index ["domain"], name: "index_egnyte_connections_on_domain", unique: true
+  end
+
   create_table "email_brand_references", force: :cascade do |t|
     t.datetime "archived_at"
     t.string "brand_kit", null: false

@@ -153,12 +153,12 @@ class DreamsPageTest < ActionDispatch::IntegrationTest
 
     assert_select "[data-test='agents-dreams-link'][href=?]", dreams_path
 
-    # A white-alpha pill vanishes on the light theme's page; the links sit on theme
-    # tokens (text-body on surface-alt, border-strong) that read in both themes.
+    # Both are pages elsewhere, so they are the header's Links menu items
+    # (docs/PAGE_HEADER.md, "The four kinds of control"): the engine's one look, on
+    # theme tokens, never a hand-styled white-alpha pill that vanishes on the light page.
     %w[agents-dreams-link agents-activities-link].each do |link|
-      classes = css_select("[data-test='#{link}']").first["class"].split
-      assert_includes classes, "text-body", link
-      assert_includes classes, "bg-surface-alt", link
+      classes = css_select(".page-header-menu-list [data-test='#{link}']").first["class"].split
+      assert_includes classes, "page-header-menu-item", link
       assert_empty classes.grep(%r{white/}), "#{link} still uses a white-alpha class"
     end
   end

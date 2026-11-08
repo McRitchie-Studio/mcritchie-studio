@@ -1,6 +1,7 @@
 require "test_helper"
 require "support/google_connect_fakes"
 require "support/fathom_connect_fakes"
+require "support/egnyte_connect_fakes"
 require "support/quickbooks_connect_fakes"
 
 # [component] /integrations: each card with connections says, behind its
@@ -9,16 +10,18 @@ require "support/quickbooks_connect_fakes"
 # there is more than one. The Google Calendar, Gmail and Drive cards carry a
 # connection for any signed-in user in their action row, never behind
 # Details: Connect, or the account and Disconnect (an admin's the household's,
-# a non-admin's their own); a visitor sees neither. The Fathom and dark
-# QuickBooks cards do the same for an admin alone.
+# a non-admin's their own); a visitor sees neither. The Fathom, Egnyte and
+# QuickBooks cards do the same for an admin only.
 class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
   include FathomConnectFakes
+  include EgnyteConnectFakes
   include QuickbooksConnectFakes
 
   teardown do
     reset_google_connect
     reset_fathom_connect
+    reset_egnyte_connect
     reset_quickbooks_connect
   end
 
@@ -389,6 +392,63 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     end
   end
 
+  def egnyte_slot = card("egnyte").at_css("[data-test='entry-action'] [data-test='egnyte-connection']")
+
+  test "[component] the dark Egnyte card is an admin's only, with Connect and a domain field" do
+    with_egnyte_env do
+      get integrations_path
+      assert_nil card("egnyte"), "dark: a visitor's page does not list it"
+      assert css_select("[data-test='integration-entry'][data-entry='fathom']").any?, "the control: the Connect group renders"
+
+      log_in_as users(:viewer)
+      get integrations_path
+      assert_nil card("egnyte"), "non-admin"
+
+      log_in_as users(:alex)
+      get integrations_path
+      assert card("egnyte").at_css("[data-test='coming-soon']"), "not offered to clients yet"
+      assert_equal "egnyte", card("egnyte").at_css("[data-test='entry-lead']")["data-lead"]
+      assert_equal %w[sign_in], card("egnyte").css("[data-test='entry-method']").map { _1["data-method"] }
+      assert_equal [ "none", "true" ], %w[data-state data-connectable].map { egnyte_slot[_1] }
+      form = egnyte_slot.at_css("form[data-test='egnyte-connect']")
+      assert_equal [ admin_egnyte_connect_path, "post" ], [ form["action"], form["method"] ]
+      assert_equal "/integrations", form.at_css("input[name='return_to']")["value"]
+      assert form.at_css("input[name='egnyte_domain'][required]"), "the admin names the domain before Connect"
+      assert_nil egnyte_slot.at_css("[data-test='egnyte-connect-disabled']")
+      assert_nil card("egnyte").at_css("[data-test='entry-cta']"), "the admin's real Connect replaces the contact-form one"
+    end
+  end
+
+  test "[component] an admin's Egnyte Connect renders disabled until the developer key is set" do
+    log_in_as users(:alex)
+    with_egnyte_env(creds: false) do
+      get integrations_path
+
+      assert_equal [ "none", "false" ], %w[data-state data-connectable].map { egnyte_slot[_1] }
+      button = egnyte_slot.at_css("button[data-test='egnyte-connect-disabled']")
+      assert button.key?("disabled")
+      assert_match(/Not set up on this server yet/, egnyte_slot.text)
+      assert_nil egnyte_slot.at_css("form[data-test='egnyte-connect']")
+    end
+  end
+
+  test "[component] an admin sees each connected Egnyte domain and its confirmed Disconnect, never a token" do
+    log_in_as users(:alex)
+    store_egnyte(domain: "example", access_token: "egnyte-card-access-4e9b17", refresh_token: "egnyte-card-refresh-8a2c55")
+    with_egnyte_env do
+      get integrations_path
+
+      assert_equal "connected", egnyte_slot["data-state"]
+      row = egnyte_slot.at_css("[data-test='egnyte-domain'][data-domain='example']")
+      assert_equal "Connected example.egnyte.com", row.at_css("span").text.squish
+      form = row.at_css("form[data-test='egnyte-disconnect']")
+      assert_equal admin_egnyte_disconnect_path(egnyte_domain: "example", return_to: "/integrations"), form["action"]
+      assert form["data-turbo-confirm"].present?
+      assert egnyte_slot.at_css("form[data-test='egnyte-connect']"), "another domain can still connect"
+      assert_no_match(/egnyte-card-(access|refresh)/, response.body)
+    end
+  end
+
   def quickbooks_slot = card("quickbooks").at_css("[data-test='entry-action'] [data-test='quickbooks-connection']")
 
   test "[component] the dark QuickBooks card is an admin's alone, with Connect disabled until the Intuit app is set" do
@@ -403,7 +463,6 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
 
       log_in_as users(:alex)
       get integrations_path
-      assert_equal "true", card("quickbooks")["data-dark"]
       assert card("quickbooks").at_css("[data-test='coming-soon']"), "honest: Coming soon"
       assert_equal %w[sign_in], card("quickbooks").css("[data-test='entry-method']").map { _1["data-method"] }
       assert_equal %w[read_reports], card("quickbooks").css("[data-test='entry-ability']").map { _1["data-ability"] }

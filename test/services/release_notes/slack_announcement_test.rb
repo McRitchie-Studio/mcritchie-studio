@@ -85,9 +85,9 @@ class ReleaseNotesSlackAnnouncementTest < ActiveSupport::TestCase
     assert_includes text, "🐊 *Turf Monster* `bbbb222`"
     assert_includes text, "🐉 *Cyvasse* `cccc333`"
     assert_includes text, "*McRitchie Studio* `aaaa111`"
-    assert_includes text, "<https://mcritchie.studio/tasks/#{@turf.slug}|#{@turf.slug}> · " \
+    assert_includes text, "<https://mcritchie.studio/devops/tasks/#{@turf.slug}|#{@turf.slug}> · " \
                           "<https://github.com/McRitchie-Studio/turf-monster/pull/812|PR #812>"
-    assert_includes text, "<https://mcritchie.studio/tasks/#{@cyv.slug}|#{@cyv.slug}>"
+    assert_includes text, "<https://mcritchie.studio/devops/tasks/#{@cyv.slug}|#{@cyv.slug}>"
     assert_operator text.lines.size, :<=, 8, "compact: one line per app and per card"
   end
 
@@ -97,7 +97,7 @@ class ReleaseNotesSlackAnnouncementTest < ActiveSupport::TestCase
     text = announcement.app_text(turf)
 
     assert_equal 3, text.lines.size
-    assert_includes text, "<https://mcritchie.studio/tasks/#{@turf.slug}|Turf Live Board Polish>"
+    assert_includes text, "<https://mcritchie.studio/devops/tasks/#{@turf.slug}|Turf Live Board Polish>"
     assert_includes text, "Running a production smoke test"
   end
 

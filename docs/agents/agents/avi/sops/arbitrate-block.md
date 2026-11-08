@@ -56,7 +56,7 @@ Use the production board. Do not pass `--local`.
 
    That shows the contest when it is the newest note. When a later note has
    covered it, read the full thread on the task page,
-   `https://mcritchie.studio/tasks/<slug>`, the operator-friendly source of truth
+   `https://mcritchie.studio/devops/tasks/<slug>`, the operator-friendly source of truth
    for the conversation. A contest that is in neither your brief nor the thread
    is declined (Preconditions). Hold it in one sentence too: the builder says Y
    does not hold because Z.

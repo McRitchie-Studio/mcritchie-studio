@@ -14,16 +14,16 @@
   .comm-points li { font-size: .8rem; opacity: .85; }
 </style>
 
-<div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-  <h1 class="text-xl font-semibold">Communications</h1>
-  <div class="text-sm opacity-70">
-    <%= @open_asks %> open ask<%= "s" unless @open_asks == 1 %> ·
-    <%= @counts.fetch("ask", 0) %> ask<%= "s" unless @counts.fetch("ask", 0) == 1 %> ·
-    <%= @counts.fetch("general", 0) %> general
-  </div>
-</div>
+<%# The engine page header (studio-engine docs/PAGE_HEADER.md). The tallies are a count, not a control:
+    the header's meta, beside the title. The engine hides the meta under 40rem, so a phone gets them
+    on a line of their own under the row. %>
+<% asks = @counts.fetch("ask", 0) %>
+<% tallies = "#{@open_asks} open ask#{"s" unless @open_asks == 1} · #{asks} ask#{"s" unless asks == 1} · #{@counts.fetch("general", 0)} general" %>
+<%= render "studio/page_header", title: "Communications", crumbs: studio_crumbs(:communications),
+      meta: tag.span(tallies, data: { test: "comm-tallies" }) %>
+<p class="sm:hidden mt-2 text-sm opacity-70" data-test="comm-tallies-phone"><%= tallies %></p>
 
-<div id="comm-filters" class="flex flex-col gap-2 text-sm mb-4">
+<div id="comm-filters" class="flex flex-col gap-2 text-sm mt-4 mb-4">
   <div class="flex flex-wrap items-center gap-2">
     <span class="opacity-60 w-16">Kind</span>
     <%= link_to "All", communications_path(status: @status, channel: @channel, entity: @entity),

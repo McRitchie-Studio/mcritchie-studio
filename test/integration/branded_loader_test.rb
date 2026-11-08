@@ -39,7 +39,7 @@ class BrandedLoaderTest < ActionDispatch::IntegrationTest
   end
 
   test "every page carries the hidden page-load overlay, once" do
-    get about_path
+    get marketing_kit_path
     assert_response :success
 
     if Studio.respond_to?(:loader_overlay)

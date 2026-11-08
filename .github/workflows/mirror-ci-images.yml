@@ -29,6 +29,7 @@ on:
   push:
     paths:
       - .github/workflows/mirror-ci-images.yml
+      - .github/ci-image/**
   schedule:
     # Off the hour: GitHub queues top-of-hour schedules behind everyone else's.
     - cron: "41 8 * * 1" # Mondays 08:41 UTC
@@ -49,11 +50,13 @@ jobs:
     env:
       # One `<name>:<tag>` per line, from the official library. 17 is production's
       # Postgres major (the hub's CI default); 18 is what cyvasse and moms-app pin;
-      # redis:8 is turf-monster's Redis service (its ci.yml).
+      # redis:8 is turf-monster's Redis service (its ci.yml); ubuntu:24.04 is the
+      # base of the lane image the `lane-image` job builds below.
       IMAGES: |
         postgres:17
         postgres:18
         redis:8
+        ubuntu:24.04
       TARGET: ghcr.io/mcritchie-studio
     steps:
       - name: Copy each image to ghcr.io
@@ -88,3 +91,37 @@ jobs:
             echo "${TARGET}/${image} <- ${copied}/${image} (${digest})" | tee -a "$GITHUB_STEP_SUMMARY"
           done
           exit "$failed"
+
+  # THE LANE IMAGE: ghcr.io/mcritchie-studio/ci-rails:24.04, built from
+  # .github/ci-image/Dockerfile on the mirrored ubuntu:24.04. Every lane that used to
+  # run apt (reusable-ci.yml's playwright, rails, system and island_animator; the
+  # engine's Consumer CI and browser lane) runs inside it, so no PR waits on an apt
+  # mirror (refactor-review-2026-11-06 lane-health 2f, its top red-then-green cause).
+  #
+  # The apt fetch moved here, off the PR path: a stalled mirror fails this weekly
+  # build and the lanes keep last week's image. The tag is overwritten only by a green
+  # build, and only from the default branch or a push that edits the image, so a PR
+  # that changes the Dockerfile builds its candidate before its own CI pulls it.
+  # Guard: test/lib/ci_lane_image_test.rb.
+  lane-image:
+    needs: mirror
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      IMAGE: ghcr.io/mcritchie-studio/ci-rails:24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Log in to ghcr.io
+        env:
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ github.token }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+
+      - name: Build and push the lane image
+        run: |
+          set -euo pipefail
+          docker build --pull --platform linux/amd64 -t "$IMAGE" .github/ci-image
+          docker push "$IMAGE"
+          echo "$IMAGE $(docker inspect --format '{{index .RepoDigests 0}}' "$IMAGE")" | tee -a "$GITHUB_STEP_SUMMARY"

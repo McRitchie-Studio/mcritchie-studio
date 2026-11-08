@@ -12,6 +12,6 @@ module Media
 
     def deliver_reply(message) = AgentMessages::WebChat.deliver!(message)
 
-    def typing(message, phase:) = AgentMessages::WebChat.broadcast_typing(message, phase: phase)
+    def typing(message, phase:, at: nil) = AgentMessages::WebChat.broadcast_typing(message, phase: phase, at: at)
   end
 end

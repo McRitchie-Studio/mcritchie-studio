@@ -4,14 +4,15 @@ require "test_helper"
 require "tmpdir"
 require_relative "../../bin/lib/sop_registry"
 
-# The SOP Registry table (docs/agents/index.md, installed as AGENTS.md) and the Start
-# Here SOP rows are GENERATED from the SOP files by bin/sop-registry. These cases pin
-# the generator's rule over a fixture tree, and that the committed blocks are what it
-# writes, so a new SOP file is registered by `bin/sop-registry --write` and nothing else.
+# The SOP registry is the SOP files. bin/sop resolves a name from them, and the Start
+# Here SOP rows are GENERATED from them by bin/sop-registry. These cases pin the
+# generator's rule over a fixture tree, that the committed block is what it writes,
+# and that every registered name resolves. The table left AGENTS.md to hold the boot
+# budget (task boot-budget-and-sop-resolver; test/docs/boot_budget_test.rb).
 class SopRegistryGeneratedTest < ActiveSupport::TestCase
   ROOT = Rails.root.to_s
 
-  test "[unit] the committed registry and Start Here blocks are what the generator writes" do
+  test "[unit] the committed Start Here block is what the generator writes" do
     assert_empty SopRegistry.stale(ROOT),
                  "a generated SOP block is stale. Run bin/sop-registry --write and commit the result."
   end
@@ -31,16 +32,50 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
     refute_nil row, "`clean-up` is not in the SOP registry"
     assert_equal "Mason", row.owner
     assert_path_exists Rails.root.join(row.path)
-    assert_includes Rails.root.join(SopRegistry::REGISTRY_PATH).read,
-                    "| `clean-up` | Mason | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |"
+    assert_equal "docs/agents/agents/mason/sops/clean-up.md", SopRegistry.resolve(SopRegistry.entries(ROOT), "clean-up").path
+    assert_includes Rails.root.join(SopRegistry::START_HERE_PATH).read,
+                    "| Mason `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |"
+  end
+
+  # LOAD-BEARING. The boot docs no longer carry the table: an agent resolves a name
+  # Alex McRitchie says only through bin/sop. So every registered name must resolve to
+  # its own entry, and to a file that exists.
+  test "[unit] every registered name resolves to its own file" do
+    entries = SopRegistry.entries(ROOT)
+
+    assert_operator entries.size, :>=, 40
+    entries.each do |e|
+      found = SopRegistry.resolve(entries, e.invocation)
+      assert_equal e.path, found&.path, "`#{e.invocation}` does not resolve to its own file"
+      assert_path_exists Rails.root.join(e.path)
+    end
+    assert_equal entries.size, entries.map(&:invocation).uniq.size, "two SOP files claim one name"
+  end
+
+  test "[unit] resolve forgives case and word separators, and nothing else" do
+    entries = SopRegistry.entries(ROOT)
+
+    assert_equal "docs/agents/agents/mason/HEARTBEAT.md", SopRegistry.resolve(entries, "mason heartbeat")&.path
+    assert_equal "docs/agents/agents/mason/HEARTBEAT.md", SopRegistry.resolve(entries, "Mason-Heartbeat")&.path
+    assert_nil SopRegistry.resolve(entries, "clean-upp")
+    assert_nil SopRegistry.resolve(entries, "")
+  end
+
+  test "[unit] an unknown name suggests the close registered names" do
+    entries = SopRegistry.entries(ROOT)
+
+    assert_includes SopRegistry.suggest(entries, "clean-upp"), "clean-up"
+    assert_includes SopRegistry.suggest(entries, "review"), "pr-review"
+    assert_operator SopRegistry.suggest(entries, "review").size, :<=, 5
+    assert_empty SopRegistry.suggest(entries, "zzzzqqqq")
   end
 
   # [integration] The accountability chart (rulings 2026-10-28) moved two SOPs: the
   # month close to Mack, the CFO, and ship-clock to Mason, the COO. The generator, the
-  # committed table (installed as AGENTS.md) and each seat's chart owner agree.
+  # committed Start Here table and each seat's chart owner agree.
   test "[integration] the registry names mack for close-the-month and mason for ship-clock, as the chart does" do
     rows = SopRegistry.entries(ROOT).to_h { |e| [e.invocation, e] }
-    table = Rails.root.join(SopRegistry::REGISTRY_PATH).read
+    table = Rails.root.join(SopRegistry::START_HERE_PATH).read
     chart = AccountabilityChart.load
 
     {
@@ -51,7 +86,7 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
       row = rows.fetch(invocation) { flunk "`#{invocation}` is not in the SOP registry" }
       assert_equal [owner, path], [row.owner, row.path]
       assert_path_exists Rails.root.join(path)
-      assert_includes table, "| `#{invocation}` | #{owner} | `mcritchie-studio/#{path}` |"
+      assert_includes table, "`mcritchie-studio/#{path}` |"
       assert_equal soul, chart.seat(seat).owner, "the #{seat} seat's owner holds #{invocation}"
     end
     refute_includes table, "docs/agents/modules/close-the-month.md", "the shared copy is gone"
@@ -81,34 +116,32 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
     end
   end
 
-  test "[unit] the tables render each entry with its invocation, owner, note and summary" do
+  test "[unit] the Start Here table renders each entry with its invocation, owner and summary" do
     with_tree(
       "agents/carl/HEARTBEAT.md" => "# Carl Heartbeat\n",
       "agents/carl/sops/review-primary.md" => "# Review Primary\n<!-- registry (role SOP): the primary's steps -->\n",
       "modules/shared-act.md" => "# Shared Act\n<!-- registry: a shared primitive -->\n"
     ) do |root|
       entries = SopRegistry.entries(root)
-      registry = SopRegistry.registry_table(entries)
       start_here = SopRegistry.start_here_table(entries)
 
-      assert_includes registry, "| `review-primary` (role SOP) | Carl | `mcritchie-studio/docs/agents/agents/carl/sops/review-primary.md` |"
-      assert_includes registry, "| `Carl Heartbeat` | Carl | `mcritchie-studio/docs/agents/agents/carl/HEARTBEAT.md` |"
       assert_includes start_here, "| Carl `review-primary` SOP (the primary's steps) |"
       assert_includes start_here, "| `Carl Heartbeat` launcher |"
       assert_includes start_here, "| `shared-act` (a shared primitive) |"
     end
   end
 
-  test "[unit] a new SOP file makes the committed block stale until --write" do
+  test "[unit] a new SOP file makes the committed block stale until --write, and resolves at once" do
     with_tree("agents/alex/sops/clean-up.md" => "# Clean Up\n") do |root|
       SopRegistry.write!(root)
       assert_empty SopRegistry.stale(root)
 
       File.write(File.join(root, "docs/agents/agents/alex/sops/new-act.md"), "# New Act\n")
-      assert_equal [SopRegistry::REGISTRY_PATH, SopRegistry::START_HERE_PATH], SopRegistry.stale(root)
+      assert_equal [SopRegistry::START_HERE_PATH], SopRegistry.stale(root)
+      assert_equal "docs/agents/agents/alex/sops/new-act.md", SopRegistry.resolve(SopRegistry.entries(root), "new-act")&.path
 
       SopRegistry.write!(root)
-      assert_includes File.read(File.join(root, SopRegistry::REGISTRY_PATH)), "`new-act`"
+      assert_includes File.read(File.join(root, SopRegistry::START_HERE_PATH)), "`new-act`"
     end
   end
 
@@ -134,8 +167,8 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
 
   private
 
-  # A throwaway docs tree: `files` are paths under docs/agents/, plus the two generated
-  # docs carrying empty blocks.
+  # A throwaway docs tree: `files` are paths under docs/agents/, plus the generated doc
+  # carrying an empty block.
   def with_tree(files)
     Dir.mktmpdir do |root|
       files.each do |rel, body|
@@ -144,7 +177,7 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
         File.write(path, body)
       end
       block = "#{SopRegistry.begin_marker}\n#{SopRegistry.end_marker}\n"
-      [SopRegistry::REGISTRY_PATH, SopRegistry::START_HERE_PATH].each do |rel|
+      [SopRegistry::START_HERE_PATH].each do |rel|
         FileUtils.mkdir_p(File.dirname(File.join(root, rel)))
         File.write(File.join(root, rel), "# Doc\n\n#{block}")
       end

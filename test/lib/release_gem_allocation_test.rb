@@ -95,7 +95,8 @@ class ReleaseGemAllocationTest < Minitest::Test
   # `changelog:` is nil by DEFAULT — a repo tracking no CHANGELOG.md — so every
   # test written before the roll landed keeps exercising exactly the tree it was
   # written against, and the absent-file path stays covered by all of them.
-  def build_projects_root(root, version: "0.4.0", tracked_lock: true, changelog: nil)
+  # `fragments:` (a { name => body } Hash) adds changelog.d/ and FRAGMENT_COMPILER.
+  def build_projects_root(root, version: "0.4.0", tracked_lock: true, changelog: nil, fragments: nil)
     origin = File.join(root, "studio-engine-origin.git")
     repo   = File.join(root, "studio-engine")
     Open3.capture2e("git", "init", "--quiet", "--bare", origin)
@@ -108,6 +109,14 @@ class ReleaseGemAllocationTest < Minitest::Test
     File.write(File.join(repo, "lib", "studio", "version.rb"), %(module Studio\n  VERSION = "#{version}"\nend\n))
     File.write(File.join(repo, "Gemfile.lock"), lockfile(version)) if tracked_lock
     File.write(File.join(repo, "CHANGELOG.md"), changelog) if changelog
+    if fragments
+      FileUtils.mkdir_p(File.join(repo, "changelog.d"))
+      FileUtils.mkdir_p(File.join(repo, "bin"))
+      File.write(File.join(repo, "changelog.d", "README.md"), "# Fragments\n")
+      fragments.each { |name, body| File.write(File.join(repo, "changelog.d", name), body) }
+      File.write(File.join(repo, "bin", "changelog-compile"), FRAGMENT_COMPILER)
+      FileUtils.chmod(0o755, File.join(repo, "bin", "changelog-compile"))
+    end
     git(repo, "add", "-A")
     git(repo, "commit", "--quiet", "-m", "seed #{version}")
     git(repo, "tag", "v#{version}")
@@ -126,6 +135,32 @@ class ReleaseGemAllocationTest < Minitest::Test
     git(repo, "push", "--quiet", "origin", "release:refs/heads/accepted")
     [origin, repo]
   end
+
+  # A stand-in for studio-engine's bin/changelog-compile (whose transform the engine
+  # tests): the same CLI contract — `--root DIR`, fold every fragment into
+  # '## Unreleased' and delete it, exit 1 and write nothing on a bad fragment. Here a
+  # body containing BAD is the bad fragment. Every line is under '### Added', which is
+  # enough to prove what bin/release does with the result.
+  FRAGMENT_COMPILER = <<~'RUBY'
+    #!/usr/bin/env ruby
+    root = ARGV[ARGV.index("--root") + 1]
+    dir = File.join(root, "changelog.d")
+    names = Dir.children(dir).reject { |n| n == "README.md" }.sort
+    if names.empty?
+      puts "changelog-compile: no fragments in changelog.d/ — nothing to compile"
+      exit 0
+    end
+    bodies = names.map { |n| File.read(File.join(dir, n)).strip }
+    if bodies.any? { |b| b.include?("BAD") }
+      warn "changelog-compile: invalid fragment(s) — nothing written"
+      exit 1
+    end
+    path = File.join(root, "CHANGELOG.md")
+    text = File.read(path).sub("## Unreleased\n\n", "## Unreleased\n\n### Added\n\n#{bodies.join("\n")}\n\n")
+    File.write(path, text)
+    names.each { |n| File.delete(File.join(dir, n)) }
+    puts "changelog-compile: compiled #{names.size} fragment(s) into '## Unreleased' and deleted them: #{names.join(', ')}"
+  RUBY
 
   # The `bundle` stub. `mode`:
   #   :real   rewrite the PATH spec from the version file, as measured.
@@ -373,6 +408,99 @@ class ReleaseGemAllocationTest < Minitest::Test
       assert ok, out
       assert_includes pushed(origin, "CHANGELOG.md"), "## 0.5.0 — #{today}"
       assert_includes out, "no entries — the heading records the release"
+    end
+  end
+
+  # --- changelog fragments (/tasks/changelog-fragments) ------------------------
+  #
+  # The gem compiles changelog.d/ into '## Unreleased' with its own bin/changelog-compile;
+  # bin/release calls it in the version commit, BEFORE the roll, and the guard judges the
+  # compiled file. The compiler's transform is the engine's to test; these prove the call.
+
+  def committed_files(origin)
+    git(origin, "show", "--name-status", "--format=", "accepted").lines.map(&:strip).reject(&:empty?)
+  end
+
+  def test_fragments_compile_under_the_allocated_version_in_the_one_commit
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(entries: []),
+                                          fragments: { "a-task.added.md" => "- from a fragment\n" })
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, out
+      assert_includes out, "compiled 1 fragment(s)"
+      rolled = pushed(origin, "CHANGELOG.md")
+      assert_operator rolled.index("## 0.5.0 — #{today}"), :<, rolled.index("- from a fragment"),
+                      "the fragment must land UNDER the allocated version"
+      assert_operator rolled.index("- from a fragment"), :<, rolled.index("## 0.4.0"),
+                      "and above the previous one"
+      assert_equal ["D\tchangelog.d/a-task.added.md", "M\tCHANGELOG.md", "M\tGemfile.lock", "M\tlib/studio/version.rb"],
+                   committed_files(origin).sort,
+                   "ONE commit carries the version, the lock, the rolled file AND the deleted fragment"
+      assert_equal "# Fragments\n", pushed(origin, "changelog.d/README.md"), "the README keeps the folder"
+    end
+  end
+
+  def test_a_tree_without_changelog_d_rolls_as_before
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog)
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, out
+      refute_includes out, "changelog-compile"
+      assert_equal %w[CHANGELOG.md Gemfile.lock lib/studio/version.rb],
+                   committed_files(origin).map { |l| l.split("\t").last }.sort
+    end
+  end
+
+  def test_a_compiler_with_no_fragments_stages_nothing_extra
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog, fragments: {})
+      out, ok = allocate(root, members: [member(kind: "feature")])
+
+      assert ok, out
+      assert_includes out, "nothing to compile"
+      assert_equal %w[CHANGELOG.md Gemfile.lock lib/studio/version.rb],
+                   committed_files(origin).map { |l| l.split("\t").last }.sort
+    end
+  end
+
+  def test_a_fragment_that_does_not_compile_refuses_in_the_decide_phase
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog, fragments: { "x.added.md" => "- BAD\n" })
+      out = assert_refuses(root, origin, "fragments do not compile", members: [member(kind: "feature")])
+
+      assert_includes out, "nothing written"
+      assert_includes pushed(origin, "changelog.d/x.added.md"), "BAD", "the fragment is still there"
+      assert_includes pushed(origin, "lib/studio/version.rb"), %(VERSION = "0.4.0")
+    end
+  end
+
+  # THE GUARD JUDGES THE COMPILED FILE. An empty bucket over a backlog passes
+  # (test_a_backlog_with_an_empty_bucket_does_not_hold_the_sweep); the same file with a
+  # fragment waiting is a bucket that holds entries, and the backlog refusal must fire.
+  def test_the_guard_judges_the_bucket_after_the_compile
+    with_root do |root|
+      origin, = build_projects_root(root, changelog: changelog(heading: "## 0.1.0 — 2026-01-01", entries: []),
+                                          fragments: { "late.fixed.md" => "- waiting\n" })
+      assert_refuses(root, origin, "BACKLOG", members: [member(kind: "feature")])
+    end
+  end
+
+  def test_the_dry_run_narrates_the_compile
+    with_root do |root|
+      build_projects_root(root, changelog: changelog, fragments: {})
+      script = <<~RUBY
+        ARGV.replace(["--dry-run"])
+        ENV["PROJECTS_DIR"] = #{root.inspect}
+        load #{BIN.inspect}
+        allocate_gem_versions!([{ "repo" => "studio-engine", "members" => [] }])
+      RUBY
+      out, status = Open3.capture2e(child_env(root, install_bundle_stub(root)), RbConfig.ruby, "-W0", "-e", script)
+
+      assert status.success?, out
+      assert_includes out, "compile changelog.d/ fragments into '## Unreleased'"
+      assert_operator out.index("compile changelog.d/"), :<, out.index("roll CHANGELOG.md's"), "compile, then roll"
     end
   end
 
@@ -833,6 +961,25 @@ class ReleaseGemAllocationTest < Minitest::Test
       assert_operator rolled.index("## 0.4.1"), :<, rolled.index("- late fix"),
                       "the late entry ships in 0.4.1, not under the next version"
       assert_empty Release::Changelog.unreleased_entries(rolled)
+    end
+  end
+
+  # A fragment-only merge after the roll is a late entry too: the re-run must compile it into 0.4.1.
+  def test_a_rerun_re_rolls_a_late_fragment_into_the_same_version
+    with_root do |root|
+      origin, repo = build_projects_root(root, changelog: changelog, fragments: {})
+      assert allocate(root, members: [member(kind: "bug", slug: "first-fix")]).last
+      git(repo, "fetch", "--quiet", "origin")
+      git(repo, "checkout", "--quiet", "-B", "member", "origin/accepted")
+      File.write(File.join(repo, "changelog.d", "late.fixed.md"), "- late fragment\n")
+      git(repo, "add", "-A")
+      git(repo, "commit", "--quiet", "-m", "late fragment")
+      git(repo, "push", "--quiet", "origin", "member:refs/heads/accepted")
+      out, ok = allocate(root, members: [member(kind: "bug", slug: "first-fix"), member(kind: "bug", slug: "late")])
+
+      assert ok, out
+      rolled = pushed(origin, "CHANGELOG.md")
+      assert_operator rolled.index("## 0.4.1"), :<, rolled.index("- late fragment"), "the fragment ships in 0.4.1"
     end
   end
 

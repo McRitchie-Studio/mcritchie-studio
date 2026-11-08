@@ -29,14 +29,14 @@ class SubmitTest < Minitest::Test
   BRANCH = "feat/#{SLUG}"
 
   # The board bin/submit renders task links against — DERIVED from the pin, not
-  # spelled out. It used to be the literal "https://mcritchie.studio/tasks/…",
+  # spelled out. It used to be the literal "https://mcritchie.studio/devops/tasks/…",
   # which passed only because run_ship left TASK_API_BASE unpinned and bin/submit
   # fell through to its production default. Two problems with that: the assertion
   # "the PR body must LEAD with the task URL" was really asserting the production
   # HOST, and no containment floor could pin the board without a false red here.
   # Deriving it keeps the assertion about the URL's SHAPE, which is what these
   # tests are actually for.
-  TASK_URL = "#{OutboundSeams::UNROUTABLE}/tasks/#{SLUG}"
+  TASK_URL = "#{OutboundSeams::UNROUTABLE}/devops/tasks/#{SLUG}"
   PR_URL = "https://github.com/McRitchie-Studio/mcritchie-studio/pull/999"
 
   # A throwaway repo on the task branch with a bare `origin` carrying an
@@ -141,6 +141,11 @@ class SubmitTest < Minitest::Test
           exit 1 if ENV["FAIL_GH_PARENT_LIST"] == "1"
           puts ENV.fetch("GH_PR_PARENT_JSON", "[]")
         end
+      end
+      # The 6/8 budget read: the repo's recent green PR runs (bin/lib/ci_wait_budget.rb).
+      if "#{marker}" == "GH" && ARGV[0] == "api" && ARGV[1].to_s.include?("/actions/runs") && ENV["GH_RUNS_JSON"]
+        puts ENV["GH_RUNS_JSON"]
+        exit 0
       end
       if "#{marker}" == "GH" && ARGV[0, 2] == %w[pr create]
         puts "#{PR_URL}"
@@ -339,6 +344,57 @@ class SubmitTest < Minitest::Test
     end
   end
 
+  # task ci-retry-killers: before this, a 6/8 timeout left nothing on the board,
+  # because dor-check never ran. The timeout now writes a comment on the task.
+  def test_a_ci_wait_timeout_is_recorded_on_the_board
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_STATE" => "state:pending", "SHIP_CI_WAIT_TIMEOUT" => "1"
+      })
+      combined = "#{err}\n#{out}"
+
+      refute status.success?
+      note = lines.find { |l| l[0, 2] == %w[TASK note] }
+      refute_nil note, "the timeout must write a note on the task:\n#{combined}"
+      assert_equal [SLUG, "--comment"], note[2, 2]
+      assert_match(/SUBMIT CI WAIT TIMED OUT: CI was still pending on #{Regexp.escape(PR_URL)}/, note[4])
+      assert_match(/set by SHIP_CI_WAIT_TIMEOUT/, note[4])
+      assert_match(/recorded the timeout on the board/, combined)
+      refute_includes markers(lines), "TASK move"
+    end
+  end
+
+  def test_the_ci_wait_budget_is_sized_from_the_repo_s_run_history
+    t0 = Time.utc(2026, 11, 6, 12)
+    runs = (1..10).map do |i|
+      { "head_sha" => "sha#{i}", "run_started_at" => t0.iso8601, "updated_at" => (t0 + (1_000 + (i * 100))).iso8601 }
+    end
+    with_repo do |dir|
+      out, err, status, lines = run_ship(dir, extra_env: {
+        "SHIP_CI_STATE" => "state:green", "GH_RUNS_JSON" => JSON.generate("workflow_runs" => runs)
+      })
+      combined = "#{err}\n#{out}"
+
+      assert status.success?, combined
+      read = lines.find { |l| l[0] == "GH" && l[1] == "api" && l[2].to_s.include?("/actions/runs") }
+      refute_nil read, "submit must read the repo's PR run history"
+      assert_includes read[2], "repos/McRitchie-Studio/mcritchie-studio/actions/runs?event=pull_request&status=success"
+      # p90 of 1100..2000 is 1900; plus the 300s margin.
+      assert_match(/6\/8 ci — budget 2200s \(measured: p90 1900s over 10/, combined)
+      assert_match(/waiting for CI to settle on the PR \(timeout 2200s/, combined)
+    end
+  end
+
+  def test_no_run_history_keeps_the_old_floor
+    with_repo do |dir|
+      out, err, status, = run_ship(dir, extra_env: { "SHIP_CI_STATE" => "state:green" })
+      combined = "#{err}\n#{out}"
+
+      assert status.success?, combined
+      assert_match(/6\/8 ci — budget 900s \(floor: 0 recent green PR run/, combined)
+    end
+  end
+
   def test_a_ci_that_never_appears_stops_before_the_gate
     with_repo do |dir|
       out, err, status, lines = run_ship(dir, extra_env: {
@@ -425,10 +481,11 @@ class SubmitTest < Minitest::Test
       # the DoR verdict (bin/lib/pr_overlap.rb). The second `TASK show` is 5/8 asking the board
       # whether it derives the PR url; this stub predates the field, so ship writes it. PRECHECK and
       # FAST come BEFORE the push and the PR; DOR still follows CI. TASK scout-brief rides 0/8 and
-      # only warns.
-      # History: task ship-checks-overlap-and-auth.
+      # only warns. `GH api` is 6/8 reading the repo's PR run history to size the CI wait
+      # (bin/lib/ci_wait_budget.rb).
+      # History: task ship-checks-overlap-and-auth; task ci-retry-killers.
       assert_equal ["TASK show", "PRECHECK #{SLUG}", "TASK scout-brief", "FAST #{SLUG}", "GH pr", "GH pr", "GH pr", "TASK show",
-                    "TASK update", "DOR #{SLUG}", "TASK move"], markers(lines),
+                    "TASK update", "GH api", "DOR #{SLUG}", "TASK move"], markers(lines),
                    "steps must run in the handoff order (commit + push are real git, not stubs)"
 
       # The commit landed and was pushed: origin's branch tip equals local HEAD.
@@ -674,7 +731,7 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # AN EMPTY baseRefName IS NOT A STACK (/tasks/review-guards-stacked-prs, third item).
+  # AN EMPTY baseRefName IS NOT A STACK (/devops/tasks/review-guards-stacked-prs, third item).
   # `gh pr list --head "" --state open` is NO FILTER to real gh and returns EVERY open PR, so
   # an unread or absent base would make the probe name the FIRST open PR as this PR's parent
   # and preserve a MIS-BASED PR on the strength of a coincidence. No answer falls to the repair.
@@ -761,7 +818,7 @@ class SubmitTest < Minitest::Test
     end
   end
 
-  # --- cheap refusals come BEFORE the push (/tasks/submit-checks-before-push) -------
+  # --- cheap refusals come BEFORE the push (/devops/tasks/submit-checks-before-push) -------
   #
   # 0/8 asks bin/dor-check --precheck (every merge-gate rule but the CI read) before
   # anything is committed; 2/8 runs bin/fast-check after the commit and BEFORE the

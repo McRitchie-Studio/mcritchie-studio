@@ -29,7 +29,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     chips = css_select("[data-test='group-chip']")
     assert_equal %w[#connect #add-ons #custom], chips.map { _1["href"] }
     chips.each do |chip|
-      group = Integration.groups_for(admin: false).find { _1.key == chip["data-group"] }
+      group = Integration.groups.find { _1.key == chip["data-group"] }
       assert_select "section##{group.key.dasherize}[data-test='integration-group'][data-group='#{group.key}']", 1
       assert_equal "#{group.title} #{group.entries.size}", chip.text.squish
     end

@@ -19,6 +19,8 @@ test("admin opens the turf kit, uploads a reference and sees it listed", async (
   await loginWithMagicLink(page, "alex@test.com");
 
   await page.goto("/email_images");
+  // Brand kits is a page elsewhere: the header's Links menu (task admin-pages-standard-header).
+  await page.locator(".page-header .page-header-menu-button").click();
   await page.locator("[data-test='brand-kits-link']").click();
   await expect(page.getByRole("heading", { name: "Brand kits" })).toBeVisible();
   await page.locator("[data-test='brand-kit-card'][data-kit='turf-monster']").click();
