@@ -115,6 +115,10 @@ class User < ApplicationRecord
   # never be found again and would lock its owner out.
   normalizes :email, with: ->(address) { address.strip.downcase }
   validates :email, uniqueness: true, allow_nil: true
+  # One list, held in the database too (CHECK users_role_known). A role outside
+  # it used to save and quietly read as non-admin.
+  ROLES = %w[viewer admin].freeze
+  validates :role, inclusion: { in: ROLES }
   validate :parked_move_carries_proof, if: -> { persisted? && will_save_change_to_email? }
   validate :has_authentication_method
 
@@ -206,7 +210,11 @@ class User < ApplicationRecord
     )
   rescue ActiveRecord::RecordNotUnique
     # Race: a concurrent callback created the user between find_by and create!.
-    find_by(email: auth.info.email) || find_by(provider: auth.provider, uid: auth.uid)
+    # The pair first: it is the identity this callback proved. The email lookup
+    # runs only for a real address, because find_by(email: nil) matches ANY
+    # account without an email, and would sign this caller in as a stranger.
+    email = auth.info.email.to_s.strip.downcase.presence
+    find_by(provider: auth.provider, uid: auth.uid) || (email && where("lower(email) = ?", email).first)
   end
 
   # --- Predicates ------------------------------------------------------------

@@ -254,4 +254,78 @@ class UserTest < ActiveSupport::TestCase
       "the roster must win over a hand-set role, or a demotion never reaches existing rows"
   end
 
+  # --- Identity guards (database audit 2026-11-07) ---------------------------
+
+  test "[unit] a role outside User::ROLES is invalid" do
+    user = users(:viewer)
+    user.role = "user"
+    assert_not user.valid?
+    assert_includes user.errors[:role], "is not included in the list"
+  end
+
+  test "[unit] a nil role is invalid" do
+    user = users(:viewer)
+    user.role = nil
+    assert_not user.valid?
+  end
+
+  test "[unit] the users_role_known CHECK holds exactly User::ROLES" do
+    check = ActiveRecord::Base.connection.check_constraints("users").find { |c| c.name == "users_role_known" }
+    assert check, "users_role_known is missing"
+    assert_equal User::ROLES.sort, check.expression.scan(/'([a-z_]+)'/).flatten.sort
+    assert_not User.columns_hash["role"].null, "users.role must be NOT NULL"
+  end
+
+  test "[unit] the database refuses a role outside the list" do
+    assert_raises(ActiveRecord::StatementInvalid) do
+      users(:viewer).update_column(:role, "user")
+    end
+  end
+
+  test "[integration] a duplicate provider and uid pair raises RecordNotUnique" do
+    User.create!(email: "first-pair@example.com", provider: "google_oauth2", uid: "pair-123")
+    assert_raises(ActiveRecord::RecordNotUnique) do
+      User.new(email: "second-pair@example.com", provider: "google_oauth2", uid: "pair-123").save!(validate: false)
+    end
+  end
+
+  test "[integration] accounts without a provider do not collide on the pair index" do
+    User.create!(email: "no-provider-a@example.com")
+    assert_nothing_raised { User.create!(email: "no-provider-b@example.com") }
+  end
+
+  test "[unit] no parked identity carries a role outside User::ROLES" do
+    assert_empty User::PARKED_IDENTITIES.map { |identity| identity[:role] }.compact - User::ROLES
+  end
+
+  test "[integration] from_omniauth settles a create race on the provider and uid index" do
+    # No email, so only the (provider, uid) index can catch the twin.
+    auth = OmniAuth::AuthHash.new(provider: "google_oauth2", uid: "race-456", info: { name: "Race Winner" })
+    # A different name, so the twin cannot collide on its slug instead.
+    winner = User.create!(provider: "google_oauth2", uid: "race-456", name: "First Tab")
+
+    # The losing callback looked before the winner committed: its FIRST lookup
+    # misses, so it reaches create!. The index refuses the twin, and the rescue
+    # (a second, real lookup) returns the winner.
+    calls = 0
+    real_find_by = User.method(:find_by)
+    lookup = ->(*args, **kw) { (calls += 1) == 1 ? nil : real_find_by.call(*args, **kw) }
+    User.stub(:find_by, lookup) do
+      assert_equal winner, User.from_omniauth(auth, email_verified: true)
+    end
+    assert_equal 1, User.where(provider: "google_oauth2", uid: "race-456").count
+  end
+  test "[integration] the race rescue never returns a stranger who has no email" do
+    stranger = User.create!(provider: "github", uid: "stranger-1", name: "Stranger")
+    auth = OmniAuth::AuthHash.new(provider: "google_oauth2", uid: "race-789", info: { name: "No Email" })
+
+    calls = 0
+    real_find_by = User.method(:find_by)
+    lookup = ->(*args, **kw) { (calls += 1) == 1 ? nil : real_find_by.call(*args, **kw) }
+    User.stub(:create!, ->(*) { raise ActiveRecord::RecordNotUnique, "simulated" }) do
+      User.stub(:find_by, lookup) do
+        assert_not_equal stranger, User.from_omniauth(auth, email_verified: true)
+      end
+    end
+  end
 end
