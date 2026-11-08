@@ -1931,6 +1931,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_130000) do
     t.index ["model"], name: "index_model_rate_overrides_on_model", unique: true
   end
 
+  create_table "msgraph_connections", force: :cascade do |t|
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "display_name", null: false
+    t.text "tenant_id", null: false
+    t.string "tenant_key", null: false
+    t.datetime "updated_at", null: false
+    t.index ["connected_at"], name: "index_msgraph_connections_on_connected_at"
+    t.index ["tenant_key"], name: "index_msgraph_connections_on_tenant_key", unique: true
+  end
+
   create_table "news", force: :cascade do |t|
     t.datetime "archived_at"
     t.string "article_image_url"
@@ -2082,6 +2094,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_130000) do
     t.datetime "updated_at", null: false
     t.index ["dex"], name: "index_pokemons_on_dex"
     t.index ["slug"], name: "index_pokemons_on_slug", unique: true
+  end
+
+  create_table "quickbooks_connections", force: :cascade do |t|
+    t.string "company_name"
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "environment", null: false
+    t.datetime "last_refreshed_at"
+    t.string "realm_id", null: false
+    t.text "refresh_token", null: false
+    t.datetime "refresh_token_expires_at"
+    t.datetime "updated_at", null: false
+    t.index ["connected_at"], name: "index_quickbooks_connections_on_connected_at"
+    t.index ["realm_id"], name: "index_quickbooks_connections_on_realm_id", unique: true
   end
 
   create_table "release_conductor_claims", force: :cascade do |t|

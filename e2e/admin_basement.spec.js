@@ -19,6 +19,8 @@ const MOVED = [
   { href: "/admin/google", label: "Google connection", desc: "Calendar" },
   { href: "/admin/fathom", label: "Fathom connection", desc: "Meeting notes" },
   { href: "/admin/egnyte", label: "Egnyte connection", desc: "Document store" },
+  { href: "/admin/msgraph", label: "Microsoft 365 connection", desc: "Tenants" },
+  { href: "/admin/quickbooks", label: "QuickBooks connection", desc: "Company info" },
   { href: "/admin/agent_messages", label: "Agent inbox", desc: "Messages to agents" },
   { href: "/admin/report_destinations", label: "Report destinations", desc: "Discord channel" },
   { href: "/admin/csp_reports", label: "CSP reports", desc: "Content-Security-Policy" },

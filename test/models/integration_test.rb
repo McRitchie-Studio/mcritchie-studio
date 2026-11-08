@@ -165,8 +165,8 @@ class IntegrationTest < ActiveSupport::TestCase
 
   test "[unit] a dark entry is listed only for an admin, and still found by key" do
     dark = Integration.entries(admin: true).select(&:dark?)
-    assert_equal %w[egnyte], dark.map(&:key)
-    assert_not_includes Integration.entries.map(&:key), "egnyte"
+    assert_equal %w[egnyte microsoft_365 quickbooks], dark.map(&:key)
+    assert_empty Integration.entries.map(&:key) & %w[egnyte microsoft_365 quickbooks]
     assert_not_includes Integration.groups.flat_map(&:entries).map(&:key), "egnyte"
     assert_includes Integration.groups(admin: true).find { _1.key == "connect" }.entries.map(&:key), "egnyte"
     assert_equal "Egnyte", Integration.find(:egnyte).name, "a contact source naming it still resolves"

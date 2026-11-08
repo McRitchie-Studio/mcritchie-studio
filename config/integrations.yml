@@ -173,6 +173,24 @@ groups:
           - { key: browse_files, name: Browse your folders and read file details, via: [sign_in], status: soon }
           - { key: upload_files, name: Upload a document to a folder you choose, via: [sign_in], status: soon }
 
+      # A Microsoft 365 tenant, app-only through Microsoft Graph after one admin
+      # approval (MsgraphConnection), built dark: the public page does not list
+      # it; an admin's does, with each connected tenant and Connect, disabled
+      # until MSGRAPH_CLIENT_ID and MSGRAPH_CLIENT_SECRET are set
+      # (IntegrationsController::MSGRAPH_CARD).
+      - key: microsoft_365
+        name: Microsoft 365
+        icon: "🏢"
+        tagline: "Your agents read your users, Teams and SharePoint. Read only."
+        blurb: A Microsoft 365 administrator approves us once, and your agents read your directory, your Teams and your SharePoint files. Read only, so they cannot send, change or delete anything.
+        status: soon
+        dark: true
+        tier: pro
+        connects: [admin_grant]
+        abilities:
+          - { key: read_directory, name: Read your users and Teams, via: [admin_grant], status: soon }
+          - { key: read_files, name: Read your SharePoint files, via: [admin_grant], status: soon }
+
       - key: google_workspace_connect
         name: Google Workspace
         icon: google
@@ -216,6 +234,24 @@ groups:
         connects: [app_install]
         abilities:
           - { key: post_updates, name: Post notifications and agent updates, via: [app_install], status: soon }
+
+      # One person's own Intuit sign-in per QuickBooks Online company
+      # (QuickbooksConnection). Built and dark on our own hub (/admin/quickbooks)
+      # until the Intuit app is set up: `dark` keeps the tile off the public
+      # page, and `soon` keeps it honest. An admin sees the card's Connect
+      # (disabled until then) or each company's Disconnect
+      # (IntegrationsController::QUICKBOOKS_CARD).
+      - key: quickbooks
+        name: QuickBooks Online
+        icon: "📒"
+        tagline: "Your agents read your company info and reports. Read only."
+        blurb: Sign in with Intuit and your agents read your QuickBooks company info and reports, such as profit and loss. Read only, so they cannot change your books.
+        status: soon
+        dark: true
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: read_reports, name: Read your company info and reports, via: [sign_in] }
 
   - key: add_ons
     title: We run it

@@ -23,6 +23,12 @@ Rails.application.config.filter_parameters += [
   # A client bundle's file bodies (POST /api/v1/client_bundles/:sub): megabytes of
   # base64 that the request log has no use for.
   :content_base64,
+  # The QuickBooks callback's realmId: Intuit's id for the company connected. Not a
+  # secret, but it names a client's books. Filtered by key, not by controller: the
+  # "Started GET" line's URL is filtered one query key at a time with no params to
+  # scope by, so a controller-scoped lambda would leave it in that line. Anchored,
+  # because no other param shares the name.
+  /\ArealmId\z/,
   # An admin login's one-time code, nested and at the top level of its own API.
   /\Aagent_login_request\.code\z/,
   lambda do |key, value, params = nil|
@@ -30,11 +36,19 @@ Rails.application.config.filter_parameters += [
 
     value.replace("[FILTERED]") if params.is_a?(Hash) && params["controller"].to_s == "api/v1/agent_login_requests"
   end,
-  # The TikTok, Google, Fathom and Egnyte sign-ins' single-use auth code, on their callbacks only.
+  # The TikTok, Google, Fathom, Egnyte and QuickBooks sign-ins' single-use auth code, on their callbacks only.
   lambda do |key, value, params = nil|
     next unless key.to_s == "code" && value.is_a?(String)
 
-    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom admin/egnyte].include?(params["controller"].to_s)
+    value.replace("[FILTERED]") if params.is_a?(Hash) && %w[admin/tiktok admin/google admin/fathom admin/egnyte admin/quickbooks].include?(params["controller"].to_s)
+  end,
+  # The Microsoft 365 admin-consent callback's tenant id (MsgraphConnection
+  # stores it encrypted). Filtered by key, not by controller: the "Started GET"
+  # line's URL is filtered one query pair at a time, as a one-key hash with no
+  # controller to scope by (see realmId above). Exact key, String values only:
+  # the Teams ingest's `tenant` is a nested Hash, and the String check spares it.
+  lambda do |key, value, _params = nil|
+    value.replace("[FILTERED]") if key.to_s == "tenant" && value.is_a?(String)
   end,
   # The satellite visitor's IP the agent chat API takes for its per-IP cap
   # (Api::V1::AgentChatsController): hashed there, never stored, and kept out of

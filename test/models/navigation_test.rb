@@ -221,7 +221,7 @@ class NavigationTest < ActiveSupport::TestCase
 
   test "[unit] the basement group holds the moved pages, every one an admin page placed nowhere in the sidebar" do
     assert_equal %w[admin_schema admin_emails admin_link_preview asset_browser stack credentials broadcasts contacts broadcast_analytics
-                    error_logs admin_tiktok admin_google admin_fathom admin_egnyte admin_agent_messages admin_report_destinations admin_csp_reports admin_upgrade_proposals
+                    error_logs admin_tiktok admin_google admin_fathom admin_egnyte admin_msgraph admin_quickbooks admin_agent_messages admin_report_destinations admin_csp_reports admin_upgrade_proposals
                     teams people builders docs admin_ai_builder_multiple workflow_news_index merge_people duplicates_people
                     news_index contents model_pipeline body_archetypes videos alt_videos],
                  Navigation.sidebar(:basement).flat_map(&:pages).map(&:key)

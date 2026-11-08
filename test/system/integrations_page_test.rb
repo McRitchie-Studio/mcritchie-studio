@@ -9,7 +9,8 @@ require "support/egnyte_connect_fakes"
 # here) and its three cards carry no contact-form Connect, nor does the Fathom
 # card (its OAuth app set here too), which carries Connect Fathom instead, nor
 # does the Egnyte card (its developer key set too), which carries its domain
-# field and Connect Egnyte.
+# field and Connect Egnyte, nor the QuickBooks card, which carries its own
+# (disabled) Connect QuickBooks.
 class IntegrationsPageTest < ApplicationSystemTestCase
   include GoogleConnectFakes
   include FathomConnectFakes
@@ -17,7 +18,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
 
   GOOGLE_CARDS = %w[google_calendar gmail google_drive].freeze
   # The admin's cards whose real Connect replaces the contact-form one, in page order.
-  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom egnyte]).freeze
+  CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom egnyte microsoft_365 quickbooks]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
   # A headless window will not shrink below about 500px, so the width is set by
@@ -46,7 +47,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         without = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => !card.querySelector("[data-test='entry-cta']")).map(card => card.dataset.entry)
         JS
-        assert_equal CONNECTION_CARDS, without, "#{theme} at #{width}px: only the admin's Google, Fathom and Egnyte cards drop their CTA"
+        assert_equal CONNECTION_CARDS, without, "#{theme} at #{width}px: only the admin's Google, Fathom, Egnyte, Microsoft 365 and QuickBooks cards drop their CTA"
         clipped = page.evaluate_script(<<~JS)
           [...document.querySelectorAll("[data-test='integration-entry']")].filter(card => {
             const cta = card.querySelector("[data-test='entry-cta']");
@@ -95,7 +96,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     rows = page.evaluate_script(<<~JS)
       [...document.querySelectorAll("[data-test='integration-group']")].map(group => {
         const byTop = {};
-        group.querySelectorAll("[data-test='integration-entry']").forEach(card => {
+        group.querySelectorAll("[data-test='integration-entry']:not([data-dark])").forEach(card => {
           const r = card.getBoundingClientRect();
           (byTop[Math.round(r.top)] ||= []).push(Math.round(r.height));
         });
@@ -106,12 +107,15 @@ class IntegrationsPageTest < ApplicationSystemTestCase
       heights.each { |row| assert_equal 1, row.uniq.size, "#{group}: cards in a row differ in height #{row}" }
       assert_operator heights.first.size, :<=, 4, group
     end
-    # The public eight are two full rows of four; only an admin's dark tiles
-    # (built, not offered: Integration::Entry#dark?) run past them.
+    # An admin's page adds the dark tiles (built, not offered:
+    # Integration::Entry#dark?) where the config lists them, so they mix into
+    # the rows; this checks the count only: the first two rows are full and the
+    # rest hold exactly as many tiles as there are dark ones. The public page's
+    # height is pinned signed out, below.
     dark = Integration.entries(admin: true).count { _1.dark? && _1.group == "connect" }
     connect = rows.to_h.fetch("connect").map(&:size)
-    assert_equal [ 4, 4 ], connect.first(2), "Connect is two full rows of four, no lonely public tile"
-    assert_equal dark, connect.drop(2).sum, "only the admin's dark tiles sit below them"
+    assert_equal [ 4, 4 ], connect.first(2), "Connect starts with two full rows of four"
+    assert_equal dark, connect.drop(2).sum, "the rows past them hold as many tiles as there are dark ones"
     assert_equal [ 3 ], rows.to_h.fetch("add_ons").map(&:size)
   end
 
