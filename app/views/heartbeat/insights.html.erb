@@ -35,15 +35,20 @@
 </style>
 
 <section id="mason-insights" data-test="insight-bank">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), the dark section's first
+      child so it pins the length of the page, in the surface's palette (heartbeat.css,
+      "the page header on the fixed-dark surfaces"). -mx-3 px-3 fits the section's
+      narrowest gutter (12px on a phone). The old "back to the heartbeat" link is the Links menu: the trail's parent is DevOps (navigation.yml). hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "💡 Insight Bank", crumb_label: "Insight Bank", crumbs: studio_crumbs(:mason_insights),
+        menu: [ { label: "Per-session heartbeat", href: mason_heartbeat_path, data: { test: "insights-heartbeat-link", turbo: false } } ],
+        row_class: "-mx-3 px-3" %>
   <header class="hb-topbar">
     <div>
-      <h1>&#128161; Insight Bank</h1>
       <p class="hb-sub">
         The curated lessons banked from activities and actions — <%= pluralize(@insights.size, "insight") %> so far.
         Each is a grade Mason (or the McRitchie audit) kept as a lesson worth carrying into the next session.
       </p>
     </div>
-    <%= link_to "&lsaquo; back to the heartbeat".html_safe, mason_heartbeat_path, class: "hb-back", data: { turbo: false } %>
   </header>
 
   <% if @insights.any? %>

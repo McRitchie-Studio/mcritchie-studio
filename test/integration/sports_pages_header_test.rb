@@ -130,6 +130,16 @@ class SportsPagesHeaderTest < ActionDispatch::IntegrationTest
     assert_select "#{ROW} .page-header-crumb-current", text: "Player impact"
   end
 
+  # Shannon's review of split 1: a team colour dot can be black on the dark navy bar
+  # (the Raiders), so the dot carries the theme's subtle border in every mode.
+  test "[component] the team colour dot in the header carries a border for dark mode" do
+    [ nfl_team_rankings_path("buffalo-bills"),
+      nfl_player_impact_path(player_id: "david-bailey", team_id: "buffalo-bills") ].each do |path|
+      get_header path
+      assert_select "#{ROW} .page-header-meta span.rounded-full.border.border-subtle", { count: 1 }, "#{path}: the bordered dot"
+    end
+  end
+
   test "[component] a person: Rename is the admin's one action, and the slug stays in the card" do
     log_in_as(users(:alex))
     get_header person_path(@person.slug)

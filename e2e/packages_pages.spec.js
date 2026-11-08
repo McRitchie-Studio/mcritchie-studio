@@ -197,7 +197,7 @@ test("on a phone the full stack scrolls inside its box, keeps its tier header, a
   ]);
   expect(Math.abs(headerTop - boxTop)).toBeLessThan(4);
 
-  await page.locator("[data-test='back-to-packages']").click();
+  await page.locator(".page-header a.page-header-crumb[href='/packages']").click();
   await expect(page).toHaveURL(/\/packages$/);
   await expect(page.locator("[data-test='package-card']")).toHaveCount(4);
 

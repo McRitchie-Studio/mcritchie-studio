@@ -20,7 +20,8 @@ test("index row links open the source and alt video pages", async ({ page }) => 
   await expect(page).toHaveURL(new RegExp(`/videos/${SLUG}$`));
   await expect(page.locator("[data-test='cast-panel']")).toBeVisible();
 
-  await page.locator("[data-test='all-videos-link']").click();
+  // The old "All videos" link is the page header's trail parent (hub-ops-page-headers).
+  await page.locator(".page-header a.page-header-crumb[href='/videos']").click();
   await expect(page).toHaveURL(/\/videos$/);
 
   const chip = row.locator("[data-test='video-alt-link']").first();

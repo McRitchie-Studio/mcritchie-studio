@@ -293,6 +293,16 @@ class NavigationTest < ActiveSupport::TestCase
     assert_equal %i[admin_dashboard admin_basement people person], Studio.crumbs.chain(:person)
   end
 
+  # hub-ops-page-headers: the full stack's old "Back to packages" link is its parent, and
+  # a source video (drawn after the registry) sits under Videos, as its alt videos' parent.
+  test "[unit] the ops crumbs: the full stack under Packages, a video under Videos" do
+    crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
+    assert_equal %i[packages], crumbs.chain(:packages_stack)[0...-1]
+    assert_nil Navigation.page(:packages).parent, "Packages is a root"
+    assert_equal %i[admin_dashboard admin_basement videos video], Studio.crumbs.chain(:video)
+    assert_equal %i[deployments mason_heartbeat], crumbs.chain(:heartbeat_all_activities)[0...-1]
+  end
+
   test "[unit] the agent pages keep their own section, out of the DevOps trail" do
     crumbs = Navigation.registry.draw_crumbs(Studio::Crumbs.new)
     %i[pokedex activities_agents agents].each do |key|

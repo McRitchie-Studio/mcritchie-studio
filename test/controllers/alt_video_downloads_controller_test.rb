@@ -106,7 +106,7 @@ class AltVideoDownloadsControllerTest < ActionDispatch::IntegrationTest
   test "the header offers every asset and each clip card its own" do
     log_in_as users(:alex)
     get video_alt_video_path(@video, @alt)
-    assert_select "header [data-test='alt-video-download-all'][href=?]", video_alt_video_download_path(@video, @alt),
+    assert_select ".page-header a.page-header-action[data-test='alt-video-download-all'][href=?]", video_alt_video_download_path(@video, @alt),
                   text: "Download all assets"
     assert_select "[data-test='alt-clip']", @alt.clips.size
     @alt.clips.each do |clip|
