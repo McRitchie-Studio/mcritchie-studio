@@ -1,8 +1,8 @@
 <section class="max-w-5xl mx-auto px-4 py-10">
-  <div class="text-center mb-10">
-    <h1 class="text-3xl font-bold text-heading mb-2">NFL Hub</h1>
-    <p class="text-secondary">2025 Season</p>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the NFL pages' root, so
+      its trail is the page alone; the season line is the lead. %>
+  <%= render "studio/page_header", title: "NFL Hub", crumbs: studio_crumbs(:nfl_hub) %>
+  <p class="text-secondary mt-2 mb-10">2025 Season</p>
 
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
     <% if @current_nfl_season %>

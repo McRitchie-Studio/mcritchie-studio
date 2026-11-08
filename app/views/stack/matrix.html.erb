@@ -2,16 +2,17 @@
 <% columns = @clients.size + 1 %>
 
 <section class="max-w-7xl mx-auto px-4 py-10" data-test="stack-matrix-page">
-  <header class="mb-6">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Stack</p>
-    <h1 class="text-3xl font-bold text-heading mb-2">Client matrix</h1>
-    <p class="text-muted max-w-2xl">
-      Every client against its stack: its app tier and status, the package it is on, then every piece of software any of them runs.
-      <%= link_to "List view", stack_path, class: "text-primary hover:underline whitespace-nowrap", data: { test: "stack-list-link" } %>
-      <span class="text-muted" aria-hidden="true">·</span>
-      <%= link_to "Credential detail", credentials_path, class: "text-primary hover:underline whitespace-nowrap" %>
-    </p>
-  </header>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), a direct child of the
+      page's section so it stays pinned the length of the page: the old eyebrow
+      "Stack" is the trail's parent; the lead and its links are unchanged.
+      hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Client matrix", crumbs: studio_crumbs(parent: :stack) %>
+  <p class="text-muted max-w-2xl mt-2 mb-6">
+    Every client against its stack: its app tier and status, the package it is on, then every piece of software any of them runs.
+    <%= link_to "List view", stack_path, class: "text-primary hover:underline whitespace-nowrap", data: { test: "stack-list-link" } %>
+    <span class="text-muted" aria-hidden="true">·</span>
+    <%= link_to "Credential detail", credentials_path, class: "text-primary hover:underline whitespace-nowrap" %>
+  </p>
 
   <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
     <div class="rounded-2xl border border-subtle bg-surface px-5 py-4" data-test="matrix-mrr">

@@ -20,7 +20,11 @@ module ApplicationCable
   # auth reads it (Studio::ErrorHandling#current_user and #verify_session_token):
   # session[Studio.session_key] names the user, and session[:session_token] must
   # match the user's rotating token (OPSEC-045), so a revoked session cannot keep a
-  # socket the page itself would refuse.
+  # socket the page itself would refuse. A device that logged out is refused too:
+  # its cookie's sid is ended on the server (Studio::UserSession.ended?, the
+  # engine's device-session check, docs/DEVICE_SESSIONS.md in studio-engine), so a
+  # copy of a logged-out cookie cannot open a socket. respond_to? keeps the line a
+  # no-op on an engine from before the helper.
   #
   # CONNECT IS THE ONLY CHECK, so a revocation must close the sockets it revokes.
   # `Connection.disconnect(user)` does that: User calls it after commit when the
@@ -64,6 +68,7 @@ module ApplicationCable
       session = request.session
       user_id = session[Studio.session_key.to_s] || session[Studio.session_key]
       return nil if user_id.blank?
+      return nil if Studio::UserSession.respond_to?(:ended?) && Studio::UserSession.ended?(session)
 
       user = User.find_by(id: user_id)
       return nil if user.nil?

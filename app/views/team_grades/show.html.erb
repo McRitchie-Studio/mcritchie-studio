@@ -1,17 +1,16 @@
 <% content_for :title, "#{@team.short_name} — Pass & Run Grades" %>
 
 <section class="py-6">
-  <%# Back link %>
-  <div class="mb-4">
-    <%= link_to nfl_hub_path, class: "text-sm text-secondary hover:text-primary transition" do %>
-      &larr; NFL Hub
-    <% end %>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the page had no h1, and
+      its "NFL Hub" back link is the trail. The team hero below is the page's body, so it
+      keeps its look. %>
+  <%= render "studio/page_header", title: "#{@team.name} Pass & Run Grades", crumb_label: "Pass & run grades",
+        crumbs: studio_crumbs(parent: :nfl_hub) %>
 
   <%# Hero %>
   <% primary = @team.color_primary || "#6366f1" %>
   <% secondary = @team.color_secondary || "#1f2937" %>
-  <div class="rounded-xl overflow-hidden mb-8" style="background: linear-gradient(135deg, <%= primary %> 0%, <%= secondary %> 100%);">
+  <div class="rounded-xl overflow-hidden mt-6 mb-8" style="background: linear-gradient(135deg, <%= primary %> 0%, <%= secondary %> 100%);">
     <div class="relative py-8 px-6" style="background: rgba(0,0,0,0.3);">
       <div class="text-center">
         <span class="text-5xl block mb-2"><%= @team.emoji %></span>

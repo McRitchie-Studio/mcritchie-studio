@@ -8,14 +8,16 @@
 <% channel = @destination&.discord_channel %>
 <% state = if channel.nil? then "not_configured" elsif !@destination.enabled? then "disabled" elsif !channel.selectable? then "unavailable" else "on" end %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="agent-settings-page" data-agent="<%= @cto.slug %>">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the CTO's name is the
+      title, under its app's page (Applications, then the app). The avatar and the "CTO
+      of" line stay beside each other under it. hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: @cto.display_name,
+        crumbs: app_page_crumbs(admin: admin?) + [ { label: @app.name, href: application_path(@app.slug) } ] %>
   <div class="flex items-center gap-4 min-w-0">
     <%= render "applications/cto_avatar", cto: @cto, size: "lg" %>
-    <div class="min-w-0">
-      <h1 class="text-3xl font-bold text-heading break-words"><%= @cto.display_name %></h1>
-      <p class="text-secondary mt-1">
-        CTO of <%= link_to @app.name, application_path(@app.slug), class: "underline hover:text-heading", data: { test: "agent-settings-app-link" } %>
-      </p>
-    </div>
+    <p class="text-secondary min-w-0">
+      CTO of <%= link_to @app.name, application_path(@app.slug), class: "underline hover:text-heading", data: { test: "agent-settings-app-link" } %>
+    </p>
   </div>
 
   <% if AgentMessages::WebIngest.available?(@cto) %>

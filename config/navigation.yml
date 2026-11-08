@@ -68,7 +68,7 @@ pages:
   privacy:        { page: "landing#privacy",         audience: public, label: Privacy Policy }
   marketing_kit:  { page: "marketing_kit#index",     audience: public, label: Marketing Kit }
   packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Builder, Pro and Team tiers, and Enterprise", icon: package }
-  packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
+  packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier, parent: packages }
   integrations:   { page: "integrations#index",      audience: public, label: Integrations, emoji: "🔌", hover_emoji: "🧩", desc: "Connect your tools, add services we run", icon: plug }
   integrations_discord: { page: "integrations#discord", audience: public, label: Discord for your agents }
   build:          { page: "build#new",               audience: public, label: Build, emoji: "🧱", hover_emoji: "✨", desc: Describe an app and we build it, icon: hammer }
@@ -80,25 +80,27 @@ pages:
   schedule_index: { page: "schedule#index",          audience: public, label: Schedule a call }
 
   # ── NFL ──────────────────────────────────────────────────────────────────
+  # Each page under the NFL Hub names it as its parent, so its page header's crumb trail
+  # reads "NFL Hub › …" where the old "NFL Hub" back link stood (hub-remaining-page-headers).
   nfl_hub:                     { page: "nfl#index",               audience: public, label: NFL Hub, emoji: "🏈", hover_emoji: "📈", desc: Rankings + grades }
-  nfl_rosters:                 { page: "nfl#rosters",             audience: public, label: NFL Rosters }
+  nfl_rosters:                 { page: "nfl#rosters",             audience: public, label: NFL Rosters, parent: nfl_hub }
   games_season:                { page: "games#season",            audience: public, label: 2026 Season, args: [2026], emoji: "📅", hover_emoji: "🏟️", desc: Schedule + results }
   games_week:                  { page: "games#week",              audience: public, label: Week slate }
   game_show:                   { page: "games#show",              audience: public, label: Game }
-  nfl_quarterback_rankings:    { page: "rankings#quarterback",    audience: public, label: Quarterback Rankings }
-  nfl_offensive_line_rankings: { page: "rankings#offensive_line", audience: public, label: Offensive Line Rankings }
-  nfl_receiving_rankings:      { page: "rankings#receiving",      audience: public, label: Receiving Rankings }
-  nfl_rushing_rankings:        { page: "rankings#rushing",        audience: public, label: Rushing Rankings }
-  nfl_defense_rankings:        { page: "rankings#defense",        audience: public, label: Defense Rankings }
-  nfl_pass_rush_rankings:      { page: "rankings#pass_rush",      audience: public, label: Pass Rush Rankings }
-  nfl_coverage_rankings:       { page: "rankings#coverage",       audience: public, label: Coverage Rankings }
-  nfl_prospects:               { page: "rankings#prospects",      audience: public, label: Draft Prospects }
-  nfl_coaches:                 { page: "rankings#coaches",        audience: public, label: NFL Coaches }
-  nfl_pass_first_rankings:     { page: "rankings#pass_first",     audience: public, label: Pass-First Rankings }
+  nfl_quarterback_rankings:    { page: "rankings#quarterback",    audience: public, label: Quarterback Rankings, parent: nfl_hub }
+  nfl_offensive_line_rankings: { page: "rankings#offensive_line", audience: public, label: Offensive Line Rankings, parent: nfl_hub }
+  nfl_receiving_rankings:      { page: "rankings#receiving",      audience: public, label: Receiving Rankings, parent: nfl_hub }
+  nfl_rushing_rankings:        { page: "rankings#rushing",        audience: public, label: Rushing Rankings, parent: nfl_hub }
+  nfl_defense_rankings:        { page: "rankings#defense",        audience: public, label: Defense Rankings, parent: nfl_hub }
+  nfl_pass_rush_rankings:      { page: "rankings#pass_rush",      audience: public, label: Pass Rush Rankings, parent: nfl_hub }
+  nfl_coverage_rankings:       { page: "rankings#coverage",       audience: public, label: Coverage Rankings, parent: nfl_hub }
+  nfl_prospects:               { page: "rankings#prospects",      audience: public, label: Draft Prospects, parent: nfl_hub }
+  nfl_coaches:                 { page: "rankings#coaches",        audience: public, label: NFL Coaches, parent: nfl_hub }
+  nfl_pass_first_rankings:     { page: "rankings#pass_first",     audience: public, label: Pass-First Rankings, parent: nfl_hub }
   nfl_team_rankings:           { page: "rankings#team_unit",      audience: public, label: Team rankings }
   nfl_player_impact:           { page: "rankings#player_impact",  audience: public, label: Player impact }
   nfl_team_grades:             { page: "team_grades#show",        audience: public, label: Team grades }
-  nfl_contracts:               { page: "contracts#index",         audience: public, label: NFL Contracts }
+  nfl_contracts:               { page: "contracts#index",         audience: public, label: NFL Contracts, parent: nfl_hub }
   team_depth_chart:            { page: "depth_charts#show",       audience: public, label: Depth chart }
   team_lineup_graphic:         { page: "lineup_graphics#show",    audience: public, label: Lineup graphic }
 

@@ -1,6 +1,12 @@
 <% content_for :title, "NFL Week #{@week} — #{@year} Season" %>
 
 <section class="py-6">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the centred hero is the
+      title row, its trail reaches the season, and the season and game count are the lead. %>
+  <%= render "studio/page_header", title: "NFL Week #{@week}", crumb_label: "Week #{@week}",
+        crumbs: studio_crumbs(parent: :season, year: @year) %>
+  <p class="text-sm text-muted mt-2 mb-6"><%= @year %> Season · <%= @games.size %> games</p>
+
   <%# Week nav: prev | season | next %>
   <div class="flex items-center justify-between mb-6 text-sm">
     <div class="flex-1">
@@ -14,15 +20,6 @@
         <%= link_to "Week #{@next_week} →", games_week_path(@year, @next_week), class: "text-secondary hover:text-primary transition" %>
       <% end %>
     </div>
-  </div>
-
-  <%# Hero %>
-  <div class="text-center mb-8">
-    <h1 class="text-3xl md:text-4xl font-extrabold text-heading tracking-tight">
-      NFL Week <%= @week %>
-    </h1>
-    <p class="text-lg text-secondary mt-1"><%= @year %> Season</p>
-    <p class="text-sm text-muted mt-2"><%= @games.size %> games</p>
   </div>
 
   <% if @games.empty? %>
