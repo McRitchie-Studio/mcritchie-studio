@@ -50,7 +50,11 @@ module Msgraph
 
     class Error < StandardError; end
     class NotConfigured < Error; end
-    # The tenant no longer lets the app in: consent removed, or never granted.
+    # The tenant does not let the app in: Microsoft answers `unauthorized_client`
+    # when the app is not found in, or not enabled for, the tenant (AADSTS700016,
+    # AADSTS7000112; learn.microsoft.com/entra/identity-platform/reference-error-codes).
+    # A permission removed from a consented app still yields a token; its read
+    # then answers a Graph 403 (Reader's Error), not Revoked.
     class Revoked < Error; end
 
     Token = Struct.new(:value, :expires_at)
@@ -122,7 +126,7 @@ module Msgraph
         return json if status == 200
 
         detail = json["error_description"].to_s.lines.first.to_s.strip.presence || json["error"] || "no detail"
-        raise Revoked, "the tenant does not let the app in (#{json['error']}); an administrator consents again" if json["error"] == "unauthorized_client"
+        raise Revoked, "the app is not found in, or not enabled for, the tenant (#{json['error']}); an administrator consents again" if json["error"] == "unauthorized_client"
 
         raise Error, "Microsoft answered #{status}: #{detail}"
       end

@@ -59,7 +59,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
   test "[component] the read-only tiles say Read only on the tile line, and crypto's line is not its blurb again" do
     get integrations_path
 
-    %w[google_calendar gmail google_drive fathom microsoft_365].each do |key|
+    %w[google_calendar gmail google_drive fathom].each do |key|
       line = css_select("#{entry(key)} [data-test='entry-line']").first.text.strip
       assert_match(/Read only\.\z/, line, "#{key}: read only shows on the tile, not only in Details")
       assert_operator line.length, :<=, TILE_LINE_LIMIT, key
@@ -295,7 +295,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     group = "[data-test='integration-group'][data-group='custom']"
     assert_select "#{group} [data-test='group-kicker']", text: "Custom"
     assert_select "#{group} h2", text: "Talk to us"
-    assert_equal %w[stripe_connect crypto extra_storage ai_features microsoft_365 custom_connectors enterprise_extras],
+    assert_equal %w[stripe_connect crypto extra_storage ai_features custom_connectors enterprise_extras],
                  css_select("#{group} [data-test='integration-entry']").map { |e| e["data-entry"] }
     assert_select "#{group} [data-test='entry-price']", 0
     assert_no_match(/Scoped on a call/, css_select(group).to_s)

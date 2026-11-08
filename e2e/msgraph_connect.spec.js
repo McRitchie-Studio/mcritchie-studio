@@ -12,7 +12,7 @@ test("admin connects a Microsoft 365 tenant with the stand-in, reads it, and dis
   page.on("dialog", (dialog) => dialog.accept());
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/integrations");
-  const card = page.locator("[data-test='integration-group'][data-group='custom'] [data-test='integration-entry'][data-entry='microsoft_365']");
+  const card = page.locator("[data-test='integration-group'][data-group='connect'] [data-test='integration-entry'][data-entry='microsoft_365']");
   const slot = card.locator("[data-test='entry-action'] [data-test='msgraph-connection']");
   await expect(card.locator("[data-test='coming-soon']")).toBeVisible();
   await expect(slot).toHaveAttribute("data-state", "none");

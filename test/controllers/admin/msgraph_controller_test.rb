@@ -123,9 +123,13 @@ class Admin::MsgraphControllerTest < ActionDispatch::IntegrationTest
     with_msgraph_env do
       state = begin_connect["state"]
       msgraph_tokens([ 400, { error: "unauthorized_client" } ])
-      consent(state)
+      assert_difference -> { ErrorLog.count }, 1, "the failed name read is kept in the error log" do
+        consent(state)
+      end
 
       assert_equal MsgraphConnection::LABEL, MsgraphConnection.sole.display_name
+      assert_match(/not found in, or not enabled for/, ErrorLog.order(:id).last.message)
+      assert_no_match(/#{TENANT}/i, ErrorLog.order(:id).last.message.to_s)
     end
   end
 
@@ -184,7 +188,7 @@ class Admin::MsgraphControllerTest < ActionDispatch::IntegrationTest
       get admin_msgraph_path
 
       assert_select "[data-test='msgraph-section'][data-state='read_failed']"
-      assert_select "[data-test='msgraph-read-error']", text: /no longer lets the app in/
+      assert_select "[data-test='msgraph-read-error']", text: /not found in, or not enabled for, the tenant/
       log = ErrorLog.order(:id).last
       assert_equal "MsgraphConnection", log.target_type
       assert_no_match(/#{TENANT}/i, response.body)
@@ -211,11 +215,18 @@ class Admin::MsgraphControllerTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "[integration] the callback's tenant is filtered from the request log" do
+  test "[integration] the callback's tenant is filtered from the request log, the Started GET line included" do
+    path = "#{admin_msgraph_callback_path}?#{URI.encode_www_form(tenant: TENANT, state: 's', admin_consent: 'True')}"
+    # The app's own env config carries the filter a real request logs with.
+    request = ActionDispatch::Request.new(Rails.application.env_config.merge(Rack::MockRequest.env_for(path)))
+    assert_not_includes request.filtered_path, TENANT, "the URL the request line prints"
+    assert_includes request.filtered_path, "tenant=[FILTERED]"
+    assert_includes request.filtered_path, "admin_consent=True" # the control: the line still prints the rest
+
     filter = ActiveSupport::ParameterFilter.new(Rails.application.config.filter_parameters)
-    filtered = filter.filter("controller" => "admin/msgraph", "action" => "callback", "tenant" => TENANT, "state" => "s")
-    assert_equal "[FILTERED]", filtered["tenant"]
-    assert_equal "[FILTERED]", filter.filter("tenant" => TENANT, "admin_consent" => "True")["tenant"], "the bare query of the request line"
-    assert_equal TENANT, filter.filter("controller" => "pages", "tenant" => TENANT)["tenant"], "the control: other pages keep tenant"
+    assert_equal "[FILTERED]", filter.filter("controller" => "admin/msgraph", "tenant" => TENANT)["tenant"]
+    nested = { "id" => "t-1", "name" => "Teams ingest" }
+    assert_equal nested, filter.filter("tenant" => nested)["tenant"], "a nested tenant Hash (the Teams ingest) is spared"
   end
+
 end

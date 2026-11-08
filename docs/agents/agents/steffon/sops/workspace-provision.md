@@ -642,14 +642,17 @@ The `admin_grant` method for a Microsoft 365 tenant (`MsgraphConnection`,
 `Msgraph::OAuthClient`, `Msgraph::Reader`): app-only Microsoft Graph, read only.
 A tenant administrator presses **Connect** on **`/admin/msgraph`** (admin only),
 approves the app once on Microsoft's admin-consent page, and the callback stores
-one row per tenant: the tenant id encrypted (never rendered or logged), the
-organization's name, who connected it and when. Reads then use the
+one row per tenant: the tenant id encrypted and never rendered, the
+organization's name, who connected it and when. The hub's own request log
+filters the callback's `tenant` parameter, but Heroku's router log still records
+the full callback query, tenant id included. Reads then use the
 client-credentials grant; no refresh token exists, and the access token is
 cached in process memory only. The page shows each tenant's live read (users,
 Teams, the root site and its drives) or Microsoft's error, and a Disconnect per
-tenant. The Microsoft 365 card in the Talk to us group of `/integrations` stays
-Coming soon; an admin sees the tenants and a Connect that is disabled until the
-server can take one. `?return_to=` is honoured only for `/integrations` and
+tenant. The Microsoft 365 card in the Connect group of `/integrations` is
+`dark: true`: the public page does not list it. An admin's page lists it as
+Coming soon, with the tenants and a Connect that is disabled until the server
+can take one. `?return_to=` is honoured only for `/integrations` and
 `/admin/msgraph`.
 
 **It ships dark.** Nothing is registered yet. To go live:

@@ -1,9 +1,9 @@
 require "test_helper"
 require "support/msgraph_connect_fakes"
 
-# [component] The /integrations Microsoft 365 card: Coming soon for everyone;
-# for an admin, the hub's own tenant connections, with Connect disabled until
-# the server can take a connection. No tenant id renders.
+# [component] The /integrations Microsoft 365 card is dark: only an admin's page
+# lists it, in Connect, Coming soon, with the hub's own tenant connections and a
+# Connect disabled until the server can take one. No tenant id renders.
 class IntegrationsMsgraphCardTest < ActionDispatch::IntegrationTest
   include MsgraphConnectFakes
 
@@ -12,15 +12,15 @@ class IntegrationsMsgraphCardTest < ActionDispatch::IntegrationTest
 
   teardown { reset_msgraph_connect }
 
-  test "[component] signed out or not an admin, the card is Coming soon with no tenant slot" do
+  test "[component] the card is dark: signed out or not an admin, the page does not list it" do
     get integrations_path
-    assert_select "#{CARD}[data-status='soon'] [data-test='coming-soon']"
-    assert_select SLOT, 0
-    assert_select "#{CARD} [data-test='entry-cta']", count: 1
+    assert_select CARD, 0
+    assert_no_match(/Microsoft 365/, response.body)
 
     log_in_as users(:viewer)
     get integrations_path
-    assert_select SLOT, 0
+    assert_select CARD, 0
+    assert_select "[data-test='integration-entry'][data-entry='fathom']" # the control: the page rendered its cards
   end
 
   test "[component] an admin sees Connect disabled until MSGRAPH_CLIENT_ID and MSGRAPH_CLIENT_SECRET are set" do
@@ -30,7 +30,7 @@ class IntegrationsMsgraphCardTest < ActionDispatch::IntegrationTest
       assert_select "#{SLOT}[data-state='none'][data-connectable='false']"
       assert_select "#{SLOT} button[data-test='msgraph-connect-disabled'][disabled]", text: "Connect Microsoft 365"
       assert_select "#{SLOT} [data-test='msgraph-connect']", 0
-      assert_select "#{CARD} [data-test='coming-soon']"
+      assert_select "[data-test='integration-group'][data-group='connect'] #{CARD}[data-status='soon'] [data-test='coming-soon']"
     end
   end
 

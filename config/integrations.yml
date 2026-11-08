@@ -173,6 +173,24 @@ groups:
           - { key: browse_files, name: Browse your folders and read file details, via: [sign_in], status: soon }
           - { key: upload_files, name: Upload a document to a folder you choose, via: [sign_in], status: soon }
 
+      # A Microsoft 365 tenant, app-only through Microsoft Graph after one admin
+      # approval (MsgraphConnection), built dark: the public page does not list
+      # it; an admin's does, with each connected tenant and Connect, disabled
+      # until MSGRAPH_CLIENT_ID and MSGRAPH_CLIENT_SECRET are set
+      # (IntegrationsController::MSGRAPH_CARD).
+      - key: microsoft_365
+        name: Microsoft 365
+        icon: "🏢"
+        tagline: "Your agents read your users, Teams and SharePoint. Read only."
+        blurb: A Microsoft 365 administrator approves us once, and your agents read your directory, your Teams and your SharePoint files. Read only, so they cannot send, change or delete anything.
+        status: soon
+        dark: true
+        tier: pro
+        connects: [admin_grant]
+        abilities:
+          - { key: read_directory, name: Read your users and Teams, via: [admin_grant], status: soon }
+          - { key: read_files, name: Read your SharePoint files, via: [admin_grant], status: soon }
+
       - key: google_workspace_connect
         name: Google Workspace
         icon: google
@@ -294,23 +312,6 @@ groups:
         tagline: "Chat, search, summaries and agents in your app."
         blurb: Chat, search, summaries and agents built into your app, on the models that fit the job.
         status: on_request
-      # A Microsoft 365 tenant, app-only through Microsoft Graph after one admin
-      # approval (MsgraphConnection). Listed here, not under Connect, while it is
-      # scoped one tenant at a time (and Connect's two rows of four stay full).
-      # Coming soon to clients; an admin sees the
-      # hub's own tenant connections on the card (IntegrationsController::MSGRAPH_CARD),
-      # with Connect disabled until MSGRAPH_CLIENT_ID and MSGRAPH_CLIENT_SECRET are set.
-      - key: microsoft_365
-        name: Microsoft 365
-        icon: "🏢"
-        tagline: "Your agents read your users, Teams and SharePoint. Read only."
-        blurb: A Microsoft 365 administrator approves us once, and your agents read your directory, your Teams and your SharePoint files. Read only, so they cannot send, change or delete anything.
-        status: soon
-        tier: pro
-        connects: [admin_grant]
-        abilities:
-          - { key: read_directory, name: Read your users and Teams, via: [admin_grant], status: soon }
-          - { key: read_files, name: Read your SharePoint files, via: [admin_grant], status: soon }
       - key: custom_connectors
         name: Custom connectors
         icon: "🔌"

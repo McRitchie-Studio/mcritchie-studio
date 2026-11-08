@@ -13,8 +13,10 @@ module Admin
   # the OAuth state and admin_consent=True, reads the organization's name with
   # an app-only token, and stores the connection (the tenant id encrypted), then
   # comes back to where Connect was pressed. No tenant id and no token is
-  # rendered, flashed or logged here; a refused token or read is kept in the
-  # error log (rescue_and_log) as well as said on the page. Consent is removed
+  # rendered or flashed here. The hub's request log filters the callback's
+  # `tenant` (config/initializers/filter_parameter_logging.rb), but Heroku's
+  # router log still records the full callback query. A refused token or read
+  # is kept in the error log (rescue_and_log) as well as said on the page. Consent is removed
   # in the tenant, not by an API, so /disconnect deletes the row and the cached
   # token and says so. A tenant is named in a form by its row id, never its id.
   #
@@ -98,9 +100,11 @@ module Admin
 
     # The organization's name, read with an app-only token for the tenant just
     # consented. LABEL when the read fails (consent can take a moment to reach
-    # Graph); the connection stores either way and the page says what failed.
+    # Graph); the failure is kept in the error log, and the connection stores
+    # either way.
     def organization_name(tenant)
-      Msgraph::Reader.new(tenant_id: tenant).organization.display_name || MsgraphConnection::LABEL
+      rescue_and_log(target: current_user) { Msgraph::Reader.new(tenant_id: tenant).organization.display_name } ||
+        MsgraphConnection::LABEL
     rescue Msgraph::OAuthClient::Error
       MsgraphConnection::LABEL
     end
@@ -114,7 +118,7 @@ module Admin
       end
       { read: }
     rescue Msgraph::OAuthClient::Revoked
-      { error: "The tenant no longer lets the app in: its consent was removed or never reached it. Disconnect, then connect again." }
+      { error: "The tenant does not let the app in: the app is not found in, or not enabled for, the tenant. An administrator connects it again." }
     rescue Msgraph::OAuthClient::Error => e
       { error: e.message }
     end
