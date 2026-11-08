@@ -18,6 +18,7 @@ const MOVED = [
   { href: "/admin/tiktok", label: "TikTok connection", desc: "Connected account" },
   { href: "/admin/google", label: "Google connection", desc: "Calendar" },
   { href: "/admin/fathom", label: "Fathom connection", desc: "Meeting notes" },
+  { href: "/admin/egnyte", label: "Egnyte connection", desc: "Document store" },
   { href: "/admin/agent_messages", label: "Agent inbox", desc: "Messages to agents" },
   { href: "/admin/report_destinations", label: "Report destinations", desc: "Discord channel" },
   { href: "/admin/csp_reports", label: "CSP reports", desc: "Content-Security-Policy" },

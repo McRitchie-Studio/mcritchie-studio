@@ -550,6 +550,13 @@ Rails.application.routes.draw do
     get "fathom/connect", to: "fathom#connect", as: :fathom_connect
     delete "fathom/connection", to: "fathom#disconnect", as: :fathom_disconnect
     get "fathom/callback", to: "fathom#callback", as: :fathom_callback
+    # The Egnyte connections, one per domain (Admin::EgnyteController). The
+    # callback path is the redirect registered on the Egnyte developer key:
+    # keep it exactly.
+    get "egnyte", to: "egnyte#show", as: :egnyte
+    post "egnyte/connect", to: "egnyte#connect", as: :egnyte_connect
+    delete "egnyte/connection", to: "egnyte#disconnect", as: :egnyte_disconnect
+    get "egnyte/callback", to: "egnyte#callback", as: :egnyte_callback
   end
 
   # HTML
