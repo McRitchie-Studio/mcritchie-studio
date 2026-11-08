@@ -3015,7 +3015,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_130000) do
     t.index ["email"], name: "index_users_on_email", unique: true
     t.index ["provider", "uid"], name: "index_users_on_provider_and_uid", unique: true, where: "(provider IS NOT NULL)"
     t.index ["slug"], name: "index_users_on_slug", unique: true
-    t.check_constraint "role::text = ANY (ARRAY['viewer'::character varying, 'admin'::character varying]::text[])", name: "users_role_known"
+    t.check_constraint "role::text = ANY (ARRAY['viewer'::character varying::text, 'admin'::character varying::text])", name: "users_role_known"
   end
 
   create_table "video_artists", force: :cascade do |t|
