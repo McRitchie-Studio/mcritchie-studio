@@ -9,7 +9,7 @@ class ReleasesAuthorizeShipTest < ActionDispatch::IntegrationTest
     @release.record_event!(step: "ship_authorized", status: "started", source: "conductor",
                            metadata: { "mode" => "timed", "window_ends_at" => 30.minutes.from_now.utc.iso8601 })
     @admin = User.create!(email: "windows-admin@example.com", name: "Windows Admin", role: "admin")
-    @viewer = User.create!(email: "windows-viewer@example.com", name: "Windows Viewer", role: "user")
+    @viewer = User.create!(email: "windows-viewer@example.com", name: "Windows Viewer", role: "viewer")
   end
 
   test "[integration] an admin's approve records the one grant and answers JSON" do
