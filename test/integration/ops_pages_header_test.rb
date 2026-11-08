@@ -161,4 +161,33 @@ class OpsPagesHeaderTest < ActionDispatch::IntegrationTest
     get activities_agents_path
     assert_select "turbo-frame #{ROW}", 0
   end
+  # dark-devops-header-polish: the engine sizes the one title. An inline rule such as
+  # "#mason-heartbeat h1 { font-size:19px }" restyled it on two of the five pages.
+  DARK_PAGES = { mason_heartbeat: "#mason-heartbeat", heartbeat_all_activities: "#mason-heartbeat",
+                 mason_insights: "#mason-insights", mason_pipeline: "#mason-heartbeat",
+                 activities_agents: "#mason-heartbeat" }.freeze
+
+  test "[component] no dark page restyles the engine title from an inline style block" do
+    log_in_as(users(:alex))
+    DARK_PAGES.each do |route, section|
+      get public_send("#{route}_path")
+      assert_response :success
+      css = css_select("style").map(&:text).join("\n")
+      assert_no_match(/#{Regexp.escape(section)}\s+(\.[\w-]+\s+)*h1\s*\{/, css, "#{route}: an inline rule restyles the h1")
+      assert_select "#{section} > #{ROW} h1.page-header-title", 1
+    end
+  end
+
+  test "[component] the pipeline section grows with its content once the columns stack, and keeps the fixed height on a desktop" do
+    log_in_as(users(:alex))
+    get mason_pipeline_path
+    css = css_select("style").map(&:text).join("\n").gsub(%r{/\*.*?\*/}m, "")
+    base = css[/#mason-heartbeat\s*\{[^}]*\}/m]
+    assert base, "the pipeline's own #mason-heartbeat rule"
+    assert_no_match(/(?<![-\w])height:\s*auto/, base, "the desktop keeps the dashboard's fixed height (heartbeat.css)")
+    stacked = css[/@media\s*\(max-width:\s*1000px\)\s*\{(.*?\})\s*\}/m, 1]
+    assert stacked, "the 1000px stacking breakpoint"
+    assert_match(/#mason-heartbeat\s*\{\s*height:\s*auto;?\s*\}/, stacked, "stacked, the section grows so the sticky header pins")
+    assert_match(/\.pl-grid\s*\{\s*grid-template-columns:\s*1fr/, stacked)
+  end
 end

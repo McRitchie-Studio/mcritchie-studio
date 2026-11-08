@@ -21,7 +21,6 @@
   }
   #mason-heartbeat .hb-head { flex:0 0 auto; }
   #mason-heartbeat .hb-topbar { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; border-bottom:1px solid var(--hb-line); padding-bottom:14px; }
-  #mason-heartbeat .hb-title h1 { margin:0; font-size:19px; font-weight:700; }
   #mason-heartbeat .hb-title p { margin:4px 0 0; color:var(--hb-muted); font-size:12.5px; max-width:64ch; }
   #mason-heartbeat .hb-stats { display:flex; gap:8px; flex-wrap:wrap; }
   #mason-heartbeat .hb-stat { background:var(--hb-panel); border:1px solid var(--hb-line); border-radius:9px; padding:7px 11px; text-align:center; min-width:62px; }
@@ -539,8 +538,10 @@
    studio-engine's page header (studio/_page_header) as the first child of their dark
    section, so it pins the length of the page. The engine colours it from the theme,
    which is light on a light desktop; these rules give it the surface's own fixed-dark
-   palette instead, at rest and once stuck under the navbar. Ids, so they outrank the
-   engine's utilities with no !important. */
+   palette instead, at rest and once stuck under the navbar, and the same for the Links
+   button and its list. Ids, so they outrank the engine's utilities with no !important.
+   No rule here or in a page's own style block sizes the title: the engine's
+   .page-header-title sets it on all five pages (dark-devops-header-polish). */
 :is(#mason-heartbeat, #mason-insights) > .page-header .page-header-title,
 :is(#mason-heartbeat, #mason-insights) > .page-header .page-header-crumb-current,
 :is(#mason-heartbeat, #mason-insights) > .page-header :is(.page-header-crumb, .page-header-parent):is(:hover, :focus-visible) {
