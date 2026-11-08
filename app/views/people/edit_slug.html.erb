@@ -3,14 +3,15 @@
 <% content_for(:title, "Rename #{@person.full_name} — McRitchie Studio") %>
 
 <div class="max-w-xl mx-auto px-4 py-8">
-  <div class="card p-6 space-y-4">
-    <div>
-      <h1 class="text-xl font-bold text-heading">Rename <%= @person.full_name %></h1>
-      <p class="text-sm text-muted mt-1">
-        The slug is the person's address and the key every contract, look and record
-        holds. Renaming it moves all of them with it.
-      </p>
-    </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the card's h1 is the
+      page's title, under the person it renames. %>
+  <%= render "studio/page_header", title: "Rename #{@person.full_name}", crumb_label: "Rename",
+        crumbs: studio_crumbs(parent: :person, person: @person) %>
+  <div class="card p-6 space-y-4 mt-4">
+    <p class="text-sm text-muted">
+      The slug is the person's address and the key every contract, look and record
+      holds. Renaming it moves all of them with it.
+    </p>
 
     <%= form_with model: @person, url: slug_person_path(@person.slug_in_database), method: :patch, scope: :person,
                   local: true, class: "space-y-3", data: { test: "person-slug-form" } do |f| %>

@@ -1,28 +1,18 @@
 <% content_for :title, "NFL #{@year} Season" %>
 
 <section class="py-6">
-  <%# Hero %>
-  <div class="text-center mb-8">
-    <div class="flex items-center justify-center gap-3 mb-2">
-      <h1 class="text-3xl md:text-4xl font-extrabold text-heading tracking-tight">
-        NFL <%= @year %> Season
-      </h1>
-      <% if @season_options.size > 1 %>
-        <select onchange="window.location.href='/games/' + this.value"
-                class="bg-surface text-heading text-sm border border-subtle rounded px-2 py-1">
-          <% @season_options.each do |y| %>
-            <option value="<%= y %>" <%= "selected" if y == @year %>><%= y %></option>
-          <% end %>
-        </select>
-      <% end %>
-    </div>
-    <p class="text-sm text-muted">
-      <%= @regular_slates.size %> regular-season weeks · <%= @regular_slates.sum { |s| s.games.size } %> games
-      <% if @other_slates.any? %>
-        · <%= @other_slates.size %> additional slates
-      <% end %>
-    </p>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the centred hero is the
+      title row, the season picker is its tabs (one view per season, newest first), and
+      the counts line is the lead under it. %>
+  <%= render "studio/page_header", title: "NFL #{@year} Season", crumb_label: "#{@year} Season",
+        crumbs: studio_crumbs(parent: :nfl_hub), label: "Season",
+        tabs: (@season_options.map { |y| { label: y.to_s, href: games_season_path(y), current: (y == @year ? "page" : nil) } } if @season_options.size > 1) || [] %>
+  <p class="text-sm text-muted mt-2 mb-8">
+    <%= @regular_slates.size %> regular-season weeks · <%= @regular_slates.sum { |s| s.games.size } %> games
+    <% if @other_slates.any? %>
+      · <%= @other_slates.size %> additional slates
+    <% end %>
+  </p>
 
   <%# Regular season grid — each card shows all games grouped by kickoff time slot %>
   <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-10">

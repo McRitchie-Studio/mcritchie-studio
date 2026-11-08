@@ -2,6 +2,11 @@
     Answers the question the re-skin decision turns on: what do we already have
     of this person, and in which looks. %>
 <div class="max-w-5xl mx-auto px-4 py-8 space-y-6">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the name was the card's
+      h1; it is the page's title now, under People. Rename changes the record, so it is
+      the header's one action (admins only, as before). %>
+  <%= render "studio/page_header", title: @person.full_name, crumbs: studio_crumbs(parent: :people),
+        action: ({ label: "Rename", href: edit_slug_person_path(@person.slug), data: { test: "person-rename-slug" } } if admin?) %>
 
   <%# --- who --- %>
   <div class="card p-6 flex gap-5 items-start">
@@ -15,14 +20,7 @@
     </div>
 
     <div class="flex-1 min-w-0">
-      <h1 class="text-2xl font-bold text-heading"><%= @person.full_name %></h1>
-      <p class="text-sm text-muted">
-        <%= @person.slug %>
-        <% if admin? %>
-          <%= link_to "Rename", edit_slug_person_path(@person.slug), class: "ml-2 text-xs text-primary hover:underline",
-                data: { test: "person-rename-slug" } %>
-        <% end %>
-      </p>
+      <p class="text-sm text-muted" data-test="person-slug"><%= @person.slug %></p>
 
       <div class="flex gap-2 flex-wrap mt-2">
         <% if (a = @person.athlete_profile) %>

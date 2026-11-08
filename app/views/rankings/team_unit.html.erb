@@ -35,19 +35,12 @@
 
 <section class="py-6 px-4">
   <div class="max-w-4xl mx-auto">
-    <%= link_to nfl_hub_path, class: "inline-flex items-center gap-1 text-sm text-secondary hover:text-heading transition mb-4" do %>
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-      NFL Hub
-    <% end %>
-
-    <%# Hero %>
-    <div class="rounded-xl overflow-hidden mb-8" style="background: linear-gradient(135deg, <%= @team.color_primary %>, <%= @team.color_secondary || @team.color_primary %>);">
-      <div class="py-8 px-6 text-center">
-        <span class="text-4xl block mb-2"><%= @team.emoji %></span>
-        <h1 class="text-2xl md:text-3xl font-extrabold text-white"><%= @team.name %></h1>
-        <p class="text-white/70 text-sm mt-1">2025 Unit Rankings</p>
-      </div>
-    </div>
+    <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the old "NFL Hub" back
+        link is the crumb trail, and the team colour of the old hero is the meta dot. %>
+    <%= render "studio/page_header", title: "#{@team.emoji} #{@team.name}".strip, crumb_label: @team.name,
+          crumbs: studio_crumbs(parent: :nfl_hub),
+          meta: (tag.span(class: "inline-block w-4 h-4 rounded-full align-middle", style: "background-color: #{@team.color_primary}", aria: { hidden: true }) if @team.color_primary.present?) %>
+    <p class="text-secondary text-sm mt-2 mb-6">2025 Unit Rankings</p>
 
     <%# Power Ranking %>
     <div class="mb-8">
