@@ -1,4 +1,5 @@
 require "test_helper"
+require Rails.root.join("db/seeds/data/lettered_video.rb").to_s
 
 # [component] The hub's ops pages on the engine page header (task hub-ops-page-headers,
 # split 2 of the hub's remaining hand-rolled h1 pages; split 1 is
@@ -59,7 +60,7 @@ class OpsPagesHeaderTest < ActionDispatch::IntegrationTest
       { path: admin_egnyte_path, title: "Egnyte connections", crumbs: basement },
       { path: admin_quickbooks_path, title: "QuickBooks connection", crumbs: basement },
       { path: settings_agents_path, title: "Agents", crumbs: admin + [ applications_path ] },
-      { path: settings_agent_path("turf-monster"), title: "Turf Monster",
+      { path: settings_agent_path("turf-monster"), title: AppOwnership.ctos.find { |cto| cto.slug == "turf-monster" }.display_name,
         crumbs: admin + [ applications_path, application_path("turf-monster") ] },
       { path: applications_path, title: "Applications", crumbs: admin },
       { path: asset_browser_path, title: "Object store", crumbs: basement },
