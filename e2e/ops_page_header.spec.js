@@ -57,8 +57,10 @@ test("the Insight Bank at desktop: the header wears the dark surface's palette, 
   expect(colour).toBe("rgb(230, 237, 243)");
   await expect(row.locator(".page-header-menu-button")).toHaveText(/Links/);
   expect(await pinGapAfterScroll(page, "#mason-insights > *")).toBe(0);
-  const stuckBg = await row.evaluate((el) => getComputedStyle(el).backgroundColor);
-  expect(stuckBg).toBe("rgb(13, 17, 23)");
+  // Once stuck (the controller sets data-stuck after the scroll; the fill fades in over
+  // 150ms) the bar is the surface's own dark, not the light theme's surface.
+  await expect(row).toHaveAttribute("data-stuck", /.*/);
+  await expect.poll(() => row.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(13, 17, 23)");
 });
 
 test.describe("on a 390px phone", () => {
