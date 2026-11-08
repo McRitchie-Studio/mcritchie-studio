@@ -328,4 +328,20 @@ class UserTest < ActiveSupport::TestCase
       end
     end
   end
+
+  test "[integration] the race rescue never hands an unverified address its holder" do
+    holder = User.create!(email: "holder-race@example.com", name: "Holder")
+    auth = OmniAuth::AuthHash.new(provider: "google_oauth2", uid: "race-unverified",
+                                  info: { email: "holder-race@example.com", name: "Intruder" })
+    calls = 0
+    real_where = User.method(:where)
+    # Only the first address lookup misses: the holder committed after it ran.
+    lookup = lambda do |*args, **kw|
+      first = args.first.to_s.include?("lower(email)") && (calls += 1) == 1
+      first ? User.none : real_where.call(*args, **kw)
+    end
+    User.stub(:create!, ->(*) { raise ActiveRecord::RecordNotUnique, "simulated" }) do
+      User.stub(:where, lookup) { assert_nil User.from_omniauth(auth, email_verified: false), holder.email }
+    end
+  end
 end

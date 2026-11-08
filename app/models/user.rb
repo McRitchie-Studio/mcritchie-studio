@@ -213,7 +213,9 @@ class User < ApplicationRecord
     # The pair first: it is the identity this callback proved. The email lookup
     # runs only for a real address, because find_by(email: nil) matches ANY
     # account without an email, and would sign this caller in as a stranger.
-    email = auth.info.email.to_s.strip.downcase.presence
+    # It also needs Google's verification, the same rule as the lookup above
+    # (OPSEC-005): an unverified address hands its holder's account to nobody.
+    email = email_verified ? auth.info.email.to_s.strip.downcase.presence : nil
     find_by(provider: auth.provider, uid: auth.uid) || (email && where("lower(email) = ?", email).first)
   end
 
