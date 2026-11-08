@@ -68,7 +68,7 @@ pages:
   privacy:        { page: "landing#privacy",         audience: public, label: Privacy Policy }
   marketing_kit:  { page: "marketing_kit#index",     audience: public, label: Marketing Kit }
   packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Builder, Pro and Team tiers, and Enterprise", icon: package }
-  packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
+  packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier, parent: packages }
   integrations:   { page: "integrations#index",      audience: public, label: Integrations, emoji: "🔌", hover_emoji: "🧩", desc: "Connect your tools, add services we run", icon: plug }
   integrations_discord: { page: "integrations#discord", audience: public, label: Discord for your agents }
   build:          { page: "build#new",               audience: public, label: Build, emoji: "🧱", hover_emoji: "✨", desc: Describe an app and we build it, icon: hammer }

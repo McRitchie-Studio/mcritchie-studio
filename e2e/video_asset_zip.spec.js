@@ -18,7 +18,7 @@ test("the operator downloads the all-assets zip and a clip zip", async ({ page }
   await page.goto("/videos/test-artist-b-lettered-demo/alt_videos/1");
 
   // At the top of the page, beside the title, without scrolling.
-  const all = page.locator("header [data-test='alt-video-download-all']");
+  const all = page.locator(".page-header [data-test='alt-video-download-all']");
   await expect(all).toBeInViewport();
   await expect(all).toHaveText("Download all assets");
   const whole = await download(page, all);

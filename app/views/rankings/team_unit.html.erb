@@ -39,7 +39,7 @@
         link is the crumb trail, and the team colour of the old hero is the meta dot. %>
     <%= render "studio/page_header", title: "#{@team.emoji} #{@team.name}".strip, crumb_label: @team.name,
           crumbs: studio_crumbs(parent: :nfl_hub),
-          meta: (tag.span(class: "inline-block w-4 h-4 rounded-full align-middle", style: "background-color: #{@team.color_primary}", aria: { hidden: true }) if @team.color_primary.present?) %>
+          meta: (tag.span(class: "inline-block w-4 h-4 rounded-full align-middle border border-subtle", style: "background-color: #{@team.color_primary}", aria: { hidden: true }) if @team.color_primary.present?) %>
     <p class="text-secondary text-sm mt-2 mb-6">2025 Unit Rankings</p>
 
     <%# Power Ranking %>

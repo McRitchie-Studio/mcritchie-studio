@@ -76,9 +76,14 @@
 </style>
 
 <section id="mason-heartbeat" data-test="mason-pipeline">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), the dark section's first
+      child so it pins the length of the page, in the surface's palette (heartbeat.css,
+      "the page header on the fixed-dark surfaces"). -mx-3 px-3 fits the section's
+      narrowest gutter (12px on a phone). The lead and the heartbeat chips stay in the topbar. hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "🍽️ Distillation Pipeline", crumb_label: "Pipeline", crumbs: studio_crumbs(:mason_pipeline),
+        row_class: "-mx-3 px-3" %>
   <header class="pl-topbar">
     <div>
-      <h1>&#127869;&#65039; Distillation Pipeline</h1>
       <p class="pl-sub">
         The learning loop, left to right: narrated <strong>Activities</strong> &rarr; Mason's
         distilled <strong>Insights</strong> &rarr; the <strong>Confirmations</strong> you keep.

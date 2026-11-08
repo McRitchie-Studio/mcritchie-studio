@@ -261,7 +261,7 @@ class PackagesControllerTest < ActionDispatch::IntegrationTest
     get packages_stack_path
 
     assert_response :success
-    assert_select "a[data-test='back-to-packages'][href='/packages']"
+    assert_select ".page-header a.page-header-crumb[href='/packages']", text: "Packages"
     assert_equal %w[vibe builder pro team enterprise], css_select("[data-test='stack-tier-header']").map { |th| th["data-package"] }
     assert_select "[data-test='stack-tier-header'][data-package='enterprise']", text: /Enterprise\s*Talk to us/
     assert_equal WorkspacePackage.features_by_category.map(&:first),

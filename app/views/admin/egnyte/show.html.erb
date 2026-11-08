@@ -2,12 +2,12 @@
 <% can_connect = @configured && @encryption_ready %>
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%a %b %-d, %-l:%M %p %Z") } %>
 <section class="max-w-3xl mx-auto px-4 py-10 space-y-6" data-test="egnyte-connection-page" data-count="<%= @connections.size %>">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">Egnyte connections</h1>
-    <p class="text-secondary mt-2">
-      The Egnyte domains this server can reach, each connected by signing in. A connection can browse folders, read file details and upload a file. No token is shown here.
-    </p>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), a direct child of the
+      page's section so it stays pinned the length of the page (hub-ops-page-headers). %>
+  <%= render "studio/page_header", title: "Egnyte connections", crumbs: studio_crumbs(:admin_egnyte) %>
+  <p class="text-secondary">
+    The Egnyte domains this server can reach, each connected by signing in. A connection can browse folders, read file details and upload a file. No token is shown here.
+  </p>
 
   <% if @unreadable.any? %>
     <p class="card p-4 text-sm text-body" data-test="egnyte-unreadable">

@@ -1,11 +1,12 @@
 <% content_for :title, "Alt videos · McRitchie Studio" %>
 
 <section class="max-w-6xl mx-auto px-4 py-8 sm:py-10" data-test="alt-videos-index">
-  <header class="mb-6 min-w-0">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Recast pipeline</p>
-    <h1 class="text-2xl sm:text-3xl font-bold text-heading mb-2">Alt videos</h1>
-    <p class="text-sm text-muted">Every generated version of every source video, most recently worked on first. Build one with Build Clips on a source's cast page.</p>
-  </header>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), a direct child of the
+      page's section so it stays pinned the length of the page: the trail ends at
+      Videos, the source of every alt video.
+      hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Alt videos", crumbs: studio_crumbs(:alt_videos) %>
+  <p class="text-sm text-muted mt-2 mb-6 min-w-0">Every generated version of every source video, most recently worked on first. Build one with Build Clips on a source's cast page.</p>
 
   <% if @alt_videos.empty? %>
     <div class="empty-state text-muted" data-test="alt-videos-empty">No alt videos yet. Confirm a source's cast, tile it into chunks, then press Build Clips.</div>

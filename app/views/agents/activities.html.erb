@@ -25,6 +25,11 @@
 
 <section id="mason-heartbeat" class="aa-page" data-test="agents-activities"
          x-data="agentsActivities()" @keydown.escape.window="closeFilter()">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), the dark section's first
+      child so it pins the length of the page, in the surface's palette (heartbeat.css,
+      "the page header on the fixed-dark surfaces"). -mx-3 px-3 fits the section's
+      narrowest gutter (12px on a phone). Outside the feed's turbo-frame, so a filter swap never redraws it; the stats, Filter and the Deployments button stay in the frame's topbar. hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Activities", crumbs: studio_crumbs(:activities_agents), row_class: "-mx-3 px-3" %>
   <%# The whole feed (stats, active-filters, table, pager, sidebar) lives in a turbo-frame
       so a filter / pager click fetches the filtered data in the BACKGROUND and swaps just
       this frame — no full-page reload. The section's Alpine (filterOpen) stays OUTSIDE the
@@ -37,7 +42,6 @@
   <div class="hb-head">
     <header class="aa-topbar">
       <div class="hb-title">
-        <h1>Activities</h1>
         <p>
           Every narrated activity across all agent sessions, newest &rarr; oldest.
           Expand an activity to drill into the raw actions it framed; grade any of them inline.

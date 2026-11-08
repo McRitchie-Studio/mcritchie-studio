@@ -30,5 +30,8 @@ Rails.application.config.to_prepare do
     page :week, ->(week:) { "Week #{week}" }, ->(year:, week:) { games_week_path(year, week) }, parent: :season
     page :person, ->(person:) { truncate(person.full_name, length: 40) }, ->(person:) { person_path(person.slug) },
          parent: :people
+    # A source video (hub-ops-page-headers): its alt videos' parent.
+    page :video, ->(video:) { truncate(video.title, length: 40) }, ->(video:) { video_path(video) },
+         parent: :videos
   end
 end

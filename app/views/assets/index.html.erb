@@ -3,14 +3,15 @@
 <% crumbs = AssetBrowser.breadcrumbs(@prefix) %>
 
 <section class="max-w-6xl mx-auto px-4 py-10" data-test="assets-page">
-  <header class="mb-6">
-    <p class="text-xs font-semibold uppercase tracking-wider text-primary mb-2">Assets</p>
-    <h1 class="text-3xl font-bold text-heading mb-2">Object store</h1>
-    <p class="text-muted max-w-2xl">
-      The hub's bucket as a folder tree. Admin only; previews use signed links.
-      <span class="whitespace-nowrap">Store: <span class="font-mono text-body" data-test="asset-store"><%= @store %></span></span>
-    </p>
-  </header>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), a direct child of the
+      page's section so it stays pinned the length of the page: the old eyebrow
+      "Assets" ends the trail, and the folder trail below stays the bucket's own.
+      hub-ops-page-headers. %>
+  <%= render "studio/page_header", title: "Object store", crumb_label: "Assets", crumbs: studio_crumbs(:asset_browser) %>
+  <p class="text-muted max-w-2xl mt-2 mb-6">
+    The hub's bucket as a folder tree. Admin only; previews use signed links.
+    <span class="whitespace-nowrap">Store: <span class="font-mono text-body" data-test="asset-store"><%= @store %></span></span>
+  </p>
 
   <%= form_with url: asset_browser_path, method: :get, local: true, class: "flex flex-wrap gap-2 mb-4", data: { test: "asset-search" } do %>
     <% if @prefix.present? %><input type="hidden" name="prefix" value="<%= @prefix %>"><% end %>
