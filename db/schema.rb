@@ -3048,7 +3048,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_203710) do
     t.string "name"
     t.string "password_digest"
     t.string "provider"
-    t.string "role", default: "viewer"
+    t.string "role", default: "viewer", null: false
     t.string "session_token"
     t.string "slug"
     t.string "uid"
@@ -3057,7 +3057,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_203710) do
     t.string "voice_embedding_model"
     t.datetime "voice_embedding_updated_at"
     t.index ["email"], name: "index_users_on_email", unique: true
+    t.index ["provider", "uid"], name: "index_users_on_provider_and_uid", unique: true, where: "(provider IS NOT NULL)"
     t.index ["slug"], name: "index_users_on_slug", unique: true
+    t.check_constraint "role::text = ANY (ARRAY['viewer'::character varying::text, 'admin'::character varying::text])", name: "users_role_known"
   end
 
   create_table "video_artists", force: :cascade do |t|
