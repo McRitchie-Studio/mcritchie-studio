@@ -50,6 +50,35 @@ class CableRevocationConnectionTest < ActionCable::Connection::TestCase
     assert_equal 1, disconnects_on(channel).size
     assert_reject_connection { connect session: session_for(@admin, token: old_token) }
   end
+
+  # A logout ends only this device's session (studio-engine
+  # docs/DEVICE_SESSIONS.md): the token is not rotated, so the reconnect the
+  # sign-out's disconnect asks for must be refused by the device-session check.
+  # The engine's verdict is stubbed (ended once the device logged out), so this
+  # runs on an engine with or without Studio::UserSession.ended?.
+  test "[integration] a logged-out device's socket is dropped and its reconnect refused" do
+    logged_out = false
+    klass = Studio::UserSession.singleton_class
+    had = klass.method_defined?(:ended?)
+    klass.alias_method(:ended_before_stub?, :ended?) if had
+    klass.define_method(:ended?) { |*, **| logged_out }
+
+    connect session: session_for(@admin)
+    channel = connection.send(:internal_channel)
+    assert_equal @admin, connection.current_user
+
+    logged_out = true
+    ApplicationCable::Connection.disconnect(@admin)
+
+    assert_equal 1, disconnects_on(channel).size
+    assert_reject_connection { connect session: session_for(@admin) }
+  ensure
+    klass.remove_method(:ended?)
+    if had
+      klass.alias_method(:ended?, :ended_before_stub?)
+      klass.remove_method(:ended_before_stub?)
+    end
+  end
 end
 
 # Sign-out does not rotate the token, so the browser's socket would stay
