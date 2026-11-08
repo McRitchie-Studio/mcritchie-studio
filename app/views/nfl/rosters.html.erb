@@ -61,8 +61,9 @@
 <%# Slot labels come from LineupLabelsHelper — shared with /teams/:slug/depth-chart %>
 
 <section class="max-w-7xl mx-auto px-4 py-8">
-  <div class="mb-8">
-    <h1 class="text-3xl font-bold text-heading mb-2">NFL Rosters</h1>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md), under the NFL Hub. %>
+  <%= render "studio/page_header", title: "NFL Rosters", crumbs: studio_crumbs(:nfl_rosters) %>
+  <div class="mt-2 mb-8">
     <p class="text-secondary text-sm">Each team's starting offense (12), defense (12), special teams (4), and coaching staff (4). Headshots when available.</p>
   </div>
 
