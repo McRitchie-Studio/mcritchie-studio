@@ -6,6 +6,12 @@
 # Prisoner's Dilemma, Weekly Lock) are not portfolio apps and stay off;
 # McRitchie Industries, Commercial Welding and Voicebox are in (same day).
 #
+# Two tiles have a set source (Alex McRitchie, 2026-11-08). Industries is the
+# light mark, mcritchie_icon_light.svg. Welding is cw_icon_light.svg with a
+# clear visor: the visor's white subpath is cut out of the helmet, so the grid
+# shows through around the spark. Render both in a browser (Chrome headless),
+# because ImageMagick's own SVG renderer drops the steel gradient to flat black.
+#
 # The Pokémon soul's face is official Pokémon art, so it stays off this public
 # grid. The Turf Monster soul wears the app's own crocodile, so the app tile
 # stands for both.
