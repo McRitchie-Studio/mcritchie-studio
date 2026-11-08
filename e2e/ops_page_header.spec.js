@@ -170,7 +170,7 @@ test("the pipeline at ~900px: the columns stack and the header stays pinned afte
   expect(await pinGapAfterScroll(page, "#mason-heartbeat > *")).toBe(0);
 });
 
-for (const theme of ["light", "dark"]) test(`the Insight Bank in the ${theme} theme: the Links button and list wear the dark palette; the label passes 4.5:1; the stuck glass bar has no hairline`, async ({ page }) => {
+async function darkLinksMenu(page, theme) {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.addInitScript((t) => localStorage.setItem("theme", t), theme);
   const row = await oneHeader(page, "/devops/insights", "💡 Insight Bank");
@@ -192,6 +192,14 @@ for (const theme of ["light", "dark"]) test(`the Insight Bank in the ${theme} th
   await expect.poll(() => row.evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(13, 17, 23)");
   await expect.poll(() => row.evaluate((el) => `${getComputedStyle(el).borderTopColor} ${getComputedStyle(el).borderBottomColor}`))
     .toBe("rgba(0, 0, 0, 0) rgba(0, 0, 0, 0)");
+}
+
+test("the Insight Bank in the light theme: the Links button and list wear the dark palette; the label passes 4.5:1; the stuck glass bar has no hairline", async ({ page }) => {
+  await darkLinksMenu(page, "light");
+});
+
+test("the Insight Bank in the dark theme: the Links button and list wear the dark palette; the label passes 4.5:1; the stuck glass bar has no hairline", async ({ page }) => {
+  await darkLinksMenu(page, "dark");
 });
 
 test.describe("the pipeline on a 390px phone", () => {
