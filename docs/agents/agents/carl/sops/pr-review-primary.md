@@ -219,7 +219,10 @@ tasks. If anything is missing, note it as a finding; do not guess.
        which needs a two-parent merge commit.
      - **Order matters: merge → move**, so the task is `reviewed` **iff** its
        code is on `accepted`. If `gh pr merge` FAILS, leave the task `submitted`,
-       resolve it on GitHub, and re-review.
+       resolve it on GitHub, and re-review. The board follows the merge itself:
+       GitHub's merged `pull_request` webhook moves the task `submitted →
+       reviewed` when GitHub places all of its PRs on `accepted`. Your move then
+       confirms the stage; it is a no-op, never a refusal.
      - **After your own zap, release before the move.** A zap puts you in the
        author set, so your review login answers 403 on the move to `reviewed`
        ([`credentials.md`](../../../modules/credentials.md#how-a-soul-logs-in-to-the-board)).
@@ -227,7 +230,7 @@ tasks. If anything is missing, note it as a finding; do not guess.
        the claim too, an admin outside the author set makes it:
        `TASK_AS_ADMIN=1 bin/task move <task-slug> reviewed`.
      - **No `merged` stamp.** The board derives the rung from GitHub and
-       refreshes its `merged` column when the task lands on `reviewed`.
+       refreshes its `merged` column on the merge webhook and when the task lands on `reviewed`.
        `bin/task merged` is only a manual override for a PR GitHub cannot place.
        To check, read the **top-level** field, never `.metadata.devops.merged`
        (always `null`):

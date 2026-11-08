@@ -120,7 +120,7 @@ class AgentProposalLoopTest < ActionDispatch::IntegrationTest
       assert_equal message.discord_url, task.metadata["devops"]["source_thread"]
       assert_equal "executed", proposal.reload.status
       assert_equal task.slug, proposal.result["task_slug"]
-      assert_equal "**Avi** · Opened `#{task.slug}` https://mcritchie.studio/tasks/#{task.slug}", @posts.last["content"]
+      assert_equal "**Avi** · Opened `#{task.slug}` https://mcritchie.studio/devops/tasks/#{task.slug}", @posts.last["content"]
       assert_equal go.external_id, @posts.last.dig("message_reference", "message_id"), "posted in reply to the go"
     end
   end

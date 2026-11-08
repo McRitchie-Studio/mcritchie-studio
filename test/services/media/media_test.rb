@@ -93,10 +93,10 @@ class MediaTest < ActiveSupport::TestCase
   test "[unit] Web typing broadcasts the pulse with its phase; Email typing does nothing" do
     message = Object.new
     seen = []
-    AgentMessages::WebChat.stub(:broadcast_typing, ->(m, phase:) { seen << [ m, phase ] }) do
-      Media.adapter("web").typing(message, phase: "thinking")
+    AgentMessages::WebChat.stub(:broadcast_typing, ->(m, phase:, at:) { seen << [ m, phase, at ] }) do
+      Media.adapter("web").typing(message, phase: "thinking", at: 12.5)
     end
-    assert_equal [ [ message, "thinking" ] ], seen
+    assert_equal [ [ message, "thinking", 12.5 ] ], seen
     assert_nil Media.adapter("email").typing(message, phase: "typing")
   end
 
@@ -119,16 +119,16 @@ class MediaTest < ActiveSupport::TestCase
     message = agent_message!(channel: "web")
     AgentMessage.claim!(soul: "avi", worker: "w1")
     seen = []
-    fake = Struct.new(:seen) { def typing(m, phase:) = seen << [ m.id, phase ] }.new(seen)
+    fake = Struct.new(:seen) { def typing(m, phase:, at: nil) = seen << [ m.id, phase, at ] }.new(seen)
     message.stub(:typing_refusal, nil) do
       AgentMessage.stub(:find_by, message) do
         Media.stub(:adapter, ->(key) { seen << key and fake }) do
-          AgentMessageTypingJob.perform_now(message.id, "w1", "thinking")
+          AgentMessageTypingJob.perform_now(message.id, "w1", "thinking", 7.0)
           AgentMessageTypingJob.perform_now(message.id, "w1", "bogus")
         end
       end
     end
-    assert_equal [ "web", [ message.id, "thinking" ], "web", [ message.id, "typing" ] ], seen
+    assert_equal [ "web", [ message.id, "thinking", 7.0 ], "web", [ message.id, "typing", nil ] ], seen
   end
 
   test "[unit] the shared bot signs with the display name through the job's kept class methods" do

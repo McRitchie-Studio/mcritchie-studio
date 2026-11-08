@@ -25,8 +25,7 @@ class DocsController < ApplicationController
     end
 
     @path = path
-    @title = File.basename(path).titleize
-    @content = render_markdown(File.read(full_path))
+    @title, @content = lift_title(render_markdown(File.read(full_path)), fallback: File.basename(path).titleize)
     render :show, formats: [:html]
   end
 
@@ -40,6 +39,21 @@ class DocsController < ApplicationController
       name = File.basename(file, ".md")
       { name: name, path: "#{subdir}/#{name}" }
     end
+  end
+
+  # The page header holds the page's one h1 (studio/_page_header), so the doc's own first
+  # h1 becomes the header's title and leaves the body; any later h1 drops to an h2. A doc
+  # with no h1 keeps its body whole, under its file name as the title.
+  def lift_title(html, fallback:)
+    fragment = Nokogiri::HTML5::DocumentFragment.parse(html.to_s)
+    headings = fragment.css("h1")
+    return [ fallback, html ] if headings.empty?
+
+    title = headings.first.text.strip.presence || fallback
+    headings.first.remove
+    headings.drop(1).each { |heading| heading.name = "h2" }
+    # The fragment is SafeMarkdown's own output, re-serialized: no new markup enters it.
+    [ title, fragment.to_html.html_safe ] # rubocop:disable Rails/OutputSafety
   end
 
   # SafeMarkdown: raw HTML filtered, and a javascript: or other unsafe link left as text.

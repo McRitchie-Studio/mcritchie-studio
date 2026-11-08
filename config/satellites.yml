@@ -196,9 +196,11 @@ satellites:
     # The production host is Commercial Welding's own domain, chosen by Alex McRitchie: its DNS is on
     # Squarespace (a Coming Soon page today) and its mail on Google Workspace, so the launch
     # repoints the web records only. Heroku apps `commercial-welding` and
-    # `commercial-welding-qa` were provisioned 2026-10-12 on Alex McRitchie's word. Nothing
-    # pairing Commercial Welding with McRitchie goes public before the acquisition
-    # closes, so the row is `reserved`, not `active`: a reserved row draws no navbar
+    # `commercial-welding-qa` were provisioned 2026-10-12 on Alex McRitchie's word. Until
+    # 2026-11-07 nothing paired Commercial Welding with McRitchie in public before the
+    # acquisition closed; that day Alex McRitchie lifted it ("Make it public now") and
+    # the site joined the /websites portfolio and the landing logo grid. The row stays
+    # `reserved`, not `active`, until he asks for more: a reserved row draws no navbar
     # or link-tree entry (Satellite.active), and it still holds the desk ports.
     heroku_app: "commercial-welding"
     production_url: "https://commercialwelding.llc"

@@ -155,6 +155,9 @@ class StateStoreContainmentTest < Minitest::Test
                                         "symlink — LAYER 2 cannot read it. It carries the two enforce! rules in " \
                                         "bash, and test/commands/install_fast_lane_tooling_test.rb EXECUTES it " \
                                         "armed and unpinned (LAYER 3's receipt) and pinned into a sandbox"],
+    "bin/agents-backup" => [:ruby, "READ-ONLY — the nightly encrypted backup CLI (task safety-floor-settings) " \
+                                   "names .agents as the folder it COPIES FROM; it writes only its receipt " \
+                                   "(~/.agent-state-backup) and a restore folder its caller names"],
     "bin/lib/op_meter.rb" => [:ruby, "1Password read-attribution log: append is the ONE write seam and it " \
                                      "enforce!s; log_path is private so no caller can take the raw path"],
     "bin/lib/op-meter.sh" => [:bash, "BASH `op` wrapper, sourced by bin/secret, bin/gh-app-git-credential, " \
@@ -249,6 +252,9 @@ class StateStoreContainmentTest < Minitest::Test
     "bin/qa-intake" => {},
     "bin/lib/keep_awake.rb" => {
       "location" => "BUILDER — private; dir launders it, and every other path is built from dir"
+    },
+    "bin/agents-backup" => {
+      "default_sources" => "READ — the roots a backup copies FROM; nothing writes under them"
     },
     "bin/lib/op_meter.rb" => {
       "log_path" => "BUILDER — private; append launders it at the write seam",

@@ -42,6 +42,9 @@
 #             instead of the contact form; the guide's own button then goes to
 #             the form. One of Integration::GUIDES.
 #
+#   dark      optional: true for an entry built but not offered yet. Only an
+#             admin's /integrations lists it (to connect the hub's own
+#             account); the public page does not show it at all.
 #   connects  optional: the ways this entry connects (keys of connection_methods
 #             below), in the order the card lists them
 #   abilities optional: what the entry can do once connected, each
@@ -152,6 +155,24 @@ groups:
         abilities:
           - { key: read_meeting_notes, name: Read your meeting notes and transcripts, via: [sign_in] }
 
+      # One person's sign-in to one Egnyte domain (EgnyteConnection), built dark:
+      # the public page does not list it; an admin's does, with the card's
+      # Connect (a domain field) or each domain and its Disconnect, and a
+      # disabled Connect until the server holds the developer key
+      # (IntegrationsController::EGNYTE_CARD).
+      - key: egnyte
+        name: Egnyte
+        icon: egnyte
+        tagline: "Your agents browse your Egnyte folders and file documents."
+        blurb: Sign in to your Egnyte domain and your agents can browse its folders, read what each file is, and upload a document where you point them.
+        status: soon
+        dark: true
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: browse_files, name: Browse your folders and read file details, via: [sign_in], status: soon }
+          - { key: upload_files, name: Upload a document to a folder you choose, via: [sign_in], status: soon }
+
       - key: google_workspace_connect
         name: Google Workspace
         icon: google
@@ -195,6 +216,24 @@ groups:
         connects: [app_install]
         abilities:
           - { key: post_updates, name: Post notifications and agent updates, via: [app_install], status: soon }
+
+      # One person's own Intuit sign-in per QuickBooks Online company
+      # (QuickbooksConnection). Built and dark on our own hub (/admin/quickbooks)
+      # until the Intuit app is set up: `dark` keeps the tile off the public
+      # page, and `soon` keeps it honest. An admin sees the card's Connect
+      # (disabled until then) or each company's Disconnect
+      # (IntegrationsController::QUICKBOOKS_CARD).
+      - key: quickbooks
+        name: QuickBooks Online
+        icon: "📒"
+        tagline: "Your agents read your company info and reports. Read only."
+        blurb: Sign in with Intuit and your agents read your QuickBooks company info and reports, such as profit and loss. Read only, so they cannot change your books.
+        status: soon
+        dark: true
+        tier: pro
+        connects: [sign_in]
+        abilities:
+          - { key: read_reports, name: Read your company info and reports, via: [sign_in] }
 
   - key: add_ons
     title: We run it

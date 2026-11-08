@@ -28,9 +28,6 @@ class LandingController < ApplicationController
   def privacy
   end
 
-  def about
-  end
-
   private
 
   # A draft the signed-in visitor's press can still launch: it exists, is still

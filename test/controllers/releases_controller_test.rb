@@ -33,7 +33,7 @@ class ReleasesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h1.page-header-title", "All Deployments"
-    assert_select ".page-header-crumbs li", 3
+    assert_select ".page-header-crumbs li", 2
     assert_select "a[href=?]", deployment_path(release), text: release.slug
     # Gate-backed columns replace the co-opted Tested/Confirmed stamp pair.
     assert_select "table", text: /Assembled/
@@ -110,7 +110,7 @@ class ReleasesControllerTest < ActionDispatch::IntegrationTest
 
     assert_response :success
     assert_select "h1.page-header-title", release.slug
-    assert_equal [ admin_dashboard_path, deployments_path, all_deployments_path ], css_select(".page-header-crumbs a").map { |a| a["href"] }
+    assert_equal [ deployments_path, all_deployments_path ], css_select(".page-header-crumbs a").map { |a| a["href"] }
     assert_select "section", text: /Member Tasks/
     assert_select "section", text: /Release Steps/
     assert_select "a[href=?]", task_path(release.tasks.first.slug)

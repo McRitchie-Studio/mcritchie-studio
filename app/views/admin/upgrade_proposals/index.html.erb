@@ -6,13 +6,11 @@
      user ? [ user.display_name.presence, user.email ].compact.join(" · ") : (proposal.person&.display_name.presence || "A visitor (signed out)")
    end %>
 <section class="max-w-4xl mx-auto px-4 py-10 space-y-6" data-test="upgrade-proposals-page">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">Upgrade proposals</h1>
-    <p class="text-secondary mt-2">
-      Alex files one when a person in his chat asks to move to a package tier. Approve sets the tier on an app the person owns.
-      If they named no app of theirs, it records your yes so you can follow up. Nothing here charges anyone.
-    </p>
-  </div>
+  <%= render "studio/page_header", title: "Upgrade proposals", crumbs: studio_crumbs(:admin_upgrade_proposals) %>
+  <p class="text-secondary">
+    Alex files one when a person in his chat asks to move to a package tier. Approve sets the tier on an app the person owns.
+    If they named no app of theirs, it records your yes so you can follow up. Nothing here charges anyone.
+  </p>
 
   <% if @open.empty? %>
     <div class="card p-6 text-body" data-test="upgrade-proposals-empty">No proposals are waiting.</div>

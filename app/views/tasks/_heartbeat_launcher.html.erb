@@ -1,4 +1,5 @@
-<%# ONE soul heartbeat launcher — the avatar (LINKING to /agents/<slug>) with a column
+<%# ONE soul heartbeat launcher — the avatar and the name (each LINKING to the soul's
+    agent page, agent_path(slug), in a NEW TAB) with a column
     of copy chips: row 1 is the prompt-like soul heartbeat phrase (the rollup), then
     one row per ACTION the heartbeat groups. Each row is its own
     tasks/_workflow_copy_chip.
@@ -22,13 +23,30 @@
 <% layout = local_assigns.fetch(:layout, :row) %>
 <%# A soul with no HEARTBEAT (the general Pokémon) renders its acts only. %>
 <% rows = (launcher[:heartbeat].present? ? [["heartbeat", launcher[:heartbeat]]] : []) + actions.map { |a| ["action", a] } %>
+<%# THE AGENT PAGE OPENS IN A NEW TAB. Agents is its own set of functions (Alex
+    McRitchie, 2026-11-07): the operator reads a soul there without losing the board,
+    the open sidebar or a half-turned wheel. A route helper, never a literal path, so
+    the link follows wherever /agents is mounted. The avatar and the name are two links
+    to one page; the avatar leaves the accessibility tree its duplicate (tabindex -1,
+    aria-hidden), so a keyboard meets each soul's page once. %>
+<% soul_name = soul.name.presence || launcher[:agent_slug].titleize %>
+<% agent_href = agent_path(launcher[:agent_slug]) %>
 <% avatar = capture do %>
-  <%= link_to agent_path(launcher[:agent_slug]),
+  <%= link_to agent_href,
               class: "inline-flex shrink-0 rounded-full ring-2 ring-surface transition hover:ring-primary/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
               title: launcher[:title],
+              target: "_blank", rel: "noopener",
+              tabindex: "-1", "aria-hidden": "true",
               data: { test: "heartbeat-avatar-link" } do %>
     <%= render "components/agent_avatar", agent: soul, size: "sm" %>
   <% end %>
+<% end %>
+<% name_link = capture do %>
+  <%= link_to soul_name, agent_href,
+              target: "_blank", rel: "noopener",
+              class: "rounded-sm hover:text-primary hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
+              title: "Open #{soul_name}'s agent page in a new tab",
+              data: { test: "heartbeat-agent-link" } %>
 <% end %>
 <% if layout != :slide %>
   <div class="flex min-w-0 items-start gap-3"
@@ -39,7 +57,7 @@
     <%= avatar %>
     <div class="min-w-0 flex-1">
       <div class="flex items-baseline gap-2">
-        <span class="text-sm font-semibold text-heading" data-test="heartbeat-soul-name"><%= soul.name.presence || launcher[:agent_slug].titleize %></span>
+        <span class="text-sm font-semibold text-heading" data-test="heartbeat-soul-name"><%= name_link %></span>
         <span class="text-2xs text-muted"><%= launcher[:label] %></span>
       </div>
       <div class="mt-2 flex flex-col gap-1">
@@ -81,7 +99,7 @@
     <div class="flex min-w-0 items-center gap-2">
       <%= avatar %>
       <div class="min-w-0">
-        <div class="truncate text-sm font-semibold leading-tight text-heading" data-test="heartbeat-soul-name"><%= soul.name.presence || launcher[:agent_slug].titleize %></div>
+        <div class="truncate text-sm font-semibold leading-tight text-heading" data-test="heartbeat-soul-name"><%= name_link %></div>
         <div class="truncate text-2xs leading-tight text-muted"><%= launcher[:label] %></div>
       </div>
     </div>

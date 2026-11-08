@@ -76,6 +76,6 @@ class DocsSeatMergeRuleDocsTest < ActiveSupport::TestCase
     refute_match(/you do not merge, deploy, or move tasks/i, agent)
     assert_match(/Merge only on its exit 0/, agent)
     assert_match(/When the permit refuses: do not merge/, agent)
-    assert_includes norm("agents/mason/role.md"), "docs/agents/agents/mason/claude-agent.md /Users/alex/.claude/agents/mason.md"
+    assert_includes norm("agents/mason/role.md"), "installs it as /Users/alex/.claude/agents/mason.md: bin/install-agent-docs runs bin/install-claude-agents"
   end
 end

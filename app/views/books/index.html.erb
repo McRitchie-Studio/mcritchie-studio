@@ -2,12 +2,10 @@
 <% stamp = ->(time) { time.in_time_zone("America/Denver").strftime("%b %-d, %-l:%M %p %Z") } %>
 <% amount_class = ->(cents) { cents.negative? ? "text-danger-ink" : "text-success-ink" } %>
 <section class="max-w-4xl mx-auto px-4 py-10 space-y-6" data-test="books-page" data-entity="<%= @entity.key %>">
-  <div>
-    <h1 class="text-3xl font-bold text-heading">Books</h1>
-    <p class="text-secondary mt-2">
-      Review and confirm what each bank line was. A line no rule could classify waits here until someone answers it, and keeps the month's close a DRAFT until then. Every answer is recorded with who gave it and when, exactly as <span class="font-mono text-sm">bin/books classify</span> records it.
-    </p>
-  </div>
+  <%= render "studio/page_header", title: "Books", crumbs: studio_crumbs(:books) %>
+  <p class="text-secondary">
+    Review and confirm what each bank line was. A line no rule could classify waits here until someone answers it, and keeps the month's close a DRAFT until then. Every answer is recorded with who gave it and when, exactly as <span class="font-mono text-sm">bin/books classify</span> records it.
+  </p>
 
   <nav class="flex flex-wrap gap-2" aria-label="Entities" data-test="books-entities">
     <% @entities.each do |entity| %>

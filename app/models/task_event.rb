@@ -28,7 +28,10 @@ class TaskEvent < ApplicationRecord
   # `autopilot` is the armed-merge executor (Review::PendingActionExecutor) —
   # the one lane with no human, CLI, or form behind the transition.
   AUTOPILOT_SOURCE = "autopilot"
-  SOURCES = %w[cli api web conductor system].push(AUTOPILOT_SOURCE).freeze
+  # `github` is the merged-PR webhook (Task#follow_pull_request_merge!): GitHub
+  # reported the task's own PR merged, so the board moved it `submitted → reviewed`.
+  GITHUB_SOURCE = "github"
+  SOURCES = %w[cli api web conductor system].push(AUTOPILOT_SOURCE, GITHUB_SOURCE).freeze
 
   # The two kinds of row on the spine (see class doc). Existing rows are all
   # transitions (the column default backfills them).

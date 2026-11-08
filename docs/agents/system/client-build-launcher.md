@@ -231,7 +231,8 @@ checkout's `.env` as every agent's does.
 
 **Bounds.**
 
-- The switch: `config/client_builds.yml` `change_builder.enabled` (on as shipped). Off
+- The switch: `config/client_builds.yml` `change_builder.enabled` (OFF as shipped since
+  2026-11-06, task `safety-floor-settings`, until it runs sandboxed). Off
   in the board's copy offers no card; off in the Mac's copy runs none. A missing
   section is off.
 - The wall clock: `change_builder.run_minutes` (90); the turn cap: `max_turns` (400).
@@ -481,7 +482,7 @@ which stops it as SIGTERM does: runs in flight go back in line.
 | `model` | `opus` | The builder's model |
 | `poll_seconds` | 30 | Idle poll interval |
 | `bundle_max_bytes` | 5000000 | The local check's size limit |
-| `change_builder.enabled` | true | The headless builder for owner-go change cards ([above](#the-change-builder)); missing is off |
+| `change_builder.enabled` | false (off until sandboxed, 2026-11-06) | The headless builder for owner-go change cards ([above](#the-change-builder)); missing is off |
 | `change_builder.run_minutes` | 90 | Its wall-clock cap |
 | `change_builder.max_turns` | 400 | Its turn cap |
 | `change_builder.max_attempts` | 2 | Runs per card before a session takes it |

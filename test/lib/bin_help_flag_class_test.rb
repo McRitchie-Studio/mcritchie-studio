@@ -57,6 +57,7 @@ class BinHelpFlagClassTest < Minitest::Test
     "clean-artifacts"        => :cli_arg_guard,
     "register-app"           => :cli_arg_guard,
     "r2-backup"              => :cli_arg_guard,
+    "agents-backup"          => :cli_arg_guard,
     # The nightly UI budget (.github/workflows/ui-budget.yml): --collect opens
     # production pages in a browser and writes a results file.
     "ui-budget"              => :cli_arg_guard,
@@ -77,13 +78,16 @@ class BinHelpFlagClassTest < Minitest::Test
     # The content pipeline's agent CLI. CLAIMS and WRITES, so `--help` is wired
     # through the parser and exits before dispatch — verified against a dead
     # base URL, so no subcommand reached the network.
+    "e2e-repeat-changed"     => :optparse,
     "content"                => :optparse,
     # Posts video to a public X account. `--help` is wired through OptionParser
     # and an unknown flag refuses before any credential read or upload.
     "x-post"                 => :optparse,
     # Leftover positionals beyond <soul> <dir> abort with the usage line.
     "openclaw-workspace"     => :optparse,
-    # Generates the SOP registry blocks; --write is the only mutation and --help exits first.
+    # Resolves an SOP name to its file; read-only, and --help exits first.
+    "sop"                    => :optparse,
+    # Generates the SOP registry block; --write is the only mutation and --help exits first.
     "sop-registry"           => :optparse,
     # Stamps a T0 board note (start) and writes the ledger (record); OptionParser
     # parses every flag, so --help exits and an unknown flag refuses before any read.
@@ -244,6 +248,8 @@ class BinHelpFlagClassTest < Minitest::Test
     # bin/lib/cli_arg_guard.rb: it is Ruby, and this bootstrap repairs Ruby.
     # History: task docs-installer-help-publishes.
     "install-agent-docs"     => :own_guard,
+    # The subagent-definition installer bin/install-agent-docs runs; --help exits 1.
+    "install-claude-agents"  => :optparse,
     "agent-runtime"          => :own_guard,
     # RECLASSIFIED, NOT DELETED (/tasks/credential-helper-help-mints). `get --help` ran the REAL
     # `get`, measured to mint a live installation token, write it to the shared store, and print

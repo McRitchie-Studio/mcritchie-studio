@@ -33,17 +33,12 @@
 </style>
 
 <section class="max-w-6xl mx-auto px-4 py-8">
-  <div class="mb-6 flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <% if @team.color_primary.present? %>
-        <span class="inline-block w-4 h-4 rounded-full" style="background-color: <%= @team.color_primary %>"></span>
-      <% end %>
-      <h1 class="text-3xl font-bold text-heading"><%= @team.emoji %> <%= @team.name %> — Depth Chart</h1>
-    </div>
-    <%= link_to "← All Rosters", nfl_rosters_path, class: "text-secondary hover:text-primary text-sm" %>
-  </div>
-
-  <p class="text-secondary text-sm mb-6">
+  <%# The engine page header (docs/PAGE_HEADER.md): the old "All Rosters" link is the crumb
+      trail; the team's colour dot is the meta. %>
+  <%= render "studio/page_header", title: "#{@team.emoji} #{@team.name} — Depth Chart".strip,
+        crumb_label: "Depth chart", crumbs: studio_crumbs(parent: :nfl_rosters),
+        meta: (tag.span(class: "inline-block w-4 h-4 rounded-full align-middle", style: "background-color: #{@team.color_primary}", aria: { hidden: true }) if @team.color_primary.present?) %>
+  <p class="text-secondary text-sm mt-2 mb-6">
     Drag rows within a position to reorder depth. Click the lock icon to pin an entry — locked rows hold their depth across re-seeds.
   </p>
 

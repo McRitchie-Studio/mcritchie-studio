@@ -105,12 +105,12 @@ class CtoWebChatChangeFlowTest < ActionDispatch::IntegrationTest
 
     go.reload
     assert_equal "posted", go.reply_status
-    assert_match(%r{\AOpened `#{task.slug}` #{Regexp.escape(AgentProposal::BOARD_URL)}/tasks/#{task.slug}}, go.response_text)
-    assert sent.any? { |html| html.include?("cto-chat-turn-#{go.id}") && html.include?("/tasks/#{task.slug}") },
+    assert_match(%r{\AOpened `#{task.slug}` #{Regexp.escape(AgentProposal::BOARD_URL)}/devops/tasks/#{task.slug}}, go.response_text)
+    assert sent.any? { |html| html.include?("cto-chat-turn-#{go.id}") && html.include?("/devops/tasks/#{task.slug}") },
            "the task link streams into the chat"
 
     get chat_application_path("turf-monster")
-    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-reply'] a[href$='/tasks/#{task.slug}']"
+    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-reply'] a[href$='/devops/tasks/#{task.slug}']"
   end
 
   # A pending change proposal on `user`'s own Turf web thread, from their first message.
@@ -140,7 +140,7 @@ class CtoWebChatChangeFlowTest < ActionDispatch::IntegrationTest
     assert_match(/\AOpened `#{task.slug}`/, go.reload.response_text)
 
     get chat_application_path("turf-monster")
-    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-reply'] a[href$='/tasks/#{task.slug}']"
+    assert_select "#cto-chat-turn-#{go.id} [data-test='cto-chat-reply'] a[href$='/devops/tasks/#{task.slug}']"
   end
 
   test "[integration] another owner's go, a team-role owner's go, and another app's owner never run the proposal" do

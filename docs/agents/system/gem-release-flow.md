@@ -93,6 +93,19 @@ and weakens nothing.
 
 ## The failure story
 
+**The pre-publish gate (task `ci-retry-killers`, 2026-11-06).** Before any final goes
+to RubyGems, prepare reads two verdicts. The gem's own tip must be green
+(`gem_ci_failure`: Engine CI, plus Consumer CI, which tests each consumer's `release`
+against that tip). Each swept app's own CI must be green on its promoted
+`origin/release`, before the lock bump (`pre_publish_gate`). A red in either stops
+prepare with nothing published, so no number is burned. The app read is normally a
+credit of the green `accepted` head, not a fresh CI run. The pre-QA gate still runs
+after the bump, on the SHA QA deploys. The order cannot be reversed further: the
+post-bump SHA locks the new version, so its CI cannot resolve until the version is
+published. The two recorded burns (`0.129.0`, `0.131.0`) were superseded by the next
+prepare after new gem work merged, so this gate removes only the burns that start
+with a red app gate.
+
 **QA is red after `X` is published.**
 
 - If the fault is in an app, eject that member and re-run `prepare`. The gem's tip

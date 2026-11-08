@@ -112,6 +112,24 @@ module Github
       )
     end
 
+    # A text body (a job log), following the one redirect GitHub answers a log read
+    # with: a 302 to short-lived blob storage, fetched WITHOUT our Authorization header
+    # (the URL is pre-signed). Raises HttpError like every other read on a refusal.
+    def get_text(path, params: {}, headers: {})
+      response = request(path, params: params, headers: headers, raise_on_error: false)
+      status = response.code.to_i
+      return response.body.to_s if status.between?(200, 299)
+
+      location = response["location"].to_s
+      raise HttpError, "GitHub API HTTP #{status}: #{response.body}" unless status.between?(300, 399) && location.present?
+
+      uri = URI(location)
+      blob = execute(uri, Net::HTTP::Get.new(uri))
+      raise HttpError, "GitHub log blob HTTP #{blob.code}" unless blob.code.to_i.between?(200, 299)
+
+      blob.body.to_s
+    end
+
     def paginate(path, params: {}, headers: {})
       records = []
       next_path = path

@@ -61,7 +61,7 @@ bin/task show <slug> -v
 
 `-v` expands the record: acceptance bullets, `agent_context`, `test_plan`,
 `checks_run`, PR URL — and `unresolved_feedback:`, which carries the open
-blocker's details. The task header at `https://mcritchie.studio/tasks/<slug>`
+blocker's details. The task header at `https://mcritchie.studio/devops/tasks/<slug>`
 shows the same blocker as a red card: the 4-6 word summary up top, the full
 details below, and the block kind.
 
@@ -79,7 +79,7 @@ bin/task show <slug> --json | jq '.unresolved_feedback | {summary: .metadata.sum
 ```
 
 For the complete thread — earlier notes, handoffs, prior blocks — open the task
-page at `https://mcritchie.studio/tasks/<slug>`, the operator-friendly source of
+page at `https://mcritchie.studio/devops/tasks/<slug>`, the operator-friendly source of
 truth for the full conversation.
 
 From the details, extract three things: **what** failed, **where** (file, check,

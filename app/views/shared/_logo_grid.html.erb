@@ -1,0 +1,9 @@
+<%# The logo grid backdrop (task logo-grid-backdrop): a dim brick grid of the
+    agents' faces and the apps' logos behind a band, lit where the pointer is
+    (app/javascript/logo_grid.js builds the cells to fit; app/assets/tailwind/logo_grid.css
+    draws them). Put it first inside an element with data-logo-grid-host and
+    position: relative; that element's pointer moves light the grid. Decorative,
+    so screen readers skip it. Locals: tiles, [{ src:, label: }] (default: the
+    LogoGridHelper set). %>
+<% tiles = local_assigns.fetch(:tiles) { logo_grid_tiles } %>
+<div class="logo-grid" data-logo-grid data-tiles="<%= tiles.to_json %>" aria-hidden="true" data-test="logo-grid"></div>

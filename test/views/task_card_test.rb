@@ -925,7 +925,7 @@ class TaskCardTest < ActionView::TestCase
 
     render_card(task)
 
-    assert_select "[data-test='resubmission-state'][href='/tasks/#{task.slug}']"
+    assert_select "[data-test='resubmission-state'][href='/devops/tasks/#{task.slug}']"
   end
 
   # The bar and the blocker-summary bar answer DIFFERENT questions — state, then

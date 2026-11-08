@@ -14,7 +14,7 @@
   window.epicCards = window.epicCards || function () {
     const send = async (slug, method, body) => {
       const csrf = document.querySelector('meta[name="csrf-token"]')?.content;
-      return fetch('/tasks/' + slug + '.json', {
+      return fetch('<%= tasks_path %>/' + slug + '.json', {
         method,
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json', 'X-CSRF-Token': csrf },
         credentials: 'same-origin',
@@ -37,12 +37,14 @@
   };
 </script>
 <section class="space-y-6" data-test="epic-page" x-data="epicCards()">
-  <div>
-    <nav class="flex items-center gap-3 text-xs mb-1.5" aria-label="Epics">
-      <%= link_to "← Epics", epics_path, class: "text-muted hover:text-heading transition", data: { test: "epic-back" } %>
-    </nav>
-    <%= render "epics/epic_header", epic: @epic, drawn_count: @drawn_count %>
-  </div>
+  <%# THE HEADER: the engine page header (docs/PAGE_HEADER.md). The old "Epics" back link is
+      the crumb trail; the two boards filtered to this epic are pages elsewhere, in the
+      Links menu. epics/_epic_header keeps the counts, the span and the done bar. %>
+  <%= render "studio/page_header", title: @epic.slug, meta: "Epic",
+        crumbs: studio_crumbs(parent: :epics),
+        menu: [{ label: "Tasks board", href: tasks_path(epic: @epic.slug), data: { test: "epic-link-tasks" } },
+               { label: "Deployments board", href: deployments_path(epic: @epic.slug), data: { test: "epic-link-deployments" } }] %>
+  <%= render "epics/epic_header", epic: @epic, drawn_count: @drawn_count %>
   <% Task::STAGES.each do |stage| %>
     <% stage_tasks = @tasks_by_stage[stage] %>
     <% next if stage_tasks.blank? %>

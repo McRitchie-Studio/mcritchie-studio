@@ -162,4 +162,14 @@ class IntegrationTest < ActiveSupport::TestCase
     assert Integration.find(:stripe_connect).method_soon?("sign_in"), "Stripe is Coming soon"
     refute Integration.find(:google_workspace_managed).method_soon?("managed")
   end
+
+  test "[unit] a dark entry is listed only for an admin, and still found by key" do
+    dark = Integration.entries(admin: true).select(&:dark?)
+    assert_equal %w[egnyte quickbooks], dark.map(&:key)
+    assert_empty Integration.entries.map(&:key) & %w[egnyte quickbooks]
+    assert_not_includes Integration.groups.flat_map(&:entries).map(&:key), "egnyte"
+    assert_includes Integration.groups(admin: true).find { _1.key == "connect" }.entries.map(&:key), "egnyte"
+    assert_equal "Egnyte", Integration.find(:egnyte).name, "a contact source naming it still resolves"
+    assert dark.all?(&:soon?), "a dark entry never says Available"
+  end
 end

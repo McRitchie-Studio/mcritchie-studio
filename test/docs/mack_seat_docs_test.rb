@@ -22,7 +22,7 @@ class MackSeatDocsTest < ActiveSupport::TestCase
     assert_match(/Worker class: no admin vault/, agent)
     assert_match(/finance vault .* is Steffon's to create/, agent)
     assert_match(%r{bin/books lender <entity> <YYYY-MM>}, agent)
-    assert_includes norm("role.md"), "docs/agents/agents/mack/claude-agent.md /Users/alex/.claude/agents/mack.md"
+    assert_includes norm("role.md"), "installs it as /Users/alex/.claude/agents/mack.md: bin/install-agent-docs runs bin/install-claude-agents"
   end
 
   test "[docs] the heartbeat's weekly watch reads every entity and names what it raises" do

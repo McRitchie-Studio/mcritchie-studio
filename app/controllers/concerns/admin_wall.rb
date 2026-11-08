@@ -59,6 +59,12 @@ module AdminWall
     "omniauth_callbacks" => %w[create failure],
     "magic_links" => %w[create],
     "studio/links" => %w[show consume],
+    # The friendly not-found page (studio-engine Studio::NotFoundController). It
+    # has no route: only the exceptions app draws it, for an address the hub does
+    # not have or a record it does not hold. A walled page still answers with this
+    # wall first. Listed, or the wall's sign-in redirect would cost a signed-out
+    # visitor the page (the engine then serves public/404.html).
+    "studio/not_found" => %w[show],
     # Local-development only (the engine refuses them elsewhere): the review
     # hop's mint and the captured-email inbox.
     "studio/local_reviews" => %w[show],
@@ -67,6 +73,10 @@ module AdminWall
     "dev/board" => %w[generate move delete ship_release open_release advance_release
                       reset_release rebroadcast_release_modules qa_green_release]
   }.transform_values(&:freeze).freeze
+
+  # Public actions no route draws: only the exceptions app calls them (the friendly
+  # not-found page). The route-table guards exempt these and nothing else.
+  UNROUTED_PUBLIC = %w[studio/not_found#show].freeze
 
   # controller_path => actions any visitor may reach: the pages plus the actions.
   PUBLIC = PUBLIC_PAGES.merge(PUBLIC_ACTIONS) { |_, pages, actions| (pages + actions).freeze }.freeze

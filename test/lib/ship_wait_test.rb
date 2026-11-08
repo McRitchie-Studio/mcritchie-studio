@@ -150,4 +150,28 @@ class ShipWaitTest < Minitest::Test
     assert_equal 1.0, ShipWait.clamp_interval(0.01)
     assert_equal 30.0, ShipWait.clamp_interval(30)
   end
+  # ── the CI budget bin/submit announces (task ci-retry-killers) ─────────────
+
+  def test_it_reads_the_ci_budget_submit_announced
+    log = "submit: 5/8 record — skipped\n" \
+          "submit: 6/8 ci — budget 1500s (measured: p90 1200s ...)\n" \
+          "submit: 6/8 ci — waiting for CI to settle on the PR (timeout 1500s, poll 20s)\n"
+
+    assert_equal 1500, ShipWait.ci_budget_s(log)
+    assert_nil ShipWait.ci_budget_s("submit: 3/8 pr — opened\n")
+  end
+
+  def test_a_resumed_submit_s_last_announcement_wins
+    log = "submit: 6/8 ci — waiting for CI to settle on the PR (timeout 900s, poll 20s)\n" \
+          "submit: 6/8 ci — waiting for CI to settle on the PR (timeout 2100s, poll 20s)\n"
+
+    assert_equal 2100, ShipWait.ci_budget_s(log)
+  end
+
+  def test_the_default_bound_stretches_to_cover_the_ci_budget_and_never_shrinks
+    assert_equal 300 + 2_100 + ShipWait::AFTER_CI_S,
+                 ShipWait.extended_timeout(1_800, ci_budget_s: 2_100, seen_at_s: 300)
+    assert_equal 1_800, ShipWait.extended_timeout(1_800, ci_budget_s: 600, seen_at_s: 60)
+    assert_equal 1_800, ShipWait.extended_timeout(1_800, ci_budget_s: nil, seen_at_s: 60)
+  end
 end

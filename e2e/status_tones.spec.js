@@ -16,7 +16,7 @@ const SOLID_AA = 4.5;
 test("a form's validation errors read in both themes", async ({ page }) => {
   await page.goto("/tasks/new");
   await page.fill("input[name='task[title]']", "");
-  await page.locator("form[action='/tasks'] [type='submit']").first().click();
+  await page.locator("form[action='/devops/tasks'] [type='submit']").first().click();
 
   const box = page.locator("[data-test='form-errors']");
   await expect(box).toBeVisible();

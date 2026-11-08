@@ -1,15 +1,16 @@
 <% content_for(:title, "Email analytics") %>
 <% s = @summary %>
 <div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the Cyvasse test's scoreboard is a page
+      elsewhere, in the Links menu. The email picker is a form that changes what this page shows, so it
+      stays on the page, beside the lead. %>
+  <%= render "studio/page_header", title: "Email analytics", crumbs: studio_crumbs(:broadcast_analytics),
+        menu: [{ label: "Cyvasse four-style test", href: cyvasse_four_scoreboard_path, data: { test: "analytics-link-cyvasse-four" } }] %>
   <div class="flex flex-wrap items-end justify-between gap-3">
-    <div>
-      <h1 class="text-2xl font-extrabold text-heading">Email analytics</h1>
-      <p class="text-secondary text-sm mt-1">
-        <%= @broadcast ? "“#{@broadcast.subject}”" : "Every broadcast" %> ·
-        opens and clicks count people; programs that fake a read are counted apart.
-      </p>
-      <%= link_to "Cyvasse four-style test", cyvasse_four_scoreboard_path, class: "text-sm text-primary hover:underline" %>
-    </div>
+    <p class="text-secondary text-sm">
+      <%= @broadcast ? "“#{@broadcast.subject}”" : "Every broadcast" %> ·
+      opens and clicks count people; programs that fake a read are counted apart.
+    </p>
     <%= form_with url: broadcast_analytics_path, method: :get, class: "flex flex-wrap items-center gap-2 min-w-0 max-w-full" do %>
       <label for="broadcast" class="text-sm text-secondary">Email</label>
       <select id="broadcast" name="broadcast" class="input-field min-w-0 max-w-full">

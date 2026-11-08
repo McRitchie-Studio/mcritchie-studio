@@ -323,7 +323,7 @@ def devops(task)
 end
 
 def task_url(base_url, task)
-  "#{base_url.sub(%r{/\z}, "")}/tasks/#{task.fetch("slug")}"
+  "#{base_url.sub(%r{/\z}, "")}/devops/tasks/#{task.fetch("slug")}"
 end
 
 def task_repos(task)

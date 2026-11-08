@@ -81,6 +81,24 @@ class WebChatTest < ActiveJob::TestCase
     assert_equal({ "output_tokens" => 9 }, message.reload.run_meta, "the answer's run summary is left exactly as complete wrote it")
   end
 
+  # The pulses run on jobs, and jobs do not run in the order they were queued (the e2e
+  # async adapter, a busy queue): a "thinking" pulse that lands after the "typing" one
+  # it preceded pinned a /build turn at "thinking" (build_funnel, pass 8 of 20,
+  # 2026-11-06, task deterministic-ci). The phase sent LAST wins, by its pulse time.
+  test "an older pulse that lands late never overwrites a newer phase" do
+    message = AgentMessage.create!(channel: "web", external_id: "web:phase-order", channel_ref: BuildIntake::CHANNEL_REF,
+                                   thread_key: BuildIntake.thread_key("tok-phase-order"), soul_slug: "alex",
+                                   content: "A league site", status: "claimed", claimed_by: "w1", claimed_at: Time.current)
+    t = Time.current.to_f
+
+    AgentMessages::WebChat.broadcast_typing(message, phase: "typing", at: t + 1)
+    AgentMessages::WebChat.broadcast_typing(message, phase: "thinking", at: t)
+    assert_equal "typing", message.reload.typing_phase
+
+    AgentMessages::WebChat.broadcast_typing(message, phase: "thinking", at: t + 2)
+    assert_equal "thinking", message.reload.typing_phase, "a newer pulse still moves the phase"
+  end
+
   test "no pulse for a worker that does not hold the claim, or once the message is answered" do
     claimed = claim!
     assert_no_broadcasts(@stream) { AgentMessageTypingJob.perform_now(claimed.id, "someone-else") }

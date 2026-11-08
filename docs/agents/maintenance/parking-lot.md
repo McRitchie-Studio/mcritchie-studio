@@ -314,4 +314,6 @@ record of these four; the copy above does.
 Two more rows were `reference only`, with no action owed: Claude's local memory
 (`~/.claude/projects/-Users-alex-projects/memory/*`) and character files
 (`~/.claude/agents/*.md`). Promote durable lessons into repo docs and leave those files alone
-unless Alex McRitchie asks.
+unless Alex McRitchie asks. The character files now have sources: edit
+`docs/agents/agents/<soul>/claude-agent.md`, and the ship installs it with
+`bin/install-claude-agents`.

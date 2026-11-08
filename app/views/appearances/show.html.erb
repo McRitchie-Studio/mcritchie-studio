@@ -13,14 +13,11 @@
 <div class="max-w-6xl mx-auto px-4 py-6 space-y-5">
 
   <%# WHO, and the way back. The person page is where every route to this one
-      starts, so the breadcrumb is the return leg rather than decoration. %>
-  <nav class="flex items-center gap-1.5 text-2xs text-muted flex-wrap">
-    <%= link_to "People", people_path, class: "hover:text-primary" %>
-    <span aria-hidden="true">/</span>
-    <%= link_to @person.full_name, person_path(@person.slug), class: "hover:text-primary" %>
-    <span aria-hidden="true">/</span>
-    <span class="text-heading font-bold"><%= @appearance.descriptor %></span>
-  </nav>
+      starts, so the crumb trail is the return leg rather than decoration. The engine
+      page header (docs/PAGE_HEADER.md): the person's name is the page's one h1, and
+      the look ends the trail. %>
+  <%= render "studio/page_header", title: @person.full_name, crumb_label: @appearance.descriptor,
+        crumbs: studio_crumbs(parent: :people) + [{ label: @person.full_name, href: person_path(@person.slug) }] %>
 
   <div class="card p-4 sm:p-5 flex gap-4 items-start">
     <div class="w-14 h-14 sm:w-16 sm:h-16 shrink-0 rounded-full bg-surface-alt border border-subtle
@@ -34,8 +31,7 @@
     </div>
 
     <div class="flex-1 min-w-0">
-      <h1 class="text-xl sm:text-2xl font-bold text-heading truncate"><%= @person.full_name %></h1>
-      <p class="text-sm text-secondary"><%= @appearance.descriptor %></p>
+      <p class="text-base font-bold text-heading" data-test="look-descriptor"><%= @appearance.descriptor %></p>
       <div class="flex gap-1.5 flex-wrap mt-2">
         <% if @appearance.default? %>
           <span class="badge text-3xs bg-success/10 text-success-ink border-success/40">default model</span>

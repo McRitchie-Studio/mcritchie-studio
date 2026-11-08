@@ -1,10 +1,9 @@
 <% content_for(:title, "Cyvasse four-style test") %>
 <div class="max-w-6xl mx-auto px-4 py-8 space-y-6">
-  <div>
-    <%= link_to "Email analytics", broadcast_analytics_path, class: "text-sm text-secondary hover:text-heading" %>
-    <h1 class="text-2xl font-extrabold text-heading mt-1">Cyvasse four-style test</h1>
-    <p class="text-secondary text-sm mt-1">Which email brings players back. Ranked by people who started a game from the email.</p>
-  </div>
+  <%# The engine page header (docs/PAGE_HEADER.md): the old "Email analytics" link is the
+      crumb trail. The row is a direct child of the page's long container, so it sticks. %>
+  <%= render "studio/page_header", title: "Cyvasse four-style test", crumbs: studio_crumbs(parent: :broadcast_analytics) %>
+  <p class="text-secondary text-sm">Which email brings players back. Ranked by people who started a game from the email.</p>
 
   <section class="card p-4" aria-label="Verdict" data-verdict="<%= @verdict.state %>">
     <p class="text-lg font-bold text-heading"><%= cyvasse_four_verdict_title(@verdict) %></p>

@@ -17,7 +17,7 @@ class EpicPartialsViewTest < ActionView::TestCase
     render partial: "epics/epic_row", locals: { epic: summary }
 
     assert_select "[data-test='epic-row'][data-epic='devops-v3']"
-    assert_select "a[data-test='epic-row-link'][href='/epics/devops-v3']", text: "devops-v3"
+    assert_select "a[data-test='epic-row-link'][href='/devops/epics/devops-v3']", text: "devops-v3"
     stages = css_select("[data-test='epic-stage-count']").map { |el| el["data-stage"] }
     assert_equal %w[designed building shipped], stages
     assert_select "[data-test='epic-stage-count'][data-stage='shipped']", text: /Shipped\s*2/
@@ -33,13 +33,14 @@ class EpicPartialsViewTest < ActionView::TestCase
     assert_select "[data-test='epic-row-activity']", text: /started 4d ago · last activity 2h ago/
   end
 
+  # The epic's title and its two board links moved up into the page header (task
+  # task-pages-standard-header; test/integration/task_pages_header_test.rb holds them
+  # there), so the summary keeps no h1 of its own: the page has one, in the header.
   test "[component] the header shows the span from first task to last ship" do
     render partial: "epics/epic_header", locals: { epic: summary(first_created_at: 4.days.ago, last_shipped_at: 1.day.ago) }
 
-    assert_select "[data-test='epic-header'] h1", text: "devops-v3"
+    assert_select "[data-test='epic-header'] h1", 0
     assert_select "[data-test='epic-header-elapsed']", text: /3 days from first task to last ship/
-    assert_select "a[href='/tasks?epic=devops-v3']", text: "Tasks board"
-    assert_select "a[href='/deployments?epic=devops-v3']", text: "Deployments board"
     assert_select "[data-test='epic-header-capped']", 0, "no cap note when every task is drawn"
   end
 

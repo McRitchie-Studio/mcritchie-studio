@@ -16,7 +16,8 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
     assert_select "h1", text: "Build smarter. Your backend runs itself."
     assert_equal %w[connect add_ons custom], css_select("[data-test='integration-group']").map { |g| g["data-group"] }
     assert_equal %w[Connect We\ run\ it Talk\ to\ us], css_select("[data-test='integration-group'] h2").map { _1.text.strip }
-    assert_equal Integration.entries.map(&:key), css_select("[data-test='integration-entry']").map { |e| e["data-entry"] }
+    assert_equal Integration.entries.reject(&:dark?).map(&:key), css_select("[data-test='integration-entry']").map { |e| e["data-entry"] },
+                 "a visitor sees every entry but the dark ones"
   end
 
   test "[component] the group chips jump to each group, pinned under the header, with each group's count" do
@@ -92,7 +93,7 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
   test "[component] every entry not live reads Coming soon or On request, never Available" do
     get integrations_path
 
-    Integration.entries.each do |item|
+    Integration.entries.reject(&:dark?).each do |item|
       if item.soon?
         assert_select "#{entry(item.key)} [data-test='coming-soon']", text: "Coming soon"
       elsif item.on_request?

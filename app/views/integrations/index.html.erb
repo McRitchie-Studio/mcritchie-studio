@@ -55,6 +55,8 @@
         <% group.entries.each do |entry| %>
           <% google_ability = @google && IntegrationsController::GOOGLE_CARDS[entry.key] %>
           <% fathom_here = @fathom && entry.key == IntegrationsController::FATHOM_CARD %>
+          <% egnyte_here = @egnyte && entry.key == IntegrationsController::EGNYTE_CARD %>
+          <% quickbooks_here = @quickbooks && entry.key == IntegrationsController::QUICKBOOKS_CARD %>
           <% msgraph_here = @msgraph && entry.key == IntegrationsController::MSGRAPH_CARD %>
           <% shows_blurb = entry.line != entry.blurb %>
           <% details = shows_blurb || entry.tier_note.present? || entry.connection_methods.any? || entry.price_note.present? || entry.price_label %>
@@ -94,7 +96,7 @@
             <% end %>
 
             <%# The action row: a signed-in user's real Connect or Disconnect on a
-                Google tile (an admin's on the Fathom and Microsoft 365 tiles), else the tile's button.
+                Google tile (an admin's on the Fathom, Egnyte, Microsoft 365 and QuickBooks tiles), else the tile's button.
                 The Details toggle is a native <details> (no script) whose summary
                 sits at the row's right edge; its panel drops over the tiles below,
                 so opening one never stretches the other tiles in its row. %>
@@ -106,6 +108,10 @@
                   <div class="min-w-0 flex-1 text-xs"><%= render "integrations/fathom_connection", connection: @fathom[:connection], connectable: @fathom[:connectable] %></div>
                 <% elsif msgraph_here %>
                   <div class="min-w-0 flex-1 text-xs"><%= render "integrations/msgraph_connection", connections: @msgraph[:connections], connectable: @msgraph[:connectable] %></div>
+                <% elsif egnyte_here %>
+                  <div class="min-w-0 flex-1 text-xs"><%= render "integrations/egnyte_connection", connections: @egnyte[:connections], connectable: @egnyte[:connectable] %></div>
+                <% elsif quickbooks_here %>
+                  <div class="min-w-0 flex-1 text-xs"><%= render "integrations/quickbooks_connection", connections: @quickbooks[:connections], connectable: @quickbooks[:connectable] %></div>
                 <% elsif !logged_in? && IntegrationsController::GOOGLE_CARDS.key?(entry.key) %>
                   <%# Signed out, a Google tile's Connect opens the sign-in modal; the
                       emailed link brings them back here, to the real Connect. %>

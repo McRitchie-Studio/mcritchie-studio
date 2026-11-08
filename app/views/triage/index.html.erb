@@ -6,16 +6,19 @@
     A finding costs nothing sitting in this inbox; a task costs a worktree, a
     review, and a release slot. Promote what deserves one.
   <% end %>
-  <%= render layout: "components/page_header",
-        locals: { title: "Triage", eyebrow: "Findings Inbox", description: description,
-                  sub_nav: { nav: :board_sections, current: :triage } } do %>
-    <%= render "components/sub_nav", nav: :board_views, current: :triage %>
-    <p class="text-sm text-muted sm:ml-auto" data-test="triage-open-count"><%= pluralize(@findings.size, "open finding") %></p>
-  <% end %>
+  <%# The header's one control kind: the board views as tabs, Triage marked. The open
+      count is not a control, so it stands beside the Open heading below. %>
+  <%= render "components/page_header",
+        title: "Triage", eyebrow: "Findings Inbox", description: description,
+        sub_nav: { nav: :board_sections, current: :triage },
+        label: "Board views", tabs: board_view_tabs(current: :triage) %>
 
   <section class="card overflow-hidden">
     <div class="p-5 border-b border-subtle">
-      <h3 class="text-lg font-bold text-heading">Open</h3>
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 class="text-lg font-bold text-heading">Open</h3>
+        <p class="text-sm text-muted" data-test="triage-open-count"><%= pluralize(@findings.size, "open finding") %></p>
+      </div>
       <p class="text-sm text-secondary">
         Newest first. Promote mints a real task; dismiss retires the finding.
         <span class="text-warning-ink">⚠ Prior art</span> means nobody

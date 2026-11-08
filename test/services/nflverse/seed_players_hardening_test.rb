@@ -103,7 +103,12 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
       imp = importer_whose_network_raises(error)
 
       assert_raises(Nflverse::SeedPlayers::FeedUnavailable) { imp.send(:fetch_remote) }
-      assert_nothing_raised { imp.call }
+      # The outage warning is asserted, not printed: printed, "Errno::ECONNREFUSED" in a
+      # green job's log read as a test-server boot failure to every log scan
+      # (task deterministic-ci).
+      assert_output(nil, /FEED UNAVAILABLE.*data not refreshed/) do
+        assert_nothing_raised { imp.call }
+      end
     end
   end
 
@@ -130,7 +135,7 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
   end
 
   test "a feed outage still leaves a failed run on the record" do
-    importer_whose_network_raises(SocketError.new("down")).call
+    assert_output(nil, /FEED UNAVAILABLE/) { importer_whose_network_raises(SocketError.new("down")).call }
 
     run = ImportRun.for_source("nflverse_players").order(:id).last
     assert_equal "failed", run.status,
@@ -170,7 +175,10 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
   end
 
   test "[unit] the feed-outage rescue writes exactly one ErrorLog row" do
-    written = logs_written_by { importer_whose_network_raises(SocketError.new("down")).call }
+    written = nil
+    assert_output(nil, /FEED UNAVAILABLE/) do
+      written = logs_written_by { importer_whose_network_raises(SocketError.new("down")).call }
+    end
 
     assert_equal 1, written.count, "the quiet path owes exactly one row"
     log = written.first
@@ -192,7 +200,7 @@ class Nflverse::SeedPlayersHardeningTest < ActiveSupport::TestCase
     imp = importer_whose_network_raises(SocketError.new("down"))
 
     ErrorLog.stub(:capture!, ->(_e) { raise "error log is down" }) do
-      assert_nothing_raised { imp.call }
+      assert_output(nil, /FEED UNAVAILABLE/) { assert_nothing_raised { imp.call } }
     end
   end
 end

@@ -52,7 +52,7 @@ class ClientPipelineViewTest < ActionView::TestCase
     assert_select "[data-test='pipeline-lanes']", text: /no lane limit/
     assert_select "[data-test='pipeline-tonight']", text: /on QA, green and ready to ship, carrying 2 of your tasks/
     assert_select "[data-test='pipeline-card-pr'][href='https://github.com/x/y/pull/1']"
-    assert_select "a[href='/tasks/wire-the-scores']"
+    assert_select "a[href='/devops/tasks/wire-the-scores']"
   end
 
   # [component] admin-url-columns-use-http-href: the card's PR link reads a stored

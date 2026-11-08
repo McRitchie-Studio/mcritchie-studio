@@ -64,8 +64,11 @@ class AgentOwnerOnlyGuardTest < ActionDispatch::IntegrationTest
 
     mine = ingest(2202, author: ALEX)
     assert_equal mine.id, claim_over_http("mac-1")["id"]
-    assert_enqueued_with(job: AgentMessageTypingJob, args: [ mine.id, "mac-1", "typing" ]) do
-      post typing_api_v1_agent_message_url(mine), params: { worker: "mac-1" }, headers: @shared, as: :json
+    freeze_time do
+      # The pulse carries its queue time, so a late job cannot overwrite a newer phase.
+      assert_enqueued_with(job: AgentMessageTypingJob, args: [ mine.id, "mac-1", "typing", Time.current.to_f ]) do
+        post typing_api_v1_agent_message_url(mine), params: { worker: "mac-1" }, headers: @shared, as: :json
+      end
     end
     assert_equal "queued", response.parsed_body.dig("meta", "typing")
   end

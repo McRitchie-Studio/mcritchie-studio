@@ -1,6 +1,6 @@
 module ReleaseNotes
   class Formatter
-    PRODUCTION_TASK_BASE_URL = "https://mcritchie.studio/tasks".freeze
+    PRODUCTION_TASK_BASE_URL = "https://mcritchie.studio/devops/tasks".freeze
     # One group per app, then per library, in config/apps.yml order (AppCatalog).
     APP_GROUPS = AppCatalog.release_groups
 

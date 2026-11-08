@@ -9,7 +9,9 @@ test("landing page loads", async ({ page }) => {
   await page.goto("/");
   await expect(page.locator("body")).toContainText("McRitchie Studio");
   await expect(page.locator("body")).toContainText("Built for 2027");
-  await expect(page.locator("body")).toContainText("Alex McRitchie");
+  // The "Alex McRitchie" About section moved to alex.build/about (task
+  // hub-drops-about-section); the booking band follows the hero now.
+  await expect(page.locator("body")).toContainText("Get in Touch");
 });
 
 test("dashboard loads with agent cards", async ({ page }) => {
@@ -155,7 +157,7 @@ test("nav links work without errors @quarantine", async ({ page }) => {
 test("logged-in link sidebar reopens after browser back from signed-in routes", async ({ page }) => {
   await loginWithMagicLink(page, "alex@test.com");
 
-  const routes = ["/dashboard", "/tasks", "/tasks/task-ea8541e4b5b6", "/agents"];
+  const routes = ["/dashboard", "/devops/tasks", "/devops/tasks/task-ea8541e4b5b6", "/agents"];
   const triggers = ["button[data-link-sidebar-trigger]:visible"];
 
   for (const route of routes) {

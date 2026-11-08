@@ -148,7 +148,7 @@ module ShipAuthority
     opened = clock.call
     ends_at = opened + (minutes * 60)
     recorder.call("started", { "mode" => "timed", "window_minutes" => minutes, "window_ends_at" => ends_at.utc.iso8601 })
-    say.call("  production window: #{minutes} min, until #{ends_at.utc.iso8601} — grant with Approve on /deployments (#{release_slug}); " \
+    say.call("  production window: #{minutes} min, until #{ends_at.utc.iso8601} — grant with Approve on /devops (#{release_slug}); " \
              "on lapse the ship proceeds only with G3 green and no open escalation")
     if dry
       say.call("  [dry-run] would wait up to #{minutes} min for the grant, then read G3 + escalations at the window end")
@@ -170,7 +170,7 @@ module ShipAuthority
       if lapsed
         # The one read that decides. Unreadable is a refusal, never a proceed.
         raise Refused, "production window lapsed at #{ends_at.utc.iso8601} and the release could not be read at the window end — " \
-                       "nothing deployed. Re-run to open a fresh window, then grant with Approve on /deployments while it waits." unless state.is_a?(Hash)
+                       "nothing deployed. Re-run to open a fresh window, then grant with Approve on /devops while it waits." unless state.is_a?(Hash)
 
         blockers = Array(state["blockers"])
         if blockers.empty?
@@ -180,7 +180,7 @@ module ShipAuthority
           return :lapsed_proceed
         end
         raise Refused, "production window lapsed at #{ends_at.utc.iso8601} but the ship may not proceed on its own: " \
-                       "#{blockers.join('; ')}. Nothing deployed. Re-run, then grant with Approve on /deployments while the new window is open " \
+                       "#{blockers.join('; ')}. Nothing deployed. Re-run, then grant with Approve on /devops while the new window is open " \
                        "(a grant made before the re-run answers the old request, not the new one), or re-run with --mode ask."
       end
 

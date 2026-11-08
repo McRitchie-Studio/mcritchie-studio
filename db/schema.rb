@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_06_200000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_07_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1542,6 +1542,20 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_200000) do
     t.index ["session_id"], name: "index_dream_swaps_on_session_id", unique: true
   end
 
+  create_table "egnyte_connections", force: :cascade do |t|
+    t.datetime "access_expires_at"
+    t.text "access_token", null: false
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "domain", null: false
+    t.datetime "last_refreshed_at"
+    t.text "refresh_token"
+    t.datetime "updated_at", null: false
+    t.string "username"
+    t.index ["domain"], name: "index_egnyte_connections_on_domain", unique: true
+  end
+
   create_table "email_brand_references", force: :cascade do |t|
     t.datetime "archived_at"
     t.string "brand_kit", null: false
@@ -2080,6 +2094,21 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_06_200000) do
     t.datetime "updated_at", null: false
     t.index ["dex"], name: "index_pokemons_on_dex"
     t.index ["slug"], name: "index_pokemons_on_slug", unique: true
+  end
+
+  create_table "quickbooks_connections", force: :cascade do |t|
+    t.string "company_name"
+    t.datetime "connected_at", null: false
+    t.string "connected_by"
+    t.datetime "created_at", null: false
+    t.string "environment", null: false
+    t.datetime "last_refreshed_at"
+    t.string "realm_id", null: false
+    t.text "refresh_token", null: false
+    t.datetime "refresh_token_expires_at"
+    t.datetime "updated_at", null: false
+    t.index ["connected_at"], name: "index_quickbooks_connections_on_connected_at"
+    t.index ["realm_id"], name: "index_quickbooks_connections_on_realm_id", unique: true
   end
 
   create_table "release_conductor_claims", force: :cascade do |t|

@@ -1,10 +1,10 @@
 <section>
-  <div class="mb-6">
-    <%= link_to "&larr; All Content".html_safe, contents_path, class: "text-secondary hover:text-heading text-sm transition" %>
-  </div>
+  <%# The engine page header (docs/PAGE_HEADER.md): the old "All Content" back link is the
+      crumb trail. %>
+  <%= render "studio/page_header", title: "New Content Idea", crumbs: studio_crumbs(parent: :contents) %>
+  <div class="mb-6"></div>
 
   <div class="max-w-2xl">
-    <h2 class="text-2xl font-bold text-heading mb-6">New Content Idea</h2>
     <%= render "form", content: @content %>
   </div>
 </section>

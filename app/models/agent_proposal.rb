@@ -157,7 +157,7 @@ class AgentProposal < ApplicationRecord
     pieces.map { |v| v.to_s.delete("`").squish.truncate(PARAM_VALUE_LIMIT, separator: " ") }.join("; ")
   end
 
-  def task_url(slug) = "#{BOARD_URL}/tasks/#{slug}"
+  def task_url(slug) = "#{BOARD_URL}#{Rails.application.routes.url_helpers.task_path(slug)}"
 
   # The admin page of the message that carried the proposal, or nil.
   def message_url = source_message_id ? "#{BOARD_URL}/admin/agent_messages/#{source_message_id}" : nil

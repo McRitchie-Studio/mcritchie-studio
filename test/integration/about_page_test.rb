@@ -1,28 +1,31 @@
 require "test_helper"
 
-# /about is the studio's public company page, linked from the footer.
+# Alex McRitchie's about page moved to alex.build on 2026-11-06 (task
+# hub-drops-about-section). The hub keeps no about page: its old address is a
+# permanent redirect there, and the footer links there directly.
 class AboutPageTest < ActionDispatch::IntegrationTest
-  test "a visitor can read the about page without signing in" do
-    get about_path
+  ALEX_BUILD_ABOUT = "https://alex.build/about"
 
-    assert_response :success
-    assert_select "title", "About · McRitchie Studio"
-    assert_select "h1", "McRitchie Studio"
-    assert_select "h2", text: "Software"
-    assert_select "h2", text: "Marketing"
-    assert_select "h2", text: "How we work"
-    assert_select "ol li", 3
-    assert_select "a[href='#{schedule_index_path}']", text: "Schedule a call"
-    # The page's own button opens the booking popup in place: both markers, or
-    # the engine's script leaves it an ordinary link to /schedule.
-    assert_select "a.btn.btn-primary[href='#{schedule_index_path}'][data-booking-popup][data-studio-booking]",
-                  text: "Schedule a call", count: 1
-    assert_select "a[href='#{packages_path}']", text: "See packages"
+  test "[integration] /about is a 301 to alex.build/about" do
+    get "/about"
+
+    assert_response :moved_permanently
+    assert_equal ALEX_BUILD_ABOUT, response.location
   end
 
-  test "the footer's About link lands on it" do
+  test "[integration] /about redirects a signed-in viewer too, with no page of its own" do
+    log_in_as users(:alex)
+    get "/about"
+
+    assert_response :moved_permanently
+    assert_equal ALEX_BUILD_ABOUT, response.location
+    refute Rails.application.routes.named_routes.key?(:about), "no about_path helper to link the hub's own address"
+  end
+
+  test "[integration] the footer's About link goes straight to alex.build/about" do
     get root_path
 
-    assert_select "footer[data-site-footer] a[href='#{about_path}']", text: "About"
+    assert_select "footer[data-site-footer] a[href='#{ALEX_BUILD_ABOUT}']", text: "About", count: 1
+    assert_select "a[href='/about']", 0, "nothing links the redirect"
   end
 end

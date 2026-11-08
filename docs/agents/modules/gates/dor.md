@@ -658,7 +658,7 @@ attempt n+1.
 ## UI surfaces
 
 - **Task gates card** — the "Testing gates" card on
-  `https://mcritchie.studio/tasks/<slug>` renders the **DoR (builder)** and
+  `https://mcritchie.studio/devops/tasks/<slug>` renders the **DoR (builder)** and
   **DoR (review)** chips ahead of the G2 lanes: latest attempt
   (`×n` retry badge), passed / failed / in-flight status, and the expandable SOP
   list (`dor-check`, `tiers`, `ci`).

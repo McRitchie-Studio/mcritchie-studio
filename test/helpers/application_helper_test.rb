@@ -818,18 +818,54 @@ class ApplicationHelperTest < ActionView::TestCase
   # button pointing at a phrase no SOP file answers is a dead end the operator
   # only discovers by pressing it.
   test "[unit] every launcher act resolves to a registered SOP file" do
-    registry = Rails.root.join("docs/agents/index.md").read
-    docs_root = Rails.root.join("docs/agents")
+    require Rails.root.join("bin/lib/sop_registry").to_s
+    entries = SopRegistry.entries(Rails.root.to_s)
 
     heartbeat_launchers.flat_map { |l| l[:actions] }.each do |act|
-      row = registry[/^\|\s*`#{Regexp.escape(act)}`.*$/]
-      assert row.present?, "#{act} is a launcher act but has no row in the SOP registry"
-
-      path = row[%r{`(mcritchie-studio/)?(docs/agents/\S+?\.md)`}, 2]
-      assert path.present?, "#{act}'s registry row names no SOP file"
-      assert docs_root.join(path.sub("docs/agents/", "")).exist?,
-             "#{act} points at #{path}, which does not exist"
+      entry = SopRegistry.resolve(entries, act)
+      assert entry.present?, "#{act} is a launcher act but bin/sop cannot resolve it in the SOP registry"
+      assert Rails.root.join(entry.path).exist?, "#{act} points at #{entry.path}, which does not exist"
     end
+  end
+
+  test "[component] Workflows agent links open the agent page in a new tab, card and sidebar" do
+    seed_workflow_souls
+
+    # Both presentations: the sidebar's rows and the summary card's carousel slides.
+    [[{}, "row"], [{ variant: :summary }, "slide"]].each do |locals, layout|
+      render partial: "tasks/heartbeats_card", locals: locals
+
+      heartbeat_launchers.each do |launcher|
+        slug = launcher[:agent_slug]
+        scope = "[data-test='heartbeat-launcher'][data-layout='#{layout}'][data-agent='#{slug}']"
+        href = agent_path(slug)
+        assert_equal "/agents/#{slug}", href
+        # The name is the link a keyboard reaches; the avatar is the same page for the
+        # pointer, out of the tab order so a soul is not two stops.
+        assert_select "#{scope} [data-test='heartbeat-soul-name'] a[data-test='heartbeat-agent-link'][href=?][target='_blank'][rel~='noopener']", href, count: 1
+        assert_select "#{scope} a[data-test='heartbeat-avatar-link'][href=?][target='_blank'][rel~='noopener'][tabindex='-1']", href, count: 1
+      end
+    end
+  end
+
+  test "[component] the Workflows sidebar cycles one soul at a time with Previous and Next" do
+    seed_workflow_souls
+
+    render partial: "tasks/heartbeats_card"
+
+    slugs = heartbeat_launchers.map { |launcher| launcher[:agent_slug] }
+    assert_select "[data-test='heartbeats-card'][data-workflows-cycle][data-agents=?]", slugs.join(",")
+    assert_select "[data-test='heartbeats-card'][data-active-agent=?]", slugs.first
+    assert_select "button[data-test='workflows-next'][aria-label='Next agent']", count: 1
+    assert_select "button[data-test='workflows-prev'][aria-label='Previous agent']", count: 1
+    assert_select "[data-test='workflows-dot']", count: slugs.size
+    assert_select "[data-test='workflows-position']", text: /1\s+of #{slugs.size}/
+    # Every soul is rendered; only the first is shown before Alpine boots.
+    assert_select "[data-test='workflows-soul']", count: slugs.size
+    assert_select "[data-test='workflows-soul'][data-agent=?]:not([hidden])", slugs.first
+    assert_select "[data-test='workflows-soul'][hidden]", count: slugs.size - 1
+    assert_select "button[data-test='workflows-next'][data-workflows-step='1']", count: 1
+    assert_select "button[data-test='workflows-prev'][data-workflows-step='-1']", count: 1
   end
 
   test "[component] _heartbeats_card (the Workflows sidebar) lists every soul and every command" do
@@ -837,8 +873,9 @@ class ApplicationHelperTest < ActionView::TestCase
 
     render partial: "tasks/heartbeats_card"
 
-    # The sidebar variant: one card, every soul stacked vertically, nothing tucked
-    # behind a toggle — the sidebar has the room the half-width card never did.
+    # The sidebar variant: one card, every soul in the DOM (one shown at a time, cycled
+    # by Previous / Next), no compact toggle — the sidebar has the room the half-width
+    # card never did.
     assert_select "[data-test='heartbeats-card']", count: 1
     assert_select "[data-test='heartbeats-card'] [data-test='heartbeats-list'] [data-test='heartbeat-launcher'][data-layout='row']", count: heartbeat_launchers.size
     assert_select "[data-test='heartbeat-compact-toggle']", count: 0

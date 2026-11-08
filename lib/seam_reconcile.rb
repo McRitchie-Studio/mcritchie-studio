@@ -40,7 +40,7 @@ module SeamReconcile
   TERMINAL_STAGES = %w[shipped archived].freeze
 
   # Which anomalies each CONSUMING SOP is accountable for. The key is the SOP
-  # name from the registry in AGENTS.md, so `--seam pr-review` reads as "heal the
+  # name from the SOP registry (`bin/sop <name>`), so `--seam pr-review` reads as "heal the
   # seam pr-review consumes" rather than needing a second vocabulary.
   SEAMS = {
     "pr-review" => %i[stamp_lost ship_interrupted verdict_stranded].freeze,

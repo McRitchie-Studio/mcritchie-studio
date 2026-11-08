@@ -53,7 +53,8 @@
 #   -m, --message MSG   commit message forwarded to bin/submit (with --launch)
 #   --log PATH          the log to read (default <state-dir>/ship-<slug>.log)
 #   --pid PID           PID of an already-launched ship (liveness only)
-#   --timeout SECONDS   bound on the wait (default 1800)
+#   --timeout SECONDS   bound on the wait (default 1800, stretched to cover the CI budget
+#                       bin/submit announces at 6/8; a given --timeout is kept as is)
 #   --interval SECONDS  poll interval (default 10, floored at 1)
 #   --dir PATH          state directory (default <repo root>/tmp/ship-wait)
 #   --quiet             suppress the periodic still-running line
@@ -103,7 +104,10 @@ options = {
   timeout: Float(ENV.fetch("SHIP_WAIT_TIMEOUT", ShipWait::DEFAULT_TIMEOUT_S)),
   interval: Float(ENV.fetch("SHIP_WAIT_INTERVAL", ShipWait::DEFAULT_INTERVAL_S)),
   dir: ENV["SHIP_WAIT_DIR"],
-  quiet: false
+  quiet: false,
+  # An operator's bound is kept as given; only the default stretches to cover the CI
+  # budget bin/submit announces (ShipWait.extended_timeout).
+  timeout_explicit: ENV.key?("SHIP_WAIT_TIMEOUT")
 }
 
 parser = OptionParser.new do |o|
@@ -114,7 +118,10 @@ parser = OptionParser.new do |o|
   o.on("--skip-preflight", "forwarded to bin/submit: push past a red pre-flight") { options[:skip_preflight] = true }
   o.on("--log PATH", "log file to read") { |v| options[:log] = v }
   o.on("--pid PID", Integer, "PID of an already-launched submit") { |v| options[:pid] = v }
-  o.on("--timeout SECONDS", Float, "bound on the wait") { |v| options[:timeout] = v }
+  o.on("--timeout SECONDS", Float, "bound on the wait") do |v|
+    options[:timeout] = v
+    options[:timeout_explicit] = true
+  end
   o.on("--interval SECONDS", Float, "poll interval") { |v| options[:interval] = v }
   o.on("--dir PATH", "state directory") { |v| options[:dir] = v }
   o.on("--quiet", "suppress the periodic still-running line") { options[:quiet] = true }
@@ -230,6 +237,7 @@ say "watching #{log_path}#{watch_pid ? " (pid #{watch_pid})" : " (no pid — log
 started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 last_tick = started
 result = :running
+ci_budget_seen = nil
 
 loop do
   text = read_log(log_path).to_s
@@ -247,6 +255,14 @@ loop do
 
   now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
   elapsed = now - started
+  if !options[:timeout_explicit] && ci_budget_seen.nil? && (ci_budget = ShipWait.ci_budget_s(text))
+    ci_budget_seen = ci_budget
+    stretched = ShipWait.extended_timeout(timeout, ci_budget_s: ci_budget, seen_at_s: elapsed)
+    if stretched > timeout
+      say "submit announced a #{ci_budget}s CI budget; the wait now runs to #{stretched.round}s"
+      timeout = stretched
+    end
+  end
   break if elapsed >= timeout
 
   if !options[:quiet] && (now - last_tick) >= 60

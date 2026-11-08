@@ -252,7 +252,7 @@ UI, `jasper` onchain, `steffon` infra/deploy, `alex` docs — and give it this
 prompt, filled in:
 
 ```text
-Build task <slug>: https://mcritchie.studio/tasks/<slug>
+Build task <slug>: https://mcritchie.studio/devops/tasks/<slug>
 
 Take the desk and claim the task:
   cd /Users/alex/projects/mcritchie-studio && bin/task begin <slug> --agent <your-soul>

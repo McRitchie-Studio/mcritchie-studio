@@ -1,4 +1,5 @@
 require "test_helper"
+require_relative "../support/change_builder_on"
 require_relative "../support/agent_message_fixtures"
 
 # [integration] Build from Slack (docs/agents/system/client-build-launcher.md,
@@ -7,6 +8,7 @@ require_relative "../support/agent_message_fixtures"
 # build launcher starts it, and the card is a launcher candidate whose start posts
 # back into the same thread. Anyone else's go opens and starts nothing.
 class SlackChangeGoBuildTest < ActiveSupport::TestCase
+  include ChangeBuilderOn
   include ActiveJob::TestHelper
   include AgentMessageFixtures
 

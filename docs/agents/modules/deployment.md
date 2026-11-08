@@ -454,8 +454,11 @@ How a gem rides a release:
    cycle): `bin/dor-check` **refuses** a diff that edits one, because N
    PRs riding one candidate publish exactly **one** version, so no single PR can
    know the answer. The **release** owns the number (step 2). Editing
-   `CHANGELOG.md` is *not* refused — a PR writes its entries under
-   `## Unreleased` as normal; only the **heading** is release-owned (step 2).
+   `CHANGELOG.md` is *not* refused by dor-check, but a studio-engine PR does not
+   edit it: it adds a `changelog.d/<slug>.<kind>.md` fragment, and the engine's
+   own CI (`bin/changelog-check`) fails a PR that writes under `## Unreleased`
+   (studio-engine `changelog.d/README.md`). A gem without `changelog.d/` still
+   writes under `## Unreleased`. Only the **heading** is release-owned (step 2).
    Otherwise it is reviewed → `reviewed` like
    any other task.
 2. **`bin/release prepare` allocates the version — you do not.** The bump is
@@ -487,7 +490,12 @@ How a gem rides a release:
    When the derived bump is wrong — most often a `chore` that is genuinely
    breaking — the override is `bin/task update <task-slug> --gem-bump major`.
 
-   **That same commit rolls `CHANGELOG.md` — you do not.** `## Unreleased`
+   **That same commit rolls `CHANGELOG.md` — you do not.** First, when the
+   gem carries `changelog.d/` and `bin/changelog-compile`, prepare runs that
+   compiler in the ship workspace: it folds every fragment into `## Unreleased`
+   and deletes it, and the deletions ride the same commit. The changelog guard
+   judges the compiled file, and a fragment that does not compile refuses the
+   sweep with nothing written. Then `## Unreleased`
    becomes `## <allocated version> — <date>` and the bucket stays in place,
    empty, ready for the next cycle. `Release::Changelog`
    (`app/models/release/changelog.rb`) owns the parse, the transform and the

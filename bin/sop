@@ -1,0 +1,68 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/sop — resolve an SOP name to the file that runs it.
+#
+#   bin/sop clean-up            print the SOP file's absolute path
+#   bin/sop clean-up --cat      print the SOP file's content
+#   bin/sop --list              print every registered name, one per line: name, owner, path
+#
+# This is how an agent resolves a name Alex McRitchie says (`clean-up`, `pr-review`,
+# `Mason Heartbeat`). It reads the same source bin/sop-registry generates from:
+# bin/lib/sop_registry.rb walks the SOP files on disk. An unknown name exits 1 and
+# names the closest registered names.
+#
+# The docs tree is this script's own repo when it carries docs/agents/agents (a desk or
+# the hub primary), else the hub primary beside the projects root (the fixed-path tooling
+# install carries bin/ and docs/agents/dreams, but no SOP files). --root overrides both, for tests.
+
+require "optparse"
+require_relative "lib/sop_registry"
+require_relative "lib/projects_root"
+
+cat = false
+list = false
+root = nil
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: bin/sop NAME [--cat] | bin/sop --list"
+  opts.on("--cat", "print the SOP file's content, not its path") { cat = true }
+  opts.on("--list", "print every registered name, its owner and its path") { list = true }
+  opts.on("--root DIR", "the hub tree to read (default: this repo, else the hub primary)") { |dir| root = dir }
+  opts.on("-h", "--help", "print this help") do
+    puts opts
+    exit 0
+  end
+end
+parser.parse!(ARGV)
+
+own = ProjectsRoot::REPO_ROOT
+root ||= File.directory?(File.join(own, "docs/agents/agents")) ? own : ProjectsRoot.hub_checkout
+root = File.expand_path(root)
+abort "bin/sop: no SOP docs under #{root}/docs/agents/agents" unless File.directory?(File.join(root, "docs/agents/agents"))
+
+entries = SopRegistry.entries(root)
+
+if list
+  abort "usage: bin/sop --list (unexpected: #{ARGV.join(" ")})" unless ARGV.empty?
+  entries.each { |e| puts "#{e.invocation}\t#{e.owner}\t#{File.join(root, e.path)}" }
+  exit 0
+end
+
+abort parser.banner if ARGV.empty?
+name = ARGV.join(" ").strip.delete_prefix("`").delete_suffix("`")
+
+entry = SopRegistry.resolve(entries, name)
+unless entry
+  warn "bin/sop: no SOP is registered as `#{name}`"
+  close = SopRegistry.suggest(entries, name)
+  warn "did you mean: #{close.map { |n| "`#{n}`" }.join(", ")}" unless close.empty?
+  warn "every name: bin/sop --list"
+  exit 1
+end
+
+path = File.join(root, entry.path)
+if cat
+  print File.read(path)
+else
+  puts path
+end

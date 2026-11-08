@@ -14,7 +14,7 @@ test("a split blocker shows the summary on the card + task header, expanding to 
   expect(boardRes.ok()).toBe(true);
   const cardBar = page.locator("#card-e2e-split-blocker-demo [data-test='blocker-summary']");
   await expect(cardBar).toHaveText("Stage move skips server guard");
-  await expect(cardBar).toHaveAttribute("href", "/tasks/e2e-split-blocker-demo");
+  await expect(cardBar).toHaveAttribute("href", "/devops/tasks/e2e-split-blocker-demo");
 
   // TASK PAGE: the header leads with the short 4-6 word summary, not the full prose.
   const res = await page.goto("/tasks/e2e-split-blocker-demo");
@@ -70,7 +70,7 @@ test("the board and task page call out a resubmission, and leave a fresh build a
   await expect(bar).toBeVisible();
   await expect(bar).toContainText("RESUBMISSION");
   await expect(bar).not.toContainText("HEAD UNKNOWN");
-  await expect(bar).toHaveAttribute("href", "/tasks/e2e-split-blocker-demo");
+  await expect(bar).toHaveAttribute("href", "/devops/tasks/e2e-split-blocker-demo");
 
   // The task page states it outright AND carries what `bin/task bounces` knows —
   // the circuit breaker's armed state — where a reader actually looks.

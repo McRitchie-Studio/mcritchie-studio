@@ -76,9 +76,14 @@ class AdminWallTest < ActionDispatch::IntegrationTest
     routed = routes_table.map { |controller, action, *| [controller, action] }.to_set
     AdminWall::PUBLIC.merge(AdminWall::SIGNED_IN).each do |controller, actions|
       actions.each do |action|
+        next if AdminWall::UNROUTED_PUBLIC.include?("#{controller}##{action}")
+
         assert_includes routed, [controller, action],
                         "AdminWall lists #{controller}##{action}, which no route draws; drop it from the list"
       end
+    end
+    AdminWall::UNROUTED_PUBLIC.each do |pair|
+      assert_not_includes routed, pair.split("#"), "#{pair} gained a route: drop it from AdminWall::UNROUTED_PUBLIC"
     end
   end
 
@@ -100,7 +105,7 @@ class AdminWallTest < ActionDispatch::IntegrationTest
       assert_not signed_in_route?(controller, action), "#{pair} must need an admin"
     end
 
-    public_pages = %w[landing#index landing#terms landing#privacy landing#about packages#index packages#stack
+    public_pages = %w[landing#index landing#terms landing#privacy packages#index packages#stack
                       build#new build#create build#show build#check contact_submissions#new
                       contact_submissions#create unsubscribes#show email_tracking#open links#index
                       schedule#index nfl#index rankings#quarterback games#season depth_charts#show

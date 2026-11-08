@@ -1,11 +1,8 @@
 <div class="max-w-5xl mx-auto px-4 py-8">
-  <div class="flex items-center justify-between mb-6">
-    <div>
-      <h1 class="text-2xl font-extrabold text-heading">Broadcasts</h1>
-      <p class="text-secondary text-sm mt-1">Marketing emails composed, sent, and measured in Studio. Open the editor to compose, send, and see engagement.</p>
-    </div>
-    <%= link_to "Analytics", broadcast_analytics_path, class: "btn btn-secondary" %>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): Analytics is a page elsewhere, in the Links menu. %>
+  <%= render "studio/page_header", title: "Broadcasts", crumbs: studio_crumbs(:broadcasts),
+        menu: [{ label: "Analytics", href: broadcast_analytics_path, data: { test: "broadcasts-link-analytics" } }] %>
+  <p class="text-secondary text-sm mt-2 mb-6">Marketing emails composed, sent, and measured in Studio. Open the editor to compose, send, and see engagement.</p>
 
   <% if @broadcasts.empty? %>
     <div class="card p-8 text-center text-secondary">No broadcasts yet.</div>

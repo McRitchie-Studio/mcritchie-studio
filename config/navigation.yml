@@ -66,7 +66,6 @@ pages:
   root:           { page: "landing#index",           audience: public, label: Home }
   terms:          { page: "landing#terms",           audience: public, label: Terms of Service }
   privacy:        { page: "landing#privacy",         audience: public, label: Privacy Policy }
-  about:          { page: "landing#about",           audience: public, label: About }
   marketing_kit:  { page: "marketing_kit#index",     audience: public, label: Marketing Kit }
   packages:       { page: "packages#index",          audience: public, label: Packages, emoji: "📦", hover_emoji: "🏢", desc: "Vibe, Builder, Pro and Team tiers, and Enterprise", icon: package }
   packages_stack: { page: "packages#stack",          audience: public, label: Everything in every tier }
@@ -128,10 +127,13 @@ pages:
 
   # ── Site administration ──────────────────────────────────────────────────
   admin_dashboard:    { page: "admin/dashboard#show",         audience: admin, label: Admin dashboard, emoji: "📊", hover_emoji: "🔬", desc: Users + request logs, icon: chart-column, crumb: Admin }
-  deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board, icon: rocket, parent: admin_dashboard }
+  # /devops, the board home, is the ROOT of the DevOps crumb trail (devops-namespace,
+  # Alex McRitchie 2026-11-07): its pages read "DevOps › …", never "Admin › Deployments".
+  deployments:        { page: "tasks#deployments",            audience: admin, label: Deployments, emoji: "🚀", hover_emoji: "📦", desc: Deploy lane board, icon: rocket, crumb: DevOps }
   admin_style:        { page: "style#index",                  audience: admin, label: Design System, emoji: "🎨", hover_emoji: "🧩", desc: Theme · Modals · Tricks · Tasks, icon: palette, parent: admin_dashboard }
   admin_schema:       { page: "schema#index",                 audience: admin, label: Schema, emoji: "🗂️", hover_emoji: "🔎", desc: DB schema browser, parent: admin_basement }
-  logos:              { page: "logos#index",                  audience: admin, label: Branding Kits, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built, icon: diamond, parent: admin_dashboard }
+  logos:              { page: "logos#index",                  audience: admin, label: Branding Kits, emoji: "🔷", hover_emoji: "📐", desc: Each brand's navbar logos + how they are built, icon: diamond, parent: admin_dashboard, crumb: Logos }
+  logos_compare:      { page: "logos#compare",                audience: admin, label: Compare kits, parent: logos }
   admin_emails:       { page: "studio/emails#index",          audience: admin, label: Emails, emoji: "✉️", hover_emoji: "🖼️", desc: Transactional emails + their banners, parent: admin_basement }
   admin_link_preview: { page: "studio/site_identities#edit",  audience: admin, label: Link preview, emoji: "🔗", hover_emoji: "💬", desc: "Default title, description + image for unfurls", parent: admin_basement }
   asset_browser:      { page: "assets#index",                 audience: admin, label: Assets, emoji: "🗄️", hover_emoji: "🎞️", desc: Object store as a folder tree, parent: admin_basement }
@@ -149,6 +151,12 @@ pages:
   broadcasts:          { page: "broadcasts#index",         audience: admin, label: Broadcasts, emoji: "📣", hover_emoji: "✉️", desc: "Compose, send and measure marketing email", parent: admin_basement }
   contacts:            { page: "contacts#index",           audience: admin, label: Contacts, emoji: "📇", hover_emoji: "✅", desc: "The mailing list, verified and watched live", parent: admin_basement }
   broadcast_analytics: { page: "broadcast_analytics#show", audience: admin, label: Email analytics, emoji: "📬", hover_emoji: "📈", desc: "Delivery, opens, clicks and list health", parent: broadcasts }
+  # The header art for transactional email, and the cast that fronts it. In no sidebar
+  # section; here for the crumb trail over each page's title.
+  email_images:           { page: "email_images#index",           audience: admin, label: Email images, parent: admin_basement }
+  email_brand_kits:       { page: "email_brand_kits#index",       audience: admin, label: Brand kits, parent: email_images }
+  email_image_generators: { page: "email_image_generators#index", audience: admin, label: Email image generator, crumb: Generator, parent: email_images }
+  characters:             { page: "characters#index",             audience: admin, label: Characters, parent: admin_basement }
 
   # ── Ops ──────────────────────────────────────────────────────────────────
   error_logs:           { page: "error_logs#index",    audience: admin, label: Error logs, emoji: "🚨", hover_emoji: "🔍", desc: Captured errors, parent: admin_basement }
@@ -156,14 +164,21 @@ pages:
   admin_google: { page: "admin/google#show", audience: admin, label: Google connection, emoji: "🔗", hover_emoji: "🔐", desc: Calendar · Gmail · Drive · connect · disconnect, parent: admin_basement }
   admin_msgraph: { page: "admin/msgraph#show", audience: admin, label: Microsoft 365 connection, emoji: "🏢", hover_emoji: "🔐", desc: Tenants · users · Teams · SharePoint · connect · disconnect, parent: admin_basement }
   admin_fathom: { page: "admin/fathom#show", audience: admin, label: Fathom connection, emoji: "🎙️", hover_emoji: "🔐", desc: Meeting notes · transcripts · connect · disconnect, parent: admin_basement }
+  admin_egnyte: { page: "admin/egnyte#show", audience: admin, label: Egnyte connection, emoji: "🗄️", hover_emoji: "🔐", desc: Document store · folders · upload · connect · disconnect, parent: admin_basement }
+  admin_quickbooks: { page: "admin/quickbooks#show", audience: admin, label: QuickBooks connection, emoji: "📒", hover_emoji: "🔐", desc: Company info · profit and loss · read only · connect · disconnect, parent: admin_basement }
   admin_agent_messages: { page: "admin/agent_messages#index", audience: admin, label: Agent inbox, emoji: "📬", hover_emoji: "💬", desc: Messages to agents · claims · replies, parent: admin_basement }
   admin_report_destinations: { page: "admin/report_destinations#index", audience: admin, label: Report destinations, emoji: "📰", hover_emoji: "📡", desc: Which Discord channel each report posts to, parent: admin_basement }
   admin_csp_reports: { page: "admin/csp_reports#index", audience: admin, label: CSP reports, emoji: "🛡️", hover_emoji: "🚨", desc: Content-Security-Policy violations · top offenders, parent: admin_basement }
   admin_upgrade_proposals: { page: "admin/upgrade_proposals#index", audience: admin, label: Upgrade proposals, emoji: "⬆️", hover_emoji: "✅", desc: Alex's tier upgrade asks · approve or decline, parent: admin_basement }
+  # In no sidebar section; here for the crumb trail over each page's title.
+  admin_desk:           { page: "admin/desk#index",           audience: admin, label: Desk, parent: admin_basement }
+  communications:       { page: "communications#index",       audience: admin, label: Communications, parent: admin_basement }
+  usages:               { page: "usages#index",               audience: admin, label: Usage, parent: admin_basement }
   activities_agents:    { page: "agents#activities",   audience: admin, label: Activities, emoji: "🎭", hover_emoji: "🎬", desc: Cross-session agent activity feed, icon: activity, parent: admin_dashboard }
 
   # ── Data ─────────────────────────────────────────────────────────────────
   admin_ai_builder_multiple: { page: "admin/ai_builder_multiple#index", audience: admin, label: AI Builder Multiple, emoji: "📈", hover_emoji: "🤖", desc: GitHub public commit pace backtest, parent: admin_basement }
+  admin_ai_builder_multiple_commit_history: { page: "admin/ai_builder_multiple#commit_history", audience: admin, label: Commit History, parent: admin_ai_builder_multiple }
   workflow_news_index:       { page: "news#workflow",                   audience: admin, label: News workflow, emoji: "🛠️", hover_emoji: "🧭", desc: Intake → conclude board, parent: news_index }
   merge_people:              { page: "people#merge",                    audience: admin, label: Merge people, emoji: "🔀", hover_emoji: "✅", desc: Resolve duplicate people, parent: people }
   duplicates_people:         { page: "people#duplicates",               audience: admin, label: Duplicates, emoji: "👥", hover_emoji: "🧹", desc: Duplicate candidates, parent: people }
@@ -171,18 +186,23 @@ pages:
   # ── Video ────────────────────────────────────────────────────────────────
   alt_videos: { page: "alt_videos#index", audience: admin, label: Alt videos, emoji: "🎬", hover_emoji: "🔁", desc: "Every recast version, with clip progress", parent: videos }
 
-  # ── The board family and the heartbeat (reached from the sub-navs) ───────
+  # ── The board family under /devops, and the heartbeat (reached from the sub-navs) ──
   stages:                   { page: "tasks#stages",             audience: admin, label: Stages, parent: deployments }
   epics:                    { page: "epics#index",              audience: admin, label: Epics, parent: deployments }
   triage:                   { page: "triage#index",             audience: admin, label: Triage, parent: deployments }
   intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence, parent: deployments }
-  pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex, parent: deployments }
+  # The Pokédex is an agent page, its own section beside DevOps, so its trail is Admin's.
+  pokedex:                  { page: "pokemon#index",            audience: admin, label: Pokédex, parent: admin_dashboard }
   recent_tasks:             { page: "tasks#recent",             audience: admin, label: Recent tasks, parent: deployments }
   all_deployments:          { page: "releases#index",           audience: admin, label: All Deployments, parent: deployments }
   mason_heartbeat:            { page: "heartbeat#show",           audience: admin, label: Per-session heartbeat, parent: deployments }
   heartbeat_all_activities: { page: "heartbeat#all_activities", audience: admin, label: All Activities, emoji: "🗃", parent: mason_heartbeat }
   mason_insights:             { page: "heartbeat#insights",       audience: admin, label: Insight Bank, emoji: "💡", parent: deployments }
   mason_pipeline:             { page: "heartbeat#pipeline",       audience: admin, label: Pipeline, parent: deployments }
+  # Pages that are in no nav but carry the crumb trail (task task-pages-standard-header).
+  review_events_hub:        { page: "tasks#review_events_hub",  audience: admin, label: Review Process Hub, crumb: Review hub, parent: deployments }
+  admin_model_pricing:      { page: "admin/model_pricing#index", audience: admin, label: Model Pricing, parent: deployments }
+  dreams:                   { page: "dreams#index",             audience: admin, label: Dreams, parent: agents }
 
 sidebar:
   # The main areas (Alex McRitchie, 2026-11-04). The short words are this section's
@@ -200,7 +220,7 @@ sidebar:
   - { title: Clients,   group: basement, pages: [stack, credentials] }
   # The mailing list and what is sent to it.
   - { title: Email,     group: basement, pages: [broadcasts, contacts, broadcast_analytics] }
-  - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_msgraph, admin_agent_messages, admin_report_destinations, admin_csp_reports, admin_upgrade_proposals] }
+  - { title: Ops,       group: basement, pages: [error_logs, admin_tiktok, admin_google, admin_fathom, admin_egnyte, admin_msgraph, admin_quickbooks, admin_agent_messages, admin_report_destinations, admin_csp_reports, admin_upgrade_proposals] }
   # Who is who, and the docs.
   - { title: Directory, group: basement, pages: [teams, people, builders, docs] }
   - { title: Data,      group: basement, pages: [admin_ai_builder_multiple, workflow_news_index, merge_people, duplicates_people] }
