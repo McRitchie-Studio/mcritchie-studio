@@ -9,23 +9,16 @@
     ALL FOUR, NOT A COUNT. "4 searches" would hide the two things he actually checks
     here: that the TEAM made it into the subject (it silently did not until
     2026-09-27), and which expression words are being bought. %>
-<header class="space-y-3">
-  <div>
-    <p class="label-upper text-muted">Photo scouting</p>
-    <h1 class="text-2xl sm:text-3xl font-black text-heading leading-tight">
-      <%= @person.full_name %>
-    </h1>
-    <p class="text-xs text-muted mt-1">
-      <%= link_to "back to #{@person.full_name}", person_path(@person.slug),
-            class: "hover:text-primary underline" %>
-      <% if @appearance %>
-        &middot;
-        <%= link_to "the look this files against", person_appearance_path(@person.slug, @appearance.slug),
-              class: "hover:text-primary underline" %>
-      <% end %>
-    </p>
-  </div>
+<%# The engine page header (studio-engine docs/PAGE_HEADER.md), rendered straight into the
+    page's long section so it stays pinned the length of the page: the person is the
+    title, "Photo scouting" (the old eyebrow) ends the trail, the old "back to" link is
+    the trail's parent, and the look this files against is the Links menu. %>
+<%= render "studio/page_header", title: @person.full_name, crumb_label: "Photo scouting",
+      crumbs: studio_crumbs(parent: :person, person: @person),
+      menu: (@appearance ? [ { label: "The look this files against", href: person_appearance_path(@person.slug, @appearance.slug),
+                               data: { test: "scouting-look-link" } } ] : []) %>
 
+<header class="space-y-3">
   <p class="text-sm text-body max-w-2xl">
     What the searches found, what the ranking picked, and
     <strong class="text-heading">what you would have picked instead</strong>.

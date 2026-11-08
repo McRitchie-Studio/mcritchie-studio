@@ -3,19 +3,11 @@
 
 <section class="py-6 px-4">
   <div class="max-w-5xl mx-auto">
-    <%= link_to nfl_hub_path, class: "inline-flex items-center gap-1 text-sm text-secondary hover:text-heading transition mb-4" do %>
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
-      NFL Hub
-    <% end %>
-
-    <%# Hero %>
-    <div class="rounded-xl overflow-hidden mb-8" style="background: linear-gradient(135deg, var(--color-cta), var(--color-cta-hover));">
-      <div class="py-8 px-6 text-center">
-        <span class="text-4xl block mb-2">🏃</span>
-        <h1 class="text-2xl md:text-3xl font-extrabold text-white">Rushing Rankings</h1>
-        <p class="text-white/70 text-sm mt-1">2025 NFL Season</p>
-      </div>
-    </div>
+    <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the old "NFL Hub" back
+        link is the crumb trail, and the hero's line under the title is the lead below it. %>
+    <%= render "studio/page_header", title: "🏃 Rushing Rankings", crumb_label: "Rushing Rankings",
+          crumbs: studio_crumbs(:nfl_rushing_rankings) %>
+    <p class="text-secondary text-sm mt-2 mb-6">2025 NFL Season</p>
 
     <%# Search + sort controls %>
     <div class="card p-4 mb-6">
