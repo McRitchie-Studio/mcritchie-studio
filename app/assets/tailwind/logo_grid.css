@@ -26,11 +26,15 @@
   height: var(--logo-grid-tile);
   border-radius: 22%;
   overflow: hidden;
-  background: var(--color-surface-alt, #2a2550);
+  /* No chip behind the tile: a photo fills it, and an app's transparent mark
+     floats on the band (Alex McRitchie, 2026-11-07). */
+  background: transparent;
   opacity: calc(var(--logo-grid-rest) + var(--lit) * (1 - var(--logo-grid-rest)));
   transform: translate(-50%, -50%) scale(calc(0.84 + var(--lit) * 0.16));
-  filter: grayscale(calc(1 - var(--lit)));
-  box-shadow: 0 0 calc(var(--lit) * 28px) rgb(var(--color-primary-500-rgb, 139 92 246) / calc(var(--lit) * 0.55));
+  /* The glow follows the mark's own outline (drop-shadow), so a floating logo
+     gets no square halo. */
+  filter: grayscale(calc(1 - var(--lit)))
+          drop-shadow(0 0 calc(var(--lit) * 14px) rgb(var(--color-primary-500-rgb, 139 92 246) / calc(var(--lit) * 0.6)));
   will-change: opacity, transform, filter;
 }
 .logo-grid-cell img {
