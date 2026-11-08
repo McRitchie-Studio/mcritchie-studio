@@ -22,10 +22,12 @@ Rails.application.config.to_prepare do
          ->(broadcast:) { edit_broadcast_path(broadcast) }, parent: :broadcasts
     # The NFL pages whose address takes a record or a year (hub-remaining-page-headers):
     # a team's unit rankings (the player-impact page's parent), one season's weeks (a
-    # week's parent), and a person (the rename and photo-scouting pages' parent).
+    # week's parent), one week (a game's parent), and a person (the rename and
+    # photo-scouting pages' parent).
     page :team_rankings, ->(team:) { "#{team.short_name.presence || team.name} Rankings" },
          ->(team:) { nfl_team_rankings_path(team) }, parent: :nfl_hub
     page :season, ->(year:) { "#{year} Season" }, ->(year:) { games_season_path(year) }, parent: :nfl_hub
+    page :week, ->(week:) { "Week #{week}" }, ->(year:, week:) { games_week_path(year, week) }, parent: :season
     page :person, ->(person:) { truncate(person.full_name, length: 40) }, ->(person:) { person_path(person.slug) },
          parent: :people
   end

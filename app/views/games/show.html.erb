@@ -1,15 +1,15 @@
 <% content_for :title, "#{@game.away_team.short_name} @ #{@game.home_team.short_name} — NFL Week #{@week}" %>
 
 <section class="py-6">
-  <%# Back link %>
-  <div class="mb-4">
-    <%= link_to games_week_path(@year, @week), class: "text-sm text-secondary hover:text-primary transition" do %>
-      &larr; Week <%= @week %> Games
-    <% end %>
-  </div>
+  <%# The engine page header (studio-engine docs/PAGE_HEADER.md): the page had no h1, and
+      its "Week N Games" back link is the trail's parent. The matchup hero below is the
+      page's body, so it keeps its look. %>
+  <%= render "studio/page_header", title: "#{@game.away_team.name} @ #{@game.home_team.name}",
+        crumb_label: "#{@game.away_team.short_name} @ #{@game.home_team.short_name}",
+        crumbs: studio_crumbs(parent: :week, year: @year, week: @week) %>
 
   <%# Hero section with team gradient %>
-  <div class="rounded-xl overflow-hidden mb-8" style="<%= @game.hero_gradient_style %>">
+  <div class="rounded-xl overflow-hidden mt-6 mb-8" style="<%= @game.hero_gradient_style %>">
     <div class="relative py-8 px-6" style="background: rgba(0,0,0,0.3);">
       <div class="flex items-center justify-center gap-6 md:gap-12">
         <%# Away team %>

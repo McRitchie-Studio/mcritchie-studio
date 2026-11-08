@@ -284,11 +284,12 @@ class NavigationTest < ActiveSupport::TestCase
     assert_nil Navigation.page(:nfl_hub).parent, "the NFL Hub is a root"
   end
 
-  # The record pages the initializer draws after the registry: a team's rankings and a
-  # season under the NFL Hub, a person under People.
+  # The record pages the initializer draws after the registry: a team's rankings, a
+  # season and its weeks under the NFL Hub, a person under People.
   test "[unit] the record crumbs: team rankings and a season under the NFL Hub, a person under People" do
     assert_equal %i[nfl_hub team_rankings], Studio.crumbs.chain(:team_rankings)
     assert_equal %i[nfl_hub season], Studio.crumbs.chain(:season)
+    assert_equal %i[nfl_hub season week], Studio.crumbs.chain(:week)
     assert_equal %i[admin_dashboard admin_basement people person], Studio.crumbs.chain(:person)
   end
 

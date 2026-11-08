@@ -3,8 +3,9 @@ require "test_helper"
 # [component] The hub's NFL and people pages on the engine page header (task
 # hub-remaining-page-headers, split 1 of Alex McRitchie's "the UI cleanup for all the
 # apps"). Each page drew its own header: an "NFL Hub" back link over a gradient hero
-# (the rankings and contracts), a centred hero (the hub, the season, a week), or a title
-# inside a card (a person, the rename, photo scouting). Each now renders
+# (the rankings and contracts), a centred hero (the hub, the season, a week), a back link
+# over a body hero and no h1 at all (a game, a team's grades), or a title inside a card
+# (a person, the rename, photo scouting). Each now renders
 # studio/page_header with the old back link as the trail's last crumb and its title as
 # the page's one h1, in the engine's four kinds of control (studio-engine
 # docs/PAGE_HEADER.md), never actions_html. The pattern is task-pages-standard-header's
@@ -59,7 +60,10 @@ class SportsPagesHeaderTest < ActionDispatch::IntegrationTest
         crumbs: [ nfl_hub_path, nfl_team_rankings_path("buffalo-bills") ] },
       { path: nfl_rosters_path, title: "NFL Rosters", crumbs: hub },
       { path: games_season_path(2025), title: "NFL 2025 Season", crumbs: hub },
-      { path: games_week_path(2025, 1), title: "NFL Week 1", crumbs: [ nfl_hub_path, games_season_path(2025) ] }
+      { path: games_week_path(2025, 1), title: "NFL Week 1", crumbs: [ nfl_hub_path, games_season_path(2025) ] },
+      { path: game_show_path(2025, 1, "buf-at-mia"), title: "Buffalo Bills @ Miami Dolphins",
+        crumbs: [ nfl_hub_path, games_season_path(2025), games_week_path(2025, 1) ] },
+      { path: nfl_team_grades_path(team_slug: "buffalo-bills"), title: "Buffalo Bills Pass & Run Grades", crumbs: hub }
     ]
   end
 

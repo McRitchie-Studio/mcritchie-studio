@@ -11,7 +11,8 @@ const { test, expect } = require("@playwright/test");
 // The seeded pages are short, so each pin test lengthens the page's CONTENT first: a
 // spacer after the page's last content block, in that block's own parent. A row that sits
 // in a wrapper apart from the content still scrolls away, and the test reads it.
-// The admin's session is the suite's shared storage state (e2e/global-setup.js).
+// The person pages are admin pages and use the suite's shared admin session
+// (e2e/global-setup.js); the NFL page is public and runs signed out.
 
 const COACHES_CONTENT = "main .card";
 const PERSON_CONTENT = "main .card";
@@ -43,6 +44,7 @@ async function pinGapAfterScroll(page, content) {
 
 async function coachesHeader(page) {
   await page.goto("/nfl-coaches");
+  await expect(page).toHaveURL(/\/nfl-coaches$/);
   const row = page.locator(".page-header");
   await expect(page.locator("h1")).toHaveCount(1);
   await expect(row.locator("h1.page-header-title")).toHaveText("🎙️ NFL Coaches");
@@ -60,13 +62,39 @@ async function personHeader(page) {
   return row;
 }
 
-test("/nfl-coaches at desktop: the trail reads NFL Hub, and the row stays pinned after a 1500px scroll", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
-  const row = await coachesHeader(page);
-  await expect(row.locator(".page-header-crumbs li")).toHaveText(["NFL Hub", "NFL Coaches"]);
-  await expect(row.locator(".page-header-crumbs a.page-header-crumb")).toHaveAttribute("href", "/nfl");
-  expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
-  expect(await pinGapAfterScroll(page, COACHES_CONTENT)).toBe(0);
+// The NFL pages are public, so their tests run signed out (no stored session).
+test.describe("signed out", () => {
+  test.use({ storageState: { cookies: [], origins: [] } });
+
+  test("/nfl-coaches at desktop: the trail reads NFL Hub, and the row stays pinned after a 1500px scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const row = await coachesHeader(page);
+    await expect(row.locator(".page-header-crumbs li")).toHaveText(["NFL Hub", "NFL Coaches"]);
+    await expect(row.locator(".page-header-crumbs a.page-header-crumb")).toHaveAttribute("href", "/nfl");
+    expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
+    expect(await pinGapAfterScroll(page, COACHES_CONTENT)).toBe(0);
+  });
+
+  test.describe("on a 390px phone", () => {
+    test.use(PHONE);
+
+    test("/nfl-coaches at 390px: one parent link, no sideways scroll, dark mode, pinned after a 1500px scroll", async ({ page }) => {
+      await page.addInitScript(() => localStorage.setItem("theme", "dark"));
+      const row = await coachesHeader(page);
+      expect(await page.evaluate(() => window.innerWidth)).toBe(390);
+      await expect(page.locator("html")).toHaveClass(/\bdark\b/);
+      await expect(row.locator(".page-header-crumbs")).toBeHidden();
+      const parent = row.locator("a.page-header-parent");
+      await expect(parent).toBeVisible();
+      await expect(parent).toHaveAttribute("href", "/nfl");
+      await expect(parent).toContainText("NFL Hub");
+      const box = await row.boundingBox();
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(390);
+      expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
+      expect(await pinGapAfterScroll(page, COACHES_CONTENT)).toBe(0);
+    });
+  });
 });
 
 test("/people/:slug at desktop: the trail reaches People, Rename is the action, and the row stays pinned", async ({ page }) => {
@@ -81,23 +109,6 @@ test("/people/:slug at desktop: the trail reaches People, Rename is the action, 
 
 test.describe("on a 390px phone", () => {
   test.use(PHONE);
-
-  test("/nfl-coaches at 390px: one parent link, no sideways scroll, dark mode, pinned after a 1500px scroll", async ({ page }) => {
-    await page.addInitScript(() => localStorage.setItem("theme", "dark"));
-    const row = await coachesHeader(page);
-    expect(await page.evaluate(() => window.innerWidth)).toBe(390);
-    await expect(page.locator("html")).toHaveClass(/\bdark\b/);
-    await expect(row.locator(".page-header-crumbs")).toBeHidden();
-    const parent = row.locator("a.page-header-parent");
-    await expect(parent).toBeVisible();
-    await expect(parent).toHaveAttribute("href", "/nfl");
-    await expect(parent).toContainText("NFL Hub");
-    const box = await row.boundingBox();
-    expect(box.x).toBeGreaterThanOrEqual(0);
-    expect(box.x + box.width).toBeLessThanOrEqual(390);
-    expect(await sidewaysScroll(page)).toBeLessThanOrEqual(0);
-    expect(await pinGapAfterScroll(page, COACHES_CONTENT)).toBe(0);
-  });
 
   test("/people/:slug at 390px: the parent link to People, the action in view, pinned after a 1500px scroll", async ({ page }) => {
     const row = await personHeader(page);
