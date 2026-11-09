@@ -111,8 +111,9 @@ class ReleaseEngineMigrationInstallTest < Minitest::Test
     assert_includes out, "RAN: bin/rails studio_engine:install:migrations",
                     "the installer must actually run: #{out}"
     assert_includes out, "installed 1 engine migration(s)", "and say what it installed"
-    assert_includes out, "RAN: bin/rails db:create db:schema:load db:migrate",
-                    "the schema is refreshed in the same pass"
+    assert_includes out, "RAN: bin/rails db:create db:schema:load",
+                    "the schema is refreshed in the same pass: #{out}"
+    assert_includes out, "RAN: bin/rails db:migrate\n", "and the engine migration runs as its own stage: #{out}"
   end
 
   # A re-printed check constraint, through the REAL dump function. The psql verdict
@@ -162,5 +163,45 @@ class ReleaseEngineMigrationInstallTest < Minitest::Test
 
     refute_includes out, "RAN: psql", "no URL, no psql: #{out}"
     assert_includes out, "ABORTED", "the same rewrite still refuses without Postgres's word: #{out}"
+  end
+
+  # THE 2026-11-08 REFUSAL, staged. sh writes db/schema.rb as the migrate it was
+  # asked for would: this repo's own stage changes nothing, the engine stage sets
+  # NOT NULL. The abort must name that engine migration and the line, per app.
+  SLUG = %(  create_table "error_logs", force: :cascade do |t|\n    t.string "slug"\n  end\n)
+  ENGINE = "20261108160000_require_slugs.studio_engine.rb"
+
+  def staged_stub(schema_path)
+    <<~RUBY
+      def gate_env(_repo, role: "gate") = {}
+      def gate_database_url(_repo, role: "gate") = nil
+      def sh(*a, **k)
+        cmd = a.reject { |x| x.is_a?(Hash) }.join(" ")
+        version = (k[:env] || {})["VERSION"]
+        $stdout.puts("RAN: \#{cmd} VERSION=\#{version}")
+        File.write(#{schema_path.inspect}, #{SLUG.sub('"slug"', '"slug", null: false').inspect}) if version == "20261108160000"
+        ["", true]
+      end
+      def git_capture(*a) = a.join(" ").include?(" show ") ? [#{SLUG.inspect}, true] : ["", true]
+    RUBY
+  end
+
+  def test_a_refused_engine_migration_is_named_with_its_lines
+    Dir.mktmpdir do |ws|
+      FileUtils.mkdir_p(File.join(ws, "db/migrate"))
+      File.write(File.join(ws, "db/schema.rb"), SLUG)
+      %W[20261001000000_own.rb #{ENGINE}].each { |name| File.write(File.join(ws, "db/migrate", name), "") }
+
+      out = run_release(staged_stub(File.join(ws, "db/schema.rb")),
+                        %{dump_consumer_schema!(#{ws.inspect}, "turf-monster", ["?? db/migrate/#{ENGINE}"])})
+
+      assert_includes out, "RAN: bin/rails db:create db:schema:load db:migrate VERSION=20261001000000", out
+      assert_includes out, "RAN: bin/rails db:migrate VERSION=20261108160000", out
+      assert_includes out, "ABORTED: ✗ turf-monster: refreshing db/schema.rb", out
+      assert_includes out, "Engine migration #{ENGINE} changed existing db/schema.rb lines", out
+      assert_includes out, %(-    t.string "slug"\n), out
+      assert_includes out, %(+    t.string "slug", null: false), out
+      refute_includes out, "behind its own migrations", out
+    end
   end
 end
