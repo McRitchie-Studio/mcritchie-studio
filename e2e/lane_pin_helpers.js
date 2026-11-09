@@ -1,8 +1,18 @@
 const { expect } = require("@playwright/test");
+const { animationsSettled, frames } = require("./settle");
 
 // Shared by e2e/deployments_lane_pin.spec.js and its classic-scrollbar sibling, which
 // must be a separate file: forcing classic scrollbars is a LAUNCH option, and Playwright
 // takes launch options only at a file's top level.
+
+// A scroll has landed: its frame has run and the transitions it set off on the pinned
+// line (navbar, page header row) and the lane headers are done. Not the whole page:
+// the live board restarts its own short animations.
+const PINNED = ".vt-pinned-header, [data-pin='page'], [data-test='stage-header']";
+async function scrollSettled(page) {
+  await frames(page);
+  await animationsSettled(page, PINNED);
+}
 
 // SCROLL TO THE BOTTOM OF THE BOARD, not the bottom of the DOCUMENT.
 //
@@ -92,7 +102,7 @@ async function expectLanesFitAndClear(page, width, { lanes, scrollbar = 0 }) {
 
   for (const y of [0, 150]) {
     await page.evaluate((top) => window.scrollTo(0, top), y);
-    await page.waitForTimeout(250);
+    await scrollSettled(page);
     const { headers, gaps, scroller } = await headerClearance(page);
     expect(scroller, "the lanes fit without the scroller").toBe("visible");
     expect(headers, "every visible lane has its header").toBe(lanes);
@@ -112,4 +122,4 @@ async function expectLanesFitAndClear(page, width, { lanes, scrollbar = 0 }) {
   expect((await pinReading(page)).count, "and every visible lane's header is among them").toBe(lanes);
 }
 
-module.exports = { scrollToBoardBottom, gotoBoard, headerClearance, pinReading, expectLanesFitAndClear };
+module.exports = { scrollToBoardBottom, scrollSettled, gotoBoard, headerClearance, pinReading, expectLanesFitAndClear };

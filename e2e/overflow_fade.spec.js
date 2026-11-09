@@ -1,5 +1,14 @@
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
+const { animationsSettled, armTurboLoads, frames, turboLoaded } = require("./settle");
+
+// The page has settled after a load: the fades' own transitions are done, and the frames
+// after them have run (each fade measures itself a tick after Alpine starts it). Scoped
+// to the fades: both pages are live boards that restart their own short animations.
+async function loadSettled(page) {
+  await animationsSettled(page, "[data-overflow-fade]");
+  await frames(page);
+}
 
 // ===========================================================================
 // components/_overflow_fade — ASSERTED ON THE PAINTED PIXELS.
@@ -101,7 +110,7 @@ async function freezePaint(page) {
   await page.addStyleTag({
     content: "*, *::before, *::after { animation-play-state: paused !important; transition: none !important; }",
   });
-  await page.waitForTimeout(150);
+  await frames(page); // the frozen style is applied and painted
 }
 
 // Mark ONE fade and address it by that mark for the rest of the measurement.
@@ -347,7 +356,8 @@ async function widenNeighbour(page, idx, delta) {
     const chip = el.closest(".aa-r").querySelector(".hb-chip");
     chip.style.width = `${chip.getBoundingClientRect().width + d}px`;
   }, [FADE, idx, delta]);
-  await page.waitForTimeout(300);
+  // The re-solved line, the fade's ResizeObserver re-measuring, and the mask it sets.
+  await frames(page, 3);
 }
 
 async function openActivities(page) {
@@ -355,7 +365,7 @@ async function openActivities(page) {
   await loginWithMagicLink(page, "alex@test.com");
   await page.goto("/agents/activities");
   await expect(page.locator(FADE).first()).toBeVisible();
-  await page.waitForTimeout(800);
+  await loadSettled(page);
   await freezePaint(page);
 }
 
@@ -400,7 +410,7 @@ test("a neighbour widening re-fades the clipped text, and leaves a fitting label
     // PROPERTY, at whatever the new layout turns out to be — every fade is
     // masked exactly when its text does not fit.
     await page.setViewportSize({ width: 700, height: 900 });
-    await page.waitForTimeout(500);
+    await frames(page, 3); // the resize's layout, and every fade re-measuring after it
 
     const after = await inventory(page);
     const worst = after.reduce((a, b) => (b.sw - b.cw > a.sw - a.cw ? b : a));
@@ -425,7 +435,7 @@ test("the fade follows the TEXT growing inside a box that never moved", async ({
   // of re-proving the outer one.
   await page.goto("/tasks");
   await expect(page.locator(FADE).first()).toBeVisible();
-  await page.waitForTimeout(800);
+  await loadSettled(page);
   await freezePaint(page);
 
   // CARD TITLES ONLY, for two independent reasons. The title's box is a
@@ -466,7 +476,7 @@ test("the fade follows the TEXT growing inside a box that never moved", async ({
     document.head.appendChild(style);
     return { cwBefore, fromPx: px, toPx: wanted };
   }, [FADE, target.i]);
-  await page.waitForTimeout(400);
+  await frames(page, 3); // the new font's layout, the inner observer re-measuring, the mask
 
   const m = await fadeMeasurement(page, target.i);
   // The precondition that makes this spec prove the inner observer. A container
@@ -523,6 +533,16 @@ const RO_LEDGER = () => {
   };
 };
 
+// One Turbo hop, read once it has landed: Turbo's turbo:load (after the swap, or the
+// restore), then the frames in which Alpine starts each fade and its observer.
+async function turboHop(page, go, url) {
+  const loads = await armTurboLoads(page);
+  await go();
+  await page.waitForURL(url);
+  await turboLoaded(page, loads);
+  await frames(page, 3);
+}
+
 test("one live observer per fade survives eight Turbo hops, Back and Forward included",
   async ({ page }) => {
     test.setTimeout(120_000);
@@ -531,7 +551,7 @@ test("one live observer per fade survives eight Turbo hops, Back and Forward inc
     await loginWithMagicLink(page, "alex@test.com");
     await page.goto("/tasks");
     await expect(page.locator(FADE).first()).toBeVisible();
-    await page.waitForTimeout(800);
+    await loadSettled(page);
 
     const read = async () => await page.evaluate(() => window.__fadeObserverLedger());
     const check = (led, where) => {
@@ -551,26 +571,18 @@ test("one live observer per fade survives eight Turbo hops, Back and Forward inc
     // snapshot cache AND resets this ledger, so a leak would be invisible.
     const ledgers = [start];
     for (let hop = 0; hop < 4; hop += 1) {
-      await page.locator('[data-test="task-card-title"]').first().click();
-      await page.waitForURL(/\/devops\/tasks\/[^/]+$/);
-      await page.waitForTimeout(600);
+      await turboHop(page, () => page.locator('[data-test="task-card-title"]').first().click(), /\/devops\/tasks\/[^/]+$/);
       ledgers.push(await read());
       check(ledgers[ledgers.length - 1], `hop ${hop * 2 + 1} (task detail)`);
 
-      await page.goBack();
-      await page.waitForURL(/\/devops\/tasks$/);
-      await page.waitForTimeout(600);
+      await turboHop(page, () => page.goBack(), /\/devops\/tasks$/);
       ledgers.push(await read());
       check(ledgers[ledgers.length - 1], `hop ${hop * 2 + 2} (Back to the board)`);
 
       if (hop === 1) {
-        await page.goForward();
-        await page.waitForURL(/\/devops\/tasks\/[^/]+$/);
-        await page.waitForTimeout(600);
+        await turboHop(page, () => page.goForward(), /\/devops\/tasks\/[^/]+$/);
         check(await read(), "Forward to the task detail");
-        await page.goBack();
-        await page.waitForURL(/\/devops\/tasks$/);
-        await page.waitForTimeout(600);
+        await turboHop(page, () => page.goBack(), /\/devops\/tasks$/);
         check(await read(), "Back again from Forward");
       }
     }

@@ -73,11 +73,8 @@ test("a visitor opts in to texts on the contact page and sees it confirmed", asy
   await expect(care).not.toBeChecked();
 
   // The operator's notice is in the outbox.
-  let notice;
-  for (let attempt = 0; attempt < 20 && !notice; attempt += 1) {
+  await expect.poll(async () => {
     const inbox = await page.request.get("/_studio/local_emails.json").then((r) => r.json());
-    notice = inbox.deliveries.find((d) => d.to === "alex@mcritchie.studio" && d.email_key === "ContactMailer#submission");
-    if (!notice) await page.waitForTimeout(250);
-  }
-  expect(notice, "the operator notice was sent").toBeTruthy();
+    return inbox.deliveries.some((d) => d.to === "alex@mcritchie.studio" && d.email_key === "ContactMailer#submission");
+  }, { message: "the operator notice was sent" }).toBe(true);
 });

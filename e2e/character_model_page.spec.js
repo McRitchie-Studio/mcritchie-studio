@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
+const { frames } = require("./settle");
 
 // [e2e] THE CHARACTER-MODEL PAGE, in a browser — the operator's acceptance test:
 // "I want to see the images found on the internet and the output on the same UI."
@@ -105,7 +106,7 @@ test("both halves render on one page, side by side at desktop and stacked on a p
   // the one that catches a long unbroken URL widening a grid track — the identity
   // UUID and the refused address are both in that shape.
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.waitForTimeout(150);
+  await frames(page); // the resize's layout has run
   const [mobileInput, mobileOutput] = await Promise.all([
     input.boundingBox(), output.boundingBox(),
   ]);
