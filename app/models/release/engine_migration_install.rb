@@ -77,10 +77,12 @@ class Release
     # Is this `db/schema.rb` diff one the sweep may commit unreviewed?
     #
     # Installing a migration should ADD a table and move the version stamp.
-    # Anything else — a dropped table, a changed column, a rewritten index — means
-    # the consumer's committed schema was already out of step with its own
-    # migrations, and the sweep would be smuggling that drift into a release
-    # commit labelled "bump gem for QA". Fail closed and let a person look.
+    # Anything else — a dropped table, a changed column, a rewritten index — is
+    # either drift (the consumer's committed schema was out of step with its own
+    # migrations) or an engine migration that altered an existing table. Either
+    # way the sweep would smuggle it into a release commit labelled "bump gem for
+    # QA". Fail closed and let a person look; dump_stages and schema_refusal say
+    # which of the two it was.
     #
     # The version line is the one deletion that is always expected, since the
     # dumper rewrites `define(version: ...)` in place.
@@ -106,17 +108,135 @@ class Release
     # proof; bin/release.rb hands it a psql run against the throwaway database the
     # dump just migrated.
     def schema_dump_safe?(diff_text, old_schema: nil, new_schema: nil, equivalent: nil)
+      unsafe_removals(diff_text, old_schema: old_schema, new_schema: new_schema, equivalent: equivalent).empty?
+    end
+
+    # The removed lines schema_dump_safe? refuses, in diff order, each with its
+    # leading "-". Empty means the diff is safe.
+    def unsafe_removals(diff_text, old_schema: nil, new_schema: nil, equivalent: nil)
       lines = diff_text.to_s.lines
-      removals = lines.select { |line| line.start_with?("-") && !line.start_with?("---") }
-      additions = lines.select { |line| line.start_with?("+") && !line.start_with?("+++") }
+      removals = lines.select { |line| removal?(line) }
+      additions = lines.select { |line| addition?(line) }
 
       removed_checks = removals.filter_map { |line| parse_check_constraint(line.delete_prefix("-")) }
       added_checks = additions.filter_map { |line| parse_check_constraint(line.delete_prefix("+")) }
 
-      removals.all? do |line|
-        next true if version_line?(line)
+      removals.reject do |line|
+        version_line?(line) ||
+          tolerated_check_rewrite?(line, removed_checks, added_checks, old_schema, new_schema, equivalent)
+      end
+    end
 
-        tolerated_check_rewrite?(line, removed_checks, added_checks, old_schema, new_schema, equivalent)
+    def removal?(line) = line.start_with?("-") && !line.start_with?("---")
+    def addition?(line) = line.start_with?("+") && !line.start_with?("+++")
+
+    # The evidence for a refusal: every unsafe removed line, and beside it the
+    # lines its hunk added (what the line was rewritten AS), in diff order. A
+    # hunk with no unsafe removal is left out, so an added table never buries the
+    # cause. The version line is left out too.
+    def unsafe_change_lines(diff_text, old_schema: nil, new_schema: nil, equivalent: nil)
+      unsafe = unsafe_removals(diff_text, old_schema: old_schema, new_schema: new_schema, equivalent: equivalent)
+      return [] if unsafe.empty?
+
+      diff_hunks(diff_text).flat_map do |hunk|
+        next [] unless hunk.any? { |line| unsafe.include?(line) }
+
+        hunk.select { |line| unsafe.include?(line) || (addition?(line) && !version_line?(line)) }
+            .map(&:chomp)
+      end
+    end
+
+    # A unified diff's changed lines, grouped by `@@` hunk.
+    def diff_hunks(diff_text)
+      diff_text.to_s.lines.slice_before { |line| line.start_with?("@@") }
+               .map { |hunk| hunk.select { |line| removal?(line) || addition?(line) } }
+               .reject(&:empty?)
+    end
+
+    # --- naming the cause ----------------------------------------------------
+    #
+    # The 2026-11-08 sweep refused engine 0.138.0's NOT NULL migrations in six
+    # consumers, and its message said only "this repo's committed schema was
+    # already behind its own migrations" -- wrong on the cause, and silent on which
+    # migration and which lines. So the dump runs in STAGES: first the consumer's
+    # own migrations on top of its committed schema, then each newly installed
+    # engine migration alone, dumping after each. Every stage's diff is judged on
+    # its own, so a refused line is charged to the stage that produced it.
+
+    # The migration version a db/migrate path or porcelain line names, or nil.
+    def migration_version(path)
+      File.basename(path.to_s.strip.split.last.to_s)[/\A(\d+)_/, 1]
+    end
+
+    # The stages the dump runs, in order. Each is { engine_migration:, tasks:,
+    # version: }: run `bin/rails *tasks` with VERSION=version (nil: no VERSION).
+    #
+    #   * stage one loads the committed schema and migrates to the consumer's own
+    #     newest migration (engine_migration nil). With no consumer migration at
+    #     all it only re-dumps the loaded schema; `VERSION=0` would migrate DOWN.
+    #   * then one stage per newly installed engine migration, oldest first.
+    #
+    # FAIL CLOSED to one unattributed stage (the pre-2026-11-09 behaviour, every
+    # pending migration at once) when the staging cannot be trusted: no engine
+    # file, or an engine version not above every consumer version (then
+    # VERSION=<consumer newest> would skip or reorder it).
+    def dump_stages(migration_files:, engine_files:)
+      engine = engine_files.map { |path| File.basename(path.to_s.strip.split.last.to_s) }
+                           .select { |name| migration_version(name) }.uniq
+                           .sort_by { |name| migration_version(name).to_i }
+      engine_versions = engine.map { |name| migration_version(name) }
+      consumer = migration_files.filter_map { |path| migration_version(path) }.uniq - engine_versions
+      newest = consumer.max_by(&:to_i)
+
+      load_tasks = %w[db:create db:schema:load]
+      if engine.empty? || (newest && engine_versions.any? { |version| version.to_i <= newest.to_i })
+        return [{ engine_migration: nil, tasks: load_tasks + %w[db:migrate], version: nil, unattributed: true }]
+      end
+
+      first = if newest
+                { engine_migration: nil, tasks: load_tasks + %w[db:migrate], version: newest }
+              else
+                { engine_migration: nil, tasks: load_tasks + %w[db:schema:dump], version: nil }
+              end
+      [first] + engine.map { |name| { engine_migration: name, tasks: %w[db:migrate], version: migration_version(name) } }
+    end
+
+    # The abort message for a dump the guard refuses, or nil when every stage is
+    # safe. `stages` are dump_stages entries, each merged with the diff it
+    # produced and the schema text on each side of it (diff:, old_schema:,
+    # new_schema:). The message names the cause per stage: a stale committed
+    # schema, or the engine migration that altered an existing table.
+    def schema_refusal(repo, stages, equivalent: nil)
+      refused = stages.filter_map do |stage|
+        lines = unsafe_change_lines(stage[:diff], old_schema: stage[:old_schema], new_schema: stage[:new_schema],
+                                                  equivalent: equivalent)
+        [stage, lines] unless lines.empty?
+      end
+      return nil if refused.empty?
+
+      parts = ["#{repo}: refreshing db/schema.rb removed or rewrote existing schema, not just new tables. " \
+               "The sweep stops here; nothing was committed."]
+      refused.each { |stage, lines| parts << refusal_section(stage, lines) }
+      parts.join("\n\n")
+    end
+
+    def refusal_section(stage, lines)
+      evidence = lines.map { |line| "      #{line}" }.join("\n")
+      if stage[:unattributed]
+        "  The consumer's own pending migrations and the new engine migrations ran together (they could not be " \
+          "staged), so this cannot say which one changed these db/schema.rb lines:\n#{evidence}\n" \
+          "  Read db/migrate for the change, fix it, then re-run `bin/release prepare`."
+      elsif stage[:engine_migration]
+        "  Engine migration #{stage[:engine_migration]} changed existing db/schema.rb lines:\n#{evidence}\n" \
+          "  An engine migration that alters an existing table cannot ride the sweep's unreviewed bump commit. " \
+          "The gem is already published, and a rollback runs the previous release's code against the altered " \
+          "table (a new NOT NULL breaks every old insert that leaves the column empty). Make the engine " \
+          "migration additive (nullable, backfilled), tighten it in a later release, then re-run " \
+          "`bin/release prepare`."
+      else
+        "  Before any engine migration ran, this repo's committed db/schema.rb was behind its own migrations. " \
+          "Loading it and running this repo's migrations changed these lines:\n#{evidence}\n" \
+          "  Commit the schema this repo's migrations produce, then re-run `bin/release prepare`."
       end
     end
 

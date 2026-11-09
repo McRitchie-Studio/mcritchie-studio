@@ -194,13 +194,18 @@ module OpMeter
   # When both attempts run out, HUNG_LINE goes to stderr once per process (pass
   # announce: false to say it yourself) and #hung? turns true, so a caller can
   # exit HUNG_EXIT rather than report its own misleading error.
-  def popen(op_env, argv, via:, env: ENV, announce: true, **opts)
+  #
+  # A PROBE (2026-11-09, keep-awake-watches-op). +deadline:+ overrides the
+  # per-attempt bound and +retry_uncached: false+ skips the retry: a caller that
+  # watches for the hang (bin/lib/keep_awake_op_probe.rb) needs one attempt of
+  # its own length, metered and group-killed like every other.
+  def popen(op_env, argv, via:, env: ENV, announce: true, deadline: nil, retry_uncached: true, **opts)
     action = action_for(argv)
-    limit = deadline(env)
+    limit = deadline || deadline(env)
     opts = { in: File::NULL }.merge(opts)
     @last_hung = false
     result = BoundedCommand.run(op_env, argv, deadline: limit, pgroup: true, **opts)
-    if result.timed_out?
+    if result.timed_out? && retry_uncached
       record(action: action, outcome: TIMEOUT, via: via, env: env)
       result = BoundedCommand.run((op_env || {}).merge(CACHE_BYPASS), argv, deadline: limit, pgroup: true, **opts)
     end

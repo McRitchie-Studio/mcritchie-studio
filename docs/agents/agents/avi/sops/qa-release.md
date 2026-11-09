@@ -329,7 +329,10 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    database so `db/schema.rb` lands); a failed probe, an unexpected schema rewrite, or an
    underivable throwaway database ABORTS. The one rewrite it tolerates is a
    same-name `t.check_constraint` that Postgres, asked on the throwaway database,
-   deparses to the same text (a re-printed cast, not a changed meaning). The gate and QA then read the post-bump SHA.
+   deparses to the same text (a re-printed cast, not a changed meaning). The dump runs in
+   stages: this repo's own migrations first, then each new engine migration alone. So
+   the abort names the cause per app: a stale committed schema, or the engine migration
+   that changed each listed `db/schema.rb` line. The gate and QA then read the post-bump SHA.
    A gem repo's own lock (studio-engine locks solana-studio) is not touched here: the
    ship bumps it, to the final.
 

@@ -382,6 +382,21 @@ class OpMeterTest < Minitest::Test
     end
   end
 
+  # A probe (keep-awake) asks for one attempt of its own length: deadline: wins
+  # over MCR_OP_DEADLINE, and retry_uncached: false records one timeout, no retry.
+  def test_unit_a_probe_gets_one_attempt_of_its_own_deadline
+    with_log do |log, env, dir|
+      op, calls = hung_op(dir)
+      out = OpMeter.popen({}, [op, "whoami"], via: "keep-awake", env: env.merge("MCR_OP_DEADLINE" => "60"),
+                                               announce: false, deadline: 0.5, retry_uncached: false)
+
+      assert_equal "", out
+      assert OpMeter.last_hung?
+      assert_equal %w[timeout], rows(log).map { |r| r[3] }
+      assert_equal 1, calls_in(calls).length, "no uncached retry"
+    end
+  end
+
   # CONTROL: a healthy op is untouched by the bound: one call, no retry, no
   # OP_CACHE in its environment, its stdout and status as before.
   def test_unit_control_a_fast_op_is_called_once_with_the_cache_untouched

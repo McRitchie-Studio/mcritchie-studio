@@ -7,9 +7,27 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require "fileutils"
 require_relative "../../bin/lib/ci_status"
 
 class CiStatusTest < Minitest::Test
+  # A refusal-driven mint logs an `auth-refresh` row (bin/lib/auth_refresh.rb). Pin the
+  # read log to a tmpdir for every case, so a standalone run never writes the
+  # operator's real log.
+  def before_setup
+    super
+    @reads_dir = Dir.mktmpdir("ci-status-reads")
+    @reads_env = { "TASK_USAGE_SANDBOX" => ENV["TASK_USAGE_SANDBOX"], "MCR_OP_READS_LOG" => ENV["MCR_OP_READS_LOG"] }
+    ENV["TASK_USAGE_SANDBOX"] = "1"
+    ENV["MCR_OP_READS_LOG"] = File.join(@reads_dir, "op-reads.log")
+  end
+
+  def after_teardown
+    @reads_env.each { |k, v| v.nil? ? ENV.delete(k) : ENV[k] = v }
+    FileUtils.rm_rf(@reads_dir)
+    super
+  end
+
   def test_red_when_a_check_fails
     v = CiStatus.parse('[{"name":"test","bucket":"fail"},{"name":"lint","bucket":"pass"}]')
     assert_equal :red, v[:state]

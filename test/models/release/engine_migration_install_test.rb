@@ -294,4 +294,80 @@ class Release::EngineMigrationInstallTest < ActiveSupport::TestCase
     refute Install.equivalence_verdict(ok: false, output: "t\n")
     refute Install.equivalence_verdict(ok: true, output: "")
   end
+
+  # --- naming the cause (task schema-guard-names-engine-changes) -----------
+  # On 2026-11-08 engine 0.138.0's NOT NULL migrations were refused with "the
+  # committed schema was already behind its own migrations": wrong cause, no
+  # migration name, no lines. The dump now runs in stages, so each refused line
+  # is charged to the stage that produced it.
+
+  ENGINE_MIGRATION = "20261108160000_require_slugs_on_engine_tables.studio_engine.rb"
+  VERSION_DIFF = %(-ActiveRecord::Schema[7.2].define(version: 2026_11_01_000000) do\n) +
+                 %(+ActiveRecord::Schema[7.2].define(version: 2026_11_08_160000) do\n)
+  NOT_NULL_DIFF = %(@@ -10,3 +10,3 @@\n   create_table "error_logs", force: :cascade do |t|\n) +
+                  %(-    t.string "slug"\n+    t.string "slug", null: false\n)
+  NEW_TABLE_DIFF = %(@@ -40,0 +40,3 @@\n+  create_table "widgets", force: :cascade do |t|\n+    t.string "name"\n+  end\n)
+
+  def stage(engine_migration, diff)
+    { engine_migration: engine_migration, diff: "@@ -1 +1 @@\n#{VERSION_DIFF}#{diff}" }
+  end
+
+  test "the dump runs this repo's migrations first, then each engine migration alone, oldest first" do
+    stages = Install.dump_stages(
+      migration_files: %w[db/migrate/20261001000000_a.rb db/migrate/20261020000000_b.rb
+                          db/migrate/20261108170000_role.studio_engine.rb db/migrate/20261108160000_slug.studio_engine.rb],
+      engine_files: ["?? db/migrate/20261108170000_role.studio_engine.rb", "?? db/migrate/20261108160000_slug.studio_engine.rb"]
+    )
+
+    assert_equal [nil, "20261108160000_slug.studio_engine.rb", "20261108170000_role.studio_engine.rb"],
+                 stages.map { |s| s[:engine_migration] }
+    assert_equal %w[20261020000000 20261108160000 20261108170000], stages.map { |s| s[:version] }
+    assert_equal %w[db:create db:schema:load db:migrate], stages.first[:tasks]
+    assert_equal %w[db:migrate], stages.last[:tasks]
+  end
+
+  test "with no migration of its own the first stage re-dumps the loaded schema, never VERSION=0" do
+    stages = Install.dump_stages(migration_files: [], engine_files: ["db/migrate/20261108160000_slug.studio_engine.rb"])
+
+    assert_equal({ engine_migration: nil, tasks: %w[db:create db:schema:load db:schema:dump], version: nil }, stages.first)
+  end
+
+  test "an engine migration not above this repo's newest falls back to one unattributed stage" do
+    stages = Install.dump_stages(migration_files: %w[db/migrate/20261201000000_late.rb],
+                                 engine_files: ["db/migrate/20261108160000_slug.studio_engine.rb"])
+
+    assert_equal 1, stages.length
+    assert stages.first[:unattributed]
+    assert_nil stages.first[:version], "every pending migration runs, as before the staging"
+  end
+
+  test "a NOT NULL change from a new engine migration is refused with that migration's name and lines" do
+    message = Install.schema_refusal("turf-monster", [stage(nil, ""), stage(ENGINE_MIGRATION, NOT_NULL_DIFF)])
+
+    assert_includes message, "turf-monster:"
+    assert_includes message, "Engine migration #{ENGINE_MIGRATION} changed existing db/schema.rb lines"
+    assert_includes message, %(-    t.string "slug"\n)
+    assert_includes message, %(+    t.string "slug", null: false)
+    assert_includes message, "rollback"
+    refute_includes message, "behind its own migrations", "the engine migration is the cause, not a stale schema"
+    refute_includes message, "define(version:", "the version line is expected and is not evidence"
+  end
+
+  test "a stale committed schema is reported as stale and names no engine migration" do
+    message = Install.schema_refusal("cyvasse", [stage(nil, NOT_NULL_DIFF), stage(ENGINE_MIGRATION, NEW_TABLE_DIFF)])
+
+    assert_includes message, "committed db/schema.rb was behind its own migrations"
+    assert_includes message, %(-    t.string "slug")
+    refute_includes message, ENGINE_MIGRATION, "an additive engine migration is not blamed"
+  end
+
+  test "stages that only add tables and move the version are not refused" do
+    assert_nil Install.schema_refusal("rolio", [stage(nil, ""), stage(ENGINE_MIGRATION, NEW_TABLE_DIFF)])
+  end
+
+  test "the evidence leaves out an added table's hunk" do
+    lines = Install.unsafe_change_lines(NOT_NULL_DIFF + NEW_TABLE_DIFF)
+
+    assert_equal [%(-    t.string "slug"), %(+    t.string "slug", null: false)], lines
+  end
 end
