@@ -39,6 +39,8 @@ class Release
     # member apps (review of 2026-11-09: rantly's Eco dyno 503s in the last week
     # of each month). A dropped repo stays out of this release: #recorded and
     # #record both exclude it, so prepare, ship, finalize and rollback agree.
+    # Release::Conductor.record_shipped_shas never records it, and the notes, the
+    # Slack summary, the seal and `bin/release status` name it (#notes_lines).
     DROPPED_KEY = "lock_only_dropped".freeze
 
     # The subject the release tooling writes on every lock bump: the prepare's

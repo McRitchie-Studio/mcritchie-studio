@@ -3205,8 +3205,11 @@ end
 # --- dropping a lock-only app (review of release-ships-lock-only-consumers) ---
 # A lock-only app rides for nobody's card. A failure of its OWN (a red pre-publish
 # or pre-QA gate, a QA deploy that aborts or does not boot, a red ship gate or
-# re-lock gate, a production deploy or smoke that fails) therefore DROPS it from
-# the release with a warning, and the member apps carry on. Without this, rantly's
+# re-lock gate, a failed re-pin, a stray, prerelease or unshipped-final lock in its
+# tree, a production deploy or smoke that fails) therefore DROPS it from the
+# release with a warning, and the member apps carry on. Its production deploy runs
+# BEFORE its `main` moves (deploy_app), so a drop there leaves `main` behind and
+# the next sweep carries it again (task lock-only-drop-follow-ups). Without this, rantly's
 # Eco dyno, which 503s in the last week of each month, would stop every late-month
 # engine release at its smoke, with only a hand edit of the release record out.
 #
@@ -12053,6 +12056,7 @@ def ship
 
   # 4. Re-lock consumers to the finals (after ALL gems live, before any app deploy).
   repin_consumers(app_groups, published_gems, ship_sha)
+  prune_lock_only!(rel_slug, app_groups, repos)
 
   # 4b. The re-lock commit is the tree that deploys: read ITS CI before any deploy.
   run_relock_gate(app_groups, ship_sha)
