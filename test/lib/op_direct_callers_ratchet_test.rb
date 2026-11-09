@@ -10,6 +10,7 @@ require "minitest/autorun"
 require "tmpdir"
 require "open3"
 require "fileutils"
+require "rbconfig"
 require_relative "../../bin/lib/op_call_scan"
 require_relative "../../bin/lib/op_reads_ratchet"
 
@@ -142,5 +143,26 @@ class OpDirectCallersRatchetTest < Minitest::Test
     assert_equal [%w[gh-token 2], %w[secret 1]], rep["callers"].map { |c| [c["caller"], c["reads"].to_s] }
     assert_includes rep["callers"].first["via"], "gh-token:deployer×1"
     refute OpReadsRatchet.report(rows, { "daily_cap" => 3 }, now: now)["over"], "at the cap is not over"
+  end
+
+  # bin/op-reads --ratchet as a process, on a temp log and a temp config.
+  def test_unit_op_reads_ratchet_exits_one_over_the_cap_and_zero_under_it
+    Dir.mktmpdir do |dir|
+      log = File.join(dir, "op-reads.log")
+      stamp = (Time.now.utc - 60).strftime("%Y-%m-%dT%H:%M:%SZ")
+      File.write(log, Array.new(3) { [stamp, "gh-token", "read", "ok", "gh-token:agent", "1", "-"].join("\t") }.join("\n") + "\n")
+      run = lambda do |cap|
+        config = File.join(dir, "cap-#{cap}.yml")
+        File.write(config, YAML.dump("daily_cap" => cap, "cap_history" => [{ "cap" => cap }], "callers" => {}))
+        env = { "MCR_OP_READS_LOG" => log, "MCR_OP_RATCHET_CONFIG" => config, "TASK_USAGE_SANDBOX" => "1" }
+        Open3.capture3(env, RbConfig.ruby, File.join(ROOT, "bin", "op-reads"), "--ratchet")
+      end
+
+      out, _err, status = run.call(2)
+      assert_equal 1, status.exitstatus, out
+      assert_match(/3 op call\(s\) in the last 24h; daily_cap 2 .*OVER the cap/, out)
+      _out, _err, status = run.call(3)
+      assert_equal 0, status.exitstatus
+    end
   end
 end
