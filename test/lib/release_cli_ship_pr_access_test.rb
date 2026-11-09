@@ -73,4 +73,27 @@ class ReleaseCliShipPrAccessTest < ReleaseCliHarness
     assert_includes out, "Resource not accessible by integration"
     refute_includes out, "MINTED"
   end
+
+  # THE CONTROL (secret-silos-phase-two): an expired token IS a stale credential.
+  # The read goes through the shared refresh: one mint, and the retry rides it.
+  def test_an_expired_token_mints_once_and_the_read_retries
+    setup = %(ENV.delete("RELEASE_PR_UNREADABLE")\n) + SHIP_STUB + <<~'RUBY'
+      MINTS = []
+      def GhAuthRetry.mint(**) = (MINTS << 1) && "fresh-lane"
+      def bounded_capture2e(*a, env: nil, **k)
+        st = ->(ok) { Struct.new(:success?).new(ok) }
+        return ["git@github.com:McRitchie-Studio/x.git\n", st[true]] if a[0] == "git" && a.include?("get-url")
+        if a[0, 3] == %w[gh pr list]
+          return ["[]", st[true]] if (env || {})["GH_TOKEN"] == "fresh-lane"
+          return ["HTTP 401: Bad credentials\n", st[false]]
+        end
+        ["", st[true]]
+      end
+    RUBY
+    out = run_cli(["--dry-run"], call: "ship", setup: setup)
+
+    assert_includes out, "reads pull requests in every app repo"
+    assert_match(/github refused/, out, "the refresh says what it did")
+    refute_includes out, "fresh-lane", "the token is never printed"
+  end
 end

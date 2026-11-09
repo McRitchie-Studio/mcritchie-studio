@@ -467,6 +467,20 @@ class AuthRefreshTest < Minitest::Test
     GhAuthRetry.forget_minted!
   end
 
+  # bin/release's PR-read preflight: a missing grant is the answer. With
+  # permission_refreshes: false the 403 mints nothing; a 401 still refreshes.
+  def test_unit_github_permission_refreshes_false_keeps_a_403_as_the_answer
+    path, count = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path)
+    result = GhAuthRetry.with_refresh(env: e, permission_refreshes: false, say: ->(_l) { }) { |_t| [INTEGRATION_403, false] }
+    assert_equal [INTEGRATION_403, false], result
+    assert_equal 0, broker_calls(count)
+
+    result = GhAuthRetry.with_refresh(env: e, permission_refreshes: false, say: ->(_l) { }) { |t| gh(t, FAKE_MINTED) }
+    assert_equal ["[]", true], result
+    assert_equal 1, broker_calls(count)
+  end
+
   # CiStatus, and bin/release through it: the held (minted) token is ours; none held
   # means the ambient one, which may be another App's.
   def test_unit_ci_status_refusal_tells_our_minted_token_from_an_inherited_one

@@ -308,7 +308,7 @@ class Release::MemberContainmentTest < ActiveSupport::TestCase
     assert_includes src, "main_sha: main_sha, deadline: read_deadline)"
     assert_equal 2, src.scan("ship_checked = ship_checked_slugs(repos)").size
     assert_equal 2, src.scan('checked: #{ship_checked.inspect}); "').size
-    assert_includes src, "GhAuthRetry.auth_failure?(out)", "an expired token is re-minted, not read as unknown"
+    assert_includes src, "out, status = gh_read_refreshing(argv)", "an expired token is re-minted, not read as unknown"
   end
 
   # --- the git fallback for an unreadable PR (rel-20261029-00560a) -----------

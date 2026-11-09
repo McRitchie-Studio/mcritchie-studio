@@ -159,6 +159,13 @@ class PrReviewCommandTest < Minitest::Test
         exit 1
       end
       exit(ENV["GH_EDIT_FAIL"].to_s == "1" ? 1 : 0) if ARGV[0] == "pr" && ARGV[1] == "edit"
+      # GH_MERGE_NEEDS_TOKEN — `gh pr merge` refuses with a 401 unless GH_TOKEN is
+      # this value (the minted token). It compares; it never prints the token.
+      if ARGV[0] == "pr" && ARGV[1] == "merge" && !ENV["GH_MERGE_NEEDS_TOKEN"].to_s.empty? &&
+         ENV["GH_TOKEN"].to_s != ENV["GH_MERGE_NEEDS_TOKEN"]
+        STDERR.puts "HTTP 401: Bad credentials (https://api.github.com/graphql)"
+        exit 1
+      end
       exit(ENV["GH_MERGE_FAIL"].to_s == "1" ? 1 : 0) if ARGV[0] == "pr" && ARGV[1] == "merge"
       exit 0
     RUBY
@@ -1169,6 +1176,38 @@ assert_includes reviewer_calls.first, "--busy-auto",
     move_i  = seq.index { |e| e[0] == "task" && e[1] == "move" }
     assert merge_i && move_i, "expected merge and move both to run"
     assert merge_i < move_i, "merge the feat PR onto accepted BEFORE moving reviewed (reviewed ⟺ code-on-accepted)"
+  end
+
+  # [integration] secret-silos-phase-two: a merge refused on credentials goes
+  # through the shared refresh (GhAuthRetry.with_refresh): one mint, one retry,
+  # logged as `auth-refresh`, and the token is never printed.
+  def test_a_merge_refused_on_credentials_mints_once_and_retries_through_the_shared_refresh
+    ready = task("expired-token-pr", created_at: "2026-06-29T12:00:00Z")
+    reviewed = task("expired-token-pr", created_at: "2026-06-29T12:00:00Z",
+                                        reports: [report("carl", "merge-ready"), report("shannon", "merge-ready")])
+    write_snapshots(snapshot([ready]), snapshot([reviewed]))
+    minted = "fake-minted-review-token"
+    broker = File.join(@dir, "gh-token-stub")
+    count = File.join(@dir, "broker-calls")
+    File.write(broker, "#!/bin/sh\necho call >> #{count}\necho #{minted}\n")
+    File.chmod(0o755, broker)
+    reads_log = File.join(@dir, "op-reads.log")
+
+    out, err, status = run_heartbeat("--run", "--limit", "1",
+                                     env: { "GH_MERGE_NEEDS_TOKEN" => minted, "GH_AUTH_TOKEN_BIN" => broker,
+                                            "MCR_OP_READS_LOG" => reads_log })
+    assert status.success?, err
+
+    merges = json_lines(@gh_log).select { |a| a[0] == "pr" && a[1] == "merge" }
+    assert_equal 2, merges.size, "the refused merge, then one retry"
+    assert_equal 1, File.readlines(count).size, "one mint"
+    assert_match(/auth: auth-refresh: github refused github.mcritchie-agent/, out)
+    assert_equal ["move", "expired-token-pr", "reviewed", "--actor", "avi"],
+                 json_lines(@task_log).find { |a| a.first == "move" }
+    rows = File.readlines(reads_log).grep(/auth-refresh/)
+    assert_equal 1, rows.size
+    assert_includes rows.first, "github:github.mcritchie-agent"
+    refute_includes out + err + File.read(reads_log), minted, "the token is never printed or logged"
   end
 
   # [unit] A mis-based feat PR (base != accepted) is RETARGETED to accepted, then
