@@ -351,7 +351,7 @@ apps:
     database: true
     backups: true
     restore_drilled: null
-    description: alex.build, the site for Alex McRitchie, the AI hire built by Alex McRitchie; studio-engine satellite, not yet deployed
+    description: alex.build, the site for Alex McRitchie, the AI hire built by Alex McRitchie; studio-engine satellite on Heroku
 
   - slug: voicebox
     name: Voicebox
@@ -370,7 +370,7 @@ apps:
     database: true
     backups: false
     restore_drilled: null
-    description: Voicebox, a phone-first voice recorder that turns a spoken idea into a prompt posted to Slack; studio-engine satellite, not yet deployed
+    description: Voicebox, a phone-first voice recorder that turns a spoken idea into a prompt posted to Slack; studio-engine satellite on Heroku
 
 libraries:
   - slug: studio-engine

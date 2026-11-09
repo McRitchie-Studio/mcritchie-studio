@@ -244,7 +244,8 @@ reads `at authorization` in place of `at approval`.
 
 `bin/release status` also lists each registered gem's burned versions (`BURNED <gem>
 <versions>`: finals a prepare published that no release shipped); the ship refuses a
-lock naming one. `bin/release status` reads the lane for display only. A failure inside that read
+lock naming one. It also lists each live engine app whose production locks
+studio-engine a minor or more behind the last shipped engine (`LAGS <app>`, display only). `bin/release status` reads the lane for display only. A failure inside that read
 prints `lane: unavailable (<error class>)` under the current release and the
 command carries on; it never fails `status` or `prepare`, which make the same read.
 
