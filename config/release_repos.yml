@@ -414,7 +414,8 @@ apps:
     # Consumes studio-engine (config/apps.yml engine: true): a release that publishes
     # the engine bumps this app's lock to the published version, through
     # bin/release.rb#bump_consumer_locks_for_qa when the release carries the app and
-    # bin/release.rb#relock_cardless_consumers (the final, on accepted) when it does not.
+    # bin/release.rb#relock_cardless_consumers (the final, on accepted) when it does not;
+    # the next full prepare then carries it with no member (Release::LockOnlyConsumers).
     profile: standalone-heroku
     ladder: three-rung
     prod_deploy:
@@ -433,6 +434,11 @@ apps:
     # Procfile's `release: bin/rails db:migrate`. git_push_heroku runs no tests, so
     # both gates name CI's full suite, verbatim, and the two strings stay equal.
     # No accepted_trigger_lint: the app's CI carries no trigger lint yet.
+    # Consumes studio-engine (config/apps.yml engine: true): a release that publishes
+    # the engine bumps this app's lock to the published version, through
+    # bin/release.rb#bump_consumer_locks_for_qa when the release carries the app and
+    # bin/release.rb#relock_cardless_consumers (the final, on accepted) when it does not;
+    # the next full prepare then carries it with no member (Release::LockOnlyConsumers).
     test_cmd: bin/rails db:test:prepare test test:system
     qa_test_cmd: bin/rails db:test:prepare test test:system
     prod_deploy:
@@ -450,6 +456,11 @@ apps:
     # `alex-build` (essential-0 Postgres), created on Alex McRitchie's word.
     # Migrations ride the Procfile's `release: bin/rails db:migrate`.
     # git_push_heroku runs no tests, so the gate names CI's full suite, verbatim.
+    # Consumes studio-engine (config/apps.yml engine: true): a release that publishes
+    # the engine bumps this app's lock to the published version, through
+    # bin/release.rb#bump_consumer_locks_for_qa when the release carries the app and
+    # bin/release.rb#relock_cardless_consumers (the final, on accepted) when it does not;
+    # the next full prepare then carries it with no member (Release::LockOnlyConsumers).
     test_cmd: bin/rails db:test:prepare test test:system
     #
     # QA-evidence exempt on cost, by operator decision ("QA exeption", Alex
@@ -478,7 +489,8 @@ apps:
     # Consumes studio-engine (config/apps.yml engine: true): a release that publishes
     # the engine bumps this app's lock to the published version, through
     # bin/release.rb#bump_consumer_locks_for_qa when the release carries the app and
-    # bin/release.rb#relock_cardless_consumers (the final, on accepted) when it does not.
+    # bin/release.rb#relock_cardless_consumers (the final, on accepted) when it does not;
+    # the next full prepare then carries it with no member (Release::LockOnlyConsumers).
     profile: standalone-heroku
     ladder: three-rung
     prod_deploy:
