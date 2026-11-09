@@ -248,8 +248,8 @@ RELEASE_TASK_CMD = Remedy.command("task", __dir__).freeze
 # Sizes how long a gate holds a PENDING CI verdict from the workflows that produce it
 # (task gem-gate-outwaits-consumer-ci). Pure and Rails-free; see ci_poll_budget_for.
 require_relative "lib/ci_poll_budget"
-# The ONE automatic re-run a red release CI verdict may earn (a flaky test lane, or
-# bundler's gem-resolution error from the RubyGems CDN race). Pure; see poll_ci_verdict.
+# A red release CI verdict: stop and record it (`ci_red`), or the one named infra
+# re-run (bundler's gem-resolution error, the RubyGems CDN race). Pure; see poll_ci_verdict.
 require_relative "lib/ci_rerun"
 # CleanCheck is the pure verdict behind the `deploy-with-task` clean-LADDER GUARD
 # (`bin/release status --clean-only`): given BOTH rungs the expedite walks — work
@@ -4718,7 +4718,7 @@ end
 # G3 dedupe credits without a fresh run (resolve_release_ci_verdict), so this costs a
 # read, not a CI cycle, on a normal sweep. Records nothing: the pre-QA gate after the
 # bump is still G3, still reads the post-bump SHA QA deploys, and still records it.
-# A red THERE now means the lock bump itself or a flake, and a re-run at the same gem
+# A red THERE now means the lock bump itself or a defect with a cause, and a re-run at the same gem
 # tip reuses the live final (publish_gems_for_qa's reuse path), so nothing burns.
 def pre_publish_gate(app_groups, gem_plan)
   # Nothing to burn when nothing would be pushed: no gem, or every final already live.
@@ -8560,8 +8560,8 @@ def gem_ci_abort(repo, sha, version, ci)
     "publish would push. NOTHING WAS PUBLISHED — the version is still free and this run can be " \
     "re-run once CI is green. A gem push cannot be undone, so this gate will not credit a local " \
     "release-check alone: that run proves the tree is good ON THIS MACHINE, and the class of " \
-    "failure it cannot see is exactly the one that reaches every consumer. Watch the run, fix or " \
-    "re-run it, then re-run this sweep."
+    "failure it cannot see is exactly the one that reaches every consumer. Watch the run; on a red, " \
+    "find the cause and fix it forward (never a hand re-run), then re-run this sweep."
 end
 
 # Returns { repo => the version consumers LOCK for QA }: a candidate x.y.z.rcN, or
