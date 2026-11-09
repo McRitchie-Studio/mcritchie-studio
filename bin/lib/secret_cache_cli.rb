@@ -11,15 +11,24 @@
 #   bin/secret contingency <name>           the ordered steps when 1Password fails or hangs
 #   bin/secret migrate                      move the legacy .agents caches in (idempotent)
 #   bin/secret prewarm                      before a long run: refresh tokens with under 45 min left
+#   bin/secret warm <soul> [--manifest F] [--only item,item]   warm a soul's set (one bounded op pass)
+#   bin/secret warm --hook                  the SubagentStart hook: a detached warm for the subagent's soul
+#   bin/secret read [--soul S] <vault> <item> <field>   one field of a soul-set item, cache first
+#   bin/secret item-json [--soul S] <vault> <item>      the same item as `op item get --format json` prints
+#   bin/secret sets                         every soul's set and its time left; never a value
+#   bin/secret manifest <soul>              a soul's portable manifest (JSON; names only)
 #
-# A VALUE IS PRINTED BY `get` (and the classic read) ONLY, to stdout, so
+# A VALUE IS PRINTED BY `get`, `read`, `item-json` (and the classic read) ONLY, to stdout, so
 # `X="$(bin/secret get github.agent)"` works. Every other line is metadata.
 
 require "json"
 require "open3"
 require "tempfile"
+require "io/wait"
+require "rbconfig"
 require_relative "secret_cache"
 require_relative "op_meter"
+require_relative "soul_secrets"
 
 module SecretCacheCli
   USAGE = <<~TXT
@@ -30,6 +39,11 @@ module SecretCacheCli
            bin/secret contingency <name>
            bin/secret migrate
            bin/secret prewarm
+           bin/secret warm <soul> [--manifest FILE] [--only item,item] | warm --hook
+           bin/secret read [--soul S] <vault> <item> <field>
+           bin/secret item-json [--soul S] <vault> <item>
+           bin/secret sets
+           bin/secret manifest <soul>
            bin/secret <vault> <item> [field]      (the classic 1Password read)
   TXT
 
@@ -66,6 +80,15 @@ module SecretCacheCli
     when "migrate" then migrate(env, out, err)
     when "prewarm" then prewarm(env, out, err)
     when "read-item" then read_item(argv, env, out, err)
+    when "warm" then warm(argv, env, out, err)
+    when "read" then soul_read(argv, env, out, err, json: false)
+    when "item-json" then soul_read(argv, env, out, err, json: true)
+    when "sets"
+      out.puts(SoulSecrets.status_lines(SoulSecrets.config(env), env: env))
+      0
+    when "manifest"
+      out.puts(JSON.pretty_generate(SoulSecrets.manifest(argv.shift.to_s, SoulSecrets.config(env))))
+      0
     when "help", "-h", "--help"
       out.puts(USAGE)
       0
@@ -73,7 +96,7 @@ module SecretCacheCli
       err.puts(USAGE)
       2
     end
-  rescue SecretCache::Unsafe => e
+  rescue SecretCache::Unsafe, SoulSecrets::ConfigError => e
     err.puts("secret: #{e.message}")
     1
   end
@@ -199,8 +222,9 @@ module SecretCacheCli
             else
               [argv.first.to_s]
             end
+    souls = argv.first == "--source" ? forget_soul_copies(argv[1].to_s, env, out) : []
     if names.empty?
-      out.puts("secret: no manifest entry is fed by #{argv[1]}; nothing to forget")
+      out.puts("secret: no manifest entry is fed by #{argv[1]}; nothing to forget") if souls.empty?
       return 0
     end
 
@@ -300,6 +324,96 @@ module SecretCacheCli
   rescue SystemCallError
     err.puts("secret: 1Password CLI not found at #{op_bin(env)}")
     nil
+  end
+
+  # ── soul secret sets (bin/lib/soul_secrets.rb) ───────────────────────────
+
+  # Rotation drops every soul's copy of the item too. Returns the souls touched.
+  def forget_soul_copies(item, env, out)
+    cfg = SoulSecrets.config(env)
+    souls = cfg.fetch("souls", {}).select { |_s, set| set["items"].any? { |e| e["item"].to_s == item } }.keys
+    souls.each do |soul|
+      SoulSecrets.forget(soul, item, env: env)
+      report(out, "#{soul}/#{item}", "forgotten — the next read fetches it fresh")
+    end
+    souls
+  rescue SoulSecrets::ConfigError
+    []
+  end
+
+  def warm(argv, env, out, err)
+    return warm_hook(env) if argv.first == "--hook"
+
+    soul = argv.shift.to_s
+    manifest_file = nil
+    only = nil
+    while (arg = argv.shift)
+      case arg
+      when "--manifest" then manifest_file = argv.shift.to_s
+      when "--only" then only = argv.shift.to_s.split(",").map(&:strip)
+      else return usage_error(err, "unexpected #{arg.inspect}")
+      end
+    end
+    manifest = if manifest_file
+                 SoulSecrets.load_manifest(manifest_file, env)
+               else
+                 SoulSecrets.manifest(soul, SoulSecrets.config(env))
+               end
+    if manifest_file && !soul.empty? && manifest["soul"] != soul
+      return usage_error(err, "#{manifest_file} is #{manifest['soul']}'s manifest, not #{soul}'s")
+    end
+    lines, ok = SoulSecrets.warm(manifest, env: env, only: only)
+    out.puts(lines)
+    ok ? 0 : 1
+  end
+
+  # The SubagentStart hook. Prints nothing and always exits 0: a hook must never
+  # stop or slow a launch. The warm runs detached, in its own process group.
+  def warm_hook(env)
+    payload = $stdin.wait_readable(1) ? $stdin.read : ""
+    SoulSecrets.hook(payload, env: env, spawner: lambda { |soul|
+      pid = Process.spawn(env.to_h, RbConfig.ruby, __FILE__, "warm", soul,
+                          in: File::NULL, out: File::NULL, err: File::NULL, pgroup: true)
+      Process.detach(pid)
+    })
+    0
+  rescue StandardError
+    0
+  end
+
+  # `read` prints one field's value; `item-json` prints the kept fields in the
+  # shape `op item get --format json` does. Exit NOT_MANAGED (3) when no set names
+  # the item, REFUSED (4) when another soul's set does.
+  def soul_read(argv, env, out, err, json:)
+    soul = env[SoulSecrets::SOUL_ENV].to_s.strip
+    if argv.first == "--soul"
+      argv.shift
+      soul = argv.shift.to_s
+    end
+    vault, item, field = argv
+    return usage_error(err, "name the soul: --soul <slug> or #{SoulSecrets::SOUL_ENV}") if soul.empty?
+    return usage_error(err, "name the vault and the item") if vault.to_s.empty? || item.to_s.empty?
+    return usage_error(err, "name the field") if !json && field.to_s.empty?
+
+    fields = SoulSecrets.read(soul, vault, item, cfg: SoulSecrets.config(env), env: env, err: err)
+    return NOT_MANAGED if fields.nil?
+
+    if json
+      out.print(SoulSecrets.op_item_json(item, vault, fields))
+      return 0
+    end
+    unless fields.key?(field)
+      err.puts("secret: #{soul}'s copy of #{item} keeps no field #{field.inspect} (it keeps #{fields.keys.join(', ')})")
+      return 1
+    end
+    out.print(fields[field])
+    0
+  rescue SoulSecrets::Refused => e
+    err.puts(e.message)
+    SoulSecrets::REFUSED
+  rescue SoulSecrets::Unavailable => e
+    err.puts("secret: #{e.message}")
+    1
   end
 
   # ── helpers ────────────────────────────────────────────────────────────────
