@@ -29,7 +29,10 @@
 // swap, the reload at the kept place and the playback are real. The first test
 // stages a failure on a paused player by firing its error event, because a real
 // refetch would itself reset the place the test is about to measure; the tests
-// after it fail the players for real, on a 403. Not proven: that R2 answers a
+// after it fail the players for real, on a 403. A refresh asked signed out
+// and answered after the operator signs in again (in CI, a lazy frame image's
+// ask) is held across the sign-in on purpose, so the page's second ask is
+// proven, not left to timing. Not proven: that R2 answers a
 // lapsed link the way the stand-in does, and the timer's fourteen-minute
 // length (it is armed short, or its handler is called directly). Wholly
 // synthetic data: the stitch demo and the lettered demo seeded by e2e/seed.rb.
