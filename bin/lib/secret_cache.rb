@@ -743,6 +743,8 @@ module SecretCache
       - Production dynos cannot read this folder; it exists only on this Mac.
       - A rotated key: run `bin/secret forget <name>` (credential-rotation SOP) so the
         old value never lingers here.
+      - Each `<soul>/` folder holds that soul's own set (config/soul_secret_sets.yml),
+        warmed at launch by `bin/secret warm <soul>`; `bin/secret sets` shows them.
 
       ## Manifest
 
