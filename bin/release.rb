@@ -213,6 +213,7 @@ require_relative "../app/models/release/devnet_gauntlet"
 require_relative "../app/models/release/devnet_gauntlet_run"
 require_relative "../app/models/release/engine_migration_install"
 require_relative "../app/models/release/engine_consumers"
+require_relative "../app/models/release/lock_only_consumers"
 require_relative "../lib/app_catalog"
 require_relative "../app/models/release/post_deploy"
 require_relative "../app/models/release/merge_plan"
@@ -3140,6 +3141,63 @@ def adopt_recorded_pins!(recorded)
   end
 end
 
+# THE LOCK-ONLY CONSUMERS (Release::LockOnlyConsumers; task
+# release-ships-lock-only-consumers). The engine apps no swept member names whose
+# `accepted` carries only the release tooling's lock bumps past `release`: the
+# cardless re-lock left them there, and no card would ever carry them. Each one
+# that qualifies is PINNED at the `accepted` SHA its range was read to (the
+# swept pin, so the promote and the stale-tree gate read the tree this read
+# judged) and returned, to ride the promote, the QA deploy and the ship.
+#
+# A live run fetches first; a failed fetch or an unreadable range leaves the repo
+# out (it waits for the next sweep, and `bin/release status` names its lag). A
+# dry run takes no fetch and reads the refs the last fetch left.
+def lock_only_consumer_repos(member_repos, held_repos: [])
+  engine_apps = Release::EngineConsumers.all(RELEASE_REPOS, AppCatalog.apps)
+  # A repo rides one train: the train a task naming only it would ride.
+  train_repos = engine_apps.select { |repo| train_for_repos([repo]) == TRAIN.to_s }
+  candidates = Release::LockOnlyConsumers.candidates(engine_apps: engine_apps, member_repos: member_repos,
+                                                     train_repos: train_repos, held_repos: held_repos)
+  candidates.filter_map do |repo|
+    path = repo_path(repo)
+    next unless Dir.exist?(path)
+
+    unless DRY
+      _, fetched = sh("git", "-C", path, "fetch", "origin", RELEASE_BRANCH, ACCEPTED_BRANCH, "--quiet", capture: true)
+      next say("  ⚠ #{repo}: fetch failed — not judged for a lock-only ride this sweep") unless fetched
+    end
+    # git_capture, not ref_sha: these are reads, and a dry run must still make them.
+    sha_out, sha_ok = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/#{ACCEPTED_BRANCH}^{commit}")
+    _, release_ok   = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/#{RELEASE_BRANCH}^{commit}")
+    sha = sha_ok ? sha_out.to_s.strip : ""
+    next if sha.empty? || !release_ok
+
+    log, ok = git_capture("-C", path, "log", "--format=#{Release::LockOnlyConsumers::LOG_FORMAT}", "--name-only",
+                          "origin/#{RELEASE_BRANCH}..#{sha}")
+    next unless ok
+
+    commits = Release::LockOnlyConsumers.parse_log(log)
+    next unless Release::LockOnlyConsumers.lock_only?(commits)
+
+    # A lock bump whose own CI is RED stays behind, with a warning. It rides for
+    # nobody's card, so it must not stop the release: refuse_red_accepted! inside
+    # the promote would abort the whole sweep over it. Pending or absent rides;
+    # the pre-publish and pre-QA gates wait on it like any app.
+    unless DRY
+      red = red_accepted_repos(repo => ci_verdict(repo, sha))
+      if red.any?
+        say("  ⚠ #{repo}: `accepted` carries only lock bumps, but its CI is #{red[repo][:state].to_s.upcase} at " \
+            "#{short(sha)} — left out of this release; fix the lock on `#{ACCEPTED_BRANCH}` and the next sweep carries it")
+        next
+      end
+    end
+
+    step("  #{Release::LockOnlyConsumers.riding_line(repo, commits)}")
+    swept_shas[repo] = sha
+    repo
+  end
+end
+
 # How many commits reached `accepted` after the pin, per pinned repo in `repos`:
 # the work that waits for the next release. Display only; a failed read is skipped.
 def post_sweep_counts(repos)
@@ -3587,8 +3645,17 @@ end
 SWEPT_SHAS_KEY = "swept_shas"
 RECORDED_SWEPT_SHAS_RUBY = "(r.respond_to?(:metadata) ? (r.metadata || {})[#{SWEPT_SHAS_KEY.inspect}] : nil) || {}"
 
-def batch_sweep_with_plan_ruby(slugs, release_slug = nil, swept_shas: {})
+def batch_sweep_with_plan_ruby(slugs, release_slug = nil, swept_shas: {}, lock_only: [])
   open_ruby = release_slug ? "Release.open!(slug: #{release_slug.inspect}#{train_kwarg}) if #{rel_current}.nil?; " : ""
+  # The lock-only engine apps ride the same transaction: recorded on the release
+  # (Release::LockOnlyConsumers.record, a union) BEFORE repo_plan reads it, so the
+  # plan this returns, and every later step's, carries them.
+  only = Array(lock_only).map(&:to_s).reject(&:empty?).uniq
+  lock_only_ruby = if only.empty?
+                     ""
+                   else
+                     "r.update!(metadata: Release::LockOnlyConsumers.record(r.metadata || {}, #{only.inspect})); "
+                   end
   # The pins ride the SAME transaction as the membership they describe: the record of
   # who is on the release and of which tree it promotes land together or not at all.
   # Merged per repo, so a later run's pin replaces only the repos it re-pinned.
@@ -3606,6 +3673,7 @@ def batch_sweep_with_plan_ruby(slugs, release_slug = nil, swept_shas: {})
   "r = #{rel_current_or_open}; " \
   "Release::Conductor.validate_members!(r); " \
   "#{pin_ruby}" \
+  "#{lock_only_ruby}" \
   "{ slug: r.slug, state: r.state, swept: slugs, repos: Release::Conductor.repo_plan(r), " \
   "#{SWEPT_SHAS_KEY}: #{RECORDED_SWEPT_SHAS_RUBY} } }; " \
   "puts(result.to_json)"
@@ -5378,6 +5446,22 @@ def prepare
     end
   end
 
+  # 4a-ter. THE LOCK-ONLY ENGINE APPS (Release::LockOnlyConsumers). The ship's
+  #     cardless re-lock leaves the final engine lock on an engine app's `accepted`
+  #     "for the next release that carries the app", and no card ever carried it:
+  #     commercial-welding ran 0.135.2 and alex-build 0.137.0 in production while
+  #     their `accepted` held four bumps (2026-11-09). An engine app no member names
+  #     whose `accepted` carries ONLY those lock bumps now rides this release with no
+  #     member: promoted here, then QA'd (where it has a QA app) and deployed through
+  #     its own registry entry. Recorded on the release below, so the repo plan of
+  #     every later step carries it. Only a full sweep: `--task` curates the sweep
+  #     and `--expedite` proves the ladder carries one task, so neither adds a repo.
+  lock_only = []
+  if plan["sweep"].any? && task_slugs.empty? && !expedite
+    lock_only = lock_only_consumer_repos(member_repos, held_repos: detect["held_repos"] || [])
+    promote_repos = (promote_repos + lock_only).uniq
+  end
+
   promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?
 
   # 5. Record membership for every member whose code is on accepted/release/main
@@ -5390,7 +5474,7 @@ def prepare
   result = {}
   if landed.any? && !DRY
     step("record: Release::Conductor.sweep! ×#{landed.size} + repo plan in ONE run (#{landed.join(', ')})")
-    result = conductor(batch_sweep_with_plan_ruby(landed, slug, swept_shas: swept_shas))
+    result = conductor(batch_sweep_with_plan_ruby(landed, slug, swept_shas: swept_shas, lock_only: lock_only))
   end
 
   # 4b. No sweep write happened (dry-run, or a pure re-run with nothing new) →
@@ -5954,6 +6038,7 @@ def status
   say(verdict["message"])
   program_drift_report
   burned_gems_report
+  engine_lag_report
 
   # --clean-only is the GATE: a dirty ladder aborts the expedite (non-zero exit)
   # so `deploy-with-task` refuses instead of dragging the pending work to prod.
@@ -6006,6 +6091,43 @@ def burned_gems_report(reads: nil)
   Release::GemFlow.burned_status_lines(reads).each { |line| say("  #{line}") }
 rescue StandardError => e
   say("  BURNED GEM VERSIONS: cannot confirm — the check failed (#{e.class}: #{e.message})")
+end
+
+# ENGINE LAG — every live engine app whose PRODUCTION (`origin/main`) locks
+# studio-engine a minor or more behind the last shipped engine (studio-engine's
+# `origin/main` version). commercial-welding sat on 0.135.2 and alex-build on
+# 0.137.0 while the release shipped 0.141.1, and no status line said so
+# (task release-ships-lock-only-consumers). Display only, like the drift lines: it
+# never fails status or the --clean-only gate. It reads the refs the ladder read
+# above just fetched, and fetches nothing itself. `reads` is the test seam:
+# { reference:, live: { repo => version }, accepted: { repo => version } }.
+ENGINE_GEM = "studio-engine"
+
+def engine_lag_report(reads: nil)
+  reads ||= engine_lag_reads
+  say("")
+  say("Engine lag (production behind the last shipped #{ENGINE_GEM} by a minor or more):")
+  Release::LockOnlyConsumers.status_lines(gem_name: ENGINE_GEM, reference: reads[:reference],
+                                          live_locks: reads[:live], accepted_locks: reads[:accepted])
+                            .each { |line| say("  #{line}") }
+rescue StandardError => e
+  say("  ENGINE LAG: cannot confirm — the check failed (#{e.class}: #{e.message})")
+end
+
+def engine_lag_reads
+  apps = Release::EngineConsumers.all(RELEASE_REPOS, AppCatalog.apps)
+  locked = lambda do |repo, ref|
+    path = repo_path(repo)
+    next nil unless Dir.exist?(path)
+
+    lock, ok = git_capture("-C", path, "show", "#{ref}:Gemfile.lock")
+    ok ? Release::ShipSequence.locked_version(lock, ENGINE_GEM) : nil
+  end
+  {
+    reference: gem_version_from_ref(ENGINE_GEM, "origin/main"),
+    live: apps.to_h { |repo| [repo, locked.call(repo, "origin/main")] },
+    accepted: apps.to_h { |repo| [repo, locked.call(repo, "origin/#{ACCEPTED_BRANCH}")] }
+  }
 end
 
 # One gem's burned set for status: origin first, then the local tags.
