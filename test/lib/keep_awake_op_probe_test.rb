@@ -4,11 +4,9 @@
 #
 #   bin/rails test test/lib/keep_awake_op_probe_test.rb
 #
-# `op` and `ioreg` are stub scripts in a tmpdir; the real 1Password CLI never
-# runs. The probe deadline is shortened by env so a stub that never answers is
-# killed by the deadline itself, not by a sleep in the test. The Watch tests use
-# an injected clock and an injected probe, so cadence and the one-note rule run
-# with no process at all.
+# `op` and `ioreg` are stub scripts; the real 1Password CLI never runs. A short
+# probe deadline kills a stub that never answers, with no sleep in the test. The
+# Watch tests use an injected clock and probe, so they spawn no process.
 
 require "minitest/autorun"
 require "tmpdir"

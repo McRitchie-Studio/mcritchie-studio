@@ -240,9 +240,16 @@ module KeepAwake
     end
 
     def append(row, env)
-      line = [ row["ts"], row["outcome"], row["seconds"], row["idle_seconds"] || BLANK, row["pid"] ]
+      line = [ utc(row["ts"]), row["outcome"], row["seconds"], row["idle_seconds"] || BLANK, row["pid"] ]
              .map { |v| v.to_s.tr("\t\r\n", "   ") }.join("\t")
       File.open(log_path(env), "a") { |f| f.write("#{line}\n") }
+    end
+
+    # Every row is UTC, like op-reads.log and history.log, so they line up.
+    def utc(iso)
+      Time.parse(iso.to_s).utc.iso8601
+    rescue ArgumentError
+      iso.to_s
     end
 
     def monotonic
