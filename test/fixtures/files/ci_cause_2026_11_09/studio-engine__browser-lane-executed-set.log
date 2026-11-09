@@ -1,0 +1,12 @@
+2026-11-09T05:55:35.3562738Z Unexpected HTTP response: 504
+2026-11-09T05:56:36.1420859Z E2E EXECUTED SET: RED
+2026-11-09T05:56:36.1430048Z   493 executed · 0 skipped · 2 shard report(s) · census: 796 committed
+2026-11-09T05:56:36.1431055Z 
+2026-11-09T05:56:36.1432848Z   ✗ expected one report from each of 3 shard(s) — [1, 2, 3] — but got [1, 3]. A shard whose report never arrived is a shard whose specs never ran. This is the DROPPED-SHARD vector: delete one entry from a `shard:` matrix and every remaining job stays green over a smaller suite.
+2026-11-09T05:56:36.1434432Z 
+2026-11-09T05:56:36.1435166Z   ✗ the lane EXECUTED 493 spec(s); the committed suite under e2e/ counts 796 (303 FEWER than the census).
+2026-11-09T05:56:36.1446957Z 
+2026-11-09T05:56:36.1447907Z   The `playwright` check is GREEN over a set that is not the set this repo agreed to run. Find out why: the census is computed from e2e/, so no number here can be moved to match.
+2026-11-09T05:56:36.1486308Z ##[error]Process completed with exit code 1.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes

@@ -1,0 +1,15 @@
+2026-11-09T05:22:50.0042347Z ##[group]Downloading Ruby
+2026-11-09T05:22:50.0052603Z https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.11/ruby-3.3.11-ubuntu-24.04-x64.tar.gz
+2026-11-09T05:23:01.0576318Z Unexpected HTTP response: 504
+2026-11-09T05:23:01.0577487Z Waiting 16 seconds before trying again
+2026-11-09T05:23:28.1078094Z Unexpected HTTP response: 504
+2026-11-09T05:23:28.1078593Z Waiting 14 seconds before trying again
+2026-11-09T05:23:53.1529207Z Took  63.15 seconds
+2026-11-09T05:23:53.1530307Z ##[endgroup]
+2026-11-09T05:23:53.1611300Z ##[error]Error: Unexpected HTTP response: 504
+    at /__w/_actions/ruby/setup-ruby/v1/dist/index.js:12570:25
+    at Generator.next (<anonymous>)
+    at fulfilled (/__w/_actions/ruby/setup-ruby/v1/dist/index.js:12471:58)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes

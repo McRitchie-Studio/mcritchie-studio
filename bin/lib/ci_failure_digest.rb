@@ -39,8 +39,8 @@ module CiFailureDigest
 
   # Jobs that only re-count another job's result (the executed/declared-set census).
   # When a real job failed too, their red is the echo of it, so they are listed last
-  # and never excerpted.
-  ECHO_JOB = /_executed_set|_declared_set/
+  # and never excerpted. Spelled `ci / rails_executed_set`, `browser lane executed-set`.
+  ECHO_JOB = /(?:executed|declared)[_-]set/i
 
   module_function
 

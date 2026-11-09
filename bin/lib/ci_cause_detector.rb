@@ -16,12 +16,22 @@ require_relative "ci_failure_digest"
 #   infra   — the job's machinery gave out before or around the test: an apt mirror,
 #             an image pull quota, the network, a lost runner, the gem index.
 #   harness — the test rig, not a test: the test server or the browser lane's boot,
-#             global setup, an executed-set census that echoes another job.
+#             global setup, or a red step the log names only by its ##[error] line.
 #   product — a named test failed and the log shows the APP failing under it (a 500,
 #             a template error, a backtrace through app/). The race is in the product.
 #   test    — a named test failed and nothing points past the test itself.
 # The class is a FIRST READ from the log; the builder who takes the card confirms it,
 # and a product race is fixed in the product.
+#
+# SIGNAL ONLY (task ci-cause-detector-signal-only, after 2026-11-09, when one GitHub
+# 504 on ruby/setup-ruby's download filed 15 cards, one per job per repo):
+#   - An INFRA cause is outside every repo, so its card is keyed without the repo
+#     (card_slug): one card per fault across all repos, each red job one occurrence.
+#   - A job with no named fault is read by its FIRST ##[error] line, never the post-job
+#     cleanup tail. A job with no ##[error] line yields no cause; CiCauseCardJob records
+#     that red as an ErrorLog row, because a red is never dropped silently.
+#   - A census job (executed-set) that names a shard whose report never arrived is a
+#     FOLLOW-ON: its occurrence goes on the cause of that shard (attempt_causes).
 #
 # IT IS PURE. flips() reads run rows, causes() reads one job's log; the IO (GitHub
 # reads, the board write) lives in app/jobs/ci_cause_card_job.rb. The log parser is
@@ -36,8 +46,14 @@ module CiCauseDetector
   INFRA = [
     [/apt-get failed every attempt|E: Failed to fetch|Unable to fetch some archives|Could not get lock \/var\/lib\/(?:dpkg|apt)/i,
      "apt-mirror", "an apt mirror stalled or refused a package fetch"],
+    # A setup action (ruby/setup-ruby, actions/setup-node, …) that gave up on its
+    # toolchain download. Read on the ##[error] line only: the action retries, and a
+    # retried 504 that then succeeded prints the same words without failing the step.
+    # Above http-429 and network, which a stalled download can also print.
+    [/##\[error\].*(?:Unexpected HTTP response: 5\d\d|HTTP Error 5\d\d|Failed to download .*\b5\d\d\b)/i,
+     "toolchain-download", "a setup action could not download its toolchain (the host answered 5xx)"],
     [/toomanyrequests|Data limit exceeded|pull rate limit/i, "image-pull-quota", "a container image pull was rate-limited"],
-    [/can no longer be found in that source|Could not find [\w.-]+-\d[\w.]* in (?:locally installed gems|rubygems repository)/i,
+    [/can no longer be\s+found in that source|Could not find [\w.-]+-\d[\w.]* in (?:locally installed gems|rubygems repository)/i,
      "gem-index", "bundler could not resolve a locked gem (the gem index had not propagated)"],
     [/The runner has received a shutdown signal|lost communication with the server|runner .* did not respond/i,
      "runner-lost", "the hosted runner was lost mid-job"],
@@ -60,9 +76,17 @@ module CiCauseDetector
     /^\s*(?:\/\S+\/)?app\/(?:models|controllers|services|jobs|views|helpers|components|javascript)\/\S+:\d+/
   ].freeze
 
-  # Jobs that only re-count another job (the executed-set census). Their red is the
-  # echo of a shard's red, never a cause of its own.
+  # Jobs that only re-count another job (the executed-set census). When the census
+  # names a shard whose report never arrived, its red is that shard's red.
   ECHO_JOB = CiFailureDigest::ECHO_JOB
+  ECHO_SUFFIX = /[\s_-]*(?:executed|declared)[_-]set\s*\z/i
+
+  # A census lane word → the shard jobs it counts, when its own prefix does not name
+  # them (turf's `e2e_executed_set` counts `playwright (N)`).
+  LANES = { "e2e" => /playwright|e2e|browser/i, "rails" => /rails/i }.freeze
+
+  # The classes whose cause lives outside any repo: one card across all repos.
+  OUTSIDE = %w[infra].freeze
 
   module_function
 
@@ -93,8 +117,6 @@ module CiCauseDetector
   # for a setup fault (infra, then harness): when the apt step stalls or the server
   # never boots, no test runs and no test is named.
   def causes(job_name:, log:)
-    return [] if job_name.to_s.match?(ECHO_JOB)
-
     lines = CiFailureDigest.clean(log)
     failures = CiFailureDigest.extract(log)[:failures]
     unless failures.empty?
@@ -111,8 +133,81 @@ module CiCauseDetector
       hit = first_match(table, text)
       return [cause(klass, *hit, evidence_for(lines, hit.first))] if hit
     end
-    [cause("harness", nil, "job:#{job_name}", "the job failed with no test failure and no known setup fault in its log", lines.last(4))]
+    error = lines.index { |l| l.start_with?("##[error]") }
+    return [] unless error
+
+    [cause("harness", nil, "job:#{job_name}", "the job failed with no test failure and no known setup fault in its log",
+           context(lines, error))]
   end
+
+  # PURE. One red attempt's failed jobs → what each one files, as
+  # [{ job:, cause:, follows: }]. `jobs` is [{ name:, log: }]. A census job that names
+  # a missing shard report FOLLOWS the failed shard job of that number: it gets that
+  # job's causes, and `follows` names the shard job. A job with no cause at all (no
+  # ##[error] line) comes back once with `cause: nil`, for the caller to record.
+  def attempt_causes(jobs)
+    jobs = jobs.map { |j| j.to_h.transform_keys(&:to_sym) }
+    echoes, real = jobs.partition { |j| j[:name].to_s.match?(ECHO_JOB) }
+    own = real.to_h { |j| [j[:name].to_s, causes(job_name: j[:name], log: j[:log])] }
+    out = own.flat_map { |name, list| entries(name, list, nil) }
+    echoes.each do |echo|
+      shards = missing_shards(echo[:log])
+      targets = shards.filter_map { |n| shard_sibling(echo[:name], n, own.keys) }.uniq
+      followed = targets.flat_map { |t| own[t].map { |c| [t, c] } }
+      out.concat(if followed.empty?
+                   entries(echo[:name].to_s, causes(job_name: echo[:name], log: echo[:log]), nil)
+                 else
+                   followed.map { |t, c| { job: echo[:name].to_s, cause: c, follows: t } }
+                 end)
+    end
+    out
+  end
+
+  def entries(name, list, follows)
+    return [{ job: name, cause: nil, follows: follows }] if list.empty?
+
+    list.map { |c| { job: name, cause: c, follows: follows } }
+  end
+
+  # PURE. A census log → the shard numbers whose report never arrived.
+  #   e2e:   "expected one report from each of 3 shard(s) — [1, 2, 3] — but got [1, 3]"
+  #   rails: "missing receipts for shard(s) 2, 4 of 4"
+  def missing_shards(log)
+    text = CiFailureDigest.clean(log).join("\n")
+    if (m = text.match(/expected one report from each of \d+ shard\(s\) \S+ \[([\d, ]*)\] \S+ but got \[([\d, ]*)\]/))
+      return ints(m[1]) - ints(m[2])
+    end
+
+    m = text.match(/missing receipts for shard\(s\) ([\d, ]+) of \d+/)
+    m ? ints(m[1]) : []
+  end
+
+  def ints(list) = list.to_s.scan(/\d+/).map(&:to_i)
+
+  # PURE. The failed shard job a census counts as shard `n`: a job named "… (n)" or
+  # "…(shard n/m)". When two lanes have a shard n, the one that shares the census's
+  # prefix wins, then the one its lane word names; past that, nil (never a guess).
+  def shard_sibling(echo_name, n, names)
+    hits = names.select { |name| name.match?(/\((?:shard )?#{n}(?:\/\d+)?\)\s*\z/) }
+    return hits.first if hits.size <= 1
+
+    prefix = echo_name.to_s.sub(ECHO_SUFFIX, "")
+    by_prefix = hits.select { |name| name.start_with?(prefix) }
+    return by_prefix.first if by_prefix.size == 1
+
+    lane = LANES[prefix[/[a-z0-9]+\z/i].to_s.downcase]
+    by_lane = lane ? hits.select { |name| name.match?(lane) } : []
+    by_lane.size == 1 ? by_lane.first : nil
+  end
+
+  # The board slug for a cause: an outside (infra) cause is one card across repos,
+  # `ci-cause-infra-<key>`; any other is the repo's own, `ci-cause-<repo>-<key>`.
+  def card_slug(repo, cause)
+    cause = cause.to_h.transform_keys(&:to_sym)
+    outside?(cause) ? slug("infra", cause[:key]) : slug(repo, cause[:key])
+  end
+
+  def outside?(cause) = OUTSIDE.include?(cause.to_h.transform_keys(&:to_sym)[:klass].to_s)
 
   # The stable name of a failing test's cause: its spec FILE (a Playwright spec, which
   # can fail at many lines for one race) or its Minitest CLASS.
@@ -134,8 +229,13 @@ module CiCauseDetector
 
   # Three to five words, as the board wants.
   def title(klass, key)
-    short = File.basename(key.to_s).sub(/\.spec\.[jt]s\z/, "").sub(/\Ajob:/, "")
-    "Find #{klass} cause #{short}"
+    key = key.to_s
+    short = if key.start_with?("job:")
+      key.delete_prefix("job:").split(" / ").last.to_s
+    else
+      File.basename(key).sub(/\.spec\.[jt]s\z/, "")
+    end
+    "Find #{klass} cause #{short.squeeze(' ').strip}"
   end
 
   def normalize(row)
@@ -155,7 +255,16 @@ module CiCauseDetector
 
   def evidence_for(lines, pattern)
     i = lines.index { |l| l.match?(pattern) }
-    i ? lines[[i - 1, 0].max, 3].map(&:strip).reject(&:empty?) : []
+    i ? context(lines, i) : []
+  end
+
+  # Log chatter around a failing line that says nothing about the fault.
+  NOISE = /\A(?:##\[(?:group|endgroup|command)\]|Waiting \d+ seconds|Took\s+[\d.]+ seconds|\s*at )|\A\s*\z/
+
+  # The line at `i` and the three telling lines before it, oldest first.
+  def context(lines, i)
+    before = lines[0...i].reverse.reject { |l| l.match?(NOISE) }.first(3).reverse
+    (before + [lines[i]]).map(&:strip).uniq
   end
 
   # The log lines of one failure's block: from its header to the next blank-line gap

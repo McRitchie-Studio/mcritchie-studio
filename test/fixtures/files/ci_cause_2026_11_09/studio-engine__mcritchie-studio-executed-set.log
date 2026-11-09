@@ -1,0 +1,10 @@
+2026-11-09T05:34:02.7447636Z Unexpected HTTP response: 504
+2026-11-09T05:34:28.6629823Z RAILS EXECUTED SET: RED
+2026-11-09T05:34:28.6636186Z   3 shard(s) · 1315/1754 files executed · 15785 runs · 3 skips
+2026-11-09T05:34:28.6637151Z   · missing receipts for shard(s) 4 of 4
+2026-11-09T05:34:28.6645808Z 
+2026-11-09T05:34:28.6646301Z   The `rails` shards may have reported success over less than the whole suite.
+2026-11-09T05:34:28.6647333Z   Contract: consumer-lane.yml. Receipts: rails-reports.
+2026-11-09T05:34:28.6681456Z ##[error]Process completed with exit code 1.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes

@@ -1,0 +1,9 @@
+2026-11-09T08:52:28.1261299Z Your bundle is locked to studio-engine (0.141.0) from rubygems repository
+2026-11-09T08:52:28.1262275Z https://rubygems.org/ or installed locally, but that version can no longer be
+2026-11-09T08:52:28.1263188Z found in that source. That means the author of studio-engine (0.141.0) has
+2026-11-09T08:52:28.1264063Z removed it. You'll need to update your bundle to a version other than
+2026-11-09T08:52:28.1264859Z studio-engine (0.141.0) that hasn't been removed in order to install.
+2026-11-09T08:52:28.1957275Z ##[error]The process '/opt/hostedtoolcache/Ruby/3.3.11/x64/bin/bundle' failed with exit code 7
+2026-11-09T08:52:28.4915185Z ##[error]Process completed with exit code 1.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes
