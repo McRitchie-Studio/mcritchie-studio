@@ -2,7 +2,6 @@
 
 pin "application"
 pin "@hotwired/turbo-rails", to: "turbo.min.js"
-pin "sign_out_prefetch"
 pin "dropping_text"
 pin "agent_chat"
 pin "build_chat"
