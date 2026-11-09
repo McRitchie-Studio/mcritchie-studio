@@ -3,8 +3,9 @@ require "test_helper"
 # [component] A speculative fetch of the sign-out (GET /logout) leaves the session
 # as it was: Turbo's hover prefetch (X-Sec-Purpose: prefetch) and the browser's
 # own (Sec-Purpose: prefetch) get a 204 and no Set-Cookie, and the next request is
-# still signed in. A real visit still signs out. ApplicationController
-# #refuse_prefetched_sign_out (task build-funnel-held-message-cause).
+# still signed in. A real visit still signs out. The guard is the engine's
+# (Studio::ErrorHandling, task engine-logout-never-prefetched); this proves the
+# hub runs it now that the hub's own copy is gone (task hub-adopts-engine-logout-guard).
 class SignOutPrefetchTest < ActionDispatch::IntegrationTest
   setup do
     @admin = User.find_by(role: "admin") || User.create!(email: "prefetch-admin@example.com", name: "Prefetch Admin", role: "admin")
@@ -44,9 +45,9 @@ class SignOutPrefetchTest < ActionDispatch::IntegrationTest
 
   test "prefetch_request? reads only the purpose headers" do
     request = ->(headers) { ActionDispatch::Request.new(Rack::MockRequest.env_for("/logout", headers.transform_keys { |k| "HTTP_#{k.upcase.tr('-', '_')}" })) }
-    assert ApplicationController.prefetch_request?(request.call("X-Sec-Purpose" => "prefetch"))
-    assert ApplicationController.prefetch_request?(request.call("Purpose" => "prefetch"))
-    refute ApplicationController.prefetch_request?(request.call({}))
-    refute ApplicationController.prefetch_request?(request.call("Sec-Purpose" => "prerendering-is-not-it"))
+    assert Studio.prefetch_request?(request.call("X-Sec-Purpose" => "prefetch"))
+    assert Studio.prefetch_request?(request.call("Purpose" => "prefetch"))
+    refute Studio.prefetch_request?(request.call({}))
+    refute Studio.prefetch_request?(request.call("Sec-Purpose" => "prerendering-is-not-it"))
   end
 end
