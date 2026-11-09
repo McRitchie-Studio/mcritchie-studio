@@ -22,8 +22,8 @@ require_relative "auth_refresh"
 # THE RULES THIS FILE HOLDS
 #   * A soul reads only its own set. A read of an item another soul's set names is
 #     REFUSED and logged (bin/op-reads shows it as action `soul-refused`). An item
-#     no set names is NOT_MANAGED: the caller falls back to the classic read. The
-#     ratchet that closes that fallback is a later task (agent-op-reads-ratchet).
+#     no set names is NOT_MANAGED: the caller falls back to the classic read. A
+#     process that names no soul may not read a soul-set item (#refuse_unnamed!).
 #   * Nothing from an admin vault lands in a soul folder. A config that names one
 #     is refused at load, and the write path refuses it again.
 #   * Each soul's set is a portable unit (ruling 2): #manifest is everything a

@@ -27,7 +27,7 @@ Take the first rung that answers. Never skip down a rung to "be sure".
 | Rung | Source | Costs a read? | How |
 |------|--------|---------------|-----|
 | 1 | The process environment, or the repo's env file | No | `ENV["NAME"]`; `.env` / `.env.development` (table below). Not Heroku tokens: they resolve at use, rung 3 |
-| 2 | The secret cache, `/Users/alex/projects/.secret-cache/` | No | `bin/secret get <name>`, `bin/gh-token` |
+| 2 | The secret cache, `/Users/alex/projects/.secret-cache/`, and each soul's own set in `<cache>/<soul>/` | No | `bin/secret get <name>`, `bin/gh-token`; a soul-set item with `MCR_SOUL=<soul> bin/secret <vault> <item> <field>` or `bin/secret read --soul <soul> …` (config/soul_secret_sets.yml) |
 | 3 | 1Password, through the one metered wrapper | **Yes** | Ruby: `OpMeter.popen`. Shell: `op_metered` (`bin/lib/op-meter.sh`). By hand: `bin/secret <vault> <item> [field]` |
 
 - **Rung 3 is the only way to run `op`.** A raw `op read`, `op item get`,
@@ -39,9 +39,12 @@ Take the first rung that answers. Never skip down a rung to "be sure".
 - **A refused credential earns one fresh read, no more.** When a service answers 401
   or "invalid credential" to a cached copy, forget the copy, read the item fresh
   once, and try once more, through `AuthRefresh` (`SoulSecrets.with_refresh`,
-  `GhAuthRetry.with_refresh`). A second refusal stops and names the item. It is a
-  named cause (a rotated credential), never a blind retry; each refresh is an
-  `auth-refresh` row in `bin/op-reads`. Detail: [`secret-cache.md`](secret-cache.md).
+  `SoulSecrets::Admin.with_refresh`, `GhAuthRetry.with_refresh`). A 403 permission
+  refusal ("not accessible by integration") is not a stale copy and starts no
+  refresh. A second refusal stops, names the item, and marks it in
+  `bin/secret status`. It is a named cause (a rotated credential), never a blind
+  retry; each refresh is an `auth-refresh` row in `bin/op-reads`. Detail:
+  [`secret-cache.md`](secret-cache.md).
 - **GitHub tokens come only from `bin/gh-token`.** For the agent identity it serves
   the shared cache and reads 1Password only on a miss or expiry. The deployer
   identity is minted per call by design and is never cached (`CACHEABLE_IDENTITIES`);
@@ -75,6 +78,30 @@ Expiring or rotating credentials (GitHub App tokens, the harness key) are NOT
 env-file keys: they live in the secret cache, rung 2. Heroku tokens are read at
 use, never kept in a profile ([`credentials.md`](credentials.md), Heroku tokens
 resolve at use time).
+
+## The ratchet: fewer reads, only down
+
+Alex McRitchie, 2026-11-09: agents read 1Password less and less. 1Password is the
+place to experiment with a credential and the fallback when a cached copy fails,
+not the place every run reads from. Task `agent-op-reads-ratchet` holds two numbers
+in `config/op_direct_callers.yml` that may only go down:
+
+| Number | What it is | Held by |
+|--------|------------|---------|
+| `callers` | Every file under `bin/`, `app/` and `lib/` that runs `op` itself, metered or not (`bin/lib/op_call_scan.rb`), each with a `client` and a `why` | `test/lib/op_direct_callers_ratchet_test.rb`, in `bin/fast-check`'s repo-ratchets lane and in CI. A new direct caller fails; a listed file that no longer runs `op` fails too, so the list shrinks |
+| `daily_cap` | The most `op` calls in any rolling 24 hours (450 at the start; the 14-day peak was 463) | The same test: the cap may not rise against `origin/release`, and `cap_history` may never rise. `bin/op-reads --ratchet` compares the last 24 hours with it and exits 1 when over |
+
+- **What counts toward the cap.** An `op` call that could have spent quota: not a
+  bookkeeping row (`cache-hit`, `soul-refused`, `admin-refused`, `auth-refresh`),
+  not a `timeout`, not `fail:126`/`fail:127` (no `op`). A failed read counts: the
+  server answered it.
+- **The cap is a measure, not a block.** No read is ever refused for it. Over the
+  cap, `bin/op-reads --ratchet` ranks the callers; move the one that grew behind a
+  cached client. Under it for a week, lower `daily_cap` to the new peak and add a
+  `cap_history` row.
+- **A new caller.** Read through a purpose-built client: `bin/secret`,
+  `bin/gh-token`, `SoulSecrets`, `HerokuToken`. When a file truly must call `op`,
+  add it to `callers` with its reason, where a reviewer sees it.
 
 ## 2. Rotation flips one place
 

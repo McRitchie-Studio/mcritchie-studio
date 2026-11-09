@@ -1,16 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] THE 1PASSWORD READS RATCHET (task agent-op-reads-ratchet).
-# config/op_direct_callers.yml holds two numbers that may only go down:
-#   * `callers`: every file under bin/, app/ and lib/ that runs `op` itself
-#     (bin/lib/op_call_scan.rb). A file outside the list fails here; a listed
-#     file that no longer runs `op` fails too, so the list shrinks.
-#   * `daily_cap`: the most `op` calls in a rolling 24 hours (bin/op-reads
-#     --ratchet). It may not rise against origin/release, read from OUTSIDE the
-#     diff (the same pattern as rails_skip_ceiling_ratchet_test.rb), and
-#     cap_history may never rise.
-# Runs in bin/fast-check's repo-ratchets lane and in CI. Runs no `op`, reads no
-# real read log: every row it counts is synthetic.
+# [unit] THE 1PASSWORD READS RATCHET: config/op_direct_callers.yml may only go down.
+# `callers`: every file that runs `op` itself (bin/lib/op_call_scan.rb); a new one fails,
+# a stale one fails. `daily_cap`: may not rise against origin/release (read from outside
+# the diff, like rails_skip_ceiling_ratchet_test.rb). Runs no `op`; every row is synthetic.
+# History: task agent-op-reads-ratchet.
 
 require "minitest/autorun"
 require "tmpdir"

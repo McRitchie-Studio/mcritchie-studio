@@ -69,7 +69,7 @@ bin/secret sets                          # every soul's set and its time left; n
 bin/secret manifest <soul>               # a soul's portable manifest (JSON, names only)
 bin/secret read --soul <soul> <vault> <item> <field> # one field of a soul-set item (a value)
 bin/secret item-json --soul <soul> <vault> <item>    # the item as `op item get --format json` prints it (values)
-bin/secret <vault> <item> [field]        # the classic 1Password read (MCR_SOUL set: the soul's set first)
+bin/secret <vault> <item> [field]        # the classic 1Password read (MCR_SOUL set: the soul's set first; a soul-set item needs MCR_SOUL)
 ```
 
 The narration hook (`bin/atomic-capture-hook`) blanks the output of `bin/secret
@@ -154,17 +154,25 @@ its cached copy, reads the item fresh from 1Password **once**, and tries the cal
 
 **A named-cause refresh, not a blind retry.** Only a refusal of the credential
 starts it. Any other failure (a 404, a 500, a timeout, a merge conflict) goes back
-to the caller untouched, because a fresh credential does not change it. A second
-refusal after the fresh read means the 1Password item itself is bad (revoked, the
-wrong field, the wrong account). The call stops and raises `StillRefused`, which
-names the item and the service. There is no loop and no back-off: at most one
-fresh read and two calls.
+to the caller untouched, because a fresh credential does not change it. A 403
+**permission** refusal does not start it either: GitHub's "Resource not accessible
+by integration" means the App token is live and the installation lacks the grant,
+and a fresh token for the same App gets the same answer
+(`GhAuthRetry.refreshable?`). "Resource not accessible by personal access token"
+still refreshes: `gh` fell back to the stored PAT, and a minted App token fixes it.
+A second refusal after the fresh read means the 1Password item itself is bad
+(revoked, the wrong field, the wrong account). The call stops and raises
+`StillRefused`, which names the item and the service, and the item is marked:
+`bin/secret status` (GitHub) or `bin/secret sets` (a soul-set item) shows
+`REFUSED by <service> after a fresh read` until a later refresh is accepted. There
+is no loop and no back-off: at most one fresh read and two calls.
 
 | Fact | Value |
 |---|---|
 | Helper | `AuthRefresh.run(item:, service:, read:, refresh:, rejected:)` in `bin/lib/auth_refresh.rb`. The block gets the value and calls the service; it raises `AuthRefresh::Rejected` on a refusal, or `rejected` tests its result |
 | Soul-set items | `SoulSecrets.with_refresh(soul, vault, item, service:, cfg:) { \|fields\| ... }`. The refresh forgets `<cache>/<soul>/item.<item>.json`, reads the item with one bounded `op item get`, and writes it back. When a sibling process refreshed the item first, its copy is used and no second read is made |
-| GitHub | `GhAuthRetry.with_refresh(identity:) { \|token\| [output, ok] }`: the refresh is a forced mint (`bin/gh-token --force`), which never hands back the refused cached token. `bin/submit` runs every `gh` call through it. `bin/lib/ci_status.rb` keeps its own once-retry and logs it the same way |
+| Admin-tier items | `SoulSecrets::Admin.with_refresh(item, field, service:, cfg:) { \|value\| ... }`, inside an allowlisted script. The refresh drops the memoized value and reads the item once into **memory**; nothing is written to disk (the soul-set refresh writes, and the write path refuses an admin vault) |
+| GitHub | `GhAuthRetry.with_refresh(identity:) { \|token\| [output, ok] }`: the refresh is a forced mint (`bin/gh-token --force`), which never hands back the refused cached token. `bin/submit` runs every `gh` call through it. `bin/lib/ci_status.rb` keeps its own once-retry and logs and marks it the same way. `bin/pr-review` and `bin/release` still call `GhAuthRetry.mint` with their own once-retry (no `auth-refresh` row yet) |
 | Stops | `AuthRefresh::StillRefused` (the fresh value was refused too) and `AuthRefresh::RefreshFailed` (the fresh read failed). Both carry `item`, `service`, and `result`, the last refused answer, so the caller can still show what the service said |
 | Log | every refresh is one row in the read log: action `auth-refresh`, via `<service>:<item>`, outcome `ok`, `still-refused` or `refresh-failed` (`bin/op-reads --by action`). It is also said on stderr. **Never a value**: a name that looks like a token is logged as `unnamed` |
 | Bound | the helper runs no `op` itself; the caller's refresh does, through `OpMeter` (at most 20 s an attempt) |
@@ -254,10 +262,13 @@ A soul names itself with `--soul <slug>` or `MCR_SOUL`. Then:
 | in another soul's set only | **refused**, exit 4, logged as `soul-refused`. It never reaches 1Password |
 | in no set | exit 3 (`not managed`): the classic read runs, unchanged |
 
-With no `MCR_SOUL`, the classic `bin/secret <vault> <item>` read is unchanged.
-Task `agent-op-reads-ratchet` closes that path later. A caller whose service
-refuses the cached copy refreshes it once through `SoulSecrets.with_refresh` (see
-"When a service refuses a cached credential", above).
+A process that names **no** soul may not read a soul-set item at all (task
+`agent-op-reads-ratchet`). The classic `bin/secret <vault> <item>` read of an item
+any set names is refused, exit 4, logged as `soul-refused` with the soul `none`,
+and the line names the fix (`MCR_SOUL=<soul> bin/secret …`). An item no set names
+reads as before. A caller whose service refuses the cached copy refreshes it once
+through `SoulSecrets.with_refresh` (see "When a service refuses a cached
+credential", above).
 
 **One Unix user, for now.** Every agent on this Mac runs as one Unix user, so the
 per-soul folders are a policy line, not a security boundary: any process can open
