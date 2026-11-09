@@ -134,7 +134,7 @@ for gem in $GEMS; do
 
     if [ "$(date +%s)" -ge "$deadline" ]; then
       if [ "$stale" -gt 0 ] || [ "$gem_state" = missing ]; then
-        echo "::error::GEM_NOT_SERVED_ON_RUNNER: ${gem} ${version} after ${TIMEOUT}s (${polls} polls): ${summary}. The RubyGems CDN still serves this runner a copy without the version, so bundle install would fail with \"can no longer be found in that source\". The lock is correct; the CDN is late."
+        echo "::error::GEM_NOT_SERVED_ON_RUNNER: ${gem} ${version} after ${TIMEOUT}s (${polls} polls): ${summary}. The RubyGems CDN still serves this runner a copy without the version, so bundle install would fail and wrongly report the version as removed. The lock is correct; the CDN is late. Not a race the release gate re-runs."
         exit 1
       fi
       echo "::warning::${gem} ${version}: RubyGems could not be read after ${TIMEOUT}s (${summary}) — continuing; a full bundler-cache hit needs no network"

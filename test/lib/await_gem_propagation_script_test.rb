@@ -11,6 +11,7 @@ require "minitest/autorun"
 require "open3"
 require "tmpdir"
 require "fileutils"
+require_relative "../../bin/lib/ci_rerun"
 
 class AwaitGemPropagationScriptTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
@@ -114,6 +115,7 @@ class AwaitGemPropagationScriptTest < Minitest::Test
     assert_equal 1, code, out
     assert_includes out, "::error::GEM_NOT_SERVED_ON_RUNNER: studio-engine #{VERSION}"
     assert_includes out, "0 of 4 connections (4 stale"
+    refute CiRerun.resolution_error?(out), "a named CDN miss must stop the gate, not earn the infra re-run"
   end
 
   # [unit] The .gem is its own surface: /info fresh but the download 4xx is a proven miss.
