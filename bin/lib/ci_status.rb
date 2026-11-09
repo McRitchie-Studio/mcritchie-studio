@@ -783,8 +783,10 @@ module CiStatus
     @gh_token ? { "GH_TOKEN" => @gh_token } : {}
   end
 
+  # A permission refusal ("not accessible by integration") is not one: a fresh token
+  # for the same App is refused the same way (GhAuthRetry.refreshable?).
   def self.gh_auth_refusal?(body)
-    GhAuthRetry.auth_failure?(body) || HTTP_401.match?(body.to_s)
+    GhAuthRetry.refreshable?(body) || HTTP_401.match?(body.to_s)
   end
 
   # TRUE when the held token has reached its re-mint age.

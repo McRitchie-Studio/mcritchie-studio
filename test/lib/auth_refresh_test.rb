@@ -321,6 +321,89 @@ class AuthRefreshTest < Minitest::Test
     assert_equal 0, broker_calls(count)
   end
 
+  # A 403 PERMISSION refusal: the App token is live and the installation lacks
+  # the grant. A fresh token for the same App fails the same way, so no mint.
+  def test_unit_github_integration_403_is_a_permission_refusal_and_mints_nothing
+    path, count = broker
+    refusal = "GraphQL: Resource not accessible by integration (createPullRequest)"
+    result = GhAuthRetry.with_refresh(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path),
+                                      say: ->(_l) { }) { |_t| [refusal, false] }
+
+    assert_equal [refusal, false], result, "gh's answer is returned untouched"
+    assert_equal 0, broker_calls(count), "no fresh read from 1Password"
+    assert_empty refresh_rows, "no auth-refresh row"
+    refute GhAuthRetry.refreshable?(refusal)
+    assert GhAuthRetry.auth_failure?(refusal), "it still words as an auth failure for other readers"
+  end
+
+  # The PAT fallback is a stale-credential shape: a minted App token fixes it.
+  def test_unit_github_personal_access_token_403_still_refreshes
+    path, count = broker
+    refusal = "GraphQL: Resource not accessible by personal access token (createPullRequest)"
+    result = GhAuthRetry.with_refresh(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path),
+                                      say: ->(_l) { }) { |t| t == FAKE_MINTED ? ["ok", true] : [refusal, false] }
+
+    assert_equal ["ok", true], result
+    assert_equal 1, broker_calls(count)
+  end
+
+  # ── the admin tier: a refresh in memory, never on disk ─────────────────────
+
+  def admin_cfg(script)
+    { "admin_tier" => { "lane" => "deployer", "storage" => "memory", "lifetime" => "15m", "scripts" => [script] } }
+  end
+
+  # The stub op for `op read`: logs its argv words, prints the served key.
+  def admin_op_bin
+    path = File.join(@root, "op-admin")
+    File.write(path, "#!/bin/sh\necho \"$1\" >> #{@op_log}\ncat #{@key_file}\n")
+    File.chmod(0o755, path)
+    path
+  end
+
+  def admin_reads
+    File.exist?(@op_log) ? File.read(@op_log).lines.grep(/\Aread/).size : 0
+  end
+
+  def test_unit_admin_refresh_stays_in_memory_and_reads_once
+    SoulSecrets::Admin.reset!
+    script = File.join(@root, "bin", "admin-script")
+    FileUtils.mkdir_p(File.dirname(script))
+    File.write(script, "")
+    e = env("SECRET_OP_BIN" => admin_op_bin, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "fake-admin-sa-not-real")
+    cache_before = Dir.glob(File.join(@root, "**", "*")).sort
+    calls = []
+    first = SoulSecrets::Admin.read("heroku.studio.admin", "credential", cfg: admin_cfg("bin/admin-script"),
+                                    env: e, program: script, root: @root)
+    assert_equal OLD_KEY, first
+    serve(NEW_KEY) # rotated; the memo still holds the old key
+    err = StringIO.new
+    answer = SoulSecrets::Admin.with_refresh("heroku.studio.admin", "credential", service: "heroku",
+                                             cfg: admin_cfg("bin/admin-script"), env: e, program: script,
+                                             root: @root, err: err) { |value| heroku({ "credential" => value }, calls) }
+
+    assert_equal "200 OK", answer
+    assert_equal 2, calls.size, "one refused call, one retry"
+    assert_equal 2, admin_reads, "the first read and one fresh read; never a third"
+    assert_equal [%w[ok heroku:heroku.studio.admin]], refresh_rows.map { |r| [r["outcome"], r["via"]] }
+    written = Dir.glob(File.join(@root, "**", "*")).sort - cache_before - [@op_log, @reads_log]
+    assert_empty written, "an admin refresh writes nothing to disk"
+    refute_leaks(err.string)
+  ensure
+    SoulSecrets::Admin.reset!
+  end
+
+  def test_unit_admin_refresh_refuses_a_script_outside_the_tier_before_any_read
+    SoulSecrets::Admin.reset!
+    e = env("SECRET_OP_BIN" => admin_op_bin, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "fake-admin-sa-not-real")
+    assert_raises(SoulSecrets::Admin::Refused) do
+      SoulSecrets::Admin.with_refresh("heroku.studio.admin", "credential", service: "heroku",
+                                      cfg: admin_cfg("bin/admin-script"), env: e, program: __FILE__,
+                                      root: @root, err: StringIO.new) { |_v| flunk "never called" }
+    end
+    assert_equal 0, admin_reads
+  end
+
   # ── the per-soul warm lock ─────────────────────────────────────────────────
 
   def lock_path(e = env)

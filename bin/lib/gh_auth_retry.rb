@@ -51,6 +51,16 @@ module GhAuthRetry
   # verbatim-real-strings test below, which is why it uses gh's actual output.)
   AUTH_FAILURE = /resource not accessible|bad credentials|authentication failed|gh auth login|requires authentication/i
 
+  # A 403 PERMISSION refusal, not a stale credential (Carl's review of
+  # secret-refresh-on-auth-failure). "Resource not accessible by integration" means
+  # the App token is LIVE and the installation lacks the grant: a fresh token for the
+  # same App fails the same way (docs/agents/modules/source-control.md), so it must
+  # not start a refresh. It still matches AUTH_FAILURE, which other readers use to
+  # word their error; only the refresh decision (#refreshable?) leaves it out.
+  # "...by personal access token" is different: gh fell back to the stored PAT,
+  # and a minted App token fixes it, so that one still refreshes.
+  PERMISSION_REFUSAL = /not accessible by integration/i
+
   module_function
 
   # Seconds one forced mint may take: the broker's own 1Password read is bounded
@@ -62,6 +72,13 @@ module GhAuthRetry
   # trigger a mint — re-running those with a fresh token just fails again, slower.
   def auth_failure?(output)
     AUTH_FAILURE.match?(output.to_s)
+  end
+
+  # TRUE when a fresh token could change the answer: a credential refusal that is
+  # not a permission refusal (PERMISSION_REFUSAL). The one test the refresh paths
+  # use (#with_refresh, CiStatus.gh_auth_refusal?).
+  def refreshable?(output)
+    auth_failure?(output) && !PERMISSION_REFUSAL.match?(output.to_s)
   end
 
   # A fresh App installation token, or nil when one cannot be minted (no 1Password,
@@ -134,7 +151,7 @@ module GhAuthRetry
 
   # ONE `gh` call with the shared refresh (bin/lib/auth_refresh.rb): the block runs
   # with +token+ (nil = the ambient login) and returns [output, ok]. When the output
-  # is a credential refusal (auth_failure?), a token is minted fresh (bin/gh-token
+  # is a credential refusal (refreshable?: not a 403 permission refusal), a token is minted fresh (bin/gh-token
   # --force reads the App key from 1Password; the refused cached token is never
   # handed back), and the block runs once more with it. The refresh is logged as
   # `auth-refresh` with via `github:<App item>` (bin/op-reads), never the token.
@@ -154,7 +171,7 @@ module GhAuthRetry
 
                       fresh
                     },
-                    rejected: ->(result) { !result[1] && auth_failure?(result[0]) },
+                    rejected: ->(result) { !result[1] && refreshable?(result[0]) },
                     &block)
   end
 

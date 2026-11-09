@@ -630,6 +630,30 @@ module SoulSecrets
       value
     end
 
+    # The admin twin of SoulSecrets.with_refresh, IN MEMORY (Carl's review of
+    # secret-refresh-on-auth-failure). The soul-set refresh writes the fresh copy to
+    # disk, and the write path refuses an admin vault, so an admin item could never
+    # refresh there. Here the block gets the memoized value; when +service+ refuses
+    # it (the block raises AuthRefresh::Rejected, or +rejected+ says so), the memo
+    # entry is dropped, the item is read fresh once into memory, and the block runs
+    # once more. Nothing is written to disk. The allowlist check is #read's, so a
+    # script outside the tier is refused before any read.
+    def with_refresh(item, field, service:, cfg:, env: ENV, program: $PROGRAM_NAME, rejected: nil,
+                     err: $stderr, root: tooling_root, &block)
+      first = -> { read(item, field, cfg: cfg, env: env, program: program, root: root) }
+      fresh = lambda do
+        forget(item, field)
+        read(item, field, cfg: cfg, env: env, program: program, root: root)
+      end
+      AuthRefresh.run(item: item, service: service, read: first, refresh: fresh, rejected: rejected, env: env,
+                      say: ->(line) { err.puts(line) }, &block)
+    end
+
+    # Drop one memoized value; the next #read fetches it.
+    def forget(item, field)
+      @memo.delete([item.to_s, field.to_s])
+    end
+
     def fetch(tier, item, field, env)
       token_env = OpVaults.token_env(tier["lane"])
       token = env[token_env].to_s
