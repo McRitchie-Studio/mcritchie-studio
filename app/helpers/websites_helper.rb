@@ -18,6 +18,17 @@ module WebsitesHelper
     wanted.select { |name, _| declared.match?(/(?:\A|[\s,(])#{Regexp.escape(name.to_s)}:/) }
   end
 
+  # The style the /websites Portfolio row asks studio/_carousel for: :cascade
+  # (Alex McRitchie, 2026-11-08: the looping five-in-view 3D row, the engine lab's
+  # third option) where the installed engine has it, else :spotlight.
+  # The capability is the partial's own strict locals: visible: arrived with the
+  # cascade style (studio-engine task carousel-cascade-style) and only a cascade
+  # takes it, so an engine that declares it accepts style: :cascade. An engine
+  # before it raises on :cascade, so the row keeps the spotlight there.
+  def portfolio_carousel_style
+    carousel_optional_locals(visible: 5).key?(:visible) ? :cascade : :spotlight
+  end
+
   # The inline custom properties a portfolio card paints its shade and text
   # with: the app's palette (BuildGallery.palette_for, #rrggbb only) or the
   # Studio shade, and the shade: the panel at PORTFOLIO_SHADE_ALPHA.
