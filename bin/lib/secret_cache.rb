@@ -672,9 +672,11 @@ module SecretCache
     shared_item_entries(env).merge(DEFAULT_ENTRIES)
   end
 
-  # "op://vault/item/field" as [vault, item, field], or nil.
+  # An op reference (scheme, then vault/item/field) as [vault, item, field], or nil.
+  REF_SHAPE = %r{\Aop:/{2}([^/]+)/([^/]+)/(.+)\z}.freeze
+
   def parse_ref(ref)
-    match = %r{\Aop://([^/]+)/([^/]+)/(.+)\z}.match(ref.to_s.strip)
+    match = REF_SHAPE.match(ref.to_s.strip)
     match ? [match[1], match[2], match[3]] : nil
   end
 
