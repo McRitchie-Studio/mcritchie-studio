@@ -115,6 +115,15 @@ module ReviewHop
     # seeded_admin_email` at priority 1 — verifying a chain the button never
     # walks, as a user the button would never pick.
     def mint(status:, location:)
+      if status.to_i == 404
+        # Not a broken mint: there is no mint. The engine draws /_studio/local_review
+        # only for an app that calls Studio.routes(self), and that needs the engine's
+        # tables, which a token SQLite database cannot hold (rantly, the showcase apps).
+        return fail(:mint_no_route,
+                    "the mint answered 404: this app draws no /_studio/local_review (no Studio.routes). " \
+                    "An app with no database, or on the token database, cannot host the review hop; " \
+                    "it needs the engine's sign-in on Postgres (docs/agents/modules/token-database.md)")
+      end
       return fail(:mint_not_redirect, "expected a 302 from the mint, got #{status}") unless redirect?(status)
 
       uri = parse(location)

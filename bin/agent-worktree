@@ -79,6 +79,8 @@ require_relative "lib/remedy"
 # The desk node_modules link farm and its reclaim guard (borrow the primary's install
 # when the lock matches; unlink before any teardown deletes).
 require_relative "lib/desk_node_modules"
+# DeskGuard.no_database_app? — a Rails app with no database gets no db:prepare.
+require_relative "lib/desk_guard"
 
 # This script, absolute, for the remedies it prints (bin/lib/remedy.rb).
 AGENT_WORKTREE_CMD = Remedy.command("agent-worktree", __dir__).freeze
@@ -1471,7 +1473,11 @@ end
 # db:test:prepare, and still build.
 def prepare_test_env(dir, app, values)
   tasks = []
-  if test_database_url(values)
+  # A Rails app with NO DATABASE (DeskGuard.no_database_app?: no config/database.yml,
+  # and config/application.rb loads no ActiveRecord) has no db:test:prepare task, so
+  # naming it fails the whole boot. It still gets test:prepare, for the same reason as
+  # above. Proven from the desk's files, never from a failed boot.
+  if test_database_url(values) && !DeskGuard.no_database_app?(dir)
     write_test_env_local(dir, values)
     tasks << "db:test:prepare"
   end
@@ -1481,7 +1487,13 @@ end
 
 def prepare_rails(dir, app, values)
   env = command_env(app, values)
-  sh("bin/rails", "db:prepare", chdir: dir, env: env)
+  if DeskGuard.no_database_app?(dir)
+    # The showcase apps load no ActiveRecord, so `db:prepare` is not a task there and
+    # bringup used to abort on it. Say why it is skipped, and keep going.
+    puts "skipping db:prepare: #{DeskGuard.no_database_note(dir)}"
+  else
+    sh("bin/rails", "db:prepare", chdir: dir, env: env)
+  end
   # No separate tailwindcss:build here: prepare_test_env's test:prepare already builds
   # app/assets/builds/tailwind.css, unconditionally, and the compiled CSS is the same
   # file whatever RAILS_ENV compiled it — a second dev-env build would be pure duplicate work.

@@ -353,6 +353,98 @@ class DeskGuardTest < Minitest::Test
     end
   end
 
+  # ═══ A RAILS APP WITH NO DATABASE (task token-database-for-new-apps) ═══════════════════
+  # The showcase apps carry bin/rails but load no ActiveRecord and have no database.yml.
+  # The probe there dies on `uninitialized constant ActiveRecord`, and that boot failure
+  # used to refuse every pre-flight on them. Inapplicable now, but ONLY on positive proof
+  # from files, in the repo AND the desk.
+
+  def write_rails_app(dir, application_rb: NO_AR_APPLICATION, database_yml: nil)
+    FileUtils.mkdir_p(File.join(dir, "bin"))
+    FileUtils.mkdir_p(File.join(dir, "config"))
+    File.write(File.join(dir, "bin", "rails"), "#!/bin/sh\n")
+    File.write(File.join(dir, "config", "application.rb"), application_rb) if application_rb
+    File.write(File.join(dir, "config", "database.yml"), database_yml) if database_yml
+  end
+
+  NO_AR_APPLICATION = <<~RUBY
+    require_relative "boot"
+    require "rails"
+    require "active_model/railtie"
+    # require "active_record/railtie"
+    require "action_controller/railtie"
+  RUBY
+  RAILS_ALL_APPLICATION = %(require_relative "boot"\nrequire "rails/all"\n)
+  AR_RAILTIE_APPLICATION = %(require "rails"\n  require "active_record/railtie"\n)
+
+  def test_no_database_app_predicate_needs_positive_proof
+    Dir.mktmpdir do |root|
+      cases = {
+        "no_ar" => [{}, true],
+        "rails_all" => [{ application_rb: RAILS_ALL_APPLICATION }, false],
+        "ar_railtie" => [{ application_rb: AR_RAILTIE_APPLICATION }, false],
+        "database_yml" => [{ database_yml: "test:\n  database: x\n" }, false],
+        "no_application_rb" => [{ application_rb: nil }, false]
+      }
+      cases.each do |name, (opts, expected)|
+        dir = File.join(root, name)
+        write_rails_app(dir, **opts)
+        assert_equal expected, DeskGuard.no_database_app?(dir), name
+      end
+      gem_dir = File.join(root, "gem")
+      FileUtils.mkdir_p(File.join(gem_dir, "config"))
+      File.write(File.join(gem_dir, "config", "application.rb"), NO_AR_APPLICATION)
+      refute DeskGuard.no_database_app?(gem_dir), "no bin/rails: not a Rails app at all (rails_repo?'s case)"
+    end
+  end
+
+  def test_admits_a_no_database_rails_desk_without_booting
+    with_desk(database_yml: nil) do |desk, repo|
+      write_rails_app(repo)
+      write_rails_app(desk)
+      spy = []
+      assert_nil DeskGuard.refusal(desk, env: {}, resolver: resolver("", booted: false, spy: spy)),
+                 "a Rails app with no database has no test DB to guard: ADMIT"
+      assert_empty spy, "an app with no database must not be booted (the probe would die on ActiveRecord)"
+    end
+  end
+
+  def test_a_desk_that_adds_activerecord_to_a_no_database_repo_is_still_probed
+    # Proof must hold in BOTH trees. The desk loads ActiveRecord (it is adding a database),
+    # so the guard boots it; here the boot dies, and that refuses as before.
+    with_desk(database_yml: nil) do |desk, repo|
+      write_rails_app(repo)
+      write_rails_app(desk, application_rb: RAILS_ALL_APPLICATION)
+      spy = []
+      refute_nil DeskGuard.refusal(desk, env: {}, resolver: resolver("", booted: false, spy: spy))
+      refute_empty spy, "a desk that loads ActiveRecord must be booted and proven"
+    end
+  end
+
+  def test_a_desk_adding_a_token_sqlite_db_is_admitted_by_containment_before_any_shared_name
+    # rantly-adopts-token-database: the desk adds config/database.yml (SQLite) while the
+    # primary still has none, so there is no shared name to read. The file the app
+    # resolves sits inside the desk, which is the proof; no name is needed.
+    with_desk(database_yml: nil) do |desk, repo|
+      write_rails_app(repo)
+      write_rails_app(desk, application_rb: RAILS_ALL_APPLICATION, database_yml: "test:\n  database: storage/test.sqlite3\n")
+      assert_nil DeskGuard.refusal(desk, env: {}, resolver: resolver("storage/test.sqlite3"))
+    end
+  end
+
+  def test_a_file_outside_the_desk_with_no_shared_name_still_refuses
+    with_desk(database_yml: nil) do |desk, repo|
+      write_rails_app(repo, application_rb: RAILS_ALL_APPLICATION)
+      escaped = File.join(repo, "storage", "test.sqlite3")
+      refute_nil DeskGuard.refusal(desk, env: {}, resolver: resolver(escaped)),
+                 "containment is the only proof without a shared name; a file outside the desk has neither"
+    end
+  end
+
+  def test_no_database_note_names_the_token_database_page
+    assert_includes DeskGuard.no_database_note("/x/app"), "docs/agents/modules/token-database.md"
+  end
+
   # ═══ THE PURE PREDICATE ═══════════════════════════════════════════════════════════════
 
   def test_private_db_predicate_vectors

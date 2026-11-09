@@ -1354,6 +1354,51 @@ class AgentWorktreeTest < Minitest::Test
                  "no test DB skips db:test:prepare ONLY — the bundled-asset build still runs"
   end
 
+  # A Rails app with NO DATABASE (the showcase apps: no config/database.yml, and
+  # config/application.rb loads no ActiveRecord) has no db:prepare or db:test:prepare
+  # task, so `up` aborted on the first one. Bringup now skips both, says why, and still
+  # builds the assets. Task token-database-for-new-apps.
+  NO_DB_DESK_SETUP = <<~RUBY
+    require "tmpdir"
+    require "fileutils"
+    DIR = Dir.mktmpdir
+    FileUtils.mkdir_p(File.join(DIR, "bin"))
+    FileUtils.mkdir_p(File.join(DIR, "config"))
+    File.write(File.join(DIR, "bin", "rails"), "#!/bin/sh\n")
+    File.write(File.join(DIR, "config", "application.rb"), %(require "rails"\n# require "active_record/railtie"\n))
+    CALLS = []
+    def sh(*cmd, chdir: nil, env: {}, allow_fail: false); CALLS << cmd; true; end
+    def command_env(*_args); {}; end
+    def test_database_url(_values); "postgres://localhost/rantly_test_wt"; end
+    def write_test_env_local(*_args); raise "must not write .env.test.local for an app with no database"; end
+  RUBY
+
+  def test_prepare_rails_skips_the_database_tasks_for_an_app_with_no_database
+    out = run_in_script(<<~RUBY)
+      #{NO_DB_DESK_SETUP}
+      $stdout = StringIO.new
+      prepare_rails(DIR, { "slug" => "rantly" }, {})
+      said = $stdout.string
+      $stdout = STDOUT
+      print [CALLS, said.include?("skipping db:prepare")].inspect
+    RUBY
+    assert_equal '[[["bin/rails", "test:prepare"]], true]', out,
+                 "no database: bringup skips db:prepare and db:test:prepare, says so, and still runs test:prepare"
+  end
+
+  def test_prepare_rails_keeps_db_prepare_for_an_app_that_loads_activerecord
+    out = run_in_script(<<~RUBY)
+      #{NO_DB_DESK_SETUP}
+      File.write(File.join(DIR, "config", "application.rb"), %(require "rails/all"\n))
+      def write_test_env_local(*_args); nil; end
+      $stdout = StringIO.new
+      prepare_rails(DIR, { "slug" => "rantly" }, {})
+      $stdout = STDOUT
+      print CALLS.inspect
+    RUBY
+    assert_equal '[["bin/rails", "db:prepare"], ["bin/rails", "db:test:prepare", "test:prepare"]]', out
+  end
+
   # --- sweep coverage: every worktree tree on disk, not just the registry ---
   # config/satellites.yml registers satellite APPS, so repos with worktrees that are not
   # satellites (the gem/library repos) would get NO sweep, silently (`cleanup --reclaim
