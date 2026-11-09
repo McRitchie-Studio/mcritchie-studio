@@ -48,9 +48,6 @@ callers:
   bin/lib/soul_secrets.rb:
     client: self
     why: "soul secret sets and the admin tier: one bounded read on a miss, then the cache or memory"
-  bin/lib/heroku_token.rb:
-    client: self
-    why: "HerokuToken: the Heroku API key, read at use and exported once to children"
   bin/shims/op-cache/op:
     client: self
     why: "the release gauntlet's op shim: soul-set items from the cache, anything else to the real op"

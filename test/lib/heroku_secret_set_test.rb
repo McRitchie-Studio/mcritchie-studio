@@ -18,7 +18,9 @@ class HerokuSecretSetTest < Minitest::Test
   BIN = File.expand_path("../../bin/heroku-secret-set", __dir__)
 
   # A one-thread HTTP stand-in: records each request and answers `status`.
-  def with_api(status: "200")
+  # +accept+: when set, a request whose bearer is not this key gets 401, as
+  # Heroku answers a rotated key.
+  def with_api(status: "200", accept: nil)
     server = TCPServer.new("127.0.0.1", 0)
     seen = []
     thread = Thread.new do
@@ -30,7 +32,8 @@ class HerokuSecretSetTest < Minitest::Test
         end
         length = head[/^content-length:\s*(\d+)/i, 1].to_i
         seen << { head: head, body: client.read(length) }
-        client.write("HTTP/1.1 #{status} X\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
+        code = accept && !head.match?(/^authorization: Bearer #{Regexp.escape(accept.call)}\r$/i) ? "401" : status
+        client.write("HTTP/1.1 #{code} X\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}")
         client.close
       end
     rescue IOError
@@ -60,6 +63,39 @@ class HerokuSecretSetTest < Minitest::Test
     end
   end
 
+  # [unit] secret-silos-phase-two: the key is cached in steffon's soul set, so a
+  # rotation in 1Password leaves a stale copy. Heroku's 401 on it reads the item
+  # fresh once and the PATCH runs once more with the new key.
+  def test_a_401_on_the_cached_key_reads_fresh_once_and_retries
+    Dir.mktmpdir("heroku-secret-set-rotate") do |dir|
+      current = "HRKU-before-rotation"
+      op = FakeHerokuOp.install(dir, "studio-agents/heroku.studio.agents" => current)
+      with_api(accept: -> { current }) do |base, seen|
+        env = SessionEnv.neutralized(FakeHerokuOp::SCRUB.merge(
+          "HEROKU_API_BASE" => base, "HEROKU_TOKEN_OP_BIN" => op,
+          "OP_SERVICE_ACCOUNT_TOKEN" => "ops_fixture_agent", "MCR_OP_READS_LOG" => File.join(dir, "reads.log"),
+          "CLAUDE_PROJECTS_DIR" => dir, "MCR_SECRET_CACHE_DIR" => nil, "MCR_SOUL_SECRET_SETS" => nil
+        ))
+        _, err, status = Open3.capture3(env, "ruby", BIN, "fixture-app", "FIXTURE_SECRET", stdin_data: "v\n")
+        assert status.success?, err
+
+        current = "HRKU-after-rotation"
+        File.write(File.join(dir, "op-values.json"), JSON.generate("studio-agents/heroku.studio.agents" => current))
+        out, err, status = Open3.capture3(env, "ruby", BIN, "fixture-app", "FIXTURE_SECRET", stdin_data: "v\n")
+
+        assert status.success?, err
+        bearers = seen.map { |r| r[:head][/^authorization: Bearer (\S+)\r$/i, 1] }
+        assert_equal %w[HRKU-before-rotation HRKU-before-rotation HRKU-after-rotation], bearers,
+                     "the cached key, refused, then the fresh one"
+        assert_equal 2, FakeHerokuOp.calls(dir).size, "the first fill and one fresh read"
+        assert_match(/heroku refused heroku.studio.agents/, err)
+        %w[HRKU-before-rotation HRKU-after-rotation].each do |key|
+          refute_includes out + err + File.read(File.join(dir, "reads.log")), key, "a key reached output or the log"
+        end
+      end
+    end
+  end
+
   # No profile exports HEROKU_API_KEY since 2026-10-27, so an ordinary shell
   # reaches this path: the agents item, read through bin/lib/heroku_token.rb.
   def test_without_heroku_api_key_the_token_is_read_from_1password
@@ -68,7 +104,8 @@ class HerokuSecretSetTest < Minitest::Test
       with_api do |base, seen|
         env = SessionEnv.neutralized(FakeHerokuOp::SCRUB.merge(
           "HEROKU_API_BASE" => base, "HEROKU_TOKEN_OP_BIN" => op,
-          "OP_SERVICE_ACCOUNT_TOKEN" => "ops_fixture_agent", "MCR_OP_READS_LOG" => File.join(dir, "reads.log")
+          "OP_SERVICE_ACCOUNT_TOKEN" => "ops_fixture_agent", "MCR_OP_READS_LOG" => File.join(dir, "reads.log"),
+          "CLAUDE_PROJECTS_DIR" => dir, "MCR_SECRET_CACHE_DIR" => nil, "MCR_SOUL_SECRET_SETS" => nil
         ))
         out, err, status = Open3.capture3(env, "ruby", BIN, "fixture-app", "FIXTURE_SECRET", stdin_data: "v\n")
 

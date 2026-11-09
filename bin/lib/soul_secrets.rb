@@ -311,7 +311,10 @@ module SoulSecrets
     if !token_env.empty? && !env[token_env].to_s.strip.empty?
       [{ "OP_SERVICE_ACCOUNT_TOKEN" => env[token_env] }, "#{token_env} (this soul's own service account)"]
     else
-      [{}, "the shared agent service account#{token_env.empty? ? '' : " (#{token_env} is not set)"}"]
+      # The shared agent token, from +env+ (a caller's env hash, not only ENV).
+      shared = env["OP_SERVICE_ACCOUNT_TOKEN"].to_s.strip
+      [shared.empty? ? {} : { "OP_SERVICE_ACCOUNT_TOKEN" => shared },
+       "the shared agent service account#{token_env.empty? ? '' : " (#{token_env} is not set)"}"]
     end
   end
 
@@ -320,6 +323,8 @@ module SoulSecrets
   def fetch(manifest, entry, env: ENV)
     child_env, = op_env(manifest, env)
     via = "soul:#{manifest['soul']}:#{entry['vault']}/#{entry['item']}"
+    # OP_CACHE=false from the first attempt: a hung cache daemon is never asked.
+    child_env = child_env.merge(OpMeter::CACHE_BYPASS)
     out = OpMeter.popen(child_env, [op_bin(env), "item", "get", entry["item"], "--vault", entry["vault"], "--format", "json"],
                         via: via, env: bounded_env(env), announce: false, err: File::NULL)
     raise Unavailable, "1Password is not answering (#{entry['item']})" if OpMeter.last_hung?
@@ -767,7 +772,7 @@ module SoulSecrets
       raise SoulSecrets::Unavailable, "secret: #{token_env} is not set; the admin tier cannot read" if token.strip.empty?
 
       ref = "op://#{vault || vault(tier, env)}/#{item}/#{field}"
-      out = OpMeter.popen({ "OP_SERVICE_ACCOUNT_TOKEN" => token }, [SoulSecrets.op_bin(env), "read", ref],
+      out = OpMeter.popen({ "OP_SERVICE_ACCOUNT_TOKEN" => token }.merge(OpMeter::CACHE_BYPASS), [SoulSecrets.op_bin(env), "read", ref],
                           via: "admin:#{item}", env: SoulSecrets.bounded_env(env), announce: false, err: File::NULL)
       raise SoulSecrets::Unavailable, "1Password is not answering (admin #{item})" if OpMeter.last_hung?
       raise SoulSecrets::Unavailable, "op could not read admin #{item}/#{field}" unless $?.success? && !out.to_s.strip.empty?

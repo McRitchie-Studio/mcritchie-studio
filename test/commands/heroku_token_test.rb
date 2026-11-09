@@ -50,6 +50,8 @@ class HerokuTokenCommandTest < Minitest::Test
       "OP_SERVICE_ACCOUNT_TOKEN" => "ops_fixture_agent",
       "HEROKU_TOKEN_OP_BIN" => @op,
       "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log"),
+      # The agents key's soul-set copy lands in a tmpdir cache, never the real one.
+      "CLAUDE_PROJECTS_DIR" => @dir, "MCR_SECRET_CACHE_DIR" => nil, "MCR_SOUL_SECRET_SETS" => nil,
       "PATH" => "#{File.dirname(@heroku)}:#{RUBY_DIR}:#{ENV.fetch('PATH')}",
       # The children are plain scripts: keep the suite's Bundler out of them.
       "BUNDLE_GEMFILE" => nil, "BUNDLE_BIN_PATH" => nil, "RUBYOPT" => nil, "RUBYLIB" => nil
