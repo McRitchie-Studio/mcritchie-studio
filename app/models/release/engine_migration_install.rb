@@ -84,12 +84,181 @@ class Release
     #
     # The version line is the one deletion that is always expected, since the
     # dumper rewrites `define(version: ...)` in place.
-    def schema_dump_safe?(diff_text)
-      removals = diff_text.to_s.lines.select do |line|
-        line.start_with?("-") && !line.start_with?("---")
+    #
+    # THE ONE OTHER TOLERATED DELETION: a `t.check_constraint` line that Postgres
+    # re-prints after `db:schema:load`. Postgres stores a check constraint as a
+    # parsed tree and dumps it by DEPARSING that tree, so the text it gives back can
+    # differ from the text it was given while the meaning is identical. Measured on
+    # turf-monster `users_role_known` (2026-11-08), a varchar `role IN (...)`:
+    #
+    #   ARRAY['viewer'::character varying, 'admin'::character varying]::text[]
+    #   ARRAY['viewer'::character varying::text, 'admin'::character varying::text]
+    #
+    # Such a line passes only when ALL of these hold, and each one fails closed:
+    #   * an added `t.check_constraint` line carries the SAME name and the SAME
+    #     options (only the expression text moved);
+    #   * that name is unique among the removed lines, the added lines, and each
+    #     side's schema, and both sides put it on the SAME table;
+    #   * the `equivalent:` callable says Postgres reads both expressions to the
+    #     same text (see check_equivalence_statements). No callable, no tolerance.
+    #
+    # `equivalent:` receives (table:, old_expr:, new_expr:) and returns true only on
+    # proof; bin/release.rb hands it a psql run against the throwaway database the
+    # dump just migrated.
+    def schema_dump_safe?(diff_text, old_schema: nil, new_schema: nil, equivalent: nil)
+      lines = diff_text.to_s.lines
+      removals = lines.select { |line| line.start_with?("-") && !line.start_with?("---") }
+      additions = lines.select { |line| line.start_with?("+") && !line.start_with?("+++") }
+
+      removed_checks = removals.filter_map { |line| parse_check_constraint(line.delete_prefix("-")) }
+      added_checks = additions.filter_map { |line| parse_check_constraint(line.delete_prefix("+")) }
+
+      removals.all? do |line|
+        next true if version_line?(line)
+
+        tolerated_check_rewrite?(line, removed_checks, added_checks, old_schema, new_schema, equivalent)
+      end
+    end
+
+    def version_line?(line)
+      line.include?("ActiveRecord::Schema") && line.include?("define(version:")
+    end
+
+    def tolerated_check_rewrite?(line, removed_checks, added_checks, old_schema, new_schema, equivalent)
+      return false unless equivalent
+
+      old = parse_check_constraint(line.delete_prefix("-"))
+      return false unless old
+
+      same_name_removed = removed_checks.select { |check| check[:name] == old[:name] }
+      same_name_added = added_checks.select { |check| check[:name] == old[:name] }
+      return false unless same_name_removed.length == 1 && same_name_added.length == 1
+
+      new = same_name_added.first
+      return false unless new[:options] == old[:options]
+
+      table = check_constraint_table(old_schema, old[:name])
+      return false if table.nil? || table != check_constraint_table(new_schema, old[:name])
+
+      equivalent.call(table: table, old_expr: old[:expr], new_expr: new[:expr]) == true
+    rescue StandardError
+      false
+    end
+
+    CHECK_CONSTRAINT_LINE = /\A\s*t\.check_constraint\s+("(?:[^"\\]|\\.)*")(.*)\z/m
+    NAME_OPTION = /\bname:\s*("(?:[^"\\]|\\.)*")/
+
+    # `t.check_constraint "<expr>", name: "<name>"[, validate: false]` -> its parts,
+    # or nil for any other line. The dumper writes both strings with #inspect, so
+    # #undump reads them back exactly; a string it cannot read is not a match.
+    def parse_check_constraint(line)
+      match = CHECK_CONSTRAINT_LINE.match(line.to_s.chomp)
+      return nil unless match
+
+      options = match[2].strip
+      name = NAME_OPTION.match(options)
+      return nil unless name
+
+      { expr: match[1].undump, name: name[1].undump, options: options }
+    rescue RuntimeError
+      nil
+    end
+
+    # The table whose `create_table` block holds the check constraint `name`, or nil
+    # when the schema has none or more than one (a name Postgres scopes per table
+    # can repeat across tables, and a guess there would be fail-open).
+    def check_constraint_table(schema_text, name)
+      table = nil
+      found = []
+      schema_text.to_s.each_line do |line|
+        if (create = /\A\s*create_table\s+("(?:[^"\\]|\\.)*")/.match(line))
+          table = create[1].undump
+        elsif (check = parse_check_constraint(line)) && check[:name] == name
+          found << table
+        end
+      end
+      found.length == 1 ? found.first : nil
+    rescue RuntimeError
+      nil
+    end
+
+    # SQL that asks Postgres whether two check expressions on `table` mean the same
+    # thing. Run it, in order, inside a transaction that is rolled back, against a
+    # database that already holds `table`; the LAST statement selects one boolean.
+    #
+    # THE METHOD. A scratch temp table copies `table`'s columns (LIKE), and each
+    # expression is added to it as a CHECK and read back with pg_get_constraintdef.
+    # That read-back is re-added and read again until the text stops changing (at
+    # most four passes), because one pass is not always a fixed point: measured on
+    # Postgres 14, `role IN ('viewer','admin')` reads back as the `::text[]` form,
+    # which reads back as the per-element `::text` form, which is stable.
+    # Deparse-then-parse is the round trip pg_dump relies on to preserve meaning, so
+    # two expressions that settle on the same text are the same expression; a
+    # changed meaning ('owner' added) settles on different text and is refused.
+    #
+    # The expressions are the consumer's own committed schema text, run on a
+    # throwaway database the sweep created and drops; they are passed into the DO
+    # block as SQL string literals, never spliced into its body.
+    DO_TAG = "$release_schema_eq$"
+
+    def check_equivalence_statements(table:, old_expr:, new_expr:)
+      # The one text that could close the DO block's dollar quote. It never occurs
+      # in a real schema; refuse rather than escape.
+      if [old_expr, new_expr].any? { |expr| expr.to_s.include?(DO_TAG) }
+        raise ArgumentError, "check expression contains #{DO_TAG}"
       end
 
-      removals.all? { |line| line.include?("ActiveRecord::Schema") && line.include?("define(version:") }
+      [
+        "SET LOCAL standard_conforming_strings = on",
+        "CREATE TEMP TABLE release_schema_eq_scratch (LIKE #{quote_ident(table)}) ON COMMIT DROP",
+        "CREATE TEMP TABLE release_schema_eq_result (side text PRIMARY KEY, def text NOT NULL) ON COMMIT DROP",
+        <<~SQL.strip,
+          DO #{DO_TAG}
+          DECLARE
+            sides text[] := ARRAY['old', 'new'];
+            exprs text[] := ARRAY[#{quote_literal(old_expr)}, #{quote_literal(new_expr)}];
+            current_def text;
+            next_def text;
+            constraint_name text;
+          BEGIN
+            FOR side_index IN 1..2 LOOP
+              current_def := 'CHECK (' || exprs[side_index] || ')';
+              FOR pass IN 1..4 LOOP
+                constraint_name := 'release_schema_eq_' || sides[side_index] || '_' || pass;
+                EXECUTE format('ALTER TABLE release_schema_eq_scratch ADD CONSTRAINT %I %s', constraint_name, current_def);
+                SELECT pg_get_constraintdef(oid) INTO next_def FROM pg_constraint
+                  WHERE conrelid = 'release_schema_eq_scratch'::regclass AND conname = constraint_name;
+                EXIT WHEN next_def = current_def;
+                current_def := next_def;
+              END LOOP;
+              INSERT INTO release_schema_eq_result VALUES (sides[side_index], current_def);
+            END LOOP;
+          END
+          #{DO_TAG}
+        SQL
+        "SELECT (SELECT def FROM release_schema_eq_result WHERE side = 'old') = " \
+        "(SELECT def FROM release_schema_eq_result WHERE side = 'new') AS equivalent"
+      ]
+    end
+
+    # The whole check as one psql script: the statements above between BEGIN and
+    # ROLLBACK, so nothing it creates outlives the run.
+    def check_equivalence_script(**kwargs)
+      (["BEGIN"] + check_equivalence_statements(**kwargs) + ["ROLLBACK"]).map { |sql| "#{sql};\n" }.join
+    end
+
+    # What `psql -At` printed for that script: only a clean exit whose answer is
+    # the boolean true counts as proof.
+    def equivalence_verdict(ok:, output:)
+      ok && output.to_s.lines.map(&:strip).reject(&:empty?).last == "t"
+    end
+
+    def quote_ident(name)
+      %("#{name.to_s.gsub('"', '""')}")
+    end
+
+    def quote_literal(text)
+      "'#{text.to_s.gsub("'", "''")}'"
     end
   end
 end
