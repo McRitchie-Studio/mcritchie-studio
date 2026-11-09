@@ -26,13 +26,16 @@
 # `client` (`self` when the file IS a purpose-built client, `remedy-text` when it
 # only prints an `op` command for a person, else the client it should move to).
 
-daily_cap: 450
+daily_cap: 430
 
 # Newest last. Each lowering adds a row; the test refuses a row that rises.
 cap_history:
   - date: 2026-11-09
     cap: 450
     why: "first ratchet. Measured rolling 24 h, 2026-10-27 to 2026-11-09: peak 463 (2026-10-27), 425 (2026-11-08), typical 200-400. Two callers spend about 90%: gh-token's deployer mints (about 166 a day, minted per call by design) and agent mints (about 92 a day)."
+  - date: 2026-11-09
+    cap: 430
+    why: "secret-silos-phase-two moved four callers behind the secret cache. Their reads over the 7 days to 2026-11-09 (bin/op-reads): workspace-credentials 92, agents-backup 36, secret:discord.webhooks 26, secret:r2.mcritchie-agents-backup 12; 166 in all, about 24 a day. Cached (1 to 7 day lifetimes) they cost about 3 a day, so the cut is about 21 a day; the cap falls by 20. The Heroku moves cut nothing measurable (no heroku-token read in those 7 days). The deployer mints (gh-token:deployer, 1,246 in 7 days) are untouched: their broker is the next card."
 
 callers:
   # ── purpose-built clients: the places a credential SHOULD come from ──────────

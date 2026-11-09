@@ -70,14 +70,18 @@ untouched by any of this.
 | `AGENT_API_SECRET` | `mcritchie-studio/.env` | `bin/lib/agent_api.rb`, `bin/lib/task_board.rb` (env, then `.env`, then one metered read) | `bin/conductor-host-setup` prints the one-line fix (item `Agent API Secret`) |
 | `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (the dev pair) | `<app>/.env.development` | each app's storage config | `bin/ecosystem-build`, only when the file is missing or empty (item `r2.<app>`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (the dev OAuth client) | each app's `.env` | the Rails apps locally | `bin/dev-google-client` (item `google.studio.local`) |
-| `GMAIL_OAUTH_CREDENTIAL` | the app's `.env` | `Gmail::Credentials` (env first; else one metered read) | by hand from item `gmail.studio.agents` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | the app's `.env` | `Workspace::Credentials` (env first; else one metered read) | by hand from item `google.industries.agents` |
+| `GMAIL_OAUTH_CREDENTIAL` | the app's `.env` | `Gmail::Credentials` (env first; else the secret cache, a shared item, then one metered read) | by hand from item `gmail.studio.agents` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | the app's `.env` | `Workspace::Credentials` (env first; else the secret cache, a shared item, then one metered read) | by hand from item `google.industries.agents` |
 | `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` | the shell or `.env` | `bin/x-post` (env first; else one metered `item get`) | by hand from item `agent.turf.x` |
 
 Expiring or rotating credentials (GitHub App tokens, the harness key) are NOT
 env-file keys: they live in the secret cache, rung 2. Heroku tokens are read at
 use, never kept in a profile ([`credentials.md`](credentials.md), Heroku tokens
-resolve at use time).
+resolve at use time): the agents key from Steffon's soul set in the cache, the
+admin keys into the calling script's memory ([`secret-cache.md`](secret-cache.md),
+"A reader script reads its item from the owning soul"). The Discord webhooks, the
+R2 backup keys and the Google credentials are shared items in the cache
+([`secret-cache.md`](secret-cache.md), "Shared items").
 
 ## The ratchet: fewer reads, only down
 
@@ -89,7 +93,7 @@ in `config/op_direct_callers.yml` that may only go down:
 | Number | What it is | Held by |
 |--------|------------|---------|
 | `callers` | Every file under `bin/`, `app/` and `lib/` that runs `op` itself, metered or not (`bin/lib/op_call_scan.rb`), each with a `client` and a `why` | `test/lib/op_direct_callers_ratchet_test.rb`, in `bin/fast-check`'s repo-ratchets lane and in CI. A new direct caller fails; a listed file that no longer runs `op` fails too, so the list shrinks |
-| `daily_cap` | The most `op` calls in any rolling 24 hours (450 at the start; the 14-day peak was 463) | The same test: the cap may not rise against `origin/release`, and `cap_history` may never rise. `bin/op-reads --ratchet` compares the last 24 hours with it and exits 1 when over |
+| `daily_cap` | The most `op` calls in any rolling 24 hours (450 at the start, the 14-day peak was 463; 430 from `secret-silos-phase-two`, which moved about 21 reads a day behind the cache) | The same test: the cap may not rise against `origin/release`, and `cap_history` may never rise. `bin/op-reads --ratchet` compares the last 24 hours with it and exits 1 when over |
 
 - **What counts toward the cap.** An `op` call that could have spent quota: not a
   bookkeeping row (`cache-hit`, `soul-refused`, `admin-refused`, `auth-refresh`),
@@ -100,7 +104,7 @@ in `config/op_direct_callers.yml` that may only go down:
   cached client. Under it for a week, lower `daily_cap` to the new peak and add a
   `cap_history` row.
 - **A new caller.** Read through a purpose-built client: `bin/secret`,
-  `bin/gh-token`, `SoulSecrets`, `HerokuToken`. When a file truly must call `op`,
+  `bin/gh-token`, `SoulSecrets`, `HerokuToken`, `SecretCache.read_ref`. When a file truly must call `op`,
   add it to `callers` with its reason, where a reviewer sees it.
 
 ## 2. Rotation flips one place
