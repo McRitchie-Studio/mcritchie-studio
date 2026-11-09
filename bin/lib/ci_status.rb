@@ -853,7 +853,11 @@ module CiStatus
     end
 
     retried, retried_ok = gh_capture(args)
-    refused = !retried_ok && gh_auth_refusal?(retried)
+    # The retry rode the token this process just minted, so gh_auth_refusal?
+    # would excuse its 403 ("ours: a fresh one is refused the same way") and log
+    # `ok` for a refused call. On the retry any credential refusal counts
+    # (GhAuthRetry.refused?; Steffon's light on agent-op-reads-ratchet).
+    refused = !retried_ok && (GhAuthRetry.refused?(retried, token: @gh_token, on_retry: true) || HTTP_401.match?(retried.to_s))
     AuthRefresh.record(gh_lane_item, "github", refused ? "still-refused" : "ok")
     GhAuthRetry.mark_refusal(GhIdentity.resolve(nil), refused ? :still_refused : :ok, ENV)
     [retried, retried_ok]

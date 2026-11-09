@@ -376,6 +376,27 @@ class AuthRefreshTest < Minitest::Test
     GhAuthRetry.forget_minted!
   end
 
+  # Steffon's light on agent-op-reads-ratchet: the inherited token's 403 starts the
+  # refresh, and the fresh token meets the SAME 403. The retry rides a token this
+  # process minted, which refreshable? excuses; on the retry any credential refusal
+  # counts, so the run stops StillRefused and logs `still-refused`, never `ok`.
+  def test_unit_github_integration_403_on_the_retry_too_is_still_refused_not_ok
+    GhAuthRetry.forget_minted!
+    path, count = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path, "GH_TOKEN" => FAKE_LEAKED)
+    error = assert_raises(AuthRefresh::StillRefused) do
+      GhAuthRetry.with_refresh(identity: "agent", env: e, say: ->(_l) { }) { |_t| [INTEGRATION_403, false] }
+    end
+
+    assert_equal 1, broker_calls(count), "one mint, never a second"
+    assert_equal [%w[still-refused github:github.mcritchie-agent]], refresh_rows.map { |r| [r["outcome"], r["via"]] }
+    assert_equal [INTEGRATION_403, false], error.result, "gh's own answer survives for the caller"
+    assert_equal "github", SecretCache.entry("github.agent", e)["still_refused_by"]
+    refute_leaks(error.message, refresh_rows.to_s)
+  ensure
+    GhAuthRetry.forget_minted!
+  end
+
   # CiStatus, and bin/release through it: the held (minted) token is ours; none held
   # means the ambient one, which may be another App's.
   def test_unit_ci_status_refusal_tells_our_minted_token_from_an_inherited_one

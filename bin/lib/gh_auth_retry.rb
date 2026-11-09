@@ -193,6 +193,7 @@ module GhAuthRetry
     resolved = GhIdentity.resolve(identity, env: env)
     item = resolved ? GhIdentity.item_for(resolved) : nil
     tried = nil
+    calls = 0
     AuthRefresh.run(item: item || "github", service: "github", env: env, say: say,
                     how: "minting a GitHub App token from a fresh 1Password read",
                     read: -> { token },
@@ -202,11 +203,24 @@ module GhAuthRetry
 
                       fresh
                     },
-                    rejected: ->(result) { !result[1] && refreshable?(result[0], token: tried, env: env) },
+                    rejected: ->(result) { !result[1] && refused?(result[0], token: tried, on_retry: calls > 1, env: env) },
                     mark: ->(outcome) { mark_refusal(resolved, outcome, env) }) do |value|
       tried = value
+      calls += 1
       block.call(value)
     end
+  end
+
+  # Did GitHub refuse the credential? On the FIRST call: only when a fresh token
+  # could change the answer (#refreshable?), so a 403 of our own minted token
+  # starts no refresh. On the RETRY: any credential refusal (#auth_failure?). The
+  # retry always rides a token this process just minted, so #refreshable? would
+  # call its 403 "not a refusal" and the run would log `ok` for a call GitHub
+  # refused. An inherited token's 403 that the fresh token meets again is the
+  # lane's App missing the grant: `still-refused` (Steffon's light on
+  # agent-op-reads-ratchet).
+  def refused?(output, token:, on_retry:, env: ENV)
+    on_retry ? auth_failure?(output) : refreshable?(output, token: token, env: env)
   end
 
   # A second refusal marks the cache entry (github.<identity>), so `bin/secret
