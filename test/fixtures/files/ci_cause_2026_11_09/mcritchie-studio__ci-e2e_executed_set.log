@@ -1,0 +1,12 @@
+2026-11-09T07:47:13.1665992Z Unexpected HTTP response: 504
+2026-11-09T07:47:40.1170369Z E2E EXECUTED SET: RED
+2026-11-09T07:47:40.1175144Z   346 executed · 0 skipped · 2 shard report(s) · census: 511 executed (521 committed − 10 quarantined)
+2026-11-09T07:47:40.1175494Z 
+2026-11-09T07:47:40.1176516Z   ✗ expected one report from each of 3 shard(s) — [1, 2, 3] — but got [1, 2]. A shard whose report never arrived is a shard whose specs never ran, and its ~170 specs are silently uncovered. This is the DROPPED-SHARD vector: delete one entry from the ci.yml `shard:` matrix and every remaining job stays green over a smaller suite.
+2026-11-09T07:47:40.1177746Z 
+2026-11-09T07:47:40.1178051Z   ✗ the lane EXECUTED 346 spec(s); the committed suite under e2e/ counts 511 (165 FEWER than the census).
+2026-11-09T07:47:40.1182427Z 
+2026-11-09T07:47:40.1183193Z   The `playwright` check is GREEN over a set that is not the set this repo agreed to run. Reconcile it deliberately — do not just move the number in config/e2e_lane.yml to match what happened, which is the self-declaration disease this whole lane exists to cure.
+2026-11-09T07:47:40.1214420Z ##[error]Process completed with exit code 1.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes

@@ -1,0 +1,10 @@
+2026-11-09T07:48:10.5718227Z Unexpected HTTP response: 504
+2026-11-09T07:49:08.7423932Z RAILS EXECUTED SET: RED
+2026-11-09T07:49:08.7429902Z   3 shard(s) · 1316/1754 files executed · 16162 runs · 11 skips
+2026-11-09T07:49:08.7430452Z   · missing receipts for shard(s) 3 of 4
+2026-11-09T07:49:08.7436318Z 
+2026-11-09T07:49:08.7436621Z   The `rails` shards may have reported success over less than the whole suite.
+2026-11-09T07:49:08.7437523Z   Contract: /home/runner/work/mcritchie-studio/mcritchie-studio/config/rails_lane.yml. Receipts: rails-reports.
+2026-11-09T07:49:08.7476464Z ##[error]Process completed with exit code 1.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes
