@@ -622,39 +622,42 @@ end
 # PATs were retired in the 2026-07-29 org migration, so the ambient login reads fine
 # and then refuses the one write that matters — and on 2026-08-10 that stopped EVERY
 # reviewer merge so a human could mint by hand. Acquisition itself lives in
-# bin/gh-token (one cache, two toggled slots per identity, newest wins); this only
-# decides WHEN to ask, which is why fixing the third caller was wiring rather than a
-# third copy of the same code.
+# bin/gh-token (one cache, two toggled slots per identity, newest wins); WHEN to ask
+# is the shared refresh, GhAuthRetry.with_refresh (bin/lib/auth_refresh.rb): one
+# mint, one retry, a second refusal stops, and each refresh is logged as
+# `auth-refresh` in bin/op-reads (task secret-silos-phase-two).
 #
-# Narrow on purpose: a non-auth failure returns untouched, because re-running a merge
-# conflict with a fresh token just fails again and buries the real cause. Returns
-# [output, ok] where output is stdout on success and both streams on failure — gh
-# reports failures on stderr, and a caller handed only stdout sees an empty error.
+# identity: "agent" IS THE ESCAPE HATCH, used deliberately. GhAuthRetry defaults to
+# the session's lane (GH_APP_ITEM), and review WRITES pull requests — it comments and
+# merges — which the deployer App is denied by design. Under a stray deployer export
+# this recovery would mint the one App that cannot do the write it is recovering.
+#
+# The minted token is HELD (@gh_token, and GH_TOKEN for every later child), so the
+# rest of the sweep rides it; a refusal of the held token (it lives an hour) earns
+# one more mint. Narrow on purpose: a non-auth failure returns untouched, because
+# re-running a merge conflict with a fresh token just fails again and buries the
+# real cause. Returns [output, ok] where output is stdout on success and both
+# streams on failure — gh reports failures on stderr, and a caller handed only
+# stdout sees an empty error.
 def gh_with_auth_retry(args)
-  out, err, status = run_capture(managed_command(GH_BIN, *args))
-  return [out.to_s, true] if status&.success?
-
-  failure = [out, err].compact.map(&:to_s).join("\n").strip
-  return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
-
-  puts "  auth: gh refused on credentials — fetching a token and retrying once."
-  # identity: "agent" IS THE ESCAPE HATCH, used deliberately. GhAuthRetry now defaults to
-  # the session's lane (GH_APP_ITEM), and review WRITES pull requests — it comments and
-  # merges — which the deployer App is denied by design. Under a stray deployer export
-  # this recovery would mint the one App that cannot do the write it is recovering.
-  @gh_token = GhAuthRetry.mint(identity: "agent")
-  unless @gh_token
-    reason = GhAuthRetry.last_error
-    puts "  auth: could not obtain a token#{reason.empty? ? '' : " (#{reason})"}; reporting gh's original error."
-    return [failure, false]
+  GhAuthRetry.with_refresh(identity: "agent", token: @gh_token, say: ->(line) { puts "  auth: #{line}" }) do |token|
+    adopt_gh_token(token)
+    out, err, status = run_capture(managed_command(GH_BIN, *args))
+    status&.success? ? [out.to_s, true] : [[out, err].compact.map(&:to_s).join("\n").strip, false]
   end
+rescue AuthRefresh::StillRefused, AuthRefresh::RefreshFailed => e
+  # The message names the App item and the cause, never a token.
+  puts "  auth: #{e.message.lines.first.to_s.strip}; reporting gh's answer."
+  e.result || ["", false]
+end
 
-  # Process-local, and never printed. The retried child inherits it.
-  ENV["GH_TOKEN"] = @gh_token
-  r_out, r_err, r_status = run_capture(managed_command(GH_BIN, *args))
-  return [r_out.to_s, true] if r_status&.success?
+# Hold a token the refresh minted: process-local, never printed. Every later gh
+# child inherits it through GH_TOKEN.
+def adopt_gh_token(token)
+  return if token.to_s.strip.empty? || token == @gh_token
 
-  [[r_out, r_err].compact.map(&:to_s).join("\n").strip, false]
+  @gh_token = token
+  ENV["GH_TOKEN"] = token
 end
 
 # A gh WRITE (pr merge / pr edit). No-ops under dry-run (prints what it WOULD run),
@@ -714,12 +717,22 @@ def assert_merge_identity(slug)
     # identity: "agent" for the same reason gh_with_auth_retry pins it — review MERGES
     # pull requests, which the deployer App is denied by design, so a stray GH_APP_ITEM
     # export must not choose the App that cannot do the write it is recovering.
-    if (@gh_token = GhAuthRetry.mint(identity: "agent"))
-      # Process-local, never printed. The re-probe and every later gh child inherit it.
-      ENV["GH_TOKEN"] = @gh_token
-      identity, message = ActingIdentity.check(gh_bin: GH_BIN)
+    # Through the shared refresh (GhAuthRetry.with_refresh): the first call hands
+    # back the answer already in hand (no second probe), an UNKNOWN identity is the
+    # refusal, and the re-probe rides the minted token. Logged as `auth-refresh`.
+    begin
+      known = [identity, message]
+      identity, message = GhAuthRetry.with_refresh(identity: "agent", say: ->(line) { puts "  identity: #{line}" },
+                                                   rejected: ->(answer) { answer[0] == ActingIdentity::UNKNOWN }) do |token|
+        next known unless token
+
+        adopt_gh_token(token)
+        ActingIdentity.check(gh_bin: GH_BIN)
+      end
       return true if identity == ActingIdentity::APP
-    else
+    rescue AuthRefresh::StillRefused => e
+      identity, message = e.result
+    rescue AuthRefresh::RefreshFailed
       reason = GhAuthRetry.last_error
       message = "could not mint an agent token to establish identity" \
                 "#{reason.to_s.strip.empty? ? '' : " (#{reason})"}"

@@ -46,14 +46,6 @@ class OpReadsAreBoundedTest < Minitest::Test
       ['metered("item get")', "same"],
       ['metered("item edit")', "same"]
     ],
-    "app/services/gmail/credentials.rb" => [
-      ['"op", "read", item,', "meter_op_read records it on the next line; the read keeps its own single bound",
-       /meter_op_read\(status\)/]
-    ],
-    "app/services/workspace/credentials.rb" => [
-      ['"op", "read", item,', "meter_op_read records it on the next line; the read keeps its own single bound",
-       /meter_op_read\(status\)/]
-    ],
     "bin/lib/conductor_host.rb" => [
       ["\"op read '\#{OpVaults.ref", "printed remedy text for the operator of a new host; never executed here"]
     ],

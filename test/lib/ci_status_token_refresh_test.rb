@@ -89,6 +89,25 @@ class CiStatusTokenRefreshTest < Minitest::Test
     end
   end
 
+  # [unit] Steffon's light on agent-op-reads-ratchet: an INHERITED token gets the
+  # integration 403, the refresh mints, and the fresh token gets the same 403. The
+  # retry rode a token this process minted, which once excused its 403 and logged
+  # `ok`. It is a refusal: `still-refused`, and the item is marked.
+  def test_an_integration_403_that_survives_the_fresh_token_is_logged_still_refused
+    with_stubs do |s|
+      File.write(File.join(s.dir, "forbid"), "")
+      with_env("GH_TOKEN" => "fake-inherited-token-not-real") do
+        body, ok = CiStatus.gh_read_status("api", PATH)
+
+        refute ok
+        assert_includes body, "not accessible by integration"
+        assert_equal 1, s.mints, "one mint for the inherited token's 403, never a second"
+        assert_equal "still-refused", refresh_rows.last["outcome"]
+        refute_includes File.read(ENV["MCR_OP_READS_LOG"]), "fake-inherited"
+      end
+    end
+  end
+
   def refresh_rows
     OpMeter.records(env: ENV).select { |r| r["action"] == "auth-refresh" }
   end
@@ -154,6 +173,10 @@ class CiStatusTokenRefreshTest < Minitest::Test
       gh = script(dir, "gh", <<~SH)
         #!/bin/sh
         echo "$GH_TOKEN" >> "#{dir}/seen"
+        if [ -e "#{dir}/forbid" ]; then
+          echo '{"message":"Resource not accessible by integration","status":"403"}'
+          exit 1
+        fi
         if [ -z "$GH_TOKEN" ] || ! grep -qx "$GH_TOKEN" "#{dir}/valid"; then
           echo '{"message":"Bad credentials","status":"401"}'
           echo 'gh: Bad credentials (HTTP 401)' >&2

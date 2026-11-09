@@ -189,10 +189,18 @@ module GhAuthRetry
   # Raises AuthRefresh::RefreshFailed when no token can be minted and
   # AuthRefresh::StillRefused when GitHub refuses the fresh one too; both carry the
   # refused [output, ok] as #result, so the caller can still print what gh said.
-  def with_refresh(identity: nil, root: nil, env: ENV, token: nil, say: nil, &block)
+  #
+  # +permission_refreshes+ false: a 403 "resource not accessible" on the FIRST call
+  # is the answer, not a stale token (bin/release's PR-read preflight: a forced
+  # mint per private repo would only hear it again). +rejected+ replaces the
+  # refusal test outright, for a caller whose answer is not gh output
+  # (bin/pr-review's identity probe); it judges both calls.
+  def with_refresh(identity: nil, root: nil, env: ENV, token: nil, say: nil, permission_refreshes: true, rejected: nil,
+                   &block)
     resolved = GhIdentity.resolve(identity, env: env)
     item = resolved ? GhIdentity.item_for(resolved) : nil
     tried = nil
+    calls = 0
     AuthRefresh.run(item: item || "github", service: "github", env: env, say: say,
                     how: "minting a GitHub App token from a fresh 1Password read",
                     read: -> { token },
@@ -202,11 +210,30 @@ module GhAuthRetry
 
                       fresh
                     },
-                    rejected: ->(result) { !result[1] && refreshable?(result[0], token: tried, env: env) },
+                    rejected: rejected || lambda { |result|
+                      !result[1] && refused?(result[0], token: tried, on_retry: calls > 1, env: env,
+                                                        permission: permission_refreshes)
+                    },
                     mark: ->(outcome) { mark_refusal(resolved, outcome, env) }) do |value|
       tried = value
+      calls += 1
       block.call(value)
     end
+  end
+
+  # Did GitHub refuse the credential? On the FIRST call: only when a fresh token
+  # could change the answer (#refreshable?), so a 403 of our own minted token
+  # starts no refresh. On the RETRY: any credential refusal (#auth_failure?). The
+  # retry always rides a token this process just minted, so #refreshable? would
+  # call its 403 "not a refusal" and the run would log `ok` for a call GitHub
+  # refused. An inherited token's 403 that the fresh token meets again is the
+  # lane's App missing the grant: `still-refused` (Steffon's light on
+  # agent-op-reads-ratchet).
+  def refused?(output, token:, on_retry:, env: ENV, permission: true)
+    return auth_failure?(output) if on_retry
+    return false if !permission && output.to_s.match?(/resource not accessible/i)
+
+    refreshable?(output, token: token, env: env)
   end
 
   # A second refusal marks the cache entry (github.<identity>), so `bin/secret

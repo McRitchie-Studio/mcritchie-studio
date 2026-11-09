@@ -26,13 +26,16 @@
 # `client` (`self` when the file IS a purpose-built client, `remedy-text` when it
 # only prints an `op` command for a person, else the client it should move to).
 
-daily_cap: 450
+daily_cap: 430
 
 # Newest last. Each lowering adds a row; the test refuses a row that rises.
 cap_history:
   - date: 2026-11-09
     cap: 450
     why: "first ratchet. Measured rolling 24 h, 2026-10-27 to 2026-11-09: peak 463 (2026-10-27), 425 (2026-11-08), typical 200-400. Two callers spend about 90%: gh-token's deployer mints (about 166 a day, minted per call by design) and agent mints (about 92 a day)."
+  - date: 2026-11-09
+    cap: 430
+    why: "secret-silos-phase-two moved four callers behind the secret cache. Their reads over the 7 days to 2026-11-09 (bin/op-reads): workspace-credentials 92, agents-backup 36, secret:discord.webhooks 26, secret:r2.mcritchie-agents-backup 12; 166 in all, about 24 a day. Cached (1 to 7 day lifetimes) they cost about 3 a day, so the cut is about 21 a day; the cap falls by 20. The Heroku moves cut nothing measurable (no heroku-token read in those 7 days). The deployer mints (gh-token:deployer, 1,246 in 7 days) are untouched: their broker is the next card."
 
 callers:
   # ── purpose-built clients: the places a credential SHOULD come from ──────────
@@ -45,12 +48,12 @@ callers:
   bin/lib/secret_cache_cli.rb:
     client: self
     why: "bin/secret's Ruby half: op-item cache entries read on a miss"
+  bin/lib/secret_cache.rb:
+    client: self
+    why: "SecretCache.read_ref: a shared item (config/shared_secret_items.yml) from the cache, else one bounded read; serves agents-backup, r2-backup --op, Workspace and Gmail credentials"
   bin/lib/soul_secrets.rb:
     client: self
     why: "soul secret sets and the admin tier: one bounded read on a miss, then the cache or memory"
-  bin/lib/heroku_token.rb:
-    client: self
-    why: "HerokuToken: the Heroku API key, read at use and exported once to children"
   bin/shims/op-cache/op:
     client: self
     why: "the release gauntlet's op shim: soul-set items from the cache, anything else to the real op"
@@ -63,12 +66,6 @@ callers:
   bin/lib/agent_api.rb:
     client: self
     why: "the board secret for AgentApi: env, then .env, then one memoized metered read"
-  app/services/gmail/credentials.rb:
-    client: self
-    why: "Gmail::Credentials: GMAIL_OAUTH_CREDENTIAL from env first, else one metered read"
-  app/services/workspace/credentials.rb:
-    client: self
-    why: "Workspace::Credentials: GOOGLE_SERVICE_ACCOUNT_JSON from env first, else one metered read"
 
   # ── 1Password health, not a credential ──────────────────────────────────────
   bin/lib/one_password_wait.rb:
@@ -109,14 +106,6 @@ callers:
   bin/x-post:
     client: bin/secret
     why: "X API keys: env first, else one metered item get"
-
-  # ── backups ─────────────────────────────────────────────────────────────────
-  bin/agents-backup:
-    client: bin/secret
-    why: "the R2 backup keys (r2.mcritchie-agents-backup), five fields read per run (about 5 a day)"
-  bin/r2-backup:
-    client: bin/secret
-    why: "the R2 backup keys for the app buckets"
 
   # ── remedy text only: these print an `op` command for a person ──────────────
   bin/lib/conductor_host.rb:

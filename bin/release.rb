@@ -1137,6 +1137,25 @@ def gh_token_env(token)
   token.to_s.strip.empty? ? {} : { "GH_TOKEN" => token }
 end
 
+# ONE bounded `gh` read with the shared refresh (GhAuthRetry.with_refresh, task
+# secret-silos-phase-two): a credential refusal mints the lane's token once and
+# the read runs once more; any other failure returns untouched. The refresh is
+# logged as `auth-refresh` in bin/op-reads, never the token. Returns [out, status]
+# like bounded_capture2e; a refresh that cannot mint, or a second refusal, returns
+# the refused answer for the caller to judge. +permission_refreshes+ false keeps a
+# 403 "resource not accessible" as the answer (a missing grant, not a stale token).
+def gh_read_refreshing(argv, permission_refreshes: true, **opts)
+  status = nil
+  out, = GhAuthRetry.with_refresh(say: ->(line) { say("  #{line}") }, permission_refreshes: permission_refreshes) do |token|
+    o, status = bounded_capture2e(*argv, env: gh_token_env(token), **opts)
+    [o, status.success?]
+  end
+  [out, status]
+rescue AuthRefresh::StillRefused, AuthRefresh::RefreshFailed => e
+  say("  #{e.message.lines.first.to_s.strip}")
+  [Array(e.result).first.to_s, status]
+end
+
 # A `gh` call in the workflow-dispatch lane: identical to `sh`, except it carries
 # the lane's freshest credential (gh_fresh_env). It does NOT retry: the watch streams
 # and is backed by a refreshing poll, and the dispatch goes through gh_write_once.
@@ -7509,11 +7528,8 @@ def member_code_shas(repo, member)
     else
       ["gh", "pr", "view", url, "--json", "mergeCommit,headRefOid"]
     end
-  out, status = bounded_capture2e(*argv)
-  if !status.success? && GhAuthRetry.auth_failure?(out)
-    token = GhAuthRetry.mint
-    out, status = bounded_capture2e(*argv, env: gh_token_env(token)) if token
-  end
+  # An expired token is re-minted once (gh_read_refreshing), never read as unknown.
+  out, status = gh_read_refreshing(argv)
   raise "#{argv[0, 3].join(' ')} #{url.empty? ? repo : url}: #{out.to_s.strip[0, 120]}" unless status.success?
 
   json = JSON.parse(out)
@@ -10904,11 +10920,7 @@ def deploy_workflow_runs(workflow, path)
 
   argv = ["gh", "run", "list", "--workflow", wf, "--limit", "20",
           "--json", "databaseId,headSha,status,conclusion"]
-  out, status = bounded_capture2e(*argv, chdir: path)
-  if !status.success? && GhAuthRetry.auth_failure?(out)
-    token = GhAuthRetry.mint
-    out, status = bounded_capture2e(*argv, chdir: path, env: gh_token_env(token)) if token
-  end
+  out, status = gh_read_refreshing(argv, chdir: path)
   return nil unless status.success?
 
   JSON.parse(out)
@@ -11513,13 +11525,9 @@ def ship_pr_readable(repo)
   return [false, "no GitHub origin for #{repo}"] if nwo.empty?
 
   argv = ["gh", "pr", "list", "--repo", nwo, "--state", "merged", "--json", "number", "--limit", "1"]
-  out, status = bounded_capture2e(*argv)
   # A missing grant ("resource not accessible") is the answer, not a stale token: a
   # forced mint (a 1Password read) per private repo would only hear it again.
-  if !status.success? && GhAuthRetry.auth_failure?(out) && !out.match?(/resource not accessible/i)
-    token = GhAuthRetry.mint
-    out, status = bounded_capture2e(*argv, env: gh_token_env(token)) if token
-  end
+  out, status = gh_read_refreshing(argv, permission_refreshes: false)
   [status.success?, out.to_s]
 end
 

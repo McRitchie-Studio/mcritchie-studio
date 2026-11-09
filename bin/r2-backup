@@ -9,7 +9,7 @@
 require_relative "lib/cli_arg_guard"
 require_relative "lib/r2_backup"
 require_relative "lib/op_vaults"
-require_relative "lib/op_meter" # every op read bounded and metered (OpMeter.popen)
+require_relative "lib/secret_cache" # --op: cache first, then one bounded, metered op read
 
 USAGE = <<~TXT
   usage: bin/r2-backup run <app> [--accept-drop] [--op]
@@ -65,7 +65,10 @@ if args.bool?("--op")
   { "R2_ENDPOINT" => "endpoint", "R2_BACKUP_ACCESS_KEY_ID" => "access-key-id-backup",
     "R2_BACKUP_SECRET_ACCESS_KEY" => "secret-access-key-backup" }.each do |env, field|
     ref = OpVaults.ref("r2.#{app}", field)
-    value = OpMeter.popen({}, ["op", "read", ref], via: "r2-backup", err: File::NULL).to_s.strip
+    # Through SecretCache.read_ref: a field config/shared_secret_items.yml names is
+    # served from the cache; r2.<app> is named for no app yet (the nightly run uses
+    # the workflow's env), so this is one bounded, metered read per field.
+    value = SecretCache.read_ref(ref, via: "r2-backup", op_bin: "op").to_s
     abort("r2-backup: could not read #{field} from r2.#{app} — NOTHING ran.") if value.empty?
     ENV[env] = value
   end

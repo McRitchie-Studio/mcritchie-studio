@@ -68,7 +68,9 @@ class HerokuProfileMigrateTest < Minitest::Test
       "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "ops_fixture_admin",
       # A stale export in the migrator's own shell must not vouch for the item.
       "HEROKU_API_KEY" => STALE_AGENTS,
-      "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log")
+      "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log"),
+      # The agents key's soul-set copy lands in a tmpdir cache, never the real one.
+      "CLAUDE_PROJECTS_DIR" => @dir, "MCR_SECRET_CACHE_DIR" => nil, "MCR_SOUL_SECRET_SETS" => nil
     )
     out, err, status = Open3.capture3(SessionEnv.neutralized(base.merge(env)), "ruby", BIN, "--shim-dir", @shims, *args)
     SECRETS.each do |secret|
@@ -174,10 +176,12 @@ class HerokuProfileMigrateTest < Minitest::Test
     run_bin
     # Per file: the agent profile proves agents; the admin profile proves every
     # lane whose literal it holds (its agents mirror included).
-    reads = FakeHerokuOp.calls(File.join(@dir, "op")).map { |c| c["argv"][1] }.uniq
-    assert_equal %w[op://studio-agents/heroku.studio.agents/credential
-                    op://studio-agents-admin/heroku.studio.admin/credential
-                    op://studio-applications/heroku.studio.applications/credential], reads
+    # The agents key through steffon's soul set (`op item get`), the admin lanes
+    # through the admin tier (`op read`): each read fresh, never from a cache.
+    reads = FakeHerokuOp.calls(File.join(@dir, "op")).map { |c| c["argv"].first(3).join(" ") }.uniq
+    assert_equal ["item get heroku.studio.agents",
+                  "read op://studio-agents-admin/heroku.studio.admin/credential",
+                  "read op://studio-applications/heroku.studio.applications/credential"], reads
   end
 
   def test_a_lane_that_does_not_resolve_leaves_its_file_unchanged

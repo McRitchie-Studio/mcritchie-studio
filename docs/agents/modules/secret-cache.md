@@ -48,10 +48,30 @@ added back.
 
 **Long-lived 1Password items are cached only when named.** An entry of kind
 `op-item` (`vault`, `item`, `field`, `lifetime_seconds`, `refresh_window_seconds`)
-makes `bin/secret <vault> <item> [field]` serve that item from the folder. None are
-named by default. To choose one, read the data first: since 2026-10-27 every
-`bin/secret` read records its item in the read log (the `via` column reads
-`secret:<vault>/<item>`; query with `bin/op-reads`). A read the cache answers is logged too, with the action `cache-hit`, so quota spend and cache hits stay apart.
+makes `bin/secret <vault> <item> [field]` serve that item from the folder. To
+choose one, read the data first: since 2026-10-27 every `bin/secret` read records
+its item in the read log (the `via` column reads `secret:<vault>/<item>`; query
+with `bin/op-reads`). A read the cache answers is logged too, with the action
+`cache-hit`, so quota spend and cache hits stay apart.
+
+### Shared items
+
+Some long-lived fields are read by every soul, not by one: the Discord webhooks,
+the R2 backup keys, and the Google service-account and Gmail credentials.
+`config/shared_secret_items.yml` names them as `op-item` entries, each
+`<item>.<field>` (task `secret-silos-phase-two`, 2026-11-09). The data that chose
+them: in the 7 days to 2026-11-09, `workspace-credentials` spent 92 reads,
+`agents-backup` 36, `secret:discord.webhooks` 26 and
+`secret:r2.mcritchie-agents-backup` 12.
+
+| Fact | Value |
+|---|---|
+| Config | `config/shared_secret_items.yml`: `item`, `field`, `lane` (or `vault` for a vault no lane names, such as `industries-agents`), `lifetime`, `refresh_window` (default 1 h or a tenth of the lifetime). An admin vault is refused at load |
+| From the shell | `bin/secret studio-agents discord.webhooks release-notes-webhook`: a fresh copy is printed with no 1Password call (not even the `whoami`) |
+| From Ruby | `SecretCache.read_ref("op://<vault>/<item>/<field>", via:)`: the cached copy, else one bounded, metered `op read` (one attempt, `OP_CACHE=false`), stored when the config names it. `bin/agents-backup`, `bin/r2-backup --op`, `Workspace::Credentials` and `Gmail::Credentials` read through it. A ref the config does not name is read every time |
+| Lifetimes | the webhooks and R2 keys 7 days, the Google credentials 1 day |
+| Rotation | the copy is served until it expires, so a rotation drops it: `bin/secret forget --source discord.webhooks` drops every field of the item (the rotation step below) |
+| In a test | a run that pins no cache folder under the armed sandbox reads without the cache; the operator's folder is never reached |
 
 ## The one read path: `bin/secret`
 
@@ -173,9 +193,11 @@ is no loop and no back-off: at most one fresh read and two calls.
 | Fact | Value |
 |---|---|
 | Helper | `AuthRefresh.run(item:, service:, read:, refresh:, rejected:)` in `bin/lib/auth_refresh.rb`. The block gets the value and calls the service; it raises `AuthRefresh::Rejected` on a refusal, or `rejected` tests its result |
-| Soul-set items | `SoulSecrets.with_refresh(soul, vault, item, service:, cfg:) { \|fields\| ... }`. The refresh forgets `<cache>/<soul>/item.<item>.json`, reads the item with one bounded `op item get`, and writes it back. When a sibling process refreshed the item first, its copy is used and no second read is made |
+| Soul-set items | `SoulSecrets.with_refresh(soul, vault, item, service:, cfg:) { \|fields\| ... }`. The refresh forgets `<cache>/<soul>/item.<item>.json`, reads the item with one bounded `op item get`, and writes it back, all while it holds the soul's lock (the warm lock, `SoulSecrets.refresh_locked`). Five processes that meet the same refusal spend one read: each later one finds a copy that differs from the one it was refused and takes it. A lock held past 30 s with no fresh copy written fails the refresh (`RefreshFailed`) and forgets nothing |
 | Admin-tier items | `SoulSecrets::Admin.with_refresh(item, field, service:, cfg:) { \|value\| ... }`, inside an allowlisted script. The refresh drops the memoized value and reads the item once into **memory**; nothing is written to disk (the soul-set refresh writes, and the write path refuses an admin vault) |
-| GitHub | `GhAuthRetry.with_refresh(identity:) { \|token\| [output, ok] }`: the refresh is a forced mint (`bin/gh-token --force`), which never hands back the refused cached token. `bin/submit` runs every `gh` call through it. `bin/lib/ci_status.rb` keeps its own once-retry and logs and marks it the same way. `bin/pr-review` and `bin/release` still call `GhAuthRetry.mint` with their own once-retry (no `auth-refresh` row yet) |
+| GitHub | `GhAuthRetry.with_refresh(identity:) { \|token\| [output, ok] }`: the refresh is a forced mint (`bin/gh-token --force`), which never hands back the refused cached token. `bin/submit` and `bin/pr-review` run every `gh` call through it, and `bin/pr-review`'s merge-identity probe too (`rejected:` names an unknown identity as the refusal). `bin/release` runs its PR, run-list and member reads through it (`gh_read_refreshing`; the PR-read preflight passes `permission_refreshes: false`, so a missing grant mints nothing). `bin/lib/ci_status.rb` keeps its own once-retry and logs and marks it the same way. `bin/release`'s pre-push deployer mint (`mint_push_token`) is a mint, not a retry, and stays a mint |
+| On the retry | the retry rides a token this process just minted, so any credential refusal on it counts (`GhAuthRetry.refused?`): an inherited token's 403 that the fresh token meets again logs `still-refused`, never `ok` (Steffon's light on `agent-op-reads-ratchet`) |
+| Heroku | `HerokuToken.with_refresh(:agents, rejected:) { \|token\| ... }`. `bin/heroku-secret-set` runs its PATCH through it (a 401 reads fresh once). A `HEROKU_API_KEY` that `export_once!` set is replaced by the fresh key, or removed when the refresh fails, so no child inherits the refused key. A key the caller exported is used as given and never replaced |
 | Stops | `AuthRefresh::StillRefused` (the fresh value was refused too) and `AuthRefresh::RefreshFailed` (the fresh read failed). Both carry `item`, `service`, and `result`, the last refused answer, so the caller can still show what the service said |
 | Log | every refresh is one row in the read log: action `auth-refresh`, via `<service>:<item>`, outcome `ok`, `still-refused` or `refresh-failed` (`bin/op-reads --by action`). It is also said on stderr. **Never a value**: a name that looks like a token is logged as `unnamed` |
 | Bound | the helper runs no `op` itself; the caller's refresh does, through `OpMeter` (at most 20 s an attempt) |
@@ -317,10 +339,18 @@ agent never holds the value.
   soul folder, bounded (vault and token from the `deployer` lane in
   `bin/lib/op_vaults.rb`), and keeps the value in memory for `admin_tier.lifetime`
   (15 min). There is **no** `bin/secret` command that prints an admin value.
-- **The allowlist** is the scripts that read an admin item today (`bin/release.rb`,
-  `bin/gh-token`, `bin/heroku-token`, `bin/heroku-secret-set`,
-  `bin/rotate-heroku-ci-key`). Moving each one onto `Admin.read` is later work.
-  Adding a script is a reviewed config change.
+- **The allowlist** is `bin/release.rb`, `bin/gh-token`, `bin/heroku-token`,
+  `bin/heroku-secret-set`, `bin/rotate-heroku-ci-key` and
+  `bin/heroku-profile-migrate`. Adding a script is a reviewed config change.
+  Who reads through `Admin.read` today (task `secret-silos-phase-two`):
+  - `bin/heroku-token`, `bin/rotate-heroku-ci-key` and `bin/heroku-profile-migrate`
+    read the admin and applications Heroku keys through `HerokuToken`. `Admin.read`
+    takes a `vault:` for the applications key, which lives in
+    `studio-applications`, not the tier's own vault.
+  - `bin/release.rb` and `bin/heroku-secret-set` read no admin item: their Heroku
+    key is the agents lane, served from Steffon's soul set.
+  - `bin/gh-token` still reads the deployer App key per mint itself. Its
+    replacement is the deployer broker below.
 - **The open choice: disk or memory.** The config says `storage: memory`, and a
   config that says `disk` does not load.
   - *Memory* (chosen): nothing is written; each script run pays one bounded read
@@ -336,6 +366,55 @@ agent never holds the value.
 
 The existing rule stands beside it: nothing from an admin vault is ever written to
 this folder.
+
+### A reader script reads its item from the owning soul
+
+Some soul-set items are read for every soul by one purpose-built client. The
+Heroku agents key (`heroku.studio.agents`) is in Steffon's set, and `HerokuToken`
+serves it to Avi's release, to `bin/qa-server` and to the `heroku` shim in any
+shell. The item keeps one owner and one cached copy. The access unit is the
+declared reader: `SoulSecrets.reader_owner(cfg, vault, item, "bin/lib/heroku_token.rb")`
+names the soul whose entry lists that file in `readers`, and `HerokuToken` reads
+that soul's copy, whatever soul the process names. A reader no set lists gets no
+owner, and `HerokuToken` refuses (it runs no `op` of its own any more). A
+`from_env: false` read (`bin/heroku-token --check`, the migrator) reads 1Password
+fresh under the soul's lock and rewrites the copy.
+
+### The deployer broker (designed; the next card)
+
+**The spend.** `gh-token:deployer` is the largest 1Password spender: 1,246 reads
+in the 7 days to 2026-11-09, about 178 a day, in bursts of 40 to 70 an hour while
+a release runs. Every deployer mint reads the App key from 1Password, because a
+deployer token is never cached on disk (`CACHEABLE_IDENTITIES`). Each `git push`
+and `git fetch` under `GH_APP_ITEM=github.mcritchie-admin` asks the credential
+helper, which asks `bin/gh-token --identity deployer`, which mints.
+
+**The default (Alex McRitchie's ruling is owed).** A long-lived broker process
+holds the deployer App key and the token it mints **in memory only**. Admin values
+never touch disk.
+
+| Part | Design |
+|---|---|
+| Process | `bin/gh-deployer-broker`, started by `bin/release` (prepare and ship) and stopped at the run's end; at most one per machine (an `flock` on `<cache>/.deployer-broker.lock`) |
+| Key | read once from the admin vault through `SoulSecrets::Admin.read` (the broker joins `admin_tier.scripts`); held in memory for `admin_tier.lifetime` |
+| Token | minted from the key in memory; re-minted at 50 minutes; never written |
+| Socket | a Unix socket in a `0700` directory under the secret cache; one request: "a deployer token"; one answer: the token or a refusal |
+| Client | `bin/gh-token --identity deployer` asks the socket first, and mints itself only when no broker answers (today's path) |
+| Gain | one 1Password read per release run instead of 20 to 35 mints (40 to 70 reads) |
+
+**Why it is the next card, not this one.** The socket is the open risk. Every
+process on this Mac runs as the same Unix user, so any process can connect to a
+`0700` socket, and the peer check (`getpeereid`) proves only the uid, not the
+program. A build lane, or a compromised gem in a desk, could then ask for a
+deployer token, which the two-vault split exists to deny. Today that lane cannot:
+it lacks `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`. A broker is safe only with one of these:
+it runs as its own Unix user, or it serves only a child process it started (a
+release-scoped broker that hands the token to its own `git` and `gh` children
+through the environment, as `CiStatus` already does for its `gh` reads). The
+second is the smaller step and needs no new user: one mint per 50 minutes inside
+the release process, passed to `git push` through a credential helper that reads
+the parent's environment. That decision, and the ruling on the broker itself, are
+Alex McRitchie's.
 
 ## The legacy paths
 
@@ -371,7 +450,18 @@ the tooling), the links can be deleted.
   mints once and retries once; two concurrent warms of one soul spend one read (red
   without the lock), and a warm that finds the lock held reads nothing.
 - `test/lib/ci_status_token_refresh_test.rb` [unit]: the refusal-driven re-mint is
-  logged `ok`, or `still-refused` when GitHub refuses the fresh token too.
+  logged `ok`, or `still-refused` when GitHub refuses the fresh token too, an
+  inherited token's 403 included.
+- `test/lib/shared_secret_items_test.rb` [unit]: the real shared-items config
+  loads and names no admin vault; a shared item is read once and then served from
+  the cache; an expired copy reads again; an unnamed ref is never stored; an armed
+  test with no pinned folder never reaches the cache; a hung read is one attempt,
+  killed at the deadline; `bin/secret` serves a Discord webhook from the cache.
+- `test/lib/heroku_token_test.rb` [unit]: the agents key is read once and then
+  served from Steffon's cache; the admin lanes stay in memory and are refused
+  outside the admin tier; a `from_env: false` read is fresh; `with_refresh` reads
+  fresh once on a 401, replaces or clears the key `export_once!` set, and never
+  replaces a caller's key.
 - `test/commands/soul_secrets_gauntlet_test.rb` [integration]: a release with `op`
   stubbed to hang after the warm still runs the gauntlet's driver (red without the
   shim: the step is killed at its deadline).

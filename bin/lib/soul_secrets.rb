@@ -311,7 +311,10 @@ module SoulSecrets
     if !token_env.empty? && !env[token_env].to_s.strip.empty?
       [{ "OP_SERVICE_ACCOUNT_TOKEN" => env[token_env] }, "#{token_env} (this soul's own service account)"]
     else
-      [{}, "the shared agent service account#{token_env.empty? ? '' : " (#{token_env} is not set)"}"]
+      # The shared agent token, from +env+ (a caller's env hash, not only ENV).
+      shared = env["OP_SERVICE_ACCOUNT_TOKEN"].to_s.strip
+      [shared.empty? ? {} : { "OP_SERVICE_ACCOUNT_TOKEN" => shared },
+       "the shared agent service account#{token_env.empty? ? '' : " (#{token_env} is not set)"}"]
     end
   end
 
@@ -320,6 +323,8 @@ module SoulSecrets
   def fetch(manifest, entry, env: ENV)
     child_env, = op_env(manifest, env)
     via = "soul:#{manifest['soul']}:#{entry['vault']}/#{entry['item']}"
+    # OP_CACHE=false from the first attempt: a hung cache daemon is never asked.
+    child_env = child_env.merge(OpMeter::CACHE_BYPASS)
     out = OpMeter.popen(child_env, [op_bin(env), "item", "get", entry["item"], "--vault", entry["vault"], "--format", "json"],
                         via: via, env: bounded_env(env), announce: false, err: File::NULL)
     raise Unavailable, "1Password is not answering (#{entry['item']})" if OpMeter.last_hung?
@@ -530,21 +535,66 @@ module SoulSecrets
     first = lambda do
       refused_fields = read(soul, vault, item, cfg: cfg, env: env, err: err)
     end
-    fresh = lambda do
-      # A sibling process that met the same refusal may have refreshed already:
-      # a cached copy that differs from the refused one is that fresh read.
-      copy = cached(soul, entry, env: env)
-      return copy["fields"] if copy && refused_fields && copy["fields"] != refused_fields && copy["expires_at"] > Time.now
-
-      forget(soul, item, env: env)
-      fields = fetch(manifest(soul, cfg), entry, env: env)
-      store(soul, entry, fields, env: env)
-      fields
-    end
+    fresh = -> { refresh_locked(soul, item, entry, cfg: cfg, env: env, refused: refused_fields) }
     AuthRefresh.run(item: item, service: service, read: first, refresh: fresh, rejected: rejected, env: env,
                     say: ->(line) { err.puts(line) },
                     mark: ->(outcome) { mark_refused(soul, entry, service, env: env) if outcome == :still_refused },
                     &block)
+  end
+
+  # How long a refresh waits for the soul's lock (a warm, or a sibling's refresh).
+  REFRESH_WAIT = 30
+
+  # THE FORGET AND THE FRESH READ HOLD THE SOUL'S LOCK (Carl's review of
+  # secret-refresh-on-auth-failure). Five processes that meet the same refusal at
+  # once would otherwise each forget the copy and each read 1Password, and one
+  # could forget the copy another had just written. Under the lock (the warm lock,
+  # so a warm and a refresh never interleave either) the first process reads
+  # fresh; each later one finds a copy that differs from the one it was refused
+  # and takes it with no read. A lock held past REFRESH_WAIT ends the same way when
+  # the holder has written a fresh copy, else raises Unavailable (the caller's
+  # RefreshFailed). Returns the fresh fields.
+  def refresh_locked(soul, item, entry, cfg:, env: ENV, refused: nil, wait: REFRESH_WAIT)
+    taken, fields = with_warm_lock(soul, env: env, wait: wait) do
+      sibling_copy(soul, entry, refused, env: env) || begin
+        forget(soul, item, env: env)
+        fresh = fetch(manifest(soul, cfg), entry, env: env)
+        store(soul, entry, fresh, env: env)
+        fresh
+      end
+    end
+    return fields if taken
+
+    sibling_copy(soul, entry, refused, env: env) ||
+      raise(Unavailable, "another process held #{soul}'s secret lock for #{wait}s and wrote no fresh #{item}")
+  end
+
+  # A cached copy that is not the refused one: a sibling's fresh read.
+  def sibling_copy(soul, entry, refused, env: ENV)
+    return nil unless refused
+
+    copy = cached(soul, entry, env: env)
+    copy && copy["fields"] != refused && copy["expires_at"] > Time.now ? copy["fields"] : nil
+  end
+
+  # ── a reader script reads its item from the owning soul's folder ──────────
+
+  # The soul whose set names +item+ AND lists +reader+ among its readers, or nil.
+  #
+  # WHY A READER, NOT THE CALLING SOUL (task secret-silos-phase-two). Some items
+  # are read for every soul by one purpose-built client: HerokuToken serves the
+  # agents Heroku key to avi's release, to qa-server, and to the `heroku` shim in
+  # any shell. The item still has ONE owner (steffon's set) and ONE cached copy;
+  # the declared reader is the access unit. A reader no set lists gets nil, and
+  # the caller keeps its classic read.
+  def reader_owner(cfg, vault, item, reader)
+    cfg.fetch("souls", {}).each do |soul, set|
+      hit = set["items"].any? do |e|
+        e["vault"].to_s == vault.to_s && e["item"].to_s == item.to_s && Array(e["readers"]).map(&:to_s).include?(reader.to_s)
+      end
+      return soul if hit
+    end
+    nil
   end
 
   # A SECOND REFUSAL, MARKED on the item's own file (task agent-op-reads-ratchet):
@@ -668,8 +718,10 @@ module SoulSecrets
       SoulSecrets.lane_vault(tier["lane"], env)
     end
 
-    # The value of one admin item's field, for an allowlisted script.
-    def read(item, field, cfg:, env: ENV, program: $PROGRAM_NAME, now: Time.now, root: tooling_root)
+    # The value of one admin item's field, for an allowlisted script. +vault+
+    # names a vault the deployer token reads besides the tier's own (HerokuToken's
+    # applications lane: studio-applications); nil means the tier's vault.
+    def read(item, field, cfg:, env: ENV, program: $PROGRAM_NAME, now: Time.now, root: tooling_root, vault: nil)
       tier = SoulSecrets.validate_admin!(cfg["admin_tier"])
       unless allowed?(program, tier, root: root)
         SoulSecrets.log_admin_refusal(program, item, env: env)
@@ -677,13 +729,17 @@ module SoulSecrets
                        "admin items are read only by the scripts config/soul_secret_sets.yml lists (logged)"
       end
 
-      key = [item.to_s, field.to_s]
+      key = memo_key(item, field, vault)
       hit = @memo[key]
       return hit[0] if hit && hit[1] > now
 
-      value = fetch(tier, item, field, env)
+      value = fetch(tier, item, field, env, vault: vault)
       @memo[key] = [value, now + SoulSecrets.seconds(tier["lifetime"])]
       value
+    end
+
+    def memo_key(item, field, vault)
+      [vault.to_s, item.to_s, field.to_s]
     end
 
     # The admin twin of SoulSecrets.with_refresh, IN MEMORY (Carl's review of
@@ -695,28 +751,28 @@ module SoulSecrets
     # once more. Nothing is written to disk. The allowlist check is #read's, so a
     # script outside the tier is refused before any read.
     def with_refresh(item, field, service:, cfg:, env: ENV, program: $PROGRAM_NAME, rejected: nil,
-                     err: $stderr, root: tooling_root, &block)
-      first = -> { read(item, field, cfg: cfg, env: env, program: program, root: root) }
+                     err: $stderr, root: tooling_root, vault: nil, &block)
+      first = -> { read(item, field, cfg: cfg, env: env, program: program, root: root, vault: vault) }
       fresh = lambda do
-        forget(item, field)
-        read(item, field, cfg: cfg, env: env, program: program, root: root)
+        forget(item, field, vault: vault)
+        read(item, field, cfg: cfg, env: env, program: program, root: root, vault: vault)
       end
       AuthRefresh.run(item: item, service: service, read: first, refresh: fresh, rejected: rejected, env: env,
                       say: ->(line) { err.puts(line) }, &block)
     end
 
     # Drop one memoized value; the next #read fetches it.
-    def forget(item, field)
-      @memo.delete([item.to_s, field.to_s])
+    def forget(item, field, vault: nil)
+      @memo.delete(memo_key(item, field, vault))
     end
 
-    def fetch(tier, item, field, env)
+    def fetch(tier, item, field, env, vault: nil)
       token_env = OpVaults.token_env(tier["lane"])
       token = env[token_env].to_s
       raise SoulSecrets::Unavailable, "secret: #{token_env} is not set; the admin tier cannot read" if token.strip.empty?
 
-      ref = "op://#{vault(tier, env)}/#{item}/#{field}"
-      out = OpMeter.popen({ "OP_SERVICE_ACCOUNT_TOKEN" => token }, [SoulSecrets.op_bin(env), "read", ref],
+      ref = "op://#{vault || vault(tier, env)}/#{item}/#{field}"
+      out = OpMeter.popen({ "OP_SERVICE_ACCOUNT_TOKEN" => token }.merge(OpMeter::CACHE_BYPASS), [SoulSecrets.op_bin(env), "read", ref],
                           via: "admin:#{item}", env: SoulSecrets.bounded_env(env), announce: false, err: File::NULL)
       raise SoulSecrets::Unavailable, "1Password is not answering (admin #{item})" if OpMeter.last_hung?
       raise SoulSecrets::Unavailable, "op could not read admin #{item}/#{field}" unless $?.success? && !out.to_s.strip.empty?
