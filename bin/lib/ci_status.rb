@@ -839,9 +839,26 @@ module CiStatus
     mint_gh_token! if gh_token_aging?
     body, ok = gh_capture(args)
     return [body, ok] if ok || !gh_auth_refusal?(body)
-    return [body, false] unless mint_gh_token!
 
-    gh_capture(args)
+    # A refusal-driven refresh is logged like every other (bin/lib/auth_refresh.rb):
+    # action `auth-refresh`, via `github:<App item>`, never the token. A floored
+    # attempt read nothing, so it logs nothing.
+    unless mint_gh_token!
+      AuthRefresh.record(gh_lane_item, "github", "refresh-failed") if @gh_mint_result == :failed
+      return [body, false]
+    end
+
+    retried, retried_ok = gh_capture(args)
+    refused = !retried_ok && gh_auth_refusal?(retried)
+    AuthRefresh.record(gh_lane_item, "github", refused ? "still-refused" : "ok")
+    [retried, retried_ok]
+  end
+
+  # The App item this lane's token is minted from, for the refresh log. Names only.
+  def self.gh_lane_item
+    GhIdentity.item_for(GhIdentity.resolve(nil).to_s) || "github"
+  rescue StandardError
+    "github"
   end
 
   def self.gh_read(*args)

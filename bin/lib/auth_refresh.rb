@@ -39,7 +39,9 @@ require_relative "op_meter"
 # Ruby 2.6 syntax, like soul_secrets.rb (bin/gh-token loads it under system Ruby).
 module AuthRefresh
   ACTION = "auth-refresh"
-  NAME = /\A[A-Za-z0-9._:-]{1,80}\z/.freeze
+  NAME = /\A[A-Za-z0-9][A-Za-z0-9._:-]{0,79}\z/.freeze
+  # Token- and key-shaped text (bin/gh-token's SECRET_SHAPED): never a name.
+  SECRET_SHAPED = %r{ops_|gh[a-z]_|github_pat_|[A-Za-z0-9+/=_-]{32,}}.freeze
 
   # The block raises this when the service refused the credential, for a caller
   # that has no result to classify (an exception-shaped client).
@@ -126,6 +128,6 @@ module AuthRefresh
 
   def label(name)
     text = name.to_s.strip
-    NAME.match?(text) ? text : "unnamed"
+    NAME.match?(text) && !SECRET_SHAPED.match?(text) ? text : "unnamed"
   end
 end
