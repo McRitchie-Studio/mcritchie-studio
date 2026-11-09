@@ -590,18 +590,18 @@ def gh_run(root, args)
 end
 
 def gh_capture(root, *args)
-  out, err, ok = gh_run(root, args)
-  return [out, true] if ok
-
   # gh reports failures on STDERR. Classify on both streams but hand the caller
   # STDOUT — `pr list --json` parses stdout, and folding stderr into it would feed
   # warnings to JSON.parse. (The first version of this read only stdout, so the
   # classifier saw "" and never retried; ship's own error line printed empty, which
   # is what gave it away.)
-  failure = [out, err].join("\n").strip
-  return [failure, false] if @gh_token || !GhAuthRetry.auth_failure?(failure)
-
-  say "auth — gh refused on credentials; minting a GitHub App token and retrying once."
+  #
+  # THE REFRESH IS THE SHARED ONE (bin/lib/auth_refresh.rb, via GhAuthRetry.with_refresh):
+  # one fresh mint and one retry on a credential refusal, logged as `auth-refresh`
+  # (bin/op-reads), and a second refusal stops and names the App item. Once this
+  # process holds a minted token it is tried first, and a refusal of THAT token is
+  # not refreshed again here: one mint per ship, as before.
+  #
   # identity: "agent" IS THE ESCAPE HATCH, used deliberately. GhAuthRetry now defaults to
   # the session's lane (GH_APP_ITEM), and this command WRITES pull requests — a grant the
   # deployer App is denied by design. A stray `export GH_APP_ITEM=github.mcritchie-admin`
@@ -609,19 +609,24 @@ def gh_capture(root, *args)
   # docs/agents/agents/avi/sops/qa-release.md), and under it an unnamed recovery would mint
   # the one App that CANNOT open the PR this line exists to open. bin/lib/gh_identity.rb
   # cites exactly this call site as why explicit outranks the environment.
-  @gh_token = GhAuthRetry.mint(root: root, identity: "agent")
-  unless @gh_token
-    # Report the reason the mint ACTUALLY gave. This used to hardcode "1Password
-    # unavailable?", which became wrong the moment an unreadable GH_APP_ITEM grew its own
-    # nil path — the operator was sent to 1Password for a typo in their own export.
-    reason = GhAuthRetry.last_error
-    say "auth — could not mint an App token#{reason.empty? ? ' (1Password unavailable?)' : " (#{reason})"}; " \
-        "reporting gh's original error."
-    return [failure, false]
+  attempt = lambda do |token|
+    @gh_token = token if token
+    out, err, ok = gh_run(root, args)
+    [ok ? out : [out, err].join("\n").strip, ok]
   end
+  return attempt.call(@gh_token) if @gh_token
 
-  out2, err2, ok2 = gh_run(root, args)
-  [ok2 ? out2 : [out2, err2].join("\n").strip, ok2]
+  GhAuthRetry.with_refresh(identity: "agent", root: root, say: ->(line) { say "auth — #{line}" }, &attempt)
+rescue AuthRefresh::RefreshFailed => e
+  # Report the reason the mint ACTUALLY gave, then gh's ORIGINAL error. This used to
+  # hardcode "1Password unavailable?", which became wrong the moment an unreadable
+  # GH_APP_ITEM grew its own nil path — the operator was sent to 1Password for a typo
+  # in their own export.
+  say "auth — #{e.message}; could not mint an App token, so reporting gh's original error."
+  e.result
+rescue AuthRefresh::StillRefused => e
+  say "auth — #{e.message}"
+  e.result
 end
 
 list_json, listed = gh_capture(root, "pr", "list", "--head", branch, "--state", "open",

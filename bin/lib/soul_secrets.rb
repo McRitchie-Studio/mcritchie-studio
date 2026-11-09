@@ -7,6 +7,7 @@ require "fileutils"
 require_relative "secret_cache"
 require_relative "op_meter"
 require_relative "op_vaults"
+require_relative "auth_refresh"
 
 # SoulSecrets — each soul's own set of 1Password items, warmed into the secret
 # cache at launch and read from there. Config: config/soul_secret_sets.yml. Doc:
@@ -351,7 +352,49 @@ module SoulSecrets
   # One pass over a soul's set: an entry that is fresh costs nothing; any other is
   # read once from 1Password and written to the soul's folder. After a hang the
   # pass stops calling `op`. Returns [lines, ok].
-  def warm(manifest, env: ENV, now: Time.now, only: nil)
+  #
+  # ONE WARM PER SOUL AT A TIME (the warm lock). Five subagents of one soul that
+  # launch together start five warms through the SubagentStart hook. Each takes
+  # <cache>/<soul>/.warm.lock first (flock, so a crashed holder frees it with its
+  # process; there is no stale lock file to clean). A warm that finds the lock held
+  # waits up to +wait+ seconds and then runs: by then the holder has written its
+  # entries, they read as fresh, and the second pass costs no 1Password read. With
+  # wait 0 (the hook's detached warm) it stops at once and says so.
+  def warm(manifest, env: ENV, now: Time.now, only: nil, wait: WARM_WAIT)
+    soul = manifest["soul"]
+    taken, result = with_warm_lock(soul, env: env, wait: wait) do
+      warm_pass(manifest, env: env, now: now, only: only)
+    end
+    return result if taken
+
+    line = "#{soul}: another warm of #{soul} holds the warm lock; this one stops (it would read the same items)"
+    [[line], wait.to_f.zero? || !due?(manifest, env: env)]
+  end
+
+  WARM_LOCK = ".warm.lock"
+  # How long an explicit `bin/secret warm` waits for another warm of the same soul.
+  # Under bin/release's 90 s bound on its own warm (GAUNTLET_WARM_DEADLINE).
+  WARM_WAIT = 60
+  WARM_POLL = 0.1
+
+  # [true, block result] once this process holds the soul's warm lock, or
+  # [false, nil] when another process held it for the whole of +wait+ seconds.
+  def with_warm_lock(soul, env: ENV, wait: WARM_WAIT)
+    dir = ensure_soul_dir!(soul, env)
+    File.open(File.join(dir, WARM_LOCK), File::RDWR | File::CREAT | File::NOFOLLOW, SecretCache::FILE_MODE) do |lock|
+      deadline = Process.clock_gettime(Process::CLOCK_MONOTONIC) + wait.to_f
+      until lock.flock(File::LOCK_EX | File::LOCK_NB)
+        return [false, nil] if Process.clock_gettime(Process::CLOCK_MONOTONIC) >= deadline
+
+        # A bounded poll on a lock another process holds, not a wait on time:
+        # flock has no timeout of its own.
+        sleep(WARM_POLL)
+      end
+      [true, yield]
+    end
+  end
+
+  def warm_pass(manifest, env:, now:, only:)
     soul = manifest["soul"]
     _child, account = op_env(manifest, env)
     lines = ["#{soul}: warming #{manifest['items'].size} item(s) with #{account}"]
@@ -443,6 +486,46 @@ module SoulSecrets
       err.puts("secret: #{e.message}; serving the cached copy of #{item} (expires #{copy['expires_at'].utc.iso8601})")
       copy["fields"]
     end
+  end
+
+  # ── refresh on an auth failure ────────────────────────────────────────────
+
+  # Call the block with +soul+'s cached copy of +item+. When +service+ refuses it
+  # (the block raises AuthRefresh::Rejected, or +rejected+ says so of its result),
+  # forget the copy, read the item fresh from 1Password once, store it, and call
+  # the block once more. A second refusal raises AuthRefresh::StillRefused naming
+  # the item. bin/lib/auth_refresh.rb says why this is a named-cause refresh and
+  # not a blind retry.
+  #
+  #   SoulSecrets.with_refresh("steffon", vault, "heroku.studio.agents", service: "heroku",
+  #                            cfg: cfg) do |fields|
+  #     answer = heroku_api(fields["credential"])
+  #     raise AuthRefresh::Rejected if answer.code == "401"
+  #     answer
+  #   end
+  #
+  # Raises Refused for another soul's item, Unavailable when no set names it.
+  def with_refresh(soul, vault, item, service:, cfg:, env: ENV, rejected: nil, err: $stderr, &block)
+    kind, entry = resolve(soul, vault, item, cfg)
+    raise Unavailable, "#{item} is in no soul's set; with_refresh serves soul-set items only" if kind == :not_managed
+
+    refused_fields = nil
+    first = lambda do
+      refused_fields = read(soul, vault, item, cfg: cfg, env: env, err: err)
+    end
+    fresh = lambda do
+      # A sibling process that met the same refusal may have refreshed already:
+      # a cached copy that differs from the refused one is that fresh read.
+      copy = cached(soul, entry, env: env)
+      return copy["fields"] if copy && refused_fields && copy["fields"] != refused_fields && copy["expires_at"] > Time.now
+
+      forget(soul, item, env: env)
+      fields = fetch(manifest(soul, cfg), entry, env: env)
+      store(soul, entry, fields, env: env)
+      fields
+    end
+    AuthRefresh.run(item: item, service: service, read: first, refresh: fresh, rejected: rejected, env: env,
+                    say: ->(line) { err.puts(line) }, &block)
   end
 
   # The fields in the shape `op item get --format json` prints, for a caller that

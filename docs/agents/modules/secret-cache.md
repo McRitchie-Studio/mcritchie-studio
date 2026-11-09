@@ -144,6 +144,31 @@ whenever `op whoami` fails. The procedure over all of this is
 4. Report it as a blocker: name the entry, the failing `op` read, and the steps
    you tried.
 
+## When a service refuses a cached credential: one refresh
+
+**Purpose.** A cached credential can be dead before its entry expires: someone
+rotated it in 1Password, and the cache still serves the old copy. The service then
+answers 401 (or "Bad credentials", or "invalid credential"). The caller forgets
+its cached copy, reads the item fresh from 1Password **once**, and tries the call
+**once** more. Task `secret-refresh-on-auth-failure`.
+
+**A named-cause refresh, not a blind retry.** Only a refusal of the credential
+starts it. Any other failure (a 404, a 500, a timeout, a merge conflict) goes back
+to the caller untouched, because a fresh credential does not change it. A second
+refusal after the fresh read means the 1Password item itself is bad (revoked, the
+wrong field, the wrong account). The call stops and raises `StillRefused`, which
+names the item and the service. There is no loop and no back-off: at most one
+fresh read and two calls.
+
+| Fact | Value |
+|---|---|
+| Helper | `AuthRefresh.run(item:, service:, read:, refresh:, rejected:)` in `bin/lib/auth_refresh.rb`. The block gets the value and calls the service; it raises `AuthRefresh::Rejected` on a refusal, or `rejected` tests its result |
+| Soul-set items | `SoulSecrets.with_refresh(soul, vault, item, service:, cfg:) { \|fields\| ... }`. The refresh forgets `<cache>/<soul>/item.<item>.json`, reads the item with one bounded `op item get`, and writes it back. When a sibling process refreshed the item first, its copy is used and no second read is made |
+| GitHub | `GhAuthRetry.with_refresh(identity:) { \|token\| [output, ok] }`: the refresh is a forced mint (`bin/gh-token --force`), which never hands back the refused cached token. `bin/submit` runs every `gh` call through it. `bin/lib/ci_status.rb` keeps its own once-retry and logs it the same way |
+| Stops | `AuthRefresh::StillRefused` (the fresh value was refused too) and `AuthRefresh::RefreshFailed` (the fresh read failed). Both carry `item`, `service`, and `result`, the last refused answer, so the caller can still show what the service said |
+| Log | every refresh is one row in the read log: action `auth-refresh`, via `<service>:<item>`, outcome `ok`, `still-refused` or `refresh-failed` (`bin/op-reads --by action`). It is also said on stderr. **Never a value**: a name that looks like a token is logged as `unnamed` |
+| Bound | the helper runs no `op` itself; the caller's refresh does, through `OpMeter` (at most 20 s an attempt) |
+
 ## Session start and long runs
 
 - **Session start** (`bin/session-insights`, the SessionStart hook) names every
@@ -207,6 +232,14 @@ Why this seam, and not the others:
 - **SubagentStart** fires on every soul launch, names the soul, and is installed
   by the same tooling as the other managed hooks.
 
+**One warm per soul at a time.** Five subagents of one soul that launch together
+start five warms. Each warm first takes `<cache>/<soul>/.warm.lock` with `flock`, so
+a crashed holder frees it when its process ends and no stale lock file is left. The
+hook's detached warm runs with `--wait 0`: when another warm of the soul holds the
+lock, it stops at once and says so. An explicit `bin/secret warm <soul>` waits up to
+60 s (`--wait SECONDS`; under `bin/release`'s 90 s bound) and then runs: the entries
+the first warm wrote are fresh, so it costs no 1Password read.
+
 A soul that runs outside Claude Code (Codex, a script) warms by hand:
 `bin/secret warm <soul>`. A read warms the one item it needs on a miss, so a
 missed warm costs one bounded read, not a failure.
@@ -222,9 +255,9 @@ A soul names itself with `--soul <slug>` or `MCR_SOUL`. Then:
 | in no set | exit 3 (`not managed`): the classic read runs, unchanged |
 
 With no `MCR_SOUL`, the classic `bin/secret <vault> <item>` read is unchanged.
-Task `agent-op-reads-ratchet` closes that path later. Task
-`secret-refresh-on-auth-failure` can use `bin/secret forget --source <item>`
-and the read path above as its refresh.
+Task `agent-op-reads-ratchet` closes that path later. A caller whose service
+refuses the cached copy refreshes it once through `SoulSecrets.with_refresh` (see
+"When a service refuses a cached credential", above).
 
 **One Unix user, for now.** Every agent on this Mac runs as one Unix user, so the
 per-soul folders are a policy line, not a security boundary: any process can open
@@ -317,6 +350,14 @@ the tooling), the links can be deleted.
   read after warm hits the cache while `op` hangs; another soul's read is refused
   and logged; the portable manifest warms alone; the hook; the admin allowlist and
   its memory-only read.
+- `test/lib/auth_refresh_test.rb` [unit]: a stale cached key gets a 401, is read
+  fresh once, and the call succeeds; a still-bad key stops after one refresh and
+  names the item; a sibling's fresh copy costs no read; a non-refusal failure is
+  returned untouched; a failed fresh read stops; the log carries names only; GitHub
+  mints once and retries once; two concurrent warms of one soul spend one read (red
+  without the lock), and a warm that finds the lock held reads nothing.
+- `test/lib/ci_status_token_refresh_test.rb` [unit]: the refusal-driven re-mint is
+  logged `ok`, or `still-refused` when GitHub refuses the fresh token too.
 - `test/commands/soul_secrets_gauntlet_test.rb` [integration]: a release with `op`
   stubbed to hang after the warm still runs the gauntlet's driver (red without the
   shim: the step is killed at its deadline).

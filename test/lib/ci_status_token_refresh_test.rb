@@ -69,7 +69,28 @@ class CiStatusTokenRefreshTest < Minitest::Test
       assert ok
       assert_equal 2, s.mints
       assert_equal "minted-2", s.tokens_seen.last
+      assert_equal "ok", refresh_rows.last["outcome"], "the refusal-driven refresh is logged"
+      assert_equal "github:github.mcritchie-agent", refresh_rows.last["via"], "with the App item, never the token"
+      refute_includes File.read(ENV["MCR_OP_READS_LOG"]), "minted-"
     end
+  end
+
+  # [unit] A 401 that survives the fresh token is logged as still-refused.
+  def test_a_401_on_the_fresh_token_too_is_logged_still_refused
+    with_stubs do |s|
+      CiStatus.gh_read_status("api", PATH)
+      @now += CiStatus::MINT_RETRY_FLOOR_S
+      s.expire("minted-1")
+      File.write(File.join(s.dir, "valid-lock"), "") # GitHub accepts no token minted from here
+      _, ok = CiStatus.gh_read_status("api", PATH)
+
+      refute ok
+      assert_equal "still-refused", refresh_rows.last["outcome"]
+    end
+  end
+
+  def refresh_rows
+    OpMeter.records(env: ENV).select { |r| r["action"] == "auth-refresh" }
   end
 
   # [unit] THE BOUND: a token refused inside the retry floor is NOT re-minted, so a
@@ -145,11 +166,14 @@ class CiStatusTokenRefreshTest < Minitest::Test
         [ -e "#{dir}/broken" ] && { echo 'no 1Password session' >&2; exit 1; }
         n=$(( $(cat "#{dir}/count") + 1 ))
         echo "$n" > "#{dir}/count"
-        echo "minted-$n" >> "#{dir}/valid"
+        [ -e "#{dir}/valid-lock" ] || echo "minted-$n" >> "#{dir}/valid"
         printf 'minted-%s' "$n"
       SH
+      # The read log is pinned to the tmpdir: a refusal-driven mint logs an
+      # `auth-refresh` row, and a test must never write the operator's real log.
       with_env("CI_STATUS_GH_BIN" => gh, "GH_AUTH_TOKEN_BIN" => broker, "GH_TOKEN" => nil,
-               "GH_APP_ITEM" => nil) do
+               "GH_APP_ITEM" => nil, "TASK_USAGE_SANDBOX" => "1",
+               "MCR_OP_READS_LOG" => File.join(dir, "op-reads.log")) do
         yield Stubs.new(dir)
       end
     end

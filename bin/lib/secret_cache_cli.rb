@@ -11,7 +11,8 @@
 #   bin/secret contingency <name>           the ordered steps when 1Password fails or hangs
 #   bin/secret migrate                      move the legacy .agents caches in (idempotent)
 #   bin/secret prewarm                      before a long run: refresh tokens with under 45 min left
-#   bin/secret warm <soul> [--manifest F] [--only item,item]   warm a soul's set (one bounded op pass)
+#   bin/secret warm <soul> [--manifest F] [--only item,item] [--wait S]   warm a soul's set (one bounded op pass;
+#                                           waits up to S seconds, default 60, for another warm of the soul)
 #   bin/secret warm --hook                  the SubagentStart hook: a detached warm for the subagent's soul
 #   bin/secret read [--soul S] <vault> <item> <field>   one field of a soul-set item, cache first
 #   bin/secret item-json [--soul S] <vault> <item>      the same item as `op item get --format json` prints
@@ -39,7 +40,7 @@ module SecretCacheCli
            bin/secret contingency <name>
            bin/secret migrate
            bin/secret prewarm
-           bin/secret warm <soul> [--manifest FILE] [--only item,item] | warm --hook
+           bin/secret warm <soul> [--manifest FILE] [--only item,item] [--wait SECONDS] | warm --hook
            bin/secret read [--soul S] <vault> <item> <field>
            bin/secret item-json [--soul S] <vault> <item>
            bin/secret sets
@@ -347,10 +348,14 @@ module SecretCacheCli
     soul = argv.shift.to_s
     manifest_file = nil
     only = nil
+    wait = SoulSecrets::WARM_WAIT
     while (arg = argv.shift)
       case arg
       when "--manifest" then manifest_file = argv.shift.to_s
       when "--only" then only = argv.shift.to_s.split(",").map(&:strip)
+      when "--wait"
+        wait = Float(argv.shift.to_s, exception: false)
+        return usage_error(err, "--wait takes a number of seconds") unless wait && wait >= 0
       else return usage_error(err, "unexpected #{arg.inspect}")
       end
     end
@@ -362,7 +367,7 @@ module SecretCacheCli
     if manifest_file && !soul.empty? && manifest["soul"] != soul
       return usage_error(err, "#{manifest_file} is #{manifest['soul']}'s manifest, not #{soul}'s")
     end
-    lines, ok = SoulSecrets.warm(manifest, env: env, only: only)
+    lines, ok = SoulSecrets.warm(manifest, env: env, only: only, wait: wait)
     out.puts(lines)
     ok ? 0 : 1
   end
@@ -372,7 +377,9 @@ module SecretCacheCli
   def warm_hook(env)
     payload = $stdin.wait_readable(1) ? $stdin.read : ""
     SoulSecrets.hook(payload, env: env, spawner: lambda { |soul|
-      pid = Process.spawn(env.to_h, RbConfig.ruby, __FILE__, "warm", soul,
+      # --wait 0: a second subagent of the same soul finds the first one's warm
+      # holding the soul's warm lock and stops, so N launches cost one pass.
+      pid = Process.spawn(env.to_h, RbConfig.ruby, __FILE__, "warm", soul, "--wait", "0",
                           in: File::NULL, out: File::NULL, err: File::NULL, pgroup: true)
       Process.detach(pid)
     })
