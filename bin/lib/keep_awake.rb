@@ -7,6 +7,7 @@ require "rbconfig"
 require "digest"
 require_relative "projects_root"
 require_relative "../../lib/task_usage_sandbox"
+require_relative "keep_awake_op_probe"
 
 # KeepAwake — ONE shared "keep the Mac awake" hold that any agent can start,
 # join, renew and release (bin/keep-awake; SOP:
@@ -25,7 +26,9 @@ require_relative "../../lib/task_usage_sandbox"
 # for tests). It holds state.json (the holders + the supervisor), state.lock
 # (the flock every read-modify-write takes), history.log (one TSV row per
 # start/join/renew/release/lapse/end, to line hold windows up against
-# op-reads.log), supervisor.log, and the compiled menu-bar indicator.
+# op-reads.log), op-probe.log (the supervisor's bounded `op whoami` probes:
+# bin/lib/keep_awake_op_probe.rb), supervisor.log, and the compiled menu-bar
+# indicator.
 #
 # The dir is a state store under the operator's real .agents, so it answers to
 # TaskUsageSandbox: `location` is the private builder, `dir` the one laundered
@@ -243,7 +246,8 @@ module KeepAwake
         "supervisor" => state["supervisor"],
         "supervisor_alive" => supervisor_up ? true : false,
         "dir" => KeepAwake.dir(env),
-        "checked" => stamp(now)
+        "checked" => stamp(now),
+        "op_probe" => OpProbe.summary(env)
       }
     end
 
@@ -373,10 +377,11 @@ module KeepAwake
   # raced a `join` must not end the joiner's hold, so the decision to exit is
   # always the one tick() makes under the lock.
   class Supervisor
-    def initialize(env: ENV, store: Store.new(env: env), pid: Process.pid)
+    def initialize(env: ENV, store: Store.new(env: env), pid: Process.pid, watch: OpProbe::Watch.new(env: env))
       @env = env
       @store = store
       @pid = pid
+      @watch = watch
       @wake = false
       @children = {}
     end
@@ -394,6 +399,7 @@ module KeepAwake
 
         ensure_caffeinate
         ensure_indicator unless @children.key?(:indicator)
+        watch_op
         nap
       end
       KeepAwake.notify("The Mac may sleep again: no agent is holding it awake.", env: @env) if result[:ended]
@@ -407,6 +413,15 @@ module KeepAwake
       return "No holder left; the Mac may sleep." if holders.empty?
 
       "Still held by #{holders.map { |h| h["by"] }.join(", ")}."
+    end
+
+    # The 1Password watch. It may block for one probe's deadline (20 seconds);
+    # caffeinate holds the Mac meanwhile, since it waits on this pid. A probe
+    # that raises must never end the hold.
+    def watch_op
+      @watch.tick
+    rescue StandardError => e
+      warn("keep-awake: op probe failed: #{e.class}: #{e.message}")
     end
 
     def nap

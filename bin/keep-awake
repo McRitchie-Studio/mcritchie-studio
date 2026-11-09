@@ -18,6 +18,12 @@
 # agent that dies lets the Mac sleep on its own. One supervisor holds
 # `caffeinate -dims` and a menu-bar indicator; start, stop and lapse post a
 # macOS notification. The library is bin/lib/keep_awake.rb.
+#
+# THE 1PASSWORD WATCH. While a hold is live the supervisor runs one 20-second
+# bounded `op whoami` about every 25 minutes (every 5 while it hangs), logs the
+# outcome and the user-idle seconds to op-probe.log, and meters it in
+# op-reads.log. `status` prints the last probe and the latest hang window; a hang
+# proven longer than 10 minutes posts one notification. bin/lib/keep_awake_op_probe.rb.
 
 require "json"
 require "optparse"
@@ -74,6 +80,31 @@ def print_status(report, now)
     puts "keep-awake: not held. The Mac may sleep."
   end
   report["holders"].each { |h| puts holder_line(h, now) }
+  print_op_probe(report["op_probe"] || {})
+end
+
+def idle_text(seconds)
+  seconds.nil? ? "user idle unknown" : "user idle #{seconds / 60}m"
+end
+
+# The 1Password watch: the last probe, and the latest hang window if any.
+def print_op_probe(probe)
+  last = probe["last"]
+  if last.nil?
+    every = probe["every_seconds"] ? "every #{(probe["every_seconds"] / 60).round}m while held" : "off"
+    puts "  op probe: none yet (#{every})."
+    return
+  end
+  puts "  op probe: last #{local(last["ts"])} #{last["outcome"]} in #{last["seconds"]}s, #{idle_text(last["idle_seconds"])}."
+  hang = probe["hang"]
+  return unless hang
+
+  span = "#{local(hang["start"])} to #{local(hang["last_hung"])} (#{hang["minutes"]}m, #{hang["probes"]} hung probe(s))"
+  if hang["answered"]
+    puts "  op hang: #{span}; answered again #{local(hang["answered"])}."
+  else
+    puts "  op hang: OPEN since #{local(hang["start"])}: #{span}."
+  end
 end
 
 command = ARGV.shift
