@@ -139,7 +139,8 @@ test("on /build the first message leaves the hero standing; the head compacts as
       gallery: seen.some((name) => /:opacity$/.test(name) && !/^agent-shell-subtitle/.test(name)),
     };
   })).toEqual({ portrait: true, subtitle: true, heading: true, gallery: true });
-  await animationsSettled(page); // the shrink has landed before it is measured
+  // The shrink (the head, the portrait, the subtitle) and the gallery's exit have landed.
+  await animationsSettled(page, "[data-agent-shell], [data-test='build-gallery']");
   const grown = await measure(page);
   expect(grown.share, "the conversation fills most of the window").toBeGreaterThan(0.75);
   expect(grown.share, "never taller than the window").toBeLessThanOrEqual(1.0);

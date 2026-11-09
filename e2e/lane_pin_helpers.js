@@ -14,10 +14,13 @@ const { animationsSettled, frames } = require("./settle");
 // board directly, and clamps to the document, so a page where the board IS last scrolls
 // exactly as far as the document allows.
 // A scroll has landed: its frame has run (sticky positions, scroll events, the
-// navbar's scroll-linked collapse starting) and every transition it set off is done.
+// navbar's scroll-linked collapse starting) and the transitions it set off on the
+// pinned line (the navbar, the page header's row) and the lane headers are done. The
+// whole page is not waited on: the live board restarts its own short animations.
+const PINNED = ".vt-pinned-header, [data-pin='page'], [data-test='stage-header']";
 async function scrollSettled(page) {
   await frames(page);
-  await animationsSettled(page);
+  await animationsSettled(page, PINNED);
 }
 
 async function scrollToBoardBottom(page) {

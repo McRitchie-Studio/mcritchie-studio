@@ -15,7 +15,9 @@ async function frames(page, count = 2) {
 }
 
 // Every running animation and transition with an end has finished: on the whole page, or
-// on `selector`'s element and what is inside it (`subtree: false` for the element alone).
+// on every element `selector` matches and what is inside them (`subtree: false` for the
+// elements alone). Scope it on a live page: a board that restarts a short animation on
+// every tick never settles as a whole.
 // An endless loop (a glow, a pulse, a typing dot) has no end and is not waited on; a
 // paused one is not waited on either. Read again after each round, since one ending can
 // start the next.
@@ -24,9 +26,9 @@ async function animationsSettled(page, selector = null, { subtree = true } = {})
     const frame = () => new Promise((resolve) => requestAnimationFrame(() => resolve()));
     const ends = (a) => Number.isFinite(a.effect?.getComputedTiming?.().endTime);
     const running = () => {
-      const scope = sel ? document.querySelector(sel) : null;
-      if (sel && !scope) return [];
-      const all = scope ? scope.getAnimations({ subtree: deep }) : document.getAnimations();
+      const all = sel
+        ? [...document.querySelectorAll(sel)].flatMap((el) => el.getAnimations({ subtree: deep }))
+        : document.getAnimations();
       return all.filter((a) => a.playState === "running" && ends(a));
     };
     await frame(); // a transition a style change just asked for exists from the next frame

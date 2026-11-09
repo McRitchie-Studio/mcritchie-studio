@@ -2,10 +2,11 @@ const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
 const { animationsSettled, armTurboLoads, frames, turboLoaded } = require("./settle");
 
-// The page has settled after a load: its entrance animations are done, and the frames
-// after them have run (each fade measures itself a tick after Alpine starts it).
+// The page has settled after a load: the fades' own transitions are done, and the frames
+// after them have run (each fade measures itself a tick after Alpine starts it). Scoped
+// to the fades: both pages are live boards that restart their own short animations.
 async function loadSettled(page) {
-  await animationsSettled(page);
+  await animationsSettled(page, "[data-overflow-fade]");
   await frames(page);
 }
 
