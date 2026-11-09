@@ -1,12 +1,9 @@
 # frozen_string_literal: true
 
-# The release CI gate's red verdict, as bin/release's poll reads it (poll_ci_verdict →
-# ci_red_once! → ci_rerun_settled?). Alex McRitchie's deterministic-CI ruling
-# (2026-11-08): a red test lane STOPS and is recorded (`ci_red`: run id, jobs, specs),
-# never re-run. The one named infra cause (bundler's gem-resolution error in every
-# failing job) earns one re-run, recorded as `ci_infra_rerun`. The decision itself is
-# unit-tested in test/lib/ci_rerun_test.rb; these drive the real poll loop with the
-# GitHub reads stubbed.
+# The release CI gate's red verdict through the real poll loop (poll_ci_verdict →
+# ci_red_once!), GitHub stubbed. A red test lane STOPS and is recorded as `ci_red`
+# (Alex McRitchie's deterministic-CI ruling, 2026-11-08); only the gem-resolution race
+# earns one re-run, recorded as `ci_infra_rerun`. Decision: test/lib/ci_rerun_test.rb.
 #
 #   ruby -Itest test/lib/release_cli_ci_rerun_test.rb
 
