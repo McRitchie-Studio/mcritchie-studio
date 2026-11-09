@@ -1191,7 +1191,7 @@ end
 # falls back to the lane's ($gh_lane_token) or the ambient one, as gh_sh does.
 #
 # Why: rel-20261105-9199b4's prepare outlived its ambient GH_TOKEN (about an hour).
-# Every CI read re-minted and passed, but the one automatic `gh run rerun` rode
+# Every CI read re-minted and passed, but the gate's `gh run rerun` (now only the infra re-run) rode
 # the dead ambient token and was refused ("Try authenticating with: gh auth login").
 # A refused write did nothing, so the retry cannot double the action. The token is
 # never printed.

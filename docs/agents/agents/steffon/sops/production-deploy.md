@@ -515,7 +515,10 @@ found in that source`). The gate re-runs that red ONCE, every job (`gh run rerun
 **every** failing job shows bundler's gem-resolution error in its own log. It prints
 `↻↻ <repo>: CI RED … INFRA RE-RUN (RubyGems CDN race …)` and records a
 `ci_infra_rerun` SOP with the cause and the run ids. A red after that re-run is real,
-is recorded as `ci_red`, and stops the gate. Why it stays: the commit is correct and
+is recorded as `ci_red`, and stops the gate. Other infra reds (a lost runner, a
+checkout or network fault before the tests start) stop too: no log line proves their
+cause the way bundler's words prove the race, so they get a cause like any red. Why
+the race stays: the commit is correct and
 only the CDN was late, so a stop would hand you a re-run with nothing to fix. Each
 `ci_infra_rerun` on the record shows that a consumer's CI still lacks the on-runner
 propagation wait (turf-monster's `.github/scripts/await-gem-propagation.sh`); file
