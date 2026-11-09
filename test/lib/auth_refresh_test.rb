@@ -1,17 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] bin/lib/auth_refresh.rb and its callers: when a service refuses a cached
-# credential (401 / invalid credential), forget the copy, read it fresh from
-# 1Password ONCE, try ONCE more; a second refusal stops and names the item; every
-# refresh is logged with the item and the service, never the value. Also the
-# per-soul warm lock (one warm per soul at a time).
-#
-# SECRET HYGIENE (a hard rule). Every value here is a FAKE. The stub `op` and the
-# stub broker never echo their environment; they log only their own argv words.
-# setup removes OP_SERVICE_ACCOUNT_TOKEN and every *_TOKEN from this process's ENV,
-# so no child (stub op, stub broker, the warm subprocess) inherits a real one.
-# Every `op` call is bounded (MCR_OP_DEADLINE). Each test asserts that no fake
-# value reaches stderr or the read log.
+# [unit] bin/lib/auth_refresh.rb and its callers: one fresh read and one retry
+# after a refused credential; a second refusal stops and names the item. Also the
+# per-soul warm lock. Every value is FAKE; the stubs never echo their env; setup
+# strips OP_SERVICE_ACCOUNT_TOKEN and every *_TOKEN from ENV so no child inherits
+# a real one; each test asserts no fake value reaches stderr or the read log.
 #
 #   ruby -Itest test/lib/auth_refresh_test.rb
 
