@@ -10,7 +10,10 @@
 # before the apps deploy, so an app always builds against the published version.
 # After the deploy, the ship re-locks every live engine app the release did NOT
 # carry (config/apps.yml engine: true) to the final on its `accepted`
-# (Release::EngineConsumers, bin/release.rb#relock_cardless_consumers).
+# (Release::EngineConsumers, bin/release.rb#relock_cardless_consumers). The next
+# full prepare carries each such app with no member when its `accepted` holds only
+# those lock bumps (Release::LockOnlyConsumers): promoted, QA'd where it has a QA
+# app, and deployed through the entry below.
 #
 # A GEM IS A CONSUMER TOO: studio-engine depends on solana-studio. The consumer
 # bump walks `apps` only, so bump_producer_locks_for_accepted bumps the gems'

@@ -122,7 +122,8 @@
 #     `merged: "main"` — assembled+main = prod-in-flight), deploy to Heroku, smoke
 #     /up, run any member's post_deploy_cmd on the PROD app (aborts on non-zero),
 #     re-lock every live engine app the release did not carry to the final on its
-#     `accepted` (in parallel, best-effort),
+#     `accepted` (in parallel, best-effort; the next full prepare carries each one
+#     whose `accepted` holds only lock bumps, Release::LockOnlyConsumers),
 #     stamp deployed_sha + flip to shipped (shipped+main = done).
 #
 #   bin/release rollback [<release>] [--mode ask|auto] [--by NAME] [--dry-run] [--yes]
@@ -9505,8 +9506,13 @@ end
 # QA's it in this release and nothing would finalize a candidate on its branch
 # (refuse_stray_candidates! would refuse the next sweep that carried it). It gets
 # the final only, after production is deployed, exactly like a producer's lock
-# (settle_producer_locks). It does not deploy: the commit waits on `accepted` for
-# the next release that carries the app.
+# (settle_producer_locks). It does not deploy now: the commit waits on `accepted`,
+# and the next full prepare carries the app with no member when `accepted` holds
+# only lock bumps (lock_only_consumer_repos; Release::LockOnlyConsumers). That
+# prepare locks it to that release's candidate like any swept app, so it is QA'd
+# where it has a QA app, re-locked at the ship and deployed. Before task
+# release-ships-lock-only-consumers nothing carried it: commercial-welding and
+# alex-build ran four engine releases behind in production.
 #
 # EACH THROUGH ITS OWN CI: the push to `accepted` triggers the app's CI on the lock
 # commit, as any merge there does. The ship does not wait on those runs; production

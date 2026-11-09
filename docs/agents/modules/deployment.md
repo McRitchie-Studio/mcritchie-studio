@@ -660,8 +660,12 @@ How a gem rides a release:
    **`origin/accepted`** at the FINAL version. The apps run in parallel, and each
    push runs that app's CI; the ship does not wait on those runs. A cardless app
    never gets a candidate, because nothing QA's it in this release, and it does
-   not deploy: the commit rides the next release that carries the app. It is
-   best-effort, like step 6. An `engine: false` app is never touched.
+   not deploy now. The next full `bin/release prepare` carries it: an engine app
+   that no card names, whose `accepted` holds only these lock bumps, rides that
+   release with no member (`Release::LockOnlyConsumers`). It is promoted, QA'd
+   where it has a QA app, and deployed through its own registry entry. A red CI
+   on the bump leaves it behind with a warning. It is best-effort, like step 6.
+   An `engine: false` app is never touched.
 
 Operational notes:
 

@@ -626,6 +626,13 @@ release shipped. Carry any `BURNED` line into the report; prepare and the ship r
 consumer lock naming one. The read asks origin with `git ls-remote` and, when origin
 does not answer, prints the clone's own tags labelled `local tags`.
 
+**Engine lag.** `bin/release status` then lists, under `Engine lag`, each live engine
+app whose production (`origin/main`) locks studio-engine a minor or more behind the
+last shipped engine (`LAGS <app>: …`). Carry each `LAGS` line into the report. A full
+`prepare` carries such an app with no member when its `accepted` holds only the
+release tooling's lock bumps, and prints ``<app>: `accepted` carries only lock bumps``
+for it; a `--task` or `--expedite` sweep does not. Display only: it never blocks.
+
 ## Related
 
 - [`../../steffon/sops/production-deploy.md`](../../steffon/sops/production-deploy.md) — the deployer act this candidate hands off to.

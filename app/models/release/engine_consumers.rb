@@ -13,7 +13,9 @@ class Release
   # (config/apps.yml) flags `engine: true` and live, that the release registry
   # (config/release_repos.yml) lists as a three-rung app. `cardless` is that set
   # minus the apps the release swept, which the ship re-locks to the final on
-  # their `accepted` (bin/release.rb#relock_cardless_consumers).
+  # their `accepted` (bin/release.rb#relock_cardless_consumers). The next full
+  # prepare carries each of those whose `accepted` holds only lock bumps, with no
+  # member (Release::LockOnlyConsumers), so the re-lock reaches production.
   #
   # The engine flag stays in config/apps.yml, its one home; the release registry
   # does not copy it, so the two cannot disagree. test/lib/app_registry_test.rb
