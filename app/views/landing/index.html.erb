@@ -95,7 +95,7 @@
   <div class="absolute inset-0 pointer-events-none" style="background: radial-gradient(ellipse 42% 46% at 50% 50%, color-mix(in srgb, var(--color-page) 88%, transparent) 0%, color-mix(in srgb, var(--color-page) 55%, transparent) 60%, transparent 100%);"></div>
   <div class="relative z-10 max-w-2xl mx-auto px-4 text-center pointer-events-none" style="padding-block: clamp(8rem, 24vh, 15rem);">
     <h2 class="text-4xl font-extrabold text-heading mb-3">Check Out Our Portfolio</h2>
-    <p class="text-secondary text-lg mb-8">Apps built by our team of agents.</p>
+    <p class="text-secondary text-lg mb-8">Websites and Agents Built on the Studio Platform</p>
     <%= link_to "See the Portfolio", websites_path, class: "btn btn-primary btn-lg pointer-events-auto", data: { test: "portfolio-band-cta" } %>
   </div>
 </section>
@@ -105,13 +105,63 @@
     separate from the portfolio band above and the surface-alt band below. %>
 <section class="border-t border-subtle" data-get-in-touch
          style="background: linear-gradient(180deg, rgb(var(--color-primary-500-rgb, 139 92 246) / .16), rgb(var(--color-primary-500-rgb, 139 92 246) / .05));">
-  <div class="max-w-4xl mx-auto px-4 section-padding">
+  <%# Side by side, 50/50, from xl up (task get-in-touch-side-by-side): a live
+      chat with Alex on the left, the booking calendar on the right; stacked
+      below xl, chat first. The band is max-w-7xl so each half is ~612px and
+      Google keeps its month-beside-slots layout and the crop holds.
+
+      TWO MATCHING SECTIONS. Each column opens with the same centred head
+      (landing/_get_in_touch_head): a round portrait, the name, the role and a
+      big title. Chat Now wears the AI Alex (/agents/alex.webp, AI Builder);
+      Book a Call wears Alex McRitchie's own photo (/people/alex-mcritchie.webp,
+      Builder), since the call is with him.
+
+      EQUAL CARDS. The grid has three rows (head, card, note) and each
+      column is a subgrid over them, so the calendar's note under its card
+      (studio/booking/_frame) sits in its own row and the two cards share one.
+      The chat card is h-0 + min-h-full at xl: it adds nothing to the row's
+      height and fills it, so the calendar alone sets the height (and the
+      chat follows it when the frame opens in use). Its thread grows into the
+      card and scrolls there, never stretching it.
+
+      The chat is the engine's compact chat in a card; this page holds no other chat (ONE PAGE HOLDS ONE CHAT). A viewer
+      the engine refuses a chat gets a link to /chat instead. %>
+  <div class="max-w-7xl mx-auto px-4 section-padding">
     <div class="text-center" style="margin-bottom: 1.75rem;">
       <h2 class="text-4xl font-extrabold text-heading mb-2">Get in Touch</h2>
-      <p class="text-secondary text-lg">Book a video call to start a conversation.</p>
+      <p class="text-secondary text-lg">Talk to Alex right now, or book a video call.</p>
     </div>
 
-    <%= studio_booking_frame %>
+    <div class="grid grid-cols-1 xl:grid-cols-2 xl:grid-rows-[auto_auto_auto] gap-x-6 gap-y-6 xl:gap-y-0" data-test="get-in-touch-grid">
+      <div class="min-w-0 flex flex-col xl:row-span-3 xl:grid xl:grid-rows-subgrid" data-test="get-in-touch-chat">
+        <%= render "landing/get_in_touch_head", section: "chat", title: "Chat Now", name: "Alex",
+                   role: BuildController::AGENT_ROLE, photo: "/agents/alex.webp" %>
+        <div class="card p-4 flex flex-col gap-3 min-h-0 xl:h-0 xl:min-h-full
+                    [&_[data-test=agent-chat]]:flex-1 [&_[data-test=agent-chat]]:min-h-0
+                    [&_[data-test=agent-chat]>div]:h-full [&_[data-test=agent-chat]>div]:min-h-0
+                    xl:[&_[data-test=agent-chat-messages]]:flex-1 xl:[&_[data-test=agent-chat-messages]]:max-h-none"
+             data-test="get-in-touch-chat-card">
+          <% if Studio.agent_chat_allowed?(studio_agent_chat_viewer) %>
+            <%= render "studio/agent_chat/chat", soul: "alex", name: "Alex", compact: true,
+                       empty: "What brought you here today?" %>
+          <% else %>
+            <%= link_to "Open the chat with Alex", chat_index_path, class: "btn btn-primary self-center", data: { test: "get-in-touch-chat-link" } %>
+          <% end %>
+        </div>
+      </div>
+
+      <div class="min-w-0 xl:row-span-3 xl:grid xl:grid-rows-subgrid [&_[data-booking-wrap]]:mx-0!" data-test="get-in-touch-booking">
+        <%= render "landing/get_in_touch_head", section: "booking", title: "Book a Call", name: "Alex",
+                   role: "Builder", photo: "/people/alex-mcritchie.webp", alt: "Alex McRitchie" %>
+        <%# Its own crop: at this half-width column (~610px inside the border)
+            Google's "Select an appointment time" box runs 211 to 551px, so the
+            site-wide crop (config/initializers/studio.rb, measured for
+            /schedule's wider column, bottom 613) would show Google's credit
+            lines. The note under the card still credits Google and links the
+            full booking page. Re-measure if the column width changes. %>
+        <%= studio_booking_frame(crop: { top: 211, bottom: 551, frame_height: 869 }) %>
+      </div>
+    </div>
   </div>
 </section>
 

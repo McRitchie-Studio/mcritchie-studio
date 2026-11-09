@@ -69,14 +69,35 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
   # Was "shows only the full-width video chat card", pinning the "Chat Over
   # Video" heading. That card held the Sprintful widget; the section now holds
   # the Google booking frame and no card heading (/tasks/professional-site-footer).
-  test "get in touch section shows the booking frame and no chat card" do
+  # [component] Side by side (task get-in-touch-side-by-side): the compact chat
+  # with Alex on the left (first when stacked), the booking calendar on the
+  # right, equal columns from xl up. Each column is a subgrid over the same
+  # three rows so the two cards match in height. Each section opens with the
+  # same head: the AI Alex over Chat Now, Alex McRitchie's photo over Book a
+  # Call. The page holds exactly one chat.
+  test "[component] get in touch band puts the chat with Alex beside the booking frame" do
     get root_path
 
     assert_response :success
     assert_includes response.body, "Get in Touch"
-    assert_select "iframe[data-booking-frame]", 1
-    assert_not_includes response.body, "Chat Over Video"
-    assert_not_includes response.body, "Chat Right Now"
+    assert_select "[data-get-in-touch] [data-test=get-in-touch-grid].xl\\:grid-cols-2" do
+      assert_select "[data-test=get-in-touch-booking].xl\\:grid-rows-subgrid iframe[data-booking-frame]", 1
+      assert_select "[data-test=get-in-touch-chat].xl\\:grid-rows-subgrid [data-test=get-in-touch-chat-head].items-center" do
+        assert_select "img[src*='/agents/alex']", 1
+        assert_select "h3", text: "Chat Now"
+        assert_select "p", text: "AI Builder"
+      end
+      assert_select "[data-test=get-in-touch-booking-head].items-center" do
+        assert_select "img[src*='/people/alex-mcritchie'][alt='Alex McRitchie']", 1
+        assert_select "h3", text: "Book a Call"
+      end
+      assert_select "[data-test=get-in-touch-chat-card] [data-test=agent-chat][data-agent-chat-soul=alex]", 1
+    end
+    body = response.body
+    assert_operator body.index('data-test="get-in-touch-chat"'), :<, body.index('data-test="get-in-touch-booking"'), "the chat comes first (left)"
+    assert_select "[data-test=agent-chat]", 1
+    assert_not_includes body, "Chat Over Video"
+    assert_not_includes body, "Chat Right Now"
   end
 
   # The home page's own "Get In Touch" section is gone; the site footer carries
