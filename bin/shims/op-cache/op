@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# bin/shims/op-cache/op — an `op` that answers `op item get` from a soul's
+# secret cache. bin/release puts this folder first on the devnet gauntlet
+# driver's PATH (gauntlet_child_env), so turf-monster's KeyStore, which runs
+# `op item get` on an item title (a vault flag and --format json), reads the wallet the
+# release warmed instead of 1Password. Doc: docs/agents/modules/secret-cache.md.
+#
+# WHY. On the night of 2026-11-08 a release waited four hours on one live
+# `op item get solana.mack.agent` inside the gauntlet. With this shim an `op`
+# that stalls after the warm cannot stop the gauntlet.
+#
+#   MCR_OP_SHIM_SOUL   the soul whose set is read (bin/release sets `avi`)
+#   MCR_OP_SHIM_REAL   the real op (default /opt/homebrew/bin/op)
+#
+# `op item get` with --format json, for an item the soul's set names: served from
+# the cache (one bounded 1Password read on a miss, written back). Another soul's
+# item: refused, exit 1. An item no set names, and every other `op` command: the
+# real op, through the metered, bounded wrapper. The value goes to stdout only,
+# as op itself would print it.
+set -uo pipefail
+
+REAL="${MCR_OP_SHIM_REAL:-/opt/homebrew/bin/op}"
+SOUL="${MCR_OP_SHIM_SOUL:-}"
+SHIM_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI="$SHIM_DIR/../../lib/secret_cache_cli.rb"
+ORIG=("$@")
+
+if [ -n "$SOUL" ] && [ "${1:-}" = "item" ] && [ "${2:-}" = "get" ] && [ -n "${3:-}" ]; then
+  title="$3"
+  vault=""
+  json=""
+  shift 3
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --vault) vault="${2:-}"; shift 2 ;;
+      --vault=*) vault="${1#--vault=}"; shift ;;
+      --format) [ "${2:-}" = "json" ] && json=1; shift 2 ;;
+      --format=json) json=1; shift ;;
+      *) json=""; vault=""; break ;;
+    esac
+  done
+  if [ -n "$vault" ] && [ -n "$json" ]; then
+    rc=0
+    # The driver may run under turf-monster's Bundler; the CLI needs the stdlib only.
+    out="$(env -u RUBYOPT -u RUBYLIB -u BUNDLE_GEMFILE -u BUNDLE_BIN_PATH -u BUNDLER_SETUP \
+      ruby "$CLI" item-json --soul "$SOUL" "$vault" "$title")" || rc=$?
+    if [ "$rc" = 0 ]; then printf '%s\n' "$out"; exit 0; fi
+    [ "$rc" = 3 ] || exit 1
+  fi
+fi
+
+# The pass-through is metered and bounded like every other `op` call
+# (bin/lib/op-meter.sh): a read the cache could not answer still cannot hang the
+# driver for hours. Without the meter (a relocated tree), the real op runs as is.
+OP_METER_VIA="op-cache-shim:${SOUL:-none}"
+[ -r "$SHIM_DIR/../../lib/op-meter.sh" ] && . "$SHIM_DIR/../../lib/op-meter.sh"
+command -v op_metered >/dev/null 2>&1 || exec "$REAL" ${ORIG[@]+"${ORIG[@]}"}
+rc=0
+op_metered "$REAL" ${ORIG[@]+"${ORIG[@]}"} || rc=$?
+exit "$rc"

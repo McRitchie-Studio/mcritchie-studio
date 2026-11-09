@@ -636,6 +636,8 @@ class InstallAgentSkillsTest < Minitest::Test
       "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/atomic-capture-hook"
     assert_includes hook_commands(settings, "SessionEnd"),
       "ATOMIC_CAPTURE_URL=https://mcritchie.studio #{tooling_bin}/agent-activity close-open"
+    # soul-secret-sets: a subagent's launch warms its soul's secret set, detached.
+    assert_equal ["#{tooling_bin}/secret warm --hook"], hook_commands(settings, "SubagentStart")
 
     codex_requirements = File.read(installed_codex_requirements)
     assert_includes codex_requirements,

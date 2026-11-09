@@ -1939,6 +1939,7 @@ def prepare_devnet_gauntlet!(rel_slug, repos, skip: false, shas: {})
   step("devnet gauntlet: Turf Monster contest-rehearsal on QA (devnet), unattended, for #{turf.join(', ')}")
   usage_key = "release:#{rel_slug}:#{Release::DevnetGauntlet::STEP}"
   seed_gauntlet_usage(usage_key)
+  warm_gauntlet_secrets!
   started = Time.now
   clock_started = gauntlet_clock # before the tree is cut: the cut spends the overall budget too
   result = with_gauntlet_tree(turf, turf_shas) { |root| devnet_gauntlet_runner(root, started_at: clock_started).call }
@@ -2155,6 +2156,61 @@ end
 # the step's own deadline or what the overall one leaves, whichever is shorter.
 # The Heroku token prepare exported (ensure_heroku_token!) reaches the driver's
 # `heroku run` through the inherited environment.
+# --- the gauntlet's wallets come from the secret cache (soul-secret-sets) ------
+# On the night of 2026-11-08 a release waited four hours on one live
+# `op item get solana.mack.agent` inside the driver (turf-monster's KeyStore). The
+# two wallets the driver signs with are Avi's soul set (config/soul_secret_sets.yml):
+# prepare warms that set first, bounded and never fatal, and the driver's PATH
+# starts with bin/shims/op-cache, whose `op item get` answers from the cache. A
+# stalled 1Password after the warm no longer stops the gauntlet.
+GAUNTLET_SOUL = "avi"
+GAUNTLET_WARM_DEADLINE = 90
+GAUNTLET_OP_SHIM_DIR = File.join(__dir__, "shims", "op-cache")
+
+# The real `op`, for the shim's pass-through: SECRET_OP_BIN, else the first `op`
+# on PATH that is not the shim, else Homebrew's.
+def gauntlet_real_op(env = ENV)
+  named = env["SECRET_OP_BIN"].to_s.strip
+  return named unless named.empty?
+
+  env["PATH"].to_s.split(File::PATH_SEPARATOR).each do |dir|
+    next if dir.empty? || File.expand_path(dir) == File.expand_path(GAUNTLET_OP_SHIM_DIR)
+
+    path = File.join(dir, "op")
+    return path if File.file?(path) && File.executable?(path)
+  end
+  "/opt/homebrew/bin/op"
+end
+
+# The driver's environment: the Bundler scrub, plus the op shim first on PATH.
+def gauntlet_child_env(env = ENV)
+  path = [GAUNTLET_OP_SHIM_DIR, env["PATH"].to_s].reject(&:empty?).join(File::PATH_SEPARATOR)
+  GAUNTLET_ENV_SCRUB.merge("PATH" => path, "MCR_OP_SHIM_SOUL" => GAUNTLET_SOUL,
+                           "MCR_OP_SHIM_REAL" => gauntlet_real_op(env))
+end
+
+# Warm Avi's set before the gauntlet: a fresh entry costs no 1Password read; a
+# stale one is read once, bounded. Never fatal: a failed warm leaves the driver
+# its shim, which reads 1Password on a miss. Not in a sandboxed (test) process
+# unless the test asks (RELEASE_GAUNTLET_WARM=1): a test must never reach a real read.
+def warm_gauntlet_secrets!
+  return if DRY
+
+  require_relative "../lib/task_usage_sandbox"
+  sandboxed = ENV["RAILS_ENV"] == "test" || TaskUsageSandbox.active?(TaskUsageSandbox.guard_env(ENV))
+  return if sandboxed && ENV["RELEASE_GAUNTLET_WARM"] != "1"
+
+  result = BoundedCommand.run(nil, [File.join(__dir__, "secret"), "warm", GAUNTLET_SOUL],
+                              deadline: GAUNTLET_WARM_DEADLINE, pgroup: true, stream: $stdout,
+                              err: [:child, :out], in: File::NULL)
+  return if result.success?
+
+  say("  ⚠ the gauntlet's wallets did not all warm#{result.timed_out? ? " within #{GAUNTLET_WARM_DEADLINE}s" : ''}; " \
+      "the driver reads 1Password for any it lacks")
+rescue SystemCallError => e
+  say("  ⚠ could not warm the gauntlet's wallets (#{e.message}); the driver reads 1Password for any it lacks")
+end
+
 def run_gauntlet_step(root, argv, budget: nil)
   ensure_heroku_token! if PROD
   driver = ENV[GAUNTLET_DRIVER_ENV].to_s.strip
@@ -2162,7 +2218,7 @@ def run_gauntlet_step(root, argv, budget: nil)
   deadline = gauntlet_step_deadline
   bound_env = GAUNTLET_STEP_DEADLINE_ENV
   deadline, bound_env = budget, GAUNTLET_DEADLINE_ENV if budget && budget < deadline
-  result = BoundedCommand.run(GAUNTLET_ENV_SCRUB, cmd, deadline: deadline, pgroup: true, stream: $stdout,
+  result = BoundedCommand.run(gauntlet_child_env, cmd, deadline: deadline, pgroup: true, stream: $stdout,
                                                        err: [:child, :out], in: File::NULL, chdir: root)
   out = result.out.to_s
   out += "\n#{deadline_kill_line([GAUNTLET_DRIVER, *argv], deadline, bound_env)}\n" if result.timed_out?

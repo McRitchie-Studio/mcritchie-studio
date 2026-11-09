@@ -23,7 +23,7 @@ token that lives one hour.
 | Backup | Time Machine may back it up; it is not excluded |
 | Production | **Heroku dynos cannot read it.** It is a file on this Mac. An app in production keeps its credentials in its config vars |
 | Override | `MCR_SECRET_CACHE_DIR` (tests); else `CLAUDE_PROJECTS_DIR/.secret-cache`; else `~/projects/.secret-cache` |
-| Code | `bin/lib/secret_cache.rb` (`SecretCache`), `bin/lib/secret_cache_cli.rb`, `bin/secret`, `bin/gh-token` |
+| Code | `bin/lib/secret_cache.rb` (`SecretCache`), `bin/lib/secret_cache_cli.rb`, `bin/secret`, `bin/gh-token`; soul sets: `config/soul_secret_sets.yml`, `bin/lib/soul_secrets.rb` (`SoulSecrets`), `bin/shims/op-cache/op` |
 
 The folder holds a `README.md` and a `manifest.json` written by the tooling, plus
 one file per cached secret. The README restates the rules for anyone who opens the
@@ -64,13 +64,18 @@ bin/secret forget --source <1Password item>       # drop every entry that item f
 bin/secret contingency github.agent      # the ordered steps for when op fails or hangs
 bin/secret migrate                       # adopt the legacy .agents caches (idempotent)
 bin/secret prewarm                       # before a long run: refresh tokens with under 45 min left
-bin/secret <vault> <item> [field]        # the classic 1Password read
+bin/secret warm <soul> [--manifest F] [--only a,b]   # warm a soul's set: one bounded op pass
+bin/secret sets                          # every soul's set and its time left; never a value
+bin/secret manifest <soul>               # a soul's portable manifest (JSON, names only)
+bin/secret read --soul <soul> <vault> <item> <field> # one field of a soul-set item (a value)
+bin/secret item-json --soul <soul> <vault> <item>    # the item as `op item get --format json` prints it (values)
+bin/secret <vault> <item> [field]        # the classic 1Password read (MCR_SOUL set: the soul's set first)
 ```
 
 The narration hook (`bin/atomic-capture-hook`) blanks the output of `bin/secret
-get` and the classic read, which print a value. It keeps the output of `status`,
-`refresh`, `forget`, `contingency`, `migrate`, `prewarm` and `help`, which print
-names and times only.
+get`, `read`, `item-json` and the classic read, which print a value. It keeps the
+output of `status`, `refresh`, `forget`, `contingency`, `migrate`, `prewarm`,
+`warm`, `sets`, `manifest` and `help`, which print names and times only.
 
 `status` speaks in time left: `expires in 42 min`, `expires in 6 min — inside the
 refresh window, the next read refreshes`, `expired 3 min ago — refreshes on next
@@ -154,7 +159,136 @@ whenever `op whoami` fails. The procedure over all of this is
 When a credential is rotated ([`credential-rotation`](../agents/steffon/sops/credential-rotation.md)
 §4.4), run `bin/secret forget --source <1Password item>`. For a GitHub App key, for
 example: `bin/secret forget --source github.mcritchie-agent`. The next read mints
-from the new key.
+from the new key. The same command drops every soul's copy of the item
+(`bin/secret forget --source solana.mack.agent` clears `avi/`), so the next warm or
+read fetches the new value.
+
+## Soul secret sets
+
+**Purpose.** Each soul has its own set of 1Password items. The set is warmed into
+`<cache>/<soul>/` when the soul launches, and read from there. A stalled `op` then
+stops nothing until an entry expires.
+
+**Why (Alex McRitchie, 2026-11-09).** On the night of 2026-11-08 a release waited
+about four hours on one live `op item get solana.mack.agent` inside the devnet
+gauntlet. Task `soul-secret-sets`.
+
+| Fact | Value |
+|---|---|
+| Config | `config/soul_secret_sets.yml`: one set per soul in `config/souls.yml` (a test holds every roster soul to a set, even an empty one). Each item names `item`, `lane` (an `OpVaults` lane, never a vault literal: `agent` resolves to `MCR_OP_VAULT_AGENT`, else its default, on the reading machine; `deployer` is refused), `fields` (only these labels are kept on disk), `lifetime`, optional `refresh_window` (default a tenth of the lifetime) and `readers` |
+| Folder | `<cache>/<soul>/`, `0700`; one `item.<item>.json` per item, `0600`, written by the same `O_EXCL \| O_NOFOLLOW` temp-file-then-rename path. The folder and file guards (mode, owner, symlink, git) apply |
+| Admin vault | refused twice: at config load (a soul set that names an admin-vault item does not load) and at write (`AdminVaultRefused`) |
+| Bound | every `op` call goes through `OpMeter.popen`, at most 20 s an attempt (`SoulSecrets::OP_DEADLINE_CAP`; 14 s by default). After a hang the warm pass stops calling `op` |
+| Log | a cache answer is logged as `cache-hit`; a refused read as `soul-refused`; both in the read log (`bin/op-reads --by action`). Never a value |
+
+**Today's sets.** Avi holds the two wallets the devnet gauntlet signs with
+(`solana.mack.agent`, `solana.turf.agent`). Steffon holds `heroku.studio.agents`.
+Every other soul's set is empty and lists the shared entries it uses
+(`github.agent`, `harness-key`). Add an item from data: `bin/op-reads` names the
+item behind every `bin/secret` read. Do not add one from a guess.
+
+### The launch seam: the SubagentStart hook
+
+`bin/install-agent-docs` wires a Claude Code `SubagentStart` hook,
+`<projects>/.agents/bin/secret warm --hook`. Claude Code gives the hook the
+subagent's `agent_type`, which is the soul's slug for every soul definition the
+installer writes (`~/.claude/agents/<soul>.md`). When that soul's set has an item
+that is not fresh, the hook starts `bin/secret warm <soul>` detached, in its own
+process group. The hook prints nothing and always exits 0. A fresh set costs a few
+file reads and no process.
+
+Why this seam, and not the others:
+
+- **SessionStart** runs once for the top-level session, before any soul is known,
+  and its insights hook must spawn nothing.
+- **`bin/agent-activity start`** is override-only since turn-driven narration
+  (`bin/atomic-capture-hook` opens spans itself), so many launches never call it.
+- **The role pages** are prose. A step an agent can skip is not a seam.
+- **SubagentStart** fires on every soul launch, names the soul, and is installed
+  by the same tooling as the other managed hooks.
+
+A soul that runs outside Claude Code (Codex, a script) warms by hand:
+`bin/secret warm <soul>`. A read warms the one item it needs on a miss, so a
+missed warm costs one bounded read, not a failure.
+
+### Reading, and the refusal
+
+A soul names itself with `--soul <slug>` or `MCR_SOUL`. Then:
+
+| The item is | The read |
+|---|---|
+| in this soul's set | the cache; inside the refresh window or after expiry, one bounded read written back. When that read fails, a copy that has not expired still serves, with a warning on stderr |
+| in another soul's set only | **refused**, exit 4, logged as `soul-refused`. It never reaches 1Password |
+| in no set | exit 3 (`not managed`): the classic read runs, unchanged |
+
+With no `MCR_SOUL`, the classic `bin/secret <vault> <item>` read is unchanged.
+Task `agent-op-reads-ratchet` closes that path later. Task
+`secret-refresh-on-auth-failure` can use `bin/secret forget --source <item>`
+and the read path above as its refresh.
+
+**One Unix user, for now.** Every agent on this Mac runs as one Unix user, so the
+per-soul folders are a policy line, not a security boundary: any process can open
+any file. The refusal stops a soul's tooling from reading another soul's item by
+accident, and logs every attempt. Ruling 2 (below) is what turns the line into a
+boundary.
+
+### The devnet gauntlet reads from the cache
+
+`bin/release prepare` warms Avi's set before the gauntlet
+(`warm_gauntlet_secrets!`, bounded at 90 s, never fatal). The driver's `PATH`
+then starts with `bin/shims/op-cache` (`gauntlet_child_env`). That shim answers
+`op item get <item> --vault <vault> --format json` for an item in Avi's set from
+the cache, in the JSON shape `op` prints, so turf-monster's `KeyStore` reads it
+unchanged. Any other `op` command, and an item no set names, go to the real `op`.
+An `op` that stalls after the warm cannot stop the gauntlet.
+
+### A portable unit (ruling 2)
+
+Alex McRitchie plans to run different agents on different machines. A soul's set
+moves as two things: its manifest and its own 1Password service account.
+
+```bash
+bin/secret manifest avi > avi.manifest.json        # names only, never a value
+# on the new machine, with Avi's own service-account token:
+OP_SERVICE_ACCOUNT_TOKEN_AVI=… bin/secret warm avi --manifest avi.manifest.json
+```
+
+Each set names `service_account.token_env` (`OP_SERVICE_ACCOUNT_TOKEN_<SOUL>`).
+When that variable is set, the warm runs `op` with it. When it is not set, the
+warm uses the machine's shared agent account and says so. No per-soul service
+account is filed yet; filing one is Steffon's `credential-filing` work.
+
+### The admin tier (ruling 1)
+
+Admin-vault items are reached only through allowlisted purpose-built scripts. The
+agent never holds the value.
+
+- **The seam.** `SoulSecrets::Admin.read(item, field, cfg:)` runs inside the
+  script's own process. It refuses (and logs `admin-refused`) unless the process's
+  entry point (`$PROGRAM_NAME`, resolved) is one of `admin_tier.scripts` in the
+  same tooling tree. It reads with `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, never from a
+  soul folder, bounded (vault and token from the `deployer` lane in
+  `bin/lib/op_vaults.rb`), and keeps the value in memory for `admin_tier.lifetime`
+  (15 min). There is **no** `bin/secret` command that prints an admin value.
+- **The allowlist** is the scripts that read an admin item today (`bin/release.rb`,
+  `bin/gh-token`, `bin/heroku-token`, `bin/heroku-secret-set`,
+  `bin/rotate-heroku-ci-key`). Moving each one onto `Admin.read` is later work.
+  Adding a script is a reviewed config change.
+- **The open choice: disk or memory.** The config says `storage: memory`, and a
+  config that says `disk` does not load.
+  - *Memory* (chosen): nothing is written; each script run pays one bounded read
+    per item, and a hung `op` still stops that script.
+  - *Disk* (0600, short lifetime): one read serves many runs. **The threat:**
+    every process on this Mac runs as the same Unix user. A build lane, or a
+    compromised gem or npm `postinstall` in a desk, can open a 0600 file
+    directly and skip the allowlist, which only the read path enforces. So a disk
+    tier turns "only allowlisted scripts" into "any process of this user".
+  - *When disk becomes safe:* when the admin tier runs as its own Unix user, or
+    its value sits in a keychain item whose access list names the script. Until
+    then it stays in memory.
+
+The existing rule stands beside it: nothing from an admin vault is ever written to
+this folder.
 
 ## The legacy paths
 
@@ -176,6 +310,16 @@ the tooling), the links can be deleted.
   temp files, the owner and symlink check, the admin-vault refusal, `forget
   harness-key` under `MCR_SECRET_CACHE_DIR`, and the narration hook keeping
   metadata output.
+- `test/lib/soul_secrets_test.rb` [unit]: the real config names a set for every
+  roster soul; admin-vault items, missing fields and a disk admin tier are refused
+  at load; warm writes `0600` files in a `0700` soul folder keeping only the named
+  fields, reads nothing for a fresh set, uses the soul's own service account; a
+  read after warm hits the cache while `op` hangs; another soul's read is refused
+  and logged; the portable manifest warms alone; the hook; the admin allowlist and
+  its memory-only read.
+- `test/commands/soul_secrets_gauntlet_test.rb` [integration]: a release with `op`
+  stubbed to hang after the warm still runs the gauntlet's driver (red without the
+  shim: the step is killed at its deadline).
 - `test/commands/secret_cli_test.rb` [integration]: a read inside the window
   refreshes; a read after expiry refreshes; a hung `op` reaches the contingency in
   seconds; a still-valid token survives; `forget` clears; no value appears in any
