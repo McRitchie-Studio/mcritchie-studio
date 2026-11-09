@@ -20,15 +20,8 @@ class ApplicationController < ActionController::Base
   before_action :verify_session_token
   before_action :set_current_context
 
-  # A speculative fetch never signs anyone out. The engine's sign-out is a GET
-  # (/logout, the link sidebar's "Log out"), and Turbo prefetches a link the
-  # pointer rests on for 100ms, sending X-Sec-Purpose: prefetch. That prefetch ran
-  # SessionsController#destroy, and its Set-Cookie signed the browser out while
-  # the page still drew the user (task build-funnel-held-message-cause: an admin's
-  # next /build message went in signed out and the bot shield held it).
-  # app/javascript/sign_out_prefetch.js stops Turbo asking; this answers any
-  # prefetch that still arrives, before the action, without touching the session.
-  before_action :refuse_prefetched_sign_out, if: -> { controller_path == "sessions" && action_name == "destroy" }
+  # A prefetched sign-out is refused by the engine (Studio::ErrorHandling, engine
+  # 0.141.1, task engine-logout-never-prefetched); the hub keeps no copy.
 
   # A web request may spend ten seconds looking image hosts up, no more. On the
   # next engine each URL-guard judgement is a DNS lookup of up to six seconds, and
@@ -41,25 +34,7 @@ class ApplicationController < ActionController::Base
 
   helper_method :first_name_modal?, :type_dense_page?
 
-  # The purpose headers a speculative fetch carries: Turbo's X-Sec-Purpose, and
-  # the browser's own Sec-Purpose (speculation rules, link prefetch).
-  PREFETCH_PURPOSE = /\bprefetch\b/i
-
-  def self.prefetch_request?(request)
-    [ request.headers["X-Sec-Purpose"], request.headers["Sec-Purpose"], request.headers["Purpose"] ]
-      .any? { |value| value.to_s.match?(PREFETCH_PURPOSE) }
-  end
-
   private
-
-  # 204, no-store: nothing to cache or render, and the session is left as it was.
-  def refuse_prefetched_sign_out
-    return unless ApplicationController.prefetch_request?(request)
-
-    response.headers["Cache-Control"] = "no-store"
-    request.session_options[:skip] = true
-    head :no_content
-  end
 
   # Whether the page reads the type scale's 14px dense base (task
   # hub-adopts-type-scale): the layout puts `type-dense` on <body>, not <html>,
