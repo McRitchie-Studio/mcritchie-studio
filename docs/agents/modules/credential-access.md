@@ -190,7 +190,8 @@ rows above); the `deployer` rows are from
 ## 5. Diagnosing a spend
 
 1. `bin/op-reads --since 24h` (free): reads by calling command. Add `--by hour`,
-   `--by context`, or `--tail 40` for the raw rows. A row with context `-` came
+   `--by context`, or `--tail 40` for the raw rows. `bin/op-reads --ratchet` ranks
+   the last 24 hours against `daily_cap` (the ratchet, above). A row with context `-` came
    from a process with no Claude session (launchd, git's credential helper).
 2. `OP_CACHE=false op service-account ratelimit`: the token and account counters.
    Measured 2026-10-24 to move neither counter, but run it once before a batch of
