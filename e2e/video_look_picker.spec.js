@@ -206,3 +206,32 @@ test("an athlete with no look is offered generate first look, and the new look c
   await expect(option(picker, name).locator("[data-test='look-option-default']")).toBeVisible();
   await page.keyboard.press("Escape");
 });
+
+// A loaded runner paints late. Alpine's x-show shows an element on the next animation
+// frame (document visible), so a focus queued on a plain timer can run while the form
+// is still display:none, and the browser drops it: the red of release run 42536453998.
+// Here every frame comes 100 ms late, which turns that ordering into the rule, not the
+// exception. The card is only opened and cancelled, so nothing is saved.
+test("the generate form takes the focus even when the frame that shows it comes late", async ({ page }) => {
+  await page.addInitScript(() => {
+    const raf = window.requestAnimationFrame.bind(window);
+    window.requestAnimationFrame = (cb) => raf((t) => setTimeout(() => cb(t), 100));
+  });
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto(VIDEO);
+
+  const picker = recast(page, 2);
+  await expect(picker).toHaveAttribute("data-state", "recast");
+  const trigger = picker.locator("[data-test='look-trigger']");
+  await trigger.focus();
+  await page.keyboard.press("Enter");
+  await expect(picker.locator("[data-test='look-list']")).toBeVisible();
+  await page.keyboard.press("End");
+  await expect(picker.locator("[data-test='look-generate-option']")).toHaveClass(/bg-surface-alt/);
+  await page.keyboard.press("Enter");
+  const form = picker.locator("[data-test='look-generate-form']");
+  await expect(form).toBeVisible();
+  await expect(form.locator("input[name='descriptor']")).toBeFocused();
+  await form.getByRole("button", { name: "Cancel" }).click();
+  await expect(form).toBeHidden();
+});

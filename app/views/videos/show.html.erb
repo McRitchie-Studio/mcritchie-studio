@@ -161,8 +161,16 @@
         this.lookSlug = this.looks[i].slug; this.genOpen = false;
         this.onLookPicked();
       },
-      // x-show paints on a timeout, so the focus waits one too.
-      startGenerate() { this.genOpen = true; this.$nextTick(() => setTimeout(() => this.$refs.genName.focus())); },
+      // Alpine's x-show shows an element on the next animation frame while the page is
+      // visible (a timer while it is hidden), and a focus on an element still
+      // display:none is dropped. So the focus is queued on the same clock, after the
+      // show: both callbacks run in the order queued. A plain timer here raced the
+      // frame and lost on a loaded runner (release run 42536453998).
+      startGenerate() {
+        this.genOpen = true;
+        const later = document.visibilityState === "visible" ? requestAnimationFrame : setTimeout;
+        this.$nextTick(() => later(() => this.$refs.genName.focus()));
+      },
       watchBuilds() {
         clearTimeout(this.lookTimer);
         if (this.looks.some((l) => l.state === "building")) this.lookTimer = setTimeout(() => this.refreshLooks(), 5000);
