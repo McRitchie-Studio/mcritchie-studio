@@ -988,9 +988,15 @@ nobody files it under "flaky". The system holds that line in five places:
 - **A cause card for every flip.** When a run goes green at a SHA where a run of the
   same workflow (or an earlier attempt of the same run, a re-run) went red,
   `GithubWorkflowRunIngestJob` enqueues `CiCauseCardJob`. It reads the red jobs' logs
-  and files one `designed` card per cause, slug `ci-cause-<repo>-<key>`, classed
-  `infra`, `harness`, `test` or `product` (`bin/lib/ci_cause_detector.rb`). A later
-  occurrence of the same cause folds into the open card. History:
+  and files one `designed` card per cause, classed `infra`, `harness`, `test` or
+  `product` (`bin/lib/ci_cause_detector.rb`). A repo's own cause has the slug
+  `ci-cause-<repo>-<key>`. An `infra` cause (a toolchain download that got a 5xx, an
+  apt mirror, an image-pull quota) is outside every repo, so it has one card across
+  all repos, `ci-cause-infra-<key>`, and each red job is one occurrence that names its
+  repo. A job with no named fault is read by its first `##[error]` line; a job with no
+  `##[error]` line files no card and leaves an `ErrorLog` row. A census job
+  (executed-set) that names a missing shard report folds onto that shard's cause. A
+  later occurrence of the same cause folds into the open card. History:
   `REPO=<owner/repo> DAYS=14 bin/rails ci:causes:sweep` (`DRY_RUN=1` to list only).
 - **Five runs at the door.** The `playwright` lane runs every spec a PR adds or changes
   in five fresh passes (`bin/e2e-repeat-changed`), after the whole suite and outside the
