@@ -616,12 +616,39 @@ class Release
     #   * APP repos carry the persistent `release` branch (the same name in every
     #     repo), the qa-server key, and the prod_deploy adapter read from
     #     config/release_repos.yml.
+    #   * LOCK-ONLY app repos (Release::LockOnlyConsumers) follow the members'
+    #     groups with `members: []`: an engine app whose `accepted` carries only
+    #     the release tooling's lock bumps, recorded on the release by prepare.
+    #     It is promoted, QA'd and deployed like any app; nothing is stamped.
     # All keys are symbol-keyed and the values are JSON-serializable.
     def repo_plan(release)
       pairs = member_plan(release).flat_map do |member|
         Array(member[:repos]).presence&.map { |repo| [ repo, member ] } || [ [ member[:repo], member ] ]
       end
 
+      member_groups(pairs) + lock_only_groups(release, pairs.map(&:first).uniq)
+    end
+
+    # The memberless app group for each lock-only repo the release recorded and
+    # its members do not already name. A repo the registry no longer lists as an
+    # app is dropped rather than deployed without an adapter.
+    def lock_only_groups(release, planned)
+      Release::LockOnlyConsumers.extra_repos(release.metadata, planned).filter_map do |repo|
+        next unless Release::Repos.app?(repo)
+
+        {
+          repo: repo,
+          kind: :app,
+          members: [],
+          lock_only: true,
+          release_branch: Release::BRANCH,
+          qa_app: Release::Repos.qa_app(repo),
+          prod_deploy: Release::Repos.prod_deploy(repo)
+        }
+      end
+    end
+
+    def member_groups(pairs)
       pairs.group_by(&:first).map do |repo, entries|
         gem = Release::Repos.gem?(repo)
         members = entries.map do |(_repo, member)|
