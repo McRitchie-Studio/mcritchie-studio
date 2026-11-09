@@ -122,6 +122,17 @@ class CiRerunTest < Minitest::Test
     assert_equal ["test/integration/production_ssl_test.rb:43"], plan[:failures].first["specs"]
   end
 
+  # [unit] The phrase inside a failing test's output is a finding, never the race.
+  def test_a_job_with_the_resolution_error_and_a_test_failure_stops
+    log = WRAPPED_LOG.gsub("scan_ruby\t", "test\t") + MINITEST_LOG
+    plan = CiRerun.plan(runs: [run_row(6)], jobs_by_run: { 6 => ["test"] }, log_for: ->(_id) { log })
+
+    assert_equal :stop, plan[:action], plan[:reason]
+    printed = "test\tRun tests\t2026-11-08T15:01:02.3Z Expected \"#{RACE_LOG}\" to be nil.\n"
+    assert_equal :stop, CiRerun.plan(runs: [run_row(6)], jobs_by_run: { 6 => ["test"] },
+                                     log_for: ->(_id) { MINITEST_LOG + printed })[:action]
+  end
+
   def test_a_real_lint_failure_stops
     plan = CiRerun.plan(runs: [run_row(7)], jobs_by_run: { 7 => %w[lint test] },
                         log_for: ->(_id) { "Offenses: 3" })

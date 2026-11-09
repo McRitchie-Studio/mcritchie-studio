@@ -110,6 +110,16 @@ module CiRerun
     unwrap_log(log).match?(RESOLUTION_ERROR)
   end
 
+  # A suite's own report: a minitest/RSpec/Playwright tally or a failure header.
+  TEST_RAN = /\d+ (?:runs|examples|tests?), \d+ (?:assertions|failures)|\b\d+ (?:failed|passed)\b|^\s*(?:Failure|Error):\s*$/
+
+  # The race and nothing else: bundler's error, and no test ran or failed in the job.
+  # A test that prints the phrase (a gem-resolution test, a fixture in a diff) names
+  # its spec location, so it stays a finding.
+  def race_only?(log)
+    resolution_error?(log) && specs_in(log).empty? && !log.to_s.each_line.any? { |l| l.sub(LOG_PREFIX, "").sub(LOG_PREFIX, "").match?(TEST_RAN) }
+  end
+
   # PURE. The log as one line of prose: job/step/timestamp prefixes dropped, every
   # run of whitespace (the wraps included) collapsed to one space.
   def unwrap_log(log)
@@ -192,7 +202,7 @@ module CiRerun
         next
       end
 
-      plain = jobs.reject { |job| resolution_error?(logs[job]) }
+      plain = jobs.reject { |job| race_only?(logs[job]) }
       if plain.any?
         kind = plain.all? { |job| test_lane?(job) } ? "test lane" : "job"
         blockers << "#{label}: #{kind}#{plain.size == 1 ? '' : 's'} #{plain.join(', ')} failed with no " \
