@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { watchPageErrors } = require("./helpers");
+const { frames } = require("./settle");
 
 // The Last Release card, and the animations it is allowed to play.
 //
@@ -63,10 +64,10 @@ test("a spurious redraw of the Last Release card animates NOTHING", async ({ pag
   await expect(lastRelease).not.toHaveAttribute("data-e2e-generation", "before", { timeout: 10_000 });
   await expect(lastRelease.locator("[data-test='release-mascot']")).toContainText("Dragonite");
 
-  // …and the card sat still through it. Settle a beat first: every fx here applies
-  // its class synchronously inside a requestAnimationFrame after the render, so one
-  // more frame plus slack is long enough for a burst to have shown up in the log.
-  await page.waitForTimeout(600);
+  // …and the card sat still through it. Every fx here applies its class synchronously
+  // inside a requestAnimationFrame after the render, so once the frames after the swap
+  // have run, a burst would be in the log.
+  await frames(page, 3);
   expect(await fxLog(page), "the Last Release card must not animate at a redraw that changed nothing").toEqual([]);
 
   await expect(lastRelease).not.toHaveClass(/lbfx-/);

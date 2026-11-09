@@ -1,5 +1,5 @@
 const { test, expect } = require("@playwright/test");
-const { scrollToBoardBottom, gotoBoard, headerClearance, pinReading, expectLanesFitAndClear } = require("./lane_pin_helpers");
+const { scrollToBoardBottom, scrollSettled, gotoBoard, headerClearance, pinReading, expectLanesFitAndClear } = require("./lane_pin_helpers");
 
 // scrollToBoardBottom and the lane-fit helpers live in e2e/lane_pin_helpers.js, shared
 // with the classic-scrollbar spec.
@@ -118,7 +118,7 @@ test("the lane row is not a scroll container while the lanes fit", async ({ page
 test("the lane headers return to the flow at the top of the page", async ({ page }) => {
   await page.goto("/deployments");
   await scrollToBoardBottom(page);
-  await page.waitForTimeout(400);
+  await scrollSettled(page);
   await page.evaluate(() => window.scrollTo(0, 0));
 
   await expect
@@ -151,7 +151,7 @@ test("nothing from a lane paints over its pinned header", async ({ page }) => {
   // band at that moment, so one position proves nothing about the next.
   for (const y of [700, 900, 1100, 1400]) {
     await page.evaluate((to) => window.scrollTo(0, to), y);
-    await page.waitForTimeout(300);
+    await scrollSettled(page);
 
     const found = await page.evaluate((at) => {
       const out = [];
@@ -254,7 +254,7 @@ test("All Stages on a narrow board scrolls the lanes sideways and unpins the hea
   await expect.poll(() => header.evaluate((h) => getComputedStyle(h).position)).toBe("static");
   for (const y of [0, 150]) {
     await page.evaluate((top) => window.scrollTo(0, top), y);
-    await page.waitForTimeout(250);
+    await scrollSettled(page);
     const { headers, gaps } = await headerClearance(page);
     expect(headers, "All Stages shows all six lanes").toBe(6);
     expect(gaps.length).toBeGreaterThan(0);

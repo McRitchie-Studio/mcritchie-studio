@@ -1,5 +1,6 @@
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, watchPageErrors } = require("./helpers");
+const { armTurboLoads, frames, turboLoaded } = require("./settle");
 
 // [e2e] The first-name ask, in a real browser.
 //
@@ -67,12 +68,16 @@ test("answering the ask survives a Turbo navigation", async ({ page }) => {
   await field.waitFor({ state: "hidden" });
 
   // A real in-page navigation, which is what leaves `document` handlers alive.
+  const loads = await armTurboLoads(page);
   await page.getByRole("link", { name: "McRitchie Studio" }).first().click();
 
   // Wait past the moment the buggy build re-opened it, rather than asserting
-  // into the gap before Alpine has run.
+  // into the gap before Alpine has run: the layout's ask runs on turbo:load
+  // (its listener was added first, so it has run when the count moves), and
+  // the store's modal renders in the frame after.
   await page.waitForFunction(() => window.Alpine && Alpine.store && Alpine.store("modals"));
-  await page.waitForTimeout(600);
+  await turboLoaded(page, loads);
+  await frames(page);
 
   await expect(page.locator("#onboarding-first-name")).toHaveCount(0);
   // The server must also agree the ask is over — the marker the handler reads.
@@ -108,12 +113,15 @@ test("answering the ask survives the BACK button", async ({ page }) => {
   await page.evaluate(() => window.Turbo.visit("/dashboard"));
   await page.waitForURL("**/dashboard");
 
+  const loads = await armTurboLoads(page);
   await page.goBack();
 
   // Wait past the point the buggy build had already re-opened it, rather than
-  // asserting into the gap before Alpine has run.
+  // asserting into the gap before Alpine has run: the restore's turbo:load is
+  // when the ask runs, and the store's modal renders in the frame after.
   await page.waitForFunction(() => window.Alpine && Alpine.store && Alpine.store("modals"));
-  await page.waitForTimeout(600);
+  await turboLoaded(page, loads);
+  await frames(page);
 
   await expect(page.locator("#onboarding-ask-first-name")).toHaveCount(0);
   // One input or two: a modal snapshotted open would restore mounted AND be

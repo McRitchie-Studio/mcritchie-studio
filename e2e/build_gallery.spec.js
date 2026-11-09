@@ -84,8 +84,16 @@ test("a card plays its motion loop on hover, and keeps the still under reduced m
   const calmCard = page.locator("[data-test='build-example']").first();
   const calmVideo = calmCard.locator("[data-test='build-example-motion']");
   await calmCard.scrollIntoViewIfNeeded();
+  // The card's pointerover is what starts a loop (app/javascript/gallery_motion.js, a
+  // document listener added at load, so it has run when this later one does).
+  await page.evaluate(() => {
+    window.__overCard = false;
+    document.addEventListener("pointerover", (event) => {
+      if (event.target.closest?.("[data-gallery-motion]")) window.__overCard = true;
+    });
+  });
   await calmCard.hover();
-  await page.waitForTimeout(600);
+  await page.waitForFunction(() => window.__overCard);
   expect(await calmVideo.evaluate((v) => v.paused)).toBe(true);
   expect(await calmVideo.evaluate((v) => getComputedStyle(v).display)).toBe("none");
 });

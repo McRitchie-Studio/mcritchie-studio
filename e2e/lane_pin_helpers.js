@@ -1,4 +1,5 @@
 const { expect } = require("@playwright/test");
+const { animationsSettled, frames } = require("./settle");
 
 // Shared by e2e/deployments_lane_pin.spec.js and its classic-scrollbar sibling, which
 // must be a separate file: forcing classic scrollbars is a LAUNCH option, and Playwright
@@ -12,6 +13,13 @@ const { expect } = require("@playwright/test");
 // (tasks/_desk_panel), so the document bottom is well past the lanes. This addresses the
 // board directly, and clamps to the document, so a page where the board IS last scrolls
 // exactly as far as the document allows.
+// A scroll has landed: its frame has run (sticky positions, scroll events, the
+// navbar's scroll-linked collapse starting) and every transition it set off is done.
+async function scrollSettled(page) {
+  await frames(page);
+  await animationsSettled(page);
+}
+
 async function scrollToBoardBottom(page) {
   await page.evaluate(() => {
     const board = document.querySelector("[data-test='kanban-board']");
@@ -92,7 +100,7 @@ async function expectLanesFitAndClear(page, width, { lanes, scrollbar = 0 }) {
 
   for (const y of [0, 150]) {
     await page.evaluate((top) => window.scrollTo(0, top), y);
-    await page.waitForTimeout(250);
+    await scrollSettled(page);
     const { headers, gaps, scroller } = await headerClearance(page);
     expect(scroller, "the lanes fit without the scroller").toBe("visible");
     expect(headers, "every visible lane has its header").toBe(lanes);
@@ -112,4 +120,4 @@ async function expectLanesFitAndClear(page, width, { lanes, scrollbar = 0 }) {
   expect((await pinReading(page)).count, "and every visible lane's header is among them").toBe(lanes);
 }
 
-module.exports = { scrollToBoardBottom, gotoBoard, headerClearance, pinReading, expectLanesFitAndClear };
+module.exports = { scrollToBoardBottom, scrollSettled, gotoBoard, headerClearance, pinReading, expectLanesFitAndClear };

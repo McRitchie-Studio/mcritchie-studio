@@ -7,6 +7,7 @@
 // @qa-readonly: it only reads the signed-out landing page.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, watchPageErrors, VISITOR } = require("./helpers");
+const { animationsSettled } = require("./settle");
 
 test.use({ storageState: VISITOR });
 test.setTimeout(45_000);
@@ -33,12 +34,14 @@ async function checkHeadline(page, width) {
   // word goes active: its text never runs past either edge of the box.
   await page.evaluate(() => {
     window.__heroClips = [];
+    window.__heroSampling = 0; // entries still being sampled
     const box = document.querySelector(".dropping-texts");
     new MutationObserver((records) => {
       for (const r of records) {
         if (!r.target.classList.contains("drop-active")) continue;
         const span = r.target;
         const start = performance.now();
+        window.__heroSampling += 1;
         const sample = () => {
           const range = document.createRange();
           range.selectNodeContents(span);
@@ -48,6 +51,7 @@ async function checkHeadline(page, width) {
           const over = Math.max(b.left - text.left, text.right - window.innerWidth);
           if (over > 1) window.__heroClips.push(`${span.textContent} ${Math.round(over)}px at ${Math.round(performance.now() - start)}ms`);
           if (performance.now() - start < 600) requestAnimationFrame(sample);
+          else window.__heroSampling -= 1;
         };
         sample();
       }
@@ -58,8 +62,8 @@ async function checkHeadline(page, width) {
   for (const word of ["Flow", "Agent", "Plan", "Idea"]) {
     const active = page.locator(".dropping-texts > span.drop-active", { hasText: word });
     await expect(active).toHaveCount(1, { timeout: 8_000 });
-    // The box eases to the word's width (0.4s) after it drops in.
-    await page.waitForTimeout(600);
+    // Measured once the word has landed: its drop-in (and the last word's exit) are done.
+    await animationsSettled(page, ".dropping-texts");
     seen[word] = await page.evaluate((w) => {
       const box = document.querySelector(".dropping-texts").getBoundingClientRect();
       const span = [...document.querySelectorAll(".dropping-texts > span")].find((s) => s.textContent === w);
@@ -96,7 +100,7 @@ async function checkHeadline(page, width) {
     expect(m.sideways, `${word}: no sideways scroll`).toBe(false);
   }
   // Let the last entry's 600ms of samples finish.
-  await page.waitForTimeout(100);
+  await page.waitForFunction(() => window.__heroSampling === 0);
   expect(await page.evaluate(() => window.__heroClips), "no word is clipped while it drops in").toEqual([]);
   const widths = new Set(Object.values(seen).map((m) => m.boxWidth));
   expect([...widths], "the word's box holds one width through the cycle").toHaveLength(1);

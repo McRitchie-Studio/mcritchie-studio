@@ -4,6 +4,7 @@
 // colour under 3:1 against the page is warned about in the theme it is shown in.
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink } = require("./helpers");
+const { frames } = require("./settle");
 
 const PAGE = "/logos/studio?type=stacked&form=tagline";
 
@@ -51,7 +52,7 @@ test("picking a colour redraws every logo on the tab, and the download carries i
   expect(await response.text()).toContain('fill="#635BB2"');
 
   await page.waitForFunction(() => [...document.querySelectorAll("img[data-test='logo-image']")].every((img) => img.complete));
-  await page.waitForTimeout(100);
+  await frames(page); // the loaded images' layout, and any scroll it moves, have run
   const after = await page.evaluate(() => window.scrollY);
   expect(Math.abs(after - before), "the scroll stays where it was").toBeLessThan(40);
 });

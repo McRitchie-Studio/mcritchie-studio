@@ -34,14 +34,12 @@ test("a deploy animates Last Release in, resets Next Release, and the timer tick
   await expect(page.locator("#current-release [data-test='release-mascot']")).toContainText("Snorlax");
   await expect(lastRelease.locator("[data-test='release-mascot']")).toContainText("Dragonite");
 
-  // The Next Release in-progress timer ticks down to the second — read it twice a
-  // little over a second apart and confirm it advanced (the seconds are climbing).
+  // The Next Release in-progress timer ticks down to the second: its text moves on
+  // from what it read (the seconds are climbing).
   const timing = page.locator("#current-release [data-test='release-timing']");
   await expect(timing).toContainText("in progress");
   const before = await timing.textContent();
-  await page.waitForTimeout(1200);
-  const after = await timing.textContent();
-  expect(after).not.toEqual(before);
+  await expect.poll(() => timing.textContent(), { message: "the in-progress timer ticks" }).not.toEqual(before);
 
   // The Next Release card now shows the per-repo lanes tracker; the pizza-tracker
   // active-stage countdown was retired in the lanes redesign.

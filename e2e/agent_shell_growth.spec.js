@@ -15,6 +15,7 @@
 // NOT @qa-readonly: it writes requests and agent messages.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
+const { animationsSettled, frames } = require("./settle");
 
 test.use({ storageState: VISITOR });
 
@@ -115,7 +116,7 @@ test("on /build the first message leaves the hero standing; the head compacts as
   // The thread slides in; a SEND does not compact the head: one short turn still
   // fits beside the hero, so the heading, the subtitle and the gallery stay.
   await expect.poll(() => page.evaluate(() => window.__animated.includes("agent-shell-thread-in"))).toBe(true);
-  await page.waitForTimeout(600);
+  await animationsSettled(page, "[data-agent-shell]"); // the slide-in, and anything it set off
   await expect(page.locator("[data-agent-shell]")).toHaveAttribute("data-shell-size", "full");
   await expect(page.locator("[data-test='build-heading'] .agent-shell-subtitle")).toBeVisible();
   await expect(gallery, "the gallery stays while the conversation is short").toBeVisible();
@@ -138,7 +139,7 @@ test("on /build the first message leaves the hero standing; the head compacts as
       gallery: seen.some((name) => /:opacity$/.test(name) && !/^agent-shell-subtitle/.test(name)),
     };
   })).toEqual({ portrait: true, subtitle: true, heading: true, gallery: true });
-  await page.waitForTimeout(500);
+  await animationsSettled(page); // the shrink has landed before it is measured
   const grown = await measure(page);
   expect(grown.share, "the conversation fills most of the window").toBeGreaterThan(0.75);
   expect(grown.share, "never taller than the window").toBeLessThanOrEqual(1.0);
@@ -152,7 +153,7 @@ test("on /build the first message leaves the hero standing; the head compacts as
 
   // A phone: the same promises.
   await page.setViewportSize({ width: 390, height: 744 });
-  await page.waitForTimeout(100);
+  await frames(page); // the resize's layout, and whatever the shell does about it in a frame
   const phone = await measure(page);
   expect(phone.composerInView, "the chat box is in a phone's window").toBe(true);
   expect(phone.threadClear).toBe(true);

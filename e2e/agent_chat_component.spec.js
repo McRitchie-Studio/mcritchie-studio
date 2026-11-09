@@ -10,6 +10,7 @@ const fs = require("fs");
 const path = require("path");
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
+const { frames } = require("./settle");
 
 test.use({ storageState: VISITOR });
 
@@ -18,6 +19,15 @@ const PNG = { name: "probe.png", mimeType: "image/png",
 
 // Holds each chat POST's answer (after the server has stored the turn) until the
 // test lets it go. `posts` counts the sends that reached the network.
+// Counts Turbo's turbo:submit-end on the page: a send's end, aborted or answered. The
+// chat script's own listener was added first, so it has run when the count moves.
+async function countSubmitEnds(page) {
+  await page.evaluate(() => {
+    window.__submitEnds = 0;
+    document.addEventListener("turbo:submit-end", () => { window.__submitEnds += 1; });
+  });
+}
+
 async function holdSends(page) {
   const gates = [];
   await page.route("**/applications/cyvasse/chat", async (route) => {
@@ -113,7 +123,11 @@ test("a message sent before the last send's answer lands is kept, and so is a dr
   // A draft typed while the second send posts survives its answer's composer swap.
   const draft = `A thought still being typed ${stamp}`;
   await input.fill(draft);
-  await page.waitForTimeout(2000); // past the held answer
+  // The held answer lands: it redraws the composer (the box the draft was typed in
+  // leaves the page) and the last send settles. Only then is the draft's carry due.
+  const typedIn = await input.elementHandle();
+  await expect.poll(() => typedIn.evaluate((el) => el.isConnected), { message: "the second send's answer redrew the composer" }).toBe(false);
+  await expect(page.locator("[data-test='cto-chat-form']"), "the last send settled").not.toHaveAttribute("aria-busy");
   await expect(page.locator("[data-test='cto-chat-input']")).toHaveValue(draft);
   await expect(sent(draft), "a draft is not sent").toHaveCount(0);
 
@@ -129,6 +143,7 @@ test("a files-only send while one posts is sent, and the composer stays busy unt
   await loginWithMagicLink(page, "owner@cyvasse.test");
   await page.goto("/applications/cyvasse/chat");
   const held = await holdSends(page);
+  await countSubmitEnds(page);
 
   const form = page.locator("[data-test='cto-chat-form']");
   const input = page.locator("[data-test='cto-chat-input']");
@@ -145,7 +160,9 @@ test("a files-only send while one posts is sent, and the composer stays busy unt
   await input.press("Enter"); // no text: the file is the message
   await expect.poll(() => held.posts, { message: "the files-only send reached the server" }).toBe(2);
 
-  await page.waitForTimeout(500); // the aborted first send's end has landed by now
+  // The files-only send aborted the first one; that send's end is the moment a
+  // composer that counts only one send would drop its busy mark.
+  await page.waitForFunction(() => window.__submitEnds >= 1);
   await expect(form, "the second send still posts").toHaveAttribute("aria-busy", "true");
 
   held.releaseAll();
@@ -215,6 +232,7 @@ test("a send refused for a dead file comes back without that file's chip", async
   const { pageErrors, report } = watchPageErrors(page);
   await loginWithMagicLink(page, "owner@cyvasse.test");
   await page.goto("/applications/cyvasse/chat");
+  await countSubmitEnds(page);
 
   const input = page.locator("[data-test='cto-chat-input']");
   await page.locator("[data-test='cto-chat-file-input']").setInputFiles(PNG);
@@ -227,7 +245,10 @@ test("a send refused for a dead file comes back without that file's chip", async
 
   await expect(page.locator("[data-test='cto-chat-error']"), "the server says why").toBeVisible();
   await expect(page.locator("[data-test='cto-chat-input']"), "the refused text is echoed back").toHaveValue(text);
-  await page.waitForTimeout(500); // past the redraw's carry
+  // The refused send has ended (its end is where a client put-back would land) and a
+  // frame has run past it.
+  await page.waitForFunction(() => window.__submitEnds >= 1);
+  await frames(page);
   await expect(page.locator("[data-test='cto-chat-chip']"), "the dead file does not come back looking ready").toHaveCount(0);
 
   // The refusal's own 422 is the answer under test; anything else is a failure.

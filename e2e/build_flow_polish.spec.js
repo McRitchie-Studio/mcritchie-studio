@@ -13,6 +13,7 @@
 // NOT @qa-readonly: it writes requests and agent messages.
 const { test, expect } = require("@playwright/test");
 const { blockThirdPartyRequests, loginWithMagicLink, watchPageErrors, VISITOR } = require("./helpers");
+const { frames } = require("./settle");
 
 test.use({ storageState: VISITOR });
 
@@ -95,6 +96,14 @@ async function startSampling(page) {
   }, log);
 }
 
+// The answer is done and the page has settled (the follow's last scroll lands in a
+// frame), then five more samples are taken, so the tail the spec reads is all after it.
+async function settledSamples(page) {
+  await frames(page);
+  const mark = await page.evaluate(() => window.__follow.distances.length);
+  await page.waitForFunction((m) => window.__follow.distances.length >= m + 5, mark);
+}
+
 async function stopSampling(page) {
   return page.evaluate(() => { clearInterval(window.__followTimer); return window.__follow; });
 }
@@ -122,12 +131,12 @@ test("a reader at the end of the thread stays pinned as an answer types in and a
   const second = `And a swell alert ${Date.now()}`;
   await send(page, second);
   await page.locator(log).evaluate((el) => { el.scrollTop = el.scrollHeight - el.clientHeight - 12; });
-  await page.waitForTimeout(100);
+  await frames(page); // the scroll event, which the follow reads, has fired
   await startSampling(page);
   await rayAnswers(page, auth, second, longAnswer("Second"));
   await expect(page.locator("[data-test='build-turn']", { hasText: second }).locator("[data-agent-reveal]")).toContainText("Second line 20", { timeout: 15_000 });
   await expect(page.locator("[data-agent-revealing]")).toHaveCount(0);
-  await page.waitForTimeout(150);
+  await settledSamples(page);
   const pinned = await stopSampling(page);
   expect(pinned.typing, "sampled while the words typed").toBeGreaterThan(3);
   expect(Math.max(...pinned.distances.slice(-5)), "it ends at the end of the thread").toBeLessThanOrEqual(1);
@@ -137,14 +146,14 @@ test("a reader at the end of the thread stays pinned as an answer types in and a
   //    and the reader is not moved.
   const third = `What about wind ${Date.now()}`;
   await send(page, third);
-  await page.waitForTimeout(100);
+  await frames(page); // the send's own scroll to the end, which lands in a frame
   const readingAt = await page.locator(log).evaluate((el) => { el.scrollTop = el.scrollHeight - el.clientHeight - 200; return el.scrollTop; });
-  await page.waitForTimeout(100);
+  await frames(page); // the scroll event, which the follow reads, has fired
   await startSampling(page);
   await rayAnswers(page, auth, third, longAnswer("Third"));
   await expect(page.locator("[data-test='build-turn']", { hasText: third }).locator("[data-agent-reveal]")).toContainText("Third line 20", { timeout: 15_000 });
   await expect(page.locator("[data-agent-revealing]")).toHaveCount(0);
-  await page.waitForTimeout(150);
+  await settledSamples(page);
   const reading = await stopSampling(page);
   expect(reading.typing, "sampled while the words typed").toBeGreaterThan(3);
   expect(new Set(reading.tops), "the reader scrolled up stays exactly where they were").toEqual(new Set([readingAt]));
@@ -220,8 +229,7 @@ test("the domain card asks for availability once its name changes, never on arri
   // A chip tap changes the name: one check, for that name.
   await card.locator("[data-test='build-address-suggestion']", { hasText: `${free}-2` }).click();
   await expect(card.locator("[data-test='build-address-availability']")).toHaveText("Available");
-  await page.waitForTimeout(500);
-  expect(checks).toEqual([`?subdomain=${free}-2`]);
+  await expect.poll(() => checks, { message: "one check, for the tapped name" }).toEqual([`?subdomain=${free}-2`]);
   expect(pageErrors, report()).toHaveLength(0);
 });
 

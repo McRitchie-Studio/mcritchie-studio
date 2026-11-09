@@ -3,47 +3,25 @@
 # with its count. A count may only fall, and must equal the file (lower it in the same
 # commit that removes one); a file not listed holds none. Every row is a named debt:
 # wait on the state instead. Task deterministic-ci, 2026-11-06.
-e2e/agent_chat_component.spec.js:
-  sleep: 3
 e2e/agent_shell_growth.spec.js:
-  sleep: 6
+  sleep: 3
 e2e/branded_loader.spec.js:
   sleep: 1
 e2e/build_cards_quality.spec.js:
   sleep: 2
 e2e/build_flow_polish.spec.js:
-  sleep: 10
+  sleep: 4
 e2e/build_funnel.spec.js:
   sleep: 2
-e2e/build_gallery.spec.js:
-  sleep: 1
-e2e/character_model_page.spec.js:
-  sleep: 1
 e2e/contact_opt_in.spec.js:
-  sleep: 2
+  sleep: 1
 e2e/deployments_exit_fx.spec.js:
   sleep: 2
-e2e/deployments_lane_pin.spec.js:
-  sleep: 3
 e2e/deployments_live.spec.js:
   sleep: 1
 e2e/helpers.js:
   branch: 1
 e2e/landing_build_cta.spec.js:
-  sleep: 1
-e2e/landing_hero_headline.spec.js:
-  sleep: 2
-e2e/lane_pin_helpers.js:
-  sleep: 1
-e2e/last_release_fx_router.spec.js:
-  sleep: 1
-e2e/logo_part_editor.spec.js:
-  sleep: 1
-e2e/onboarding_first_name.spec.js:
-  sleep: 2
-e2e/overflow_fade.spec.js:
-  sleep: 11
-e2e/release_ship.spec.js:
   sleep: 1
 e2e/video_link_refresh.spec.js:
   sleep: 4
