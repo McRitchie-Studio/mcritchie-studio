@@ -375,10 +375,13 @@ class AuthRefreshTest < Minitest::Test
       assert ok
       assert_match(/holds the warm lock/, lines.join)
     ensure
+      # The stub touches `started` BEFORE `read` opens the FIFO, so ENXIO here can mean
+      # "reader not open yet", not "never reached op": wait (bounded) for the reader.
+      release_by = Process.clock_gettime(Process::CLOCK_MONOTONIC) + 15
       begin
-        # Non-blocking: a child that never reached op has no reader on the FIFO.
         File.open(fifo, File::WRONLY | File::NONBLOCK) { |f| f.puts("go") }
       rescue Errno::ENXIO
+        retry if Process.clock_gettime(Process::CLOCK_MONOTONIC) < release_by && (Thread.pass || true)
         Process.kill("KILL", pid)
       end
       _, status = Process.wait2(pid)
