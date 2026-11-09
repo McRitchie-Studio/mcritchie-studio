@@ -11,10 +11,16 @@
 <div class="mb-4"></div>
 
 <% if @message.held? %>
-  <% hold = @message.events.reverse.find { |e| e.kind == "held" } %>
-  <div id="am-hold" class="border border-subtle rounded p-3 mb-4 text-sm">
+  <%# Two writers hold a row: the answerers (a `held` event) and the /build bot shield
+      (a `bot_shield` event, BuildIntake::Ingest). Each names its own cause. %>
+  <% hold = @message.events.reverse.find { |e| %w[held bot_shield].include?(e.kind) } %>
+  <div id="am-hold" class="border border-subtle rounded p-3 mb-4 text-sm" data-hold-kind="<%= hold&.kind %>">
     <p class="mb-2"><span class="font-semibold">Held, not answered.</span>
-      <%= hold&.detail&.dig("reason") || "The sender's role is not answered (config/agent_answerers.yml)." %>
+      <% if hold&.kind == "bot_shield" %>
+        The bot shield held it (<%= hold.detail.to_h["reason"] %>): it was sent <%= @message.envelope.to_h["signed_in"] ? "signed in" : "signed out" %>, and the browser proof failed.
+      <% else %>
+        <%= hold&.detail&.dig("reason") || "The sender's role is not answered (config/agent_answerers.yml)." %>
+      <% end %>
       Releasing it hands this one message to the agent, which answers it like any other.</p>
     <%= button_to "Release and answer", release_hold_admin_agent_message_path(@message), method: :post,
           form: { data: { turbo_confirm: "Release this held message? The agent will answer it." } },

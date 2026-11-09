@@ -52,6 +52,21 @@ async function adminToken(browser) {
 // sends it. A leftover alex row from another spec is answered and passed over.
 // With `phases`, it first pulses thinking, then typing, and the pending turn's
 // poll shows each in turn (the dispatcher reads them off Claude's stream).
+// Why the server held a /build turn, read as an admin in a context of its own (the
+// page under test may be the one that lost its session). The admin page names the
+// writer: the bot shield and its reason, or the answerers' role line. A failing
+// spec prints it, so the red carries its cause (task build-funnel-held-message-cause).
+async function heldReason(browser, turn) {
+  const id = (await turn.getAttribute("id")).replace("build-turn-", "");
+  const context = await browser.newContext();
+  const admin = await context.newPage();
+  await loginWithMagicLink(admin, "alex@test.com");
+  await admin.goto(`/admin/agent_messages/${id}`);
+  const reason = (await admin.locator("#am-hold").innerText()).replace(/\s+/g, " ").trim();
+  await context.close();
+  return `message ${id} came back held: ${reason}`;
+}
+
 async function rayAnswers(page, auth, content, text, card, { phases = false } = {}) {
   const worker = `e2e-build-${Date.now()}`;
   for (let i = 0; i < 10; i += 1) {
@@ -563,7 +578,7 @@ test("leaving /build by a Turbo visit after the first message and coming back ne
   expect(pageErrors, report()).toHaveLength(0);
 });
 
-test("on a phone an admin names a showcase app: full-width field, pasted address cleaned, queued", async ({ page }) => {
+test("on a phone an admin names a showcase app: full-width field, pasted address cleaned, queued", async ({ page, browser }) => {
   await page.setViewportSize({ width: 360, height: 780 });
   await loginWithMagicLink(page, "alex@test.com");
   const onboarding = page.getByRole("dialog", { name: "onboarding first name" });
@@ -581,9 +596,17 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
     await page.getByLabel("Tell Alex what you want to build").fill(`Rebuild of my old ${name} app`);
     await page.getByLabel("Tell Alex what you want to build").press("Enter");
     await expect(page).toHaveURL(/\/build\/[A-Za-z0-9_-]{10,}$/);
+    // The turn the create response drew carries the status the server stored. A held
+    // one is a red with a cause: print the server's own reason for it.
+    const turn = page.locator("[data-test='build-turn']");
+    await expect(turn, "the first message drew one turn").toHaveCount(1);
+    if ((await turn.getAttribute("data-status")) === "held") throw new Error(await heldReason(browser, turn));
     // An admin skips the checklist through the name step under the chat. The claim is
     // drawn by the first message's stream for an admin session only, so its absence is
     // named here rather than read as a 30s click timeout (7 CI reds at the click).
+    // Those reds had one cause: the cursor left on the first claim's button rested
+    // on the menu's Log out, and Turbo's hover prefetch of GET /logout signed the
+    // browser out (e2e/sign_out_prefetch.spec.js; task build-funnel-held-message-cause).
     const claim = page.locator("[data-test='build-admin-claim']");
     await expect(claim, "the draft's chat was drawn for an admin session").toHaveCount(1);
     await claim.locator("summary").click();

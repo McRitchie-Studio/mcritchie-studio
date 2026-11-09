@@ -148,4 +148,18 @@ class Admin::AgentMessagesControllerTest < ActionDispatch::IntegrationTest
     get admin_agent_messages_path(channel: "email")
     assert_select "#am-rows tbody tr", 2
   end
+
+  # A /build row the bot shield held (BuildIntake::Ingest) names the shield and how
+  # it was sent, not the answerers' role line: the e2e spec reads this when an
+  # admin's /build turn comes back held (task build-funnel-held-message-cause).
+  test "a bot-shield hold names the shield, its reason and that it was sent signed out" do
+    request = AppRequest.create!(prompt: "a held build")
+    message = BuildIntake::Ingest.new(request: request).call("a held build", bot_reason: "too_fast")
+
+    log_in_as(admin)
+    get admin_agent_message_path(message)
+    assert_response :success
+    assert_select "#am-hold[data-hold-kind=bot_shield]", /bot shield held it \(too_fast\): it was sent signed out/
+    assert_select "#am-hold", { text: /role .* is not answered/, count: 0 }
+  end
 end
