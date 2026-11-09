@@ -47,17 +47,35 @@ class DigestedAssetCacheTest < ActiveSupport::TestCase
   # [integration] Through the real stack: ActionDispatch::Static serves the file
   # from public/assets, and the header that reaches the client is the year.
   class ThroughStaticTest < ActionDispatch::IntegrationTest
+    # Parallel workers share public/assets: one worker's teardown could remove
+    # the folder between another's mkdir and write (ENOENT, engine consumer CI
+    # run 42706278471). One lock holds each create-and-write and each
+    # delete-and-remove whole.
+    LOCK = Rails.root.join("tmp/digested-asset-cache-probe.lock")
+
+    def self.locked
+      FileUtils.mkdir_p(LOCK.dirname)
+      File.open(LOCK, File::RDWR | File::CREAT) do |lock|
+        lock.flock(File::LOCK_EX)
+        yield
+      end
+    end
+
     setup do
       @file = Rails.root.join("public/assets/digested-asset-cache-probe-#{SecureRandom.hex(4)}.txt")
-      @made_dir = !@file.dirname.exist?
-      FileUtils.mkdir_p(@file.dirname)
-      File.write(@file, "probe")
+      self.class.locked do
+        FileUtils.mkdir_p(@file.dirname)
+        File.write(@file, "probe")
+      end
     end
 
     # Leave public/ as it was: a stray public/assets breaks a release check.
+    # The folder goes only when the last probe leaves it empty.
     teardown do
-      FileUtils.rm_f(@file)
-      Dir.rmdir(@file.dirname) if @made_dir && Dir.empty?(@file.dirname)
+      self.class.locked do
+        FileUtils.rm_f(@file)
+        Dir.rmdir(@file.dirname) if @file.dirname.exist? && Dir.empty?(@file.dirname)
+      end
     end
 
     test "a digested file served from public/assets carries a year" do
@@ -74,5 +92,28 @@ class DigestedAssetCacheTest < ActiveSupport::TestCase
         refute_match(/max-age=31536000/, response.headers["cache-control"].to_s, path)
       end
     end
+  end
+end
+
+# [unit] The probe lock is exclusive: while one probe is between its mkdir and
+# its write, no other worker can take the lock, so no teardown can remove the
+# folder under it.
+class DigestedAssetCacheProbeLockTest < ActiveSupport::TestCase
+  test "no other worker can take the probe lock inside a probe's setup" do
+    inside = Queue.new
+    go = Queue.new
+    holder = Thread.new do
+      DigestedAssetCacheTest::ThroughStaticTest.locked do
+        inside << true
+        go.pop
+      end
+    end
+    inside.pop
+    File.open(DigestedAssetCacheTest::ThroughStaticTest::LOCK, File::RDWR | File::CREAT) do |other|
+      refute other.flock(File::LOCK_EX | File::LOCK_NB), "a second worker took the lock while a probe held it"
+    end
+  ensure
+    go&.push(true)
+    holder&.join
   end
 end
