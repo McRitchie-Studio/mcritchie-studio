@@ -177,11 +177,18 @@ module KeepAwake
     # Hang windows from rows: a run of hung probes. "start" is the first hung
     # probe, "last_hung" the last, "answered" the next probe that op answered
     # (nil while the hang is open). "minutes" is start to last_hung: the time a
-    # hang is PROVEN, not guessed. Any answer, ok or fail, closes a window.
-    def windows(rows)
+    # hang is PROVEN, not guessed. Any answer, ok or fail, closes a window, and so
+    # does a gap longer than one cadence plus a deadline (the hold ended): the next
+    # hold's hang is a new window, with its own note.
+    def windows(rows, env = ENV)
+      gap = (every(env) || EVERY) + deadline(env)
       out = []
       open = nil
       rows.each do |row|
+        if open && Time.parse(row["ts"]) - Time.parse(open["last_hung"]) > gap
+          out << finish(open.merge("answered" => nil))
+          open = nil
+        end
         if row["outcome"] == HUNG
           open ||= { "start" => row["ts"], "probes" => 0, "idle_at_start" => row["idle_seconds"] }
           open["last_hung"] = row["ts"]
@@ -204,7 +211,7 @@ module KeepAwake
     # What `keep-awake status` shows: the last probe and the latest hang window.
     def summary(env = ENV)
       all = rows(env)
-      { "last" => all.last, "hang" => windows(all).last, "every_seconds" => every(env) }
+      { "last" => all.last, "hang" => windows(all, env).last, "every_seconds" => every(env) }
     rescue StandardError
       { "last" => nil, "hang" => nil, "every_seconds" => nil }
     end
@@ -289,7 +296,7 @@ module KeepAwake
       # The marker lives in a file, not in memory, so a supervisor that
       # restarts in the middle of a hang does not post the same note again.
       def note_long_hang
-        window = OpProbe.windows(OpProbe.rows(@env)).last
+        window = OpProbe.windows(OpProbe.rows(@env), @env).last
         message = OpProbe.note_for(window, @env)
         return unless message && OpProbe.noted_start(@env) != window["start"]
 

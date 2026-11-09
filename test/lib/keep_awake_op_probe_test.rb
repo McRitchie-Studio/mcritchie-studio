@@ -135,6 +135,15 @@ class KeepAwakeOpProbeTest < Minitest::Test
     assert_equal 0, open["minutes"]
   end
 
+  # Two holds, a day apart, both hung: two windows, so the second hang gets its note.
+  def test_unit_a_gap_between_holds_starts_a_new_window
+    rows = rows("hung", "hung", "hung") + rows("hung").map { |r| r.merge("ts" => (T0 + 86_400).iso8601) }
+    windows = KeepAwake::OpProbe.windows(rows, {})
+
+    assert_equal [T0.iso8601, (T0 + 86_400).iso8601], windows.map { |w| w["start"] }
+    assert_nil windows.first["answered"]
+  end
+
   def test_unit_note_only_for_an_open_hang_of_ten_minutes_or_more
     short = KeepAwake::OpProbe.windows(rows("hung", "hung")).last
     long = KeepAwake::OpProbe.windows(rows("hung", "hung", "hung")).last
