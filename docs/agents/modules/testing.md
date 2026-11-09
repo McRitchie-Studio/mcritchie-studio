@@ -31,7 +31,7 @@ checks to `checks_run` as each stage completes.
 | Production smoke | Production URL | No by default | N/A | G4 Ship (the seal — non-blocking) | After approved production deploy; verifies health and key read-only routes |
 | UI budget | Production public pages, signed out | No (GET only) | No | — | Nightly, `.github/workflows/ui-budget.yml`. `bin/ui-budget --collect` measures every page in `config/ui_budget.yml` at 390 and 1280 (axe, JS, third-party JS, phone weight, image size, HTML, CSS, asset cache) and reports over budget without failing (the ceilings are not ratified yet); it fails only when a page goes unmeasured or the collector crashes. An OVER row or a failure opens a "UI budget over: <date>" issue and the next clean night closes it. A scheduled run never gates a ship: `CiStatus.for_sha` leaves out a run proven schedule-triggered. One page by hand: `bin/ui-budget --collect --only <url>` |
 | Nightly/deep | Dedicated local/QA/devnet target | Often yes | No | — | devnet/on-chain and longer seeded workflows. **No browser matrix exists** — Playwright is Chromium-only in every repo — and no workflow runs the devnet specs: the devnet signal is the per-release `contest-rehearsal` gauntlet against QA, recorded on the release by `qa-release`. Treat this row as a *target shape*, not as coverage you have |
-| Quarantine | Any | Varies | No until fixed | — | Known flaky or unrelated checks that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
+| Quarantine | Any | Varies | No until fixed | — | Unrelated checks with a named cause (an open `ci-cause-*` card) that still matter but should produce follow-up tasks instead of blocking unrelated PRs |
 
 ### Where the hub's CI lanes live
 
@@ -320,7 +320,7 @@ If a lane fails, record the classification in task `qa_feedback`:
 
 - real regression
 - unrelated existing failure
-- flaky infrastructure
+- infra or harness cause (named, with its `ci-cause-*` card)
 - stale branch
 - missing seed or test data
 - dependency ordering issue
@@ -968,7 +968,7 @@ UI, ERB, CSS and browser-verification traps live in
 - A spawned interactive shell (`zsh -i`, `bash -i`) writes the operator's real history; set `ZDOTDIR` and `HISTFILE` to the sandbox.
 - A Node shim must use `Object.defineProperty(globalThis, "navigator", …)` and check that it took; plain assignment is a no-op where `navigator` is built in.
 - `playwright.config.js` binds `E2E_PORT`, default 3000, and adopts any server already listening there, so pass a free port and restart the server after a view edit. A spec owns its fixtures: mint rows through the board API (`meta[name=e2e-api-token]`) and delete them in a `finally`, because a card added to `e2e/seed.rb` changes the input of specs that measure the board.
-- A red that errors before its assertion, in machinery the diff cannot reach, is environmental; a `result not reported` with no backtrace is a dead worker. Say both halves before re-running. A flake whose failure looks like its subject is urgent: wait on a postcondition, never a sleep.
+- A red that errors before its assertion, in machinery the diff cannot reach, is environmental; a `result not reported` with no backtrace is a dead worker. Say both halves and file the cause; never re-run it to get a green. A red then green whose failure looks like its subject is urgent: wait on a postcondition, never a sleep.
 
 ## A Red Then Green Is A Defect With A Cause
 

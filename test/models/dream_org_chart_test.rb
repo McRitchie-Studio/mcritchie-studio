@@ -102,8 +102,8 @@ class DreamOrgChartTest < ActiveSupport::TestCase
 
     assert_equal files, chart.dreams.size, "a tracked dream failed to parse"
     assert chart.columns.flat_map(&:sops).any?, "the registry produced no soul SOPs"
-    qa = chart.columns.flat_map(&:sops).find { |sop| sop.invocation == "qa-release" }
-    assert_includes qa.steps.map(&:step), "prepare", "a live step dream shows under its live SOP"
+    clean = chart.columns.flat_map(&:sops).find { |sop| sop.invocation == "clean-infra" }
+    assert_includes clean.steps.map(&:step), "reclaim", "a live step dream shows under its live SOP"
   end
 
   private

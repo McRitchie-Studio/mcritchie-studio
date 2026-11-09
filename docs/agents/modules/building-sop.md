@@ -261,7 +261,8 @@ bin/fast-check <slug>          # diff-mapped tests + core spine + rubocop + the 
 
 It records nothing; the PR's settled green CI is the verdict. But a red lane here
 almost always means a red CI ten minutes later, so **a red pre-flight stops the
-push**. If the red is unrelated to your diff (a known-flaky lane), push anyway with
+push**. If the red is unrelated to your diff (a named cause outside it, such as an
+open `ci-cause-*` card), push anyway with
 `bin/submit <slug> --skip-preflight` and let CI decide.
 
 Before that, at 0/8, `bin/submit` runs `bin/dor-check <slug> --precheck`: every DoR

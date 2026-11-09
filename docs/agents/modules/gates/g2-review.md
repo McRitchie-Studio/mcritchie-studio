@@ -252,10 +252,12 @@ Gate-zero reads CI for you. When you read it yourself:
   reach the change, `test/docs` above all. `MERGEABLE` speaks about text only.
 - **Check whose run is red** (`gh run view <id> --json headSha` against the head
   from `gh pr view <n> --json headRefOid`, never from a handoff; key a watcher on that
-  SHA). A red spec the diff cannot reach that fails on other PRs is a shared flake.
-- **Parse `gh` as JSON; a running check has `conclusion: ""`.** Read a run before
-  re-running it (`gh run rerun` overwrites its logs), never on `accepted`, `release`
-  or `main`; for a receipt guard re-run the whole workflow, not `--failed`.
+  SHA). A red spec the diff cannot reach that fails on other PRs is a shared defect:
+  name its cause and find or file its `ci-cause-*` card.
+- **Parse `gh` as JSON; a running check has `conclusion: ""`.** On a red, read the
+  failed job's log and name the cause (infra, harness, test or product). Never re-run
+  a red to get a green (`gh run rerun` also overwrites the logs that hold the cause):
+  the builder fixes forward with a push, or the cause gets its card.
 - **An Actions outage reads as red CI** (a `startup_failure`, jobs failed while
   queued): check githubstatus.com first. Only `status: COMPLETED` is settled.
 - **Run `bin/task bounces <slug>` yourself**; a relayed breaker state is stale.

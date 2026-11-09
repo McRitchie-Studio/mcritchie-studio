@@ -461,7 +461,14 @@ class DreamBankTest < Minitest::Test
     steps = DreamBank.all.select(&:step?).to_h { |dream| [ dream.slug, [ dream.sop, dream.step ] ] }
     assert_equal %w[building-sop begin], steps["pass-the-author-at-begin"]
     assert_equal %w[clean-infra reclaim], steps["reclaim-desks-held-only-by-test-artifacts"]
-    assert_equal %w[qa-release prepare], steps["rerun-the-whole-run-before-ejecting"]
+  end
+
+  # Alex McRitchie dropped this dream in chat on 2026-11-08 ("Good call on the dream"):
+  # a same-SHA red then green is a defect with a cause, never a re-run.
+  def test_unit_the_retired_rerun_dream_stays_out_of_the_bank
+    slugs = DreamBank.all.map(&:slug)
+    assert_includes slugs, "pass-the-author-at-begin", "control: the real bank was read"
+    refute_includes slugs, "rerun-the-whole-run-before-ejecting"
   end
 
   def test_unit_index_matches_generator
