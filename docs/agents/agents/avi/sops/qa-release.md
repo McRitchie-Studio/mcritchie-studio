@@ -327,7 +327,9 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    3-attempt backoff (see CONSUMER LOCK BUMP). The same commit carries any new **engine
    migrations** (`<engine>:install:migrations` plus `db:migrate` against a throwaway
    database so `db/schema.rb` lands); a failed probe, an unexpected schema rewrite, or an
-   underivable throwaway database ABORTS. The gate and QA then read the post-bump SHA.
+   underivable throwaway database ABORTS. The one rewrite it tolerates is a
+   same-name `t.check_constraint` that Postgres, asked on the throwaway database,
+   deparses to the same text (a re-printed cast, not a changed meaning). The gate and QA then read the post-bump SHA.
    A gem repo's own lock (studio-engine locks solana-studio) is not touched here: the
    ship bumps it, to the final.
 

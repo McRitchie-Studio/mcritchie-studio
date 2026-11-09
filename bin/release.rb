@@ -8736,7 +8736,14 @@ def dump_consumer_schema!(workspace, repo)
            "otherwise land unrun and every suite would fail on a pending migration") unless created
 
     diff, = git_capture("-C", workspace, "diff", "--", "db/schema.rb")
-    unless Release::EngineMigrationInstall.schema_dump_safe?(diff)
+    old_schema, = git_capture("-C", workspace, "show", "HEAD:db/schema.rb")
+    new_schema = File.exist?(File.join(workspace, "db/schema.rb")) ? File.read(File.join(workspace, "db/schema.rb")) : ""
+    # A check constraint Postgres re-printed after the load is tolerated only on
+    # Postgres's own word, asked of this same throwaway database. SQLite (no URL)
+    # gets no callable, so any rewritten line there still refuses.
+    equivalent = url && ->(table:, old_expr:, new_expr:) { check_constraints_equivalent?(url, table, old_expr, new_expr) }
+    unless Release::EngineMigrationInstall.schema_dump_safe?(diff, old_schema: old_schema, new_schema: new_schema,
+                                                                   equivalent: equivalent)
       abort!("#{repo}: refreshing db/schema.rb removed or rewrote existing schema, not just the new table. " \
              "That means this repo's committed schema was already behind its own migrations; fix that in the " \
              "repo, then re-run `bin/release prepare`.\n#{diff}")
@@ -8746,6 +8753,25 @@ def dump_consumer_schema!(workspace, repo)
     # workspace file, which dies with the workspace.
     sh("bin/rails", "db:drop", chdir: workspace, env: env, capture: true) if url
   end
+end
+
+# Ask Postgres, on the throwaway database `url` names, whether two spellings of a
+# check constraint on `table` settle on the same deparsed text
+# (Release::EngineMigrationInstall.check_equivalence_statements). psql, not the pg
+# gem: this script loads no bundle. Any failure (psql missing, an expression that
+# does not parse, a table not found) reads as NOT equivalent.
+def check_constraints_equivalent?(url, table, old_expr, new_expr)
+  script = Release::EngineMigrationInstall.check_equivalence_script(table: table, old_expr: old_expr, new_expr: new_expr)
+  Dir.mktmpdir("release-schema-eq") do |dir|
+    path = File.join(dir, "equivalence.sql")
+    File.write(path, script)
+    out, ok = sh("psql", url, "-X", "-q", "-At", "-v", "ON_ERROR_STOP=1", "-f", path, capture: true)
+    verdict = Release::EngineMigrationInstall.equivalence_verdict(ok: ok, output: out)
+    say("  check constraint on #{table}: Postgres reads both spellings #{verdict ? 'the same' : 'differently'}")
+    verdict
+  end
+rescue ArgumentError
+  false
 end
 
 # Bump each consumer's Gemfile.lock (and, only when the new version ESCAPES the
