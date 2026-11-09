@@ -29,6 +29,11 @@ class KeepAwakeCommandTest < Minitest::Test
       while kill -0 $PPID 2>/dev/null; do sleep 0.1; done
     SH
     @notifier = stub("notify", %(printf '%s|%s\\n' "$1" "$2" >> #{@notify_log}))
+    # The supervisor's 1Password probe: a stub `op` and `ioreg`, so no test ever
+    # runs the real CLI or spends a read of the account quota.
+    @op_log = File.join(@root, "op.log")
+    @op = stub("op", %([ "$OP_CACHE" = false ] && echo "cache-off $*" >> #{@op_log}))
+    @ioreg = stub("ioreg", %(echo '"HIDIdleTime" = 125000000000'))
   end
 
   def teardown
@@ -57,6 +62,10 @@ class KeepAwakeCommandTest < Minitest::Test
       "MCR_KEEP_AWAKE_NOTIFIER" => @notifier,
       "MCR_KEEP_AWAKE_INDICATOR" => "0",
       "MCR_KEEP_AWAKE_TICK" => "0.2",
+      "MCR_KEEP_AWAKE_OP" => @op,
+      "MCR_KEEP_AWAKE_IOREG" => @ioreg,
+      "MCR_OP_READS_LOG" => File.join(@root, "op-reads.log"),
+      "OP_SERVICE_ACCOUNT_TOKEN" => nil,
       "TASK_USAGE_SANDBOX" => "1"
     )
   end
@@ -190,5 +199,23 @@ class KeepAwakeCommandTest < Minitest::Test
     assert_equal 2, code
     assert_match(/--reason is required/, out)
     assert_empty caffeinate_pids
+  end
+
+  def test_integration_supervisor_probes_op_and_status_prints_it
+    _, code = run_cli("start", "--by", "pokemon-a", "--reason", "watch op")
+    assert_equal 0, code
+    probe_log = File.join(@state, "op-probe.log")
+    wait_for { File.exist?(probe_log) && !File.read(probe_log).empty? }
+
+    assert_equal "cache-off whoami", File.read(@op_log).lines.first.strip
+    out, code = run_cli("status")
+    assert_equal 0, code, out
+    assert_match(/op probe: last \d\d:\d\d \S+ ok in [\d.]+s, user idle 2m\./, out)
+    reads = File.read(File.join(@root, "op-reads.log")).lines.map { |l| l.split("\t").values_at(1, 2, 3, 4) }
+    assert_includes reads, %w[keep-awake whoami ok keep-awake], "bin/op-reads must count the probe"
+
+    json, = run_cli("status", "--json", stdout_only: true)
+    assert_equal "ok", JSON.parse(json).dig("op_probe", "last", "outcome")
+    run_cli("stop", "--by", "pokemon-a")
   end
 end
