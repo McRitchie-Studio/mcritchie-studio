@@ -1,6 +1,7 @@
 require "minitest/autorun"
 require "open3"
 require "tmpdir"
+require "fileutils"
 
 # The engine-migration install, driven for real: the SHELL half of the step after a gem
 # publish. Never read ANY non-zero exit from `bin/rails -T <task>` as "not an engine": on a
@@ -112,5 +113,54 @@ class ReleaseEngineMigrationInstallTest < Minitest::Test
     assert_includes out, "installed 1 engine migration(s)", "and say what it installed"
     assert_includes out, "RAN: bin/rails db:create db:schema:load db:migrate",
                     "the schema is refreshed in the same pass"
+  end
+
+  # A re-printed check constraint, through the REAL dump function. The psql verdict
+  # is stubbed; the model test proves what Postgres answers. Here: psql is asked of
+  # the throwaway database, and a SQLite app gets no callable at all.
+  OLD_CHECK = %(    t.check_constraint "role::text = ANY (ARRAY['viewer'::character varying, 'admin'::character varying]::text[])", name: "users_role_known"\n)
+  NEW_CHECK = %(    t.check_constraint "role::text = ANY (ARRAY['viewer'::character varying::text, 'admin'::character varying::text])", name: "users_role_known"\n)
+
+  def dump_stub(url)
+    schema = ->(check) { %(  create_table "users", force: :cascade do |t|\n#{check}  end\n) }
+    <<~RUBY
+      def gate_env(_repo, role: "gate") = {}
+      def gate_database_url(_repo, role: "gate") = #{url.inspect}
+      def sh(*a, **k)
+        cmd = a.reject { |x| x.is_a?(Hash) }.join(" ")
+        $stdout.puts("RAN: \#{cmd}")
+        cmd.start_with?("psql") ? ["t\\n", true] : ["", true]
+      end
+      def git_capture(*a)
+        j = a.join(" ")
+        return [#{"-#{OLD_CHECK}+#{NEW_CHECK}".inspect}, true] if j.include?(" diff ")
+        return [#{schema.call(OLD_CHECK).inspect}, true] if j.include?(" show ")
+        ["", true]
+      end
+    RUBY
+  end
+
+  def run_dump(url)
+    Dir.mktmpdir do |ws|
+      FileUtils.mkdir_p(File.join(ws, "db"))
+      File.write(File.join(ws, "db/schema.rb"), %(  create_table "users", force: :cascade do |t|\n#{NEW_CHECK}  end\n))
+      run_release(dump_stub(url), %{dump_consumer_schema!(#{ws.inspect}, "turf-monster"); puts("RETURNED")})
+    end
+  end
+
+  def test_a_reprinted_check_constraint_is_asked_of_the_throwaway_database
+    out = run_dump("postgres://localhost/turf_monster_test")
+
+    assert_match %r{RAN: psql postgres://localhost/turf_monster_release_schema_\d+ }, out,
+                 "psql must run against the throwaway database, never the gate's: #{out}"
+    refute_includes out, "RAN: psql postgres://localhost/turf_monster_test", out
+    assert_includes out, "RETURNED", "a 't' verdict lets the dump through: #{out}"
+  end
+
+  def test_a_sqlite_app_gets_no_equivalence_and_still_aborts
+    out = run_dump(nil)
+
+    refute_includes out, "RAN: psql", "no URL, no psql: #{out}"
+    assert_includes out, "ABORTED", "the same rewrite still refuses without Postgres's word: #{out}"
   end
 end
