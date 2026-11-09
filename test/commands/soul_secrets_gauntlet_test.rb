@@ -1,17 +1,10 @@
 # frozen_string_literal: true
 
-# [integration] The devnet gauntlet reads its wallets from Avi's soul set
-# (soul-secret-sets). bin/release.rb is loaded in a child process; its prepare
-# step warms Avi's set with a stub `op` that answers, then the stub is rewritten
-# to HANG, and the gauntlet step runs a stand-in driver that does exactly what
-# turf-monster's KeyStore does: `op item get <title> --vault studio-agents
-# --format json`, with `op` resolved on PATH.
-#
-# Without the fix the driver's `op` is the hanging stub and the step is killed at
-# its deadline. With it, bin/shims/op-cache/op answers from the cache and the
-# stalled op is never called. FAKE values only; no real 1Password read, and never
-# the operator's real <projects>/.secret-cache (CLAUDE_PROJECTS_DIR is a tmpdir,
-# the sandbox is armed).
+# [integration] The devnet gauntlet reads its wallets from Avi's soul set. Prepare
+# warms the set with a stub `op`, the stub then HANGS, and a stand-in driver runs
+# KeyStore's own `op item get <title> --vault studio-agents --format json` from PATH.
+# Red without bin/shims/op-cache: the step is killed at its deadline. FAKE values
+# only; CLAUDE_PROJECTS_DIR is a tmpdir and the sandbox is armed.
 #
 #   ruby -Itest test/commands/soul_secrets_gauntlet_test.rb
 
