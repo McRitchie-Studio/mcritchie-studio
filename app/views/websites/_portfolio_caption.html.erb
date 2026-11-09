@@ -1,11 +1,13 @@
 <%# The /websites row's caption for one app: its name, its host and its blurb.
     studio/_carousel writes one per slide (caption:) and shows only the open
-    slide's, under the row, so the words change as the row moves. It is plain
-    text: the carousel's status line already says which app is open, so the
-    caption is never a live region. %>
+    slide's, under the row, so the words change as the row moves. The name is
+    the open app's h2 (type-h2, Alex McRitchie, 2026-11-08); the other slides'
+    captions are visibility: hidden (build_cards.css, portfolio-row), so the
+    heading outline and a screen reader meet one h2, the open app's. It is not a
+    live region: the carousel's status line already says which app is open. %>
 <% host = (URI.parse(example.url).host rescue nil) || example.url %>
-<span class="block text-center" data-test="portfolio-caption">
-  <span class="block text-lg font-bold text-heading leading-7" data-test="build-example-name"><%= example.name %></span>
-  <span class="block font-mono text-xs text-secondary leading-5" data-test="build-example-host"><%= host %></span>
+<div class="text-center" data-test="portfolio-caption">
+  <h2 class="type-h2 text-heading" data-test="build-example-name"><%= example.name %></h2>
+  <span class="block mt-1 font-mono text-xs text-secondary leading-5" data-test="build-example-host"><%= host %></span>
   <span class="block mt-1 text-sm text-secondary leading-5" data-test="build-example-blurb"><%= example.blurb %></span>
-</span>
+</div>

@@ -4,7 +4,6 @@
 <section class="max-w-3xl mx-auto px-4 text-center section-padding">
   <h1 class="text-4xl font-extrabold text-heading tracking-tight">Portfolio</h1>
   <p class="text-secondary text-lg mt-4 leading-relaxed">Real apps, live today. Open one and look around.</p>
-  <%= link_to "Build yours", build_path, class: "btn btn-primary mt-6" %>
 </section>
 
 <%# The apps ride the engine's carousel (studio/_carousel), the apps' standard for a
@@ -15,17 +14,22 @@
     Each slide is the app's still and nothing else; the name, host and blurb are
     the caption (websites/_portfolio_caption), which both styles show under the
     open slide only, so it changes as the row moves (Alex McRitchie, 2026-11-08).
-    The card is websites/_portfolio_card; /build keeps its own gallery card.
+    The card is websites/_portfolio_card; /build keeps its own gallery card. The open
+    app's card wears a violet ring (portfolio-row, app/assets/tailwind/build_cards.css).
     Autoplay and loop (Alex McRitchie, 2026-11-06) are the engine's: the row asks for
     them through carousel_optional_locals, which passes only the locals the installed
     studio/_carousel declares, so the page autoplays once the engine that has them
     (task carousel-autoplay-and-loop) is installed. %>
 <div class="max-w-5xl mx-auto px-4" style="padding-bottom: 4rem;">
   <%= render layout: "studio/carousel",
-        locals: { label: "Live apps", items: @examples, per_view: 3, id: "websites-apps", style: portfolio_carousel_style,
+        locals: { label: "Live apps", items: @examples, per_view: 3, id: "websites-apps", style: portfolio_carousel_style, class_name: "portfolio-row",
                   slide_label: ->(example) { example.name },
                   caption: ->(example) { render("websites/portfolio_caption", example: example) }, data: { test: "websites-carousel" } }
                   .merge(carousel_optional_locals(autoplay: 6, loop: true)) do |example| %>
     <%= render "websites/portfolio_card", example: example %>
   <% end %>
+  <%# Under the row and its controls, centred (Alex McRitchie, 2026-11-08). %>
+  <div class="mt-8 text-center">
+    <%= link_to "Build yours", build_path, class: "btn btn-primary", data: { test: "websites-build-cta" } %>
+  </div>
 </div>

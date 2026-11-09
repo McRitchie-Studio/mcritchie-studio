@@ -29,8 +29,12 @@ const OPEN_CAPTION = `${ROW} .carousel-slide[data-current] [data-test='portfolio
 
 // The names on the captions a visitor can see: the open slide's only.
 const shownCaptions = (page) => page.locator(`${ROW} .carousel-caption`).evaluateAll((all) =>
-  all.filter((caption) => getComputedStyle(caption).opacity !== "0" && caption.getBoundingClientRect().height > 0)
+  all.filter((caption) => getComputedStyle(caption).opacity !== "0" && getComputedStyle(caption).visibility !== "hidden" && caption.getBoundingClientRect().height > 0)
     .map((caption) => caption.querySelector("[data-test='build-example-name']").textContent.trim()));
+
+// The level-2 headings the accessibility tree holds for the row: the open app's caption only.
+const rowHeadings = async (page) => (await page.locator(ROW).ariaSnapshot()).split("\n")
+  .map((line) => line.match(/heading "(.*)" \[level=2\]/)).filter(Boolean).map((match) => match[1]);
 
 // The first opaque background colour behind an element, else the page's.
 const backdropOf = (locator) => locator.evaluate((element) => {
@@ -49,6 +53,8 @@ async function measureCards(browser, scheme) {
   const errors = watchPageErrors(page);
   await blockThirdPartyRequests(page);
   await page.goto("/websites");
+  // The hub's theme is the dark class on <html>, not the browser's scheme.
+  await page.evaluate((dark) => document.documentElement.classList.toggle("dark", dark), scheme === "dark");
   expect(await page.evaluate(() => window.innerWidth)).toBe(1400);
   // Real slides only: the spotlight's visual wrap adds aria-hidden copies at the seam.
   const cards = page.locator(`${ROW} .carousel-slide:not([aria-hidden='true']) [data-portfolio-card]`);
@@ -73,6 +79,9 @@ async function measureCards(browser, scheme) {
 
   await expect.poll(() => shownCaptions(page)).toHaveLength(1);
   const [opened] = await shownCaptions(page);
+  // One h2 in the outline, the open app's, though every slide renders a caption.
+  await expect.poll(() => rowHeadings(page)).toEqual([opened]);
+  expect(await page.getByRole("heading", { level: 1 }).allTextContents()).toEqual(["Portfolio"]);
   const caption = page.locator(OPEN_CAPTION);
   const backdrop = parse(await backdropOf(caption)).slice(0, 3);
   for (const hook of ["build-example-name", "build-example-host", "build-example-blurb"]) {
@@ -80,9 +89,27 @@ async function measureCards(browser, scheme) {
     expect(contrast(parse(colour).slice(0, 3), backdrop), `${opened} ${hook} ${colour} on the page`).toBeGreaterThanOrEqual(4.5);
   }
 
+  // The open app's card wears the violet ring (2px, then a glow); a side card does not.
+  const ring = (selector) => page.locator(`${ROW} ${selector} .portfolio-card`).first().evaluate((card) => getComputedStyle(card).boxShadow);
+  await expect.poll(() => ring(".carousel-slide[data-current]")).toMatch(/0px 0px 0px 2px/);
+  expect(await ring(".carousel-slide:not([data-current]):not([aria-hidden='true'])"), "a side card has no ring").not.toMatch(/0px 0px 0px 2px/);
+
   await page.locator(ROW).getByRole("button", { name: "Next slide", exact: true }).click();
   await expect.poll(async () => (await shownCaptions(page)).join()).not.toBe(opened);
   expect(await shownCaptions(page), "one caption at a time").toHaveLength(1);
+  await expect.poll(() => rowHeadings(page), "the h2 follows the row").toEqual(await shownCaptions(page));
+  await expect.poll(() => ring(".carousel-slide[data-current]"), "the ring follows the row").toMatch(/0px 0px 0px 2px/);
+  // Keyboard focus is its own outline, outside the ring.
+  await page.locator(`${ROW} .carousel-slide[data-current] .portfolio-card`).focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  const focus = await page.evaluate(() => { const style = getComputedStyle(document.activeElement); return { style: style.outlineStyle, offset: style.outlineOffset }; });
+  expect(focus, "focus is a solid outline 4px outside the ring").toEqual({ style: "solid", offset: "4px" });
+  // Build yours sits under the row's controls, centred (Alex McRitchie, 2026-11-08).
+  const controls = await page.locator(`${ROW} .carousel-controls`).boundingBox();
+  const cta = await page.locator("[data-test='websites-build-cta']").boundingBox();
+  expect(cta.y, "Build yours is below the arrows and dots").toBeGreaterThanOrEqual(controls.y + controls.height);
+  expect(Math.abs(cta.x + cta.width / 2 - 700), "Build yours is centred").toBeLessThanOrEqual(2);
   expect(errors.pageErrors, errors.report()).toEqual([]);
   await context.close();
 }

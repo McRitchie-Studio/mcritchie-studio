@@ -155,6 +155,35 @@
               0 0 18px 2px color-mix(in srgb, var(--pc-primary) 35%, transparent);
 }
 
+/* The open app's ring (Alex McRitchie, 2026-11-08: "give the selected a border so
+   it stands out"): a 2px ring of the brand violet and a soft glow of the same hue
+   on the front card only, keyed on the slide the carousel marks open
+   (data-current, on the cascade and the spotlight alike). A box-shadow, so it
+   follows the rounded corners and moves no layout; it fades in as a card comes
+   to the front and out as it leaves. Keyboard focus is a separate outline in the
+   text colour, 4px outside the ring, so the two never read as one. */
+.portfolio-row .carousel-slide[data-current] .portfolio-card {
+  box-shadow: 0 0 0 2px rgb(var(--color-primary-500-rgb, 139 92 246)),
+              0 0 24px 4px rgb(var(--color-primary-500-rgb, 139 92 246) / .45);
+}
+.portfolio-row .portfolio-card { transition: box-shadow 300ms ease; }
+.portfolio-row .portfolio-card:focus-visible {
+  outline: 2px solid var(--color-text);
+  outline-offset: 4px;
+}
+
+/* Every slide carries its caption, and the engine fades all but the open one's
+   to opacity 0, which leaves them in the accessibility tree. Hidden here too,
+   after the fade, so the outline holds one h2 (the open app's) and a screen
+   reader reads one caption. The space stays, so the row never changes height. */
+.portfolio-row .carousel-slide .carousel-caption { transition: opacity 300ms ease, visibility 0s; }
+.portfolio-row .carousel-slide:not([data-current]) .carousel-caption {
+  visibility: hidden;
+  transition: opacity 300ms ease, visibility 0s linear 300ms;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .portfolio-card { transition: none; }
+  .portfolio-card,
+  .portfolio-row .portfolio-card,
+  .portfolio-row .carousel-slide .carousel-caption { transition: none; }
 }

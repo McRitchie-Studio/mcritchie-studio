@@ -47,6 +47,18 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='websites-grid']", count: 0
   end
 
+  # Alex McRitchie, 2026-11-08: "Build yours" moved from the intro to under the row.
+  test "the page has one h1, and Build yours comes after the carousel, not in the intro" do
+    get websites_path
+
+    assert_select "h1", count: 1
+    assert_select "section h1 ~ a[href=?]", build_path, count: 0
+    assert_select "a[data-test='websites-build-cta'][href=?]", build_path, text: "Build yours", count: 1
+    html = response.body
+    assert_operator html.index("data-test=\"websites-carousel\""), :<, html.index("data-test=\"websites-build-cta\""),
+                    "the CTA follows the carousel in DOM order"
+  end
+
   # Alex McRitchie, 2026-11-08: the still is the whole card, and the name, host and
   # blurb are the row's caption, which the carousel shows under the open slide only.
   # /build keeps its own card.
@@ -69,7 +81,7 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
       end
       assert_select "#{card}[href=?][style*=?]", example.url, "--pc-primary:", count: 1
       assert_select "#{row} .carousel-slide[aria-label=?] .carousel-caption [data-test='portfolio-caption']", example.name, count: 1 do
-        assert_select "[data-test='build-example-name']", text: example.name, count: 1
+        assert_select "h2.type-h2[data-test='build-example-name']", text: example.name, count: 1
         assert_select "[data-test='build-example-host'].font-mono", text: URI.parse(example.url).host, count: 1
         assert_select "[data-test='build-example-blurb']", text: example.blurb, count: 1
       end
@@ -85,7 +97,7 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     style = ActionController::Base.new.view_context.extend(WebsitesHelper).portfolio_carousel_style
     other = style == :cascade ? :spotlight : :cascade
     row = "section[data-test='websites-carousel']"
-    assert_select "#{row}.carousel-#{style}[data-carousel-loop]", count: 1
+    assert_select "#{row}.carousel-#{style}.portfolio-row[data-carousel-loop]", count: 1 # portfolio-row: the open card's ring
     assert_select "#{row}.carousel-#{other}", count: 0
     if style == :cascade
       assert_select "#{row}[data-carousel-visible='5']", count: 1 # the engine drops to three on a phone
