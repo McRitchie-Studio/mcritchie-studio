@@ -604,6 +604,9 @@ test("on a phone an admin names a showcase app: full-width field, pasted address
     // An admin skips the checklist through the name step under the chat. The claim is
     // drawn by the first message's stream for an admin session only, so its absence is
     // named here rather than read as a 30s click timeout (7 CI reds at the click).
+    // Those reds had one cause: the cursor left on the first claim's button rested
+    // on the menu's Log out, and Turbo's hover prefetch of GET /logout signed the
+    // browser out (e2e/sign_out_prefetch.spec.js; task build-funnel-held-message-cause).
     const claim = page.locator("[data-test='build-admin-claim']");
     await expect(claim, "the draft's chat was drawn for an admin session").toHaveCount(1);
     await claim.locator("summary").click();
