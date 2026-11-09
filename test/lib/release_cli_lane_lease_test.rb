@@ -24,7 +24,7 @@ class ReleaseCliLaneLeaseTest < ReleaseCliHarness
         { "pending" => [], "accepted" => [], "lane" => #{lane.inspect},
           "release" => { "slug" => "rel-cli", "state" => "assembling" } }
       end
-      def ladder_ahead_states
+      def ladder_ahead_states(**)
         { "release" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
           "accepted" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }], "unreadable" => [] }
       end
@@ -58,7 +58,7 @@ class ReleaseCliLaneLeaseTest < ReleaseCliHarness
         puts("SNIPPET=\#{ruby}")
         { "pending" => [], "accepted" => [], "release" => nil }
       end
-      def ladder_ahead_states = { "release" => [], "accepted" => [], "unreadable" => [] }
+      def ladder_ahead_states(**) = { "release" => [], "accepted" => [], "unreadable" => [] }
     RUBY
     out = run_cli(["status"], setup: setup, call: "status")
 

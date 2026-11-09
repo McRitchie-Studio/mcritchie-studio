@@ -541,7 +541,7 @@ class ReleaseCliHarness < Minitest::Test
     # is the ecosystem's NORMAL state, not a fixture artifact. The guard survives
     # that because it judges only member-named repos; this override just keeps the
     # fixture's world small and $promoted-aware, exactly as the sh stub is.
-    def ladder_ahead_states(repos: nil, require_checkout: false)
+    def ladder_ahead_states(repos: nil, require_checkout: false, **)
       { "release" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
         "accepted" => [{ "repo" => "mcritchie-studio", "ahead" => ($promoted ? 0 : 2) }],
         "unreadable" => [] }
@@ -570,7 +570,7 @@ class ReleaseCliHarness < Minitest::Test
           "release" => nil,
           "screen" => { "rows" => [], "blocked" => [], "overridden" => [], "missing" => [], "proceed" => true } }
       end
-      def ladder_ahead_states(repos: nil, require_checkout: false)
+      def ladder_ahead_states(repos: nil, require_checkout: false, **)
         { "release" => [], "accepted" => ($promoted ? [] : #{ahead.inspect}), "unreadable" => [] }
       end
     RUBY
@@ -673,7 +673,7 @@ class ReleaseCliHarness < Minitest::Test
       # merge that landed nothing. $promoted is flipped by SWEEP_FLOW_STUB's
       # `gh pr merge`, so the expedite guard sees the pre-promote rung and the
       # stale-tree gate sees the post-promote one — from the same stub.
-      def ladder_ahead_states(repos: nil, require_checkout: false)
+      def ladder_ahead_states(repos: nil, require_checkout: false, **)
         { "release" => [{ "repo" => "mcritchie-studio", "ahead" => 0 }],
           "accepted" => ($promoted ? [{ "repo" => "mcritchie-studio", "ahead" => 0 }] : #{accepted_ahead.inspect}),
           "unreadable" => [] }
@@ -1044,7 +1044,7 @@ class ReleaseCliHarness < Minitest::Test
         { "pending" => #{pending.inspect}, "accepted" => #{accepted.inspect},
           "release" => { "slug" => "rel-cli", "state" => "assembling" } }
       end
-      def ladder_ahead_states
+      def ladder_ahead_states(**)
         { "release" => #{ahead.inspect}, "accepted" => #{accepted_ahead.inspect},
           "unreadable" => #{unreadable.inspect} }
       end
