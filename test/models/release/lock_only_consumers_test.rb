@@ -52,6 +52,38 @@ class Release::LockOnlyConsumersTest < ActiveSupport::TestCase
     refute M.lock_bump?(bump(files: []))
   end
 
+  # Review 2026-11-09: a hand commit that copies the tool's subject must not carry
+  # the app's OWN migration; only an engine-named copy rides.
+  test "an app's own migration is not a lock bump, an engine-named one is" do
+    refute M.lock_bump?(bump(files: [ "Gemfile.lock", "db/migrate/20261109000000_add_quotes.rb" ]))
+    assert M.lock_bump?(bump(files: [ "Gemfile.lock", "db/migrate/20261109000000_add_x.solana_studio.rb" ]))
+  end
+
+  test "migrations lists the engine migrations the commits carry" do
+    commits = [ bump(files: [ "Gemfile.lock", "db/migrate/1_a.studio_engine.rb", "db/schema.rb" ]),
+                bump(files: [ "Gemfile.lock" ]) ]
+    assert_equal [ "db/migrate/1_a.studio_engine.rb" ], M.migrations(commits)
+    assert_includes M.riding_line("cw", commits), "1 engine migration(s): 1_a.studio_engine.rb"
+    assert_includes M.riding_line("cw", [ bump ]), "no migrations"
+  end
+
+  # --- drop ---
+
+  test "a dropped repo leaves the recorded set and is never recorded again" do
+    meta = M.record({}, %w[commercial-welding rantly])
+    meta = M.drop(meta, "rantly" => "production deploy failed: 503")
+
+    assert_equal %w[commercial-welding], M.recorded(meta)
+    assert_equal({ "rantly" => "production deploy failed: 503" }, M.dropped(meta))
+    assert_equal %w[commercial-welding], M.recorded(M.record(meta, %w[rantly]))
+    assert_equal [], M.extra_repos(meta, %w[commercial-welding])
+  end
+
+  test "the first drop reason stays" do
+    meta = M.drop(M.drop({}, "rantly" => "first"), "rantly" => "second")
+    assert_equal "first", M.dropped(meta)["rantly"]
+  end
+
   test "a human subject or a merge commit is not a lock bump" do
     refute M.lock_bump?(bump("Bump the engine by hand"))
     refute M.lock_bump?(bump("bump studio-engine"))

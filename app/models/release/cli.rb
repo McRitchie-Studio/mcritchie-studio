@@ -219,13 +219,20 @@ class Release
         synopsis: "bin/release announce <release> [--post]",
         consequence: "nothing was posted to Slack",
         bool: ["--post"], value: [], allow_positional: true
+      },
+      # Take a lock-only app (Release::LockOnlyConsumers) out of the current
+      # release by hand. Moves no branch and deploys nothing.
+      "drop-lock-only" => {
+        synopsis: "bin/release drop-lock-only <repo> [--reason \"…\"]",
+        consequence: "no app was dropped from the release",
+        bool: [], value: ["--reason"], allow_positional: true
       }
     }.freeze
 
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]|announce <release> [--post]} " \
+            "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]|announce <release> [--post]|drop-lock-only <repo>} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex McRitchie's words>\"] " \
             "[--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--train SLUG] [--wait-for-1password[=MINUTES]] [--local] [--dry-run] [--yes]"

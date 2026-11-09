@@ -664,7 +664,12 @@ How a gem rides a release:
    that no card names, whose `accepted` holds only these lock bumps, rides that
    release with no member (`Release::LockOnlyConsumers`). It is promoted, QA'd
    where it has a QA app, and deployed through its own registry entry. A red CI
-   on the bump leaves it behind with a warning. It is best-effort, like step 6.
+   on the bump leaves it behind with a warning. A failure of its OWN later (a red
+   pre-publish, pre-QA, ship or re-lock gate, a QA that does not boot, a failed
+   production deploy or smoke) DROPS it from the release with a `⚠ DROPPED` line,
+   recorded on the release (`metadata.lock_only_dropped`), and the member apps
+   carry on. `bin/release drop-lock-only <repo> [--reason "…"]` drops one by hand.
+   It is best-effort, like step 6.
    An `engine: false` app is never touched.
 
 Operational notes:

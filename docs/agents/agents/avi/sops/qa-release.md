@@ -631,7 +631,10 @@ app whose production (`origin/main`) locks studio-engine a minor or more behind 
 last shipped engine (`LAGS <app>: …`). Carry each `LAGS` line into the report. A full
 `prepare` carries such an app with no member when its `accepted` holds only the
 release tooling's lock bumps, and prints ``<app>: `accepted` carries only lock bumps``
-for it; a `--task` or `--expedite` sweep does not. Display only: it never blocks.
+for it; a `--task` or `--expedite` sweep does not. Display only: it never blocks. A
+lock-only app whose own gate, QA boot or deploy fails is dropped with a `⚠ DROPPED`
+line and the members go on; carry each `DROPPED` line into the report. To drop one by
+hand, run `bin/release drop-lock-only <repo> --reason "…"`.
 
 ## Related
 

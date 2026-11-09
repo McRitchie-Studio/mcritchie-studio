@@ -3171,10 +3171,13 @@ def lock_only_consumer_repos(member_repos, held_repos: [])
     sha_out, sha_ok = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/#{ACCEPTED_BRANCH}^{commit}")
     _, release_ok   = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/#{RELEASE_BRANCH}^{commit}")
     sha = sha_ok ? sha_out.to_s.strip : ""
-    next if sha.empty? || !release_ok
+    _, main_ok = git_capture("-C", path, "rev-parse", "--verify", "--quiet", "origin/main^{commit}")
+    next if sha.empty? || !release_ok || !main_ok
 
+    # Judged against `main`, what production runs: a repo dropped from an earlier
+    # release has its bumps on `release` already, and must still read as lock-only.
     log, ok = git_capture("-C", path, "log", "--format=#{Release::LockOnlyConsumers::LOG_FORMAT}", "--name-only",
-                          "origin/#{RELEASE_BRANCH}..#{sha}")
+                          "origin/main..#{sha}")
     next unless ok
 
     commits = Release::LockOnlyConsumers.parse_log(log)
@@ -3197,6 +3200,94 @@ def lock_only_consumer_repos(member_repos, held_repos: [])
     swept_shas[repo] = sha unless DRY
     repo
   end
+end
+
+# --- dropping a lock-only app (review of release-ships-lock-only-consumers) ---
+# A lock-only app rides for nobody's card. A failure of its OWN (a red pre-publish
+# or pre-QA gate, a QA deploy that aborts or does not boot, a red ship gate or
+# re-lock gate, a production deploy or smoke that fails) therefore DROPS it from
+# the release with a warning, and the member apps carry on. Without this, rantly's
+# Eco dyno, which 503s in the last week of each month, would stop every late-month
+# engine release at its smoke, with only a hand edit of the release record out.
+#
+# The drop is RECORDED on the release (Release::LockOnlyConsumers.drop), so the
+# repo plan prepare, ship, finalize and rollback read leaves it out from then on.
+# Threads (the concurrent QA and satellite deploys) only note a drop; the step's
+# caller writes the notes once, after the join (prune_lock_only!).
+LOCK_ONLY_DROP_GUARD = Mutex.new
+
+def lock_only_group?(group) = group.is_a?(Hash) && group["lock_only"] == true
+
+# { repo => reason } this process dropped, and the subset not yet recorded.
+def lock_only_drops = (@lock_only_drops ||= {})
+def lock_only_unrecorded = (@lock_only_unrecorded ||= {})
+
+def drop_lock_only!(group, reason)
+  repo = group["repo"].to_s
+  LOCK_ONLY_DROP_GUARD.synchronize do
+    lock_only_drops[repo] ||= reason
+    lock_only_unrecorded[repo] ||= reason
+  end
+  say("  ⚠ DROPPED #{repo} from this release — #{reason}. It rode with no member (its `#{ACCEPTED_BRANCH}` held " \
+      "only lock bumps), so the member apps carry on without it. Its bumps wait on `#{ACCEPTED_BRANCH}` for the " \
+      "next release; `#{RELEASE_SELF_CMD} status` names its engine lag.")
+end
+
+# Run one lock-only step for `group`. Answers true when it passed; for a lock-only
+# group an abort inside becomes a drop (false). Any other group's abort propagates.
+def lock_only_attempt(group, label)
+  yield
+  true
+rescue SystemExit => e
+  raise unless lock_only_group?(group)
+
+  drop_lock_only!(group, "#{label} failed: #{e.message.to_s.sub(/\A✗ /, '').lines.first.to_s.strip[0, 300]}")
+  false
+end
+
+# Record this process's new drops on the release, then take every dropped repo out
+# of each list given (the caller's own arrays, changed in place).
+def prune_lock_only!(rel_slug, *lists)
+  pending = LOCK_ONLY_DROP_GUARD.synchronize { lock_only_unrecorded.dup.tap { lock_only_unrecorded.clear } }
+  record_lock_only_drops!(rel_slug, pending) unless pending.empty?
+  lists.each { |list| list.reject! { |group| lock_only_drops.key?(group["repo"].to_s) } }
+end
+
+def record_lock_only_drops!(rel_slug, drops)
+  return if DRY
+
+  target = rel_slug.to_s.empty? || rel_slug.to_s == "rel-pending" ? rel_current : "Release.find_by!(slug: #{rel_slug.to_s.inspect})"
+  step("record: lock-only drop #{drops.keys.join(', ')} on the release")
+  conductor("r = #{target}; r.update!(metadata: Release::LockOnlyConsumers.drop(r.metadata || {}, #{drops.inspect})); " \
+            "puts({ lock_only_dropped: #{drops.keys.inspect} }.to_json)")
+end
+
+# `bin/release drop-lock-only <repo> [--reason "…"]`: the operator's way to take a
+# lock-only app out of the current release by hand. It refuses a repo the release
+# does not carry as lock-only (a member's repo is never dropped this way). It moves
+# no branch and deploys nothing: the repo's bumps stay on `accepted` and `release`.
+def drop_lock_only
+  args = ARGV.dup
+  at = args.index("--reason")
+  args.slice!(at, 2) if at # the reason's text is not the repo
+  repo = Release::Cli.positional_slugs(args).first.to_s.strip
+  abort!("usage: #{RELEASE_SELF_CMD} drop-lock-only <repo> [--reason \"…\"]") if repo.empty?
+  reason = opt_value("--reason").to_s.strip
+  reason = "dropped by the operator" if reason.empty?
+
+  step("record (read-only): the current release's lock-only repos")
+  current = conductor("r = #{rel_current}; puts((r ? { slug: r.slug, lock_only: " \
+                      "Release::LockOnlyConsumers.recorded(r.metadata || {}) } : {}).to_json)", read_only: true)
+  abort!("no current release — nothing to drop #{repo} from") if current["slug"].to_s.empty?
+  unless Array(current["lock_only"]).include?(repo)
+    abort!("#{current['slug']} does not carry #{repo} as a lock-only app (it carries " \
+           "#{Array(current['lock_only']).join(', ').then { |l| l.empty? ? 'none' : l }}). Nothing was changed.")
+  end
+  return unless confirm("Drop #{repo} from #{current['slug']}? (#{reason})")
+
+  drop_lock_only!({ "repo" => repo, "lock_only" => true }, reason)
+  prune_lock_only!(current["slug"])
+  say("✓ #{repo} is out of #{current['slug']}. Nothing moved: its bumps stay on `#{ACCEPTED_BRANCH}` and `#{RELEASE_BRANCH}`.")
 end
 
 # How many commits reached `accepted` after the pin, per pinned repo in `repos`:
@@ -4884,17 +4975,20 @@ def pre_publish_gate(app_groups, gem_plan)
   say("")
   step("pre-publish gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
        "(before any gem is published)")
+  # A lock-only app's red drops it (lock_only_attempt); the caller prunes it.
   app_groups.each do |group|
-    read = release_app_ci_verdict(group["repo"], label: "pre-publish gate")
-    next unless read
+    lock_only_attempt(group, "pre-publish gate") do
+      read = release_app_ci_verdict(group["repo"], label: "pre-publish gate")
+      next unless read
 
-    repo, sha, ci, budget = read.values_at(:repo, :sha, :ci, :budget)
-    step("pre-publish gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}" \
-         "#{read[:verdict][:credited] ? ' (credited)' : ''} @ #{short(sha)}")
-    next if ci_pass?(ci)
+      repo, sha, ci, budget = read.values_at(:repo, :sha, :ci, :budget)
+      step("pre-publish gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}" \
+           "#{read[:verdict][:credited] ? ' (credited)' : ''} @ #{short(sha)}")
+      next if ci_pass?(ci)
 
-    abort!("#{pre_qa_ci_abort(repo, sha, ci, budget, label: "pre-publish gate")} NOTHING was published, so no gem " \
-           "version is burned.")
+      abort!("#{pre_qa_ci_abort(repo, sha, ci, budget, label: "pre-publish gate")} NOTHING was published, so no gem " \
+             "version is burned.")
+    end
   end
 end
 
@@ -4914,25 +5008,28 @@ def pre_qa_gate(app_groups, rel_slug = nil, gem_groups: [])
   # CI for the frozen tree itself), just not executed.
   step("pre-QA gate: GitHub CI's verdict for each app's origin/#{RELEASE_BRANCH} SHA " \
        "(before any QA deploy)")
+  # A lock-only app's red drops it (lock_only_attempt); the caller prunes it.
   app_groups.each do |group|
-    read = release_app_ci_verdict(group["repo"], label: "pre-QA gate")
-    next unless read
+    lock_only_attempt(group, "pre-QA gate") do
+      read = release_app_ci_verdict(group["repo"], label: "pre-QA gate")
+      next unless read
 
-    repo, sha, cmd, verdict, ci, budget = read.values_at(:repo, :sha, :cmd, :verdict, :ci, :budget)
-    ok = ci_pass?(ci)
-    step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{verdict[:credited] ? ' (credited)' : ''} @ #{short(sha)} " \
-         "(#{cmd} ran in CI; recorded, not run here)")
-    # The G3 gate run's own SOP names the verdict's SOURCE (the credited accepted
-    # head / tree, or the SHA's own polled run) — the same line the G4 read records.
-    gate_sop("pre_qa_gate", tree_verdict_sop(verdict, sha, cmd), ok)
+      repo, sha, cmd, verdict, ci, budget = read.values_at(:repo, :sha, :cmd, :verdict, :ci, :budget)
+      ok = ci_pass?(ci)
+      step("pre-QA gate #{repo}: GitHub CI #{ci[:state].to_s.upcase}#{verdict[:credited] ? ' (credited)' : ''} @ #{short(sha)} " \
+           "(#{cmd} ran in CI; recorded, not run here)")
+      # The G3 gate run's own SOP names the verdict's SOURCE (the credited accepted
+      # head / tree, or the SHA's own polled run) — the same line the G4 read records.
+      gate_sop("pre_qa_gate", tree_verdict_sop(verdict, sha, cmd), ok)
 
-    # Record the verdict as the release's AUDIT TRAIL (nothing gates on it — G4 reads
-    # CI for the frozen tree itself). Recorded for GREEN and non-green alike: a red G3
-    # records ok:FALSE (it must not silently skip recording), carrying CI's verdict.
-    record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
-    next if ok
+      # Record the verdict as the release's AUDIT TRAIL (nothing gates on it — G4 reads
+      # CI for the frozen tree itself). Recorded for GREEN and non-green alike: a red G3
+      # records ok:FALSE (it must not silently skip recording), carrying CI's verdict.
+      record_qa_gate(rel_slug, repo, sha, cmd, ci, ok)
+      next if ok
 
-    abort!(pre_qa_ci_abort(repo, sha, ci, budget))
+      abort!(pre_qa_ci_abort(repo, sha, ci, budget))
+    end
   end
 
   # SELF-GATED GEM pass — a GEM-ONLY release's own G3 verdict. A self-gated gem
@@ -5098,7 +5195,16 @@ def run_qa_deploys(qa_groups, rel_slug, repos:, qa_shas:, skip_gauntlet:)
   gauntlet_here = !DRY && Release::DevnetGauntlet.turf_repos(repos.map { |g| g["repo"] }).any?
   frozen = qa_shas.dup # gems and QA-exempt repos, complete before any thread starts
   job = lambda do |group|
-    deployed = qa_deploy_app!(group, smoke_started: smoke_started)
+    deployed = nil
+    # A lock-only app whose QA deploy aborts, or does not boot, is DROPPED: the
+    # member apps' QA verdict is theirs alone.
+    kept = lock_only_attempt(group, "QA deploy") { deployed = qa_deploy_app!(group, smoke_started: smoke_started) }
+    if kept && lock_only_group?(group) && !deployed["ok"]
+      drop_lock_only!(group, "QA did not boot (#{deployed['qa_url']})")
+      kept = false
+    end
+    next({ "repo" => group["repo"], "dropped" => true }) unless kept
+
     extra = {}
     if gauntlet_here && group["repo"] == QA_GAUNTLET_REPO && deployed["ok"]
       # Turf's own post-deploy hooks first: the gauntlet tests the app as prepare
@@ -5118,6 +5224,8 @@ def run_qa_deploys(qa_groups, rel_slug, repos:, qa_shas:, skip_gauntlet:)
             end
 
   results.each do |r|
+    next if r["dropped"]
+
     outcome[:deployed] << r.slice("repo", "qa_app", "qa_url", "sha", "ok")
     outcome[:shas][r["repo"]] = r["sha"]
     outcome[:hooks_ran] << r["repo"] if r["hooks_ran"]
@@ -5621,6 +5729,7 @@ def prepare
   # green on its promoted tree before any version goes to RubyGems, so a red aborts
   # with nothing published and nothing burned. See pre_publish_gate.
   pre_publish_gate(app_groups, gem_plan)
+  prune_lock_only!(rel_slug, app_groups, repos)
   record_burned_finals!(gem_plan)
   published_gems = publish_gems_for_qa(gem_plan)
   # The stamp a ship with this flow checks its candidates against. Before the
@@ -5655,6 +5764,7 @@ def prepare
   record_gate_open(rel_slug, "g3_candidate", actor: "avi")
   g3_gate = :open
   pre_qa_gate(app_groups, rel_slug, gem_groups: gem_groups)
+  prune_lock_only!(rel_slug, app_groups, repos)
 
   # 5b. Record the Avi assembled QA intent for every member so /deployments shows
   #     him QA-ing the RC live the moment the deploy half starts — the Deploy mirror
@@ -5737,6 +5847,7 @@ def prepare
   #     Everything joins before the verdict below: nothing reports Assembled while a
   #     deploy or the gauntlet is still running. See run_qa_deploys.
   qa_run = run_qa_deploys(qa_groups, rel_slug, repos: repos, qa_shas: qa_shas, skip_gauntlet: skip_gauntlet)
+  prune_lock_only!(rel_slug, app_groups, repos, qa_groups)
   deployed = qa_run[:deployed]
   qa_shas.merge!(qa_run[:shas])
   qa_smoke_started = qa_run[:qa_smoke_started]
@@ -10514,7 +10625,11 @@ def run_relock_gate(app_groups, ship_sha)
   say("")
   step("re-lock gate: GitHub CI's settled verdict for each re-lock commit — the tree that deploys " \
        "(read, not run — before any deploy)")
-  gated.each { |group| test_gate(group["repo"], frozen_sha: ship_sha[group["repo"]], relock: relocked[group["repo"]]) }
+  gated.each do |group|
+    lock_only_attempt(group, "re-lock gate") do
+      test_gate(group["repo"], frozen_sha: ship_sha[group["repo"]], relock: relocked[group["repo"]])
+    end
+  end
 end
 
 # What the operator is told when a re-lock commit's CI is not green: what is already
@@ -10587,7 +10702,7 @@ def run_ship_gate(app_groups, ship_sha)
        "(read, not run — before ship authority; nothing is mutated yet)")
   app_groups.each do |group|
     repo = group["repo"]
-    test_gate(repo, frozen_sha: ship_sha[repo])
+    lock_only_attempt(group, "ship gate") { test_gate(repo, frozen_sha: ship_sha[repo]) }
   end
 end
 
@@ -11082,7 +11197,8 @@ def deploy_apps(app_groups, ship_sha, rel_slug)
 
   if satellites.size == 1 || DRY
     satellites.each do |group|
-      deploy_app(group, ship_sha[group["repo"]])
+      next unless lock_only_attempt(group, "production deploy") { deploy_app(group, ship_sha[group["repo"]]) }
+
       record_deployed_apps(rel_slug, [group], ship_sha)
     end
     return
@@ -11118,7 +11234,16 @@ def deploy_satellites_in_parallel(satellites, ship_sha, rel_slug)
   say("")
   say("  satellite deploys (#{results.count(&:ok)}/#{results.size} live):")
   Release::ParallelDeploy.summary_lines(results).each { |line| say(line) }
-  failure = Release::ParallelDeploy.failure_message(results, resume_cmd: "#{RELEASE_SELF_CMD} ship")
+  # A lock-only app's failed deploy or smoke DROPS it; only a member app's failure
+  # stops the ship (each app ran its own deploy, smoke and rollback above).
+  only = satellites.select { |g| lock_only_group?(g) }.map { |g| g["repo"] }
+  results.each do |r|
+    next if r.ok || !only.include?(r.repo)
+
+    drop_lock_only!({ "repo" => r.repo, "lock_only" => true }, "production deploy failed: #{r.error.to_s.lines.first.to_s.strip[0, 300]}")
+  end
+  failure = Release::ParallelDeploy.failure_message(results.reject { |r| !r.ok && only.include?(r.repo) },
+                                                     resume_cmd: "#{RELEASE_SELF_CMD} ship")
   abort!(failure) if failure
 end
 
@@ -11684,6 +11809,7 @@ def ship
   record_gate_open(rel_slug, "g4_ship", actor: by)
   g4_gate = :open
   run_ship_gate(app_groups, ship_sha)
+  prune_lock_only!(rel_slug, app_groups, repos)
   record_release_event(rel_slug, "ship_gate", "completed", actor: by)
 
   # 2a-bis. DEPLOY-TARGET PREFLIGHT — refuse BEFORE anything moves.
@@ -11785,6 +11911,7 @@ def ship
 
   # 4b. The re-lock commit is the tree that deploys: read ITS CI before any deploy.
   run_relock_gate(app_groups, ship_sha)
+  prune_lock_only!(rel_slug, app_groups, repos)
 
   # 4c. THE BACKSTOP: no tree whose lock names a prerelease of a registered gem
   #     deploys, whatever prepared it and whatever the steps above concluded.
@@ -11795,6 +11922,7 @@ def ship
   #    A hub failure aborts before any satellite moves; a satellite failure stops
   #    no other satellite, and the ship then aborts naming which apps are live.
   deploy_apps(app_groups, ship_sha, rel_slug)
+  prune_lock_only!(rel_slug, app_groups, repos)
 
   # 5b. Post-deploy hooks on PROD — after every app deployed + smoked, run each
   #     member's declared post_deploy_cmd against its PRODUCTION app, record the
@@ -13649,6 +13777,7 @@ if __FILE__ == $PROGRAM_NAME
   when "retro"    then retro
   when "notes"    then notes
   when "announce" then announce
+  when "drop-lock-only" then drop_lock_only
   when "cycle"    then exit(cycle)
   else
     # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand

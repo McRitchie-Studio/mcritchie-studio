@@ -33,13 +33,26 @@ class Release
     # The release metadata key that holds the lock-only repos, in sweep order.
     LOCK_ONLY_KEY = "lock_only_repos".freeze
 
+    # The repos DROPPED from this release, { repo => reason }. A lock-only repo
+    # rides for nobody's card, so a failure of its own (a red gate, a QA that does
+    # not boot, a production smoke that fails) drops it instead of stopping the
+    # member apps (review of 2026-11-09: rantly's Eco dyno 503s in the last week
+    # of each month). A dropped repo stays out of this release: #recorded and
+    # #record both exclude it, so prepare, ship, finalize and rollback agree.
+    DROPPED_KEY = "lock_only_dropped".freeze
+
     # The subject the release tooling writes on every lock bump: the prepare's
     # QA bump ("… for QA"), the ship's producer bump and the cardless re-lock.
     BUMP_SUBJECT = /\Abump [A-Za-z0-9_.-]+ [0-9][0-9A-Za-z.]*(, [A-Za-z0-9_.-]+ [0-9][0-9A-Za-z.]*)*( for QA)?\z/
 
     # The files a lock bump may change. The engine migrations ride the lock
-    # commit (install_engine_migrations!), so db/migrate and db/schema.rb count.
-    LOCK_PATH = %r{\A(Gemfile|Gemfile\.lock|db/schema\.rb|db/migrate/[^/]+\.rb)\z}
+    # commit (install_engine_migrations!), so db/schema.rb and an ENGINE-NAMED
+    # migration count: `rails <gem>:install:migrations` names each copy
+    # `<timestamp>_<name>.<gem_underscored>.rb`. An app's own migration has no such
+    # suffix, so a hand commit that copies the tool's subject cannot carry one.
+    ENGINE_MIGRATION = %r{\Adb/migrate/\d+_[a-z0-9_]+\.(studio_engine|solana_studio)\.rb\z}
+    LOCK_FILE = %r{\A(Gemfile|Gemfile\.lock|db/schema\.rb)\z}
+    LOCK_PATH = Regexp.union(LOCK_FILE, ENGINE_MIGRATION)
 
     # The `git log` format the CLI reads with (one record per commit):
     #   git log --format=<LOG_FORMAT> --name-only origin/release..origin/accepted
@@ -93,16 +106,41 @@ class Release
       end
     end
 
-    # The repos the release has recorded, read from its metadata. Order kept.
+    # The repos the release carries: recorded and not dropped. Order kept.
     def recorded(metadata)
-      Array(metadata.to_h[LOCK_ONLY_KEY]).map(&:to_s).reject(&:empty?).uniq
+      gone = dropped(metadata).keys
+      Array(metadata.to_h[LOCK_ONLY_KEY]).map(&:to_s).reject(&:empty?).uniq - gone
+    end
+
+    # { repo => reason } for every lock-only repo dropped from the release.
+    def dropped(metadata)
+      metadata.to_h[DROPPED_KEY].to_h.to_h { |repo, reason| [ repo.to_s, reason.to_s ] }
     end
 
     # The metadata after this run records `repos`: the union, earlier ones first.
+    # A repo already dropped from this release is not recorded again.
     def record(metadata, repos)
       meta = metadata.to_h.dup
-      meta[LOCK_ONLY_KEY] = (recorded(meta) + Array(repos).map(&:to_s)).reject(&:empty?).uniq
+      gone = dropped(meta).keys
+      meta[LOCK_ONLY_KEY] = (Array(meta[LOCK_ONLY_KEY]).map(&:to_s) + Array(repos).map(&:to_s))
+                            .reject(&:empty?).uniq - gone
       meta
+    end
+
+    # The metadata after `drops` ({ repo => reason }) leave the release. The
+    # first reason recorded for a repo stays.
+    def drop(metadata, drops)
+      meta = metadata.to_h.dup
+      gone = dropped(meta)
+      drops.to_h.each { |repo, reason| gone[repo.to_s] ||= reason.to_s }
+      meta[DROPPED_KEY] = gone
+      meta[LOCK_ONLY_KEY] = Array(meta[LOCK_ONLY_KEY]).map(&:to_s) - gone.keys
+      meta
+    end
+
+    # The migrations a lock-only repo's commits carry, for the prepare line.
+    def migrations(commits)
+      Array(commits).flat_map { |c| Array(c["files"]) }.select { |f| ENGINE_MIGRATION.match?(f.to_s) }.uniq
     end
 
     # The repos to add to a repo plan: recorded, and not already in it.
@@ -114,8 +152,11 @@ class Release
     # The `bin/release prepare` line for one repo that rides.
     def riding_line(repo, commits)
       bumps = Array(commits).map { |c| c["subject"].to_s.sub(/\Abump /, "").sub(/ for QA\z/, "") }
-      "#{repo}: `accepted` carries only lock bumps (#{bumps.join('; ')}) — no card names it, so it rides this " \
-        "release with no member: promoted, QA'd where it has a QA app, and deployed"
+      found = migrations(commits).map { |f| File.basename(f) }
+      carried = found.empty? ? "no migrations" : "#{found.size} engine migration(s): #{found.join(', ')}"
+      "#{repo}: `accepted` carries only lock bumps (#{bumps.join('; ')}; #{carried}) — no card names it, so it " \
+        "rides this release with no member: promoted, QA'd where it has a QA app, and deployed. A failure of its " \
+        "own drops it, never the members"
     end
 
     # --- `bin/release status`: live engine lag -------------------------------

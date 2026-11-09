@@ -1040,6 +1040,15 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal plan.as_json, JSON.parse(plan.to_json)
   end
 
+  test "repo_plan leaves out a lock-only repo dropped from the release" do
+    studio = app_task("studio change", repo: "mcritchie-studio", branch: "feat/studio")
+    rel = Release::Conductor.prepare!(task_slugs: [studio.slug], slug: "rel-lock-only-dropped")
+    meta = Release::LockOnlyConsumers.record(rel.metadata || {}, %w[commercial-welding rantly])
+    rel.update!(metadata: Release::LockOnlyConsumers.drop(meta, "rantly" => "smoke failed"))
+
+    assert_equal %w[mcritchie-studio commercial-welding], Release::Conductor.repo_plan(rel).map { |g| g[:repo] }
+  end
+
   test "repo_plan does not double a lock-only repo a member names, nor carry an unregistered one" do
     cw = app_task("cw change", repo: "commercial-welding", branch: "feat/cw")
     rel = Release::Conductor.prepare!(task_slugs: [cw.slug], slug: "rel-lock-only-member")
