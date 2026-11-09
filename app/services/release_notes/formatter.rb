@@ -21,7 +21,10 @@ module ReleaseNotes
     # its epic in the footer, and the header lists the epics the release carries.
     EPIC_GLYPH = "🧩".freeze
 
-    def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_slug: nil, seal: nil)
+    # lock_only_lines: Release::LockOnlyConsumers.notes_lines — the apps the release
+    # carried with no card, and each one it dropped (task lock-only-drop-follow-ups).
+    def initialize(app:, environment:, release:, sha:, url:, tasks:, checks: nil, release_slug: nil, seal: nil,
+                   lock_only_lines: [])
       @app = app.presence || "mcritchie-studio"
       @environment = environment.presence || "production"
       @release = release.to_s.strip
@@ -31,6 +34,7 @@ module ReleaseNotes
       @checks = checks
       @release_slug = release_slug.to_s.strip
       @seal = seal # a Release::SmokeSeal (post-ship @qa-readonly verdict) or nil
+      @lock_only_lines = Array(lock_only_lines).map(&:to_s).reject(&:blank?)
     end
 
     def message
@@ -39,6 +43,7 @@ module ReleaseNotes
       lines << ""
       lines.concat(group_lines)
       lines << ""
+      lines.concat(@lock_only_lines)
       lines << checks_line if checks_text.present?
       lines << seal_line if @seal
       lines.join("\n")
@@ -83,7 +88,8 @@ module ReleaseNotes
     #   🟢 Production smoke seal: passed   (ONLY when a seal exists)
     # Line 2 is an H3-sized masked link — Discord renders `### [text](url)` so.
     def header_content
-      ["# 🚀 Production Deployment", release_link_line, epics_line, (seal_line if @seal)].compact.join("\n")
+      ["# 🚀 Production Deployment", release_link_line, epics_line, (seal_line if @seal), *@lock_only_lines]
+        .compact.join("\n")
     end
 
     # The post-ship production smoke verdict, appended to the release notes body +

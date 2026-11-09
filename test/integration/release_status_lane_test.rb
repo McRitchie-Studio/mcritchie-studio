@@ -10,7 +10,7 @@ require_relative "../lib/release_cli_harness"
 class ReleaseStatusLaneTest < ActionDispatch::IntegrationTest
   # The subprocess runner the bin/release CLI suite uses (sealed PATH, no board).
   class Cli < ReleaseCliHarness; end
-  GIT_STUB = %(def ladder_ahead_states = { "release" => [], "accepted" => [], "unreadable" => [] }\n)
+  GIT_STUB = %(def ladder_ahead_states(**) = { "release" => [], "accepted" => [], "unreadable" => [] }\n)
 
   setup { log_in_as(users(:alex)) }
 

@@ -1242,6 +1242,32 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_not called, "dry_run must not deliver"
   end
 
+  # Review F3 of release-ships-lock-only-consumers (task lock-only-drop-follow-ups).
+  test "[unit] a production-stage drop is visible in the release notes" do
+    rel = shipped_release
+    rel.update!(metadata: Release::LockOnlyConsumers.drop(
+      rel.metadata.merge(Release::LockOnlyConsumers::LOCK_ONLY_KEY => %w[rantly]),
+      "rantly" => "production deploy failed: smoke /up answered 503"
+    ))
+    result = Release::Conductor.post_release_notes(release: rel, dry_run: true)
+
+    assert_includes result[:message], "Dropped (lock bumps only, not shipped by this release): rantly — production deploy failed"
+    header = Release::Conductor.release_notes_formatter(release: rel, app: "mcritchie-studio", environment: "production")
+                                .discord_payload[:content]
+    assert_includes header, "rantly — production deploy failed", "the Discord header carries the drop too"
+  end
+
+  # Review F2: shipped_shas never records a dropped lock-only app, and drops an
+  # entry an earlier run wrote for it.
+  test "[unit] record_shipped_shas leaves out a dropped lock-only app" do
+    rel = shipped_release
+    rel.update!(metadata: rel.metadata.merge("shipped_shas" => { "rantly" => "old1111" }))
+    rel.update!(metadata: Release::LockOnlyConsumers.drop(rel.metadata, "rantly" => "production deploy failed"))
+    Release::Conductor.record_shipped_shas(release: rel, shas: { "rantly" => "new2222", "mcritchie-studio" => "abc1234" })
+
+    assert_equal({ "mcritchie-studio" => "abc1234" }, rel.reload.metadata["shipped_shas"].slice("rantly", "mcritchie-studio"))
+  end
+
   test "post_release_notes is non-fatal when the webhook is missing" do
     rel = shipped_release
     raiser = ->(content: nil, embeds: nil) { raise ReleaseNotes::DiscordClient::MissingWebhook, "no webhook" }

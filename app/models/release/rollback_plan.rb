@@ -145,7 +145,8 @@ class Release
     #           "deployed_sha", "shipped_shas" ({repo => sha}), "repos" (repo_plan),
     #           "rolled_back" (metadata, present once a rollback completed).
     # history:  releases shipped BEFORE it, newest first: "slug", "shipped_shas",
-    #           "deployed_sha".
+    #           "deployed_sha", "lock_only_dropped" ({repo => reason}).
+    # The target carries "lock_only_dropped" too.
     # later:    the slug of a release shipped AFTER it, or nil.
     # shipping: the slug of a release whose production deploy is in flight, or nil.
     def self.build(target:, history:, later: nil, shipping: nil, hub: HUB)
@@ -364,6 +365,13 @@ class Release
         end
       end
       @apps = order(@apps)
+      # A lock-only app the release DROPPED (Release::LockOnlyConsumers) is not in
+      # its repo plan, so it is not rolled back. Say so: its `main` did not move
+      # with the release, and the release never claimed its production.
+      hash_of(@target["lock_only_dropped"]).each do |repo, reason|
+        @notes << "#{repo} was dropped from #{@release_slug} (#{reason}) — not rolled back: the release never " \
+                  "shipped it. `heroku releases` names what its production runs"
+      end
       @refusals << "#{@release_slug} deployed no app this command can roll back" if @apps.empty? && @refusals.empty?
       @notes << "main is untouched: a rollback is a deploy, not a ref move. The release's code stays on main and " \
                 "accepted, so the next ship redeploys it unless a revert lands on accepted first."
@@ -419,6 +427,10 @@ class Release
         # as the known-good state; going back to it would redeploy bad code.
         rolled = release["rolled_back"]
         next if rolled.is_a?(Hash) && !rolled.empty?
+
+        # A release that DROPPED the repo (a lock-only app) did not ship it, even
+        # where an older run recorded its `main` push: walk past it.
+        next if hash_of(release["lock_only_dropped"]).key?(repo)
 
         sha = hash_of(release["shipped_shas"])[repo].to_s
         sha = release["deployed_sha"].to_s if sha.empty? && repo == @hub

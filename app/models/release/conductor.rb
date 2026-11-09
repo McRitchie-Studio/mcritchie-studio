@@ -794,13 +794,20 @@ class Release
     # that ships the members, and `finalize` writes the same map from its
     # measured-against-prod verdict so a resumed ship carries the stronger proof
     # rather than jamming its members at `assembled`.
+    #
+    # A lock-only app the release DROPPED (Release::LockOnlyConsumers) is never
+    # recorded, and an entry an earlier run wrote for it is removed: the release
+    # did not ship it, so `bin/release rollback` must not read its SHA as this
+    # release's production (review F2 of release-ships-lock-only-consumers).
     def record_shipped_shas(release:, shas:)
       meta = release.metadata.deep_dup
       existing = meta["shipped_shas"].is_a?(Hash) ? meta["shipped_shas"] : {}
+      gone = Release::LockOnlyConsumers.dropped_repos(meta)
       shas.to_h.each do |repo, sha|
         sha = sha.to_s
         existing[repo.to_s] = sha unless sha.empty?
       end
+      gone.each { |repo| existing.delete(repo) }
       meta["shipped_shas"] = existing
       release.update!(metadata: meta)
       release
@@ -1106,7 +1113,8 @@ class Release
         # The post-ship smoke seal (bin/release step 5c recorded it BEFORE this), so
         # the notes body + Discord carry the SAME 🟢/🔴 verdict the board shows. nil
         # when unsealed (a manual / pre-seal ship) → the seal line is simply omitted.
-        seal: release.smoke_seal
+        seal: release.smoke_seal,
+        lock_only_lines: Release::LockOnlyConsumers.notes_lines(release.metadata || {})
       )
     end
 

@@ -221,7 +221,8 @@ class Release
         bool: ["--post"], value: [], allow_positional: true
       },
       # Take a lock-only app (Release::LockOnlyConsumers) out of the current
-      # release by hand. Moves no branch and deploys nothing.
+      # release by hand. Moves no branch and deploys nothing. It reads the repo
+      # plan, so a repo a member names is refused.
       "drop-lock-only" => {
         synopsis: "bin/release drop-lock-only <repo> [--reason \"…\"]",
         consequence: "no app was dropped from the release",

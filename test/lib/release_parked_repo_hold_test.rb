@@ -108,7 +108,7 @@ class ReleaseCliParkedRepoHoldTest < Minitest::Test
   def verify(plan_repos, argv)
     groups = plan_repos.map { |r| { "repo" => r } }
     run_ruby(%(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{PARKED_FIXTURE}) + <<~RUBY)
-      def ladder_ahead_states(repos: nil, require_checkout: false)
+      def ladder_ahead_states(repos: nil, require_checkout: false, **)
         puts("LADDER-READ")
         { "release" => [], "accepted" => [], "unreadable" => [] }
       end

@@ -104,6 +104,8 @@ module ReleaseNotes
         lines << head
         g[:tasks].each { |task| lines << "   • #{card_line(task, g[:repo], label: task.slug)}" }
       end
+      # The apps that rode with lock bumps only, and each one the release dropped.
+      Release::LockOnlyConsumers.notes_lines(@release.metadata || {}).each { |line| lines << esc(line) }
       lines.join("\n")
     end
 

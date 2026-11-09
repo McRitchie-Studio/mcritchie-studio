@@ -665,11 +665,18 @@ How a gem rides a release:
    release with no member (`Release::LockOnlyConsumers`). It is promoted, QA'd
    where it has a QA app, and deployed through its own registry entry. A red CI
    on the bump leaves it behind with a warning. A failure of its OWN later (a red
-   pre-publish, pre-QA, ship or re-lock gate, a QA that does not boot, a failed
-   production deploy or smoke) DROPS it from the release with a `⚠ DROPPED` line,
-   recorded on the release (`metadata.lock_only_dropped`), and the member apps
-   carry on. `bin/release drop-lock-only <repo> [--reason "…"]` drops one by hand.
-   It is best-effort, like step 6.
+   pre-publish, pre-QA, ship or re-lock gate, a failed re-pin, a stray candidate,
+   prerelease or unshipped-final lock in its tree, a QA that does not boot, a
+   failed production deploy or smoke) DROPS it from the release with a
+   `⚠ DROPPED` line, recorded on the release (`metadata.lock_only_dropped`), and
+   the member apps carry on. A lock-only app deploys BEFORE its `main` moves, so
+   a production-stage drop leaves `main` behind: the next sweep carries it again.
+   The release notes, the Slack summary, the seal summary and `bin/release status`
+   name each drop; `shipped_shas` never records a dropped app, and `rollback`
+   names it and leaves it alone. `bin/release drop-lock-only <repo> [--reason "…"]`
+   drops one by hand; it reads the repo plan, so a member's repo is refused.
+   `status` and the `--expedite` pre-check count a rung of lock bumps only as
+   clean and list it under `Lock-only apps`. It is best-effort, like step 6.
    An `engine: false` app is never touched.
 
 Operational notes:

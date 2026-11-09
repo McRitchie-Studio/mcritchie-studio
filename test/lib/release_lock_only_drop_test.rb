@@ -102,7 +102,10 @@ class ReleaseLockOnlyDropTest < Minitest::Test
     assert_includes out, "CONTINUED", "a lock-only failure must not abort the ship: #{out}"
     refute_includes out, "ABORTED", out
     assert_includes out, "DROPPED rantly from this release — production deploy failed", out
-    assert_includes out, "rollback` skips a dropped app", "main moved: the warning must not say the bumps wait: #{out}"
+    # A lock-only app deploys before its `main` moves (deploy_app), so a failed
+    # deploy leaves `main` behind and the next sweep carries it again.
+    assert_includes out, "Its `main` did not move", out
+    refute_includes out, "rollback` skips a dropped app", out
     assert_includes out, "LEFT=mcritchie-studio,turf-monster", out
   end
 
@@ -122,7 +125,7 @@ class ReleaseLockOnlyDropTest < Minitest::Test
 
     assert_includes out, "DEPLOYED: mcritchie-studio", out
     assert_includes out, "LEFT=mcritchie-studio REPOS=mcritchie-studio", out
-    assert_includes out, "rollback` skips a dropped app", out
+    assert_includes out, "Its `main` did not move", out
     refute_includes out, "ABORTED", out
   end
 
@@ -151,7 +154,7 @@ class ReleaseLockOnlyDropTest < Minitest::Test
     stub = STUB + <<~'RUBY'
       def conductor(ruby, **)
         $stdout.puts("CONDUCTOR: #{ruby}")
-        ruby.include?("recorded(") ? { "slug" => "rel-now", "lock_only" => %w[rantly commercial-welding] } : {}
+        ruby.include?("repo_plan(") ? { "slug" => "rel-now", "lock_only" => %w[rantly commercial-welding] } : {}
       end
     RUBY
     out = run_release(stub, %(ARGV.replace(["rantly", "--reason", "Eco quota"]); drop_lock_only))
@@ -164,7 +167,7 @@ class ReleaseLockOnlyDropTest < Minitest::Test
     stub = STUB + <<~'RUBY'
       def conductor(ruby, **)
         $stdout.puts("CONDUCTOR: #{ruby}")
-        ruby.include?("recorded(") ? { "slug" => "rel-now", "lock_only" => %w[rantly] } : {}
+        ruby.include?("repo_plan(") ? { "slug" => "rel-now", "lock_only" => %w[rantly] } : {}
       end
     RUBY
     out = run_release(stub, %(ARGV.replace(["turf-monster"]); drop_lock_only))

@@ -3205,8 +3205,11 @@ end
 # --- dropping a lock-only app (review of release-ships-lock-only-consumers) ---
 # A lock-only app rides for nobody's card. A failure of its OWN (a red pre-publish
 # or pre-QA gate, a QA deploy that aborts or does not boot, a red ship gate or
-# re-lock gate, a production deploy or smoke that fails) therefore DROPS it from
-# the release with a warning, and the member apps carry on. Without this, rantly's
+# re-lock gate, a failed re-pin, a stray, prerelease or unshipped-final lock in its
+# tree, a production deploy or smoke that fails) therefore DROPS it from the
+# release with a warning, and the member apps carry on. Its production deploy runs
+# BEFORE its `main` moves (deploy_app), so a drop there leaves `main` behind and
+# the next sweep carries it again (task lock-only-drop-follow-ups). Without this, rantly's
 # Eco dyno, which 503s in the last week of each month, would stop every late-month
 # engine release at its smoke, with only a hand edit of the release record out.
 #
@@ -3222,19 +3225,26 @@ def lock_only_group?(group) = group.is_a?(Hash) && group["lock_only"] == true
 def lock_only_drops = (@lock_only_drops ||= {})
 def lock_only_unrecorded = (@lock_only_unrecorded ||= {})
 
-def drop_lock_only!(group, reason, main_moved: false)
+def drop_lock_only!(group, reason, main_moved: false, production: false)
   repo = group["repo"].to_s
   LOCK_ONLY_DROP_GUARD.synchronize do
     lock_only_drops[repo] ||= reason
     lock_only_unrecorded[repo] ||= reason
   end
-  # A production-stage drop comes AFTER push_frozen_main: `main` moved, the Heroku push may be live, and
-  # git_push_heroku runs no rollback. Say so; a dropped app is outside `bin/release rollback`'s plan.
+  # A lock-only app deploys BEFORE its `main` moves (deploy_app), so a failed
+  # production deploy leaves `main` where it was and the next sweep carries the app
+  # again. `main_moved` is true only when its `main` push landed and something after
+  # it failed: say so, since a dropped app is outside `bin/release rollback`'s plan.
   tail = if main_moved
            "Its `main` and `#{ACCEPTED_BRANCH}` may already be at the release tree, so no sweep carries it again " \
              "and `status` reads no lag. Nothing rolled it back, and `#{RELEASE_SELF_CMD} rollback` skips a " \
              "dropped app. Read `heroku releases -a <its app>`: a new release whose /up is down → `heroku " \
              "rollback`; no new release → re-push `main` to its prod_deploy remote by hand."
+         elsif production
+           "Its `main` did not move, so its bumps wait on `#{ACCEPTED_BRANCH}` and the next release carries it " \
+             "again; `#{RELEASE_SELF_CMD} status` names the drop and its engine lag. If the deploy reached " \
+             "production before it failed (a smoke after the push), `heroku releases -a <its app>` shows it, and " \
+             "the next release redeploys over it."
          else
            "Its bumps wait on `#{ACCEPTED_BRANCH}` for the next release; `#{RELEASE_SELF_CMD} status` names its engine lag."
          end
@@ -3250,8 +3260,9 @@ def lock_only_attempt(group, label)
 rescue SystemExit => e
   raise unless lock_only_group?(group)
 
+  production = label == "production deploy"
   drop_lock_only!(group, "#{label} failed: #{e.message.to_s.sub(/\A✗ /, '').lines.first.to_s.strip[0, 300]}",
-                  main_moved: label == "production deploy")
+                  main_moved: production && ship_evidence.key?(group["repo"].to_s), production: production)
   false
 end
 
@@ -3285,9 +3296,13 @@ def drop_lock_only
   reason = opt_value("--reason").to_s.strip
   reason = "dropped by the operator" if reason.empty?
 
-  step("record (read-only): the current release's lock-only repos")
+  # The REPO PLAN decides, not the recorded list (review F6): a recorded repo that
+  # a member also names rides as that member's group, and dropping it would record
+  # a drop the plan never makes, so the notes would name an app the ship deploys.
+  step("record (read-only): the current release's repo plan (its lock-only groups)")
   current = conductor("r = #{rel_current}; puts((r ? { slug: r.slug, lock_only: " \
-                      "Release::LockOnlyConsumers.recorded(r.metadata || {}) } : {}).to_json)", read_only: true)
+                      "Release::Conductor.repo_plan(r).select { |g| g[:lock_only] }.map { |g| g[:repo] } } : {}).to_json)",
+                      read_only: true)
   abort!("no current release — nothing to drop #{repo} from") if current["slug"].to_s.empty?
   unless Array(current["lock_only"]).include?(repo)
     abort!("#{current['slug']} does not carry #{repo} as a lock-only app (it carries " \
@@ -5464,7 +5479,7 @@ def prepare
   #     branches untouched.
   if expedite
     step("guard: re-prove the `accepted → release → main` ladder carries only #{task_slugs.first}")
-    guard = ladder_clean_verdict(expedited: task_slugs.first)
+    guard = ladder_clean_verdict(expedited: task_slugs.first, lock_only_clean: true)
     say("")
     say(guard["message"])
     unless guard["clean"] || DRY
@@ -5753,6 +5768,7 @@ def prepare
   # Again after the bump, over every lock: it asserts the bump left nothing behind
   # (a lock it could not rewrite, a transitive one) before the pre-QA gate.
   refuse_stray_candidates!(app_groups, published_gems)
+  prune_lock_only!(rel_slug, app_groups, repos)
 
   #     4e. THE DRIFT POST-CONDITION: no swept consumer may be left resolving a gem
   #     older than the version this sweep locked. Producers (a gem repo that consumes
@@ -6164,9 +6180,10 @@ def status
   say("Release status#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
 
-  verdict = ladder_clean_verdict(expedited: expedited, report_release: true)
+  verdict = ladder_clean_verdict(expedited: expedited, report_release: true, lock_only_clean: true)
   say("")
   say(verdict["message"])
+  lock_only_status_report(verdict)
   program_drift_report
   burned_gems_report
   engine_lag_report
@@ -6178,6 +6195,22 @@ def status
     abort!("the `accepted → release → main` ladder is not clean — `deploy-with-task` refused " \
            "(ship the whole release with the `full-cycle` launcher)")
   end
+end
+
+# LOCK-ONLY APPS — the rungs the ladder counted clean because they carry only the
+# release tooling's lock bumps, and every lock-only drop on the current and the
+# last shipped release (review of release-ships-lock-only-consumers). Display only.
+def lock_only_status_report(verdict)
+  rungs = Array(verdict["lock_only_rungs"])
+  drops = Release::LockOnlyConsumers.drop_status_lines(verdict["lock_only_dropped"])
+  return if rungs.empty? && drops.empty?
+
+  say("")
+  say("Lock-only apps (lock bumps only; a full `#{RELEASE_SELF_CMD} prepare` carries them with no card):")
+  rungs.each do |row|
+    say("  #{row['repo']}: `#{row['rung']}` carries #{row['ahead']} lock bump commit(s) only — not counted against the ladder")
+  end
+  drops.each { |line| say("  #{line}") }
 end
 
 # PROGRAM DRIFT — the release lane ships apps, never on-chain programs, so status also
@@ -6432,7 +6465,13 @@ def refuse_blind_accepted!(repos)
   say("  ✓ `accepted` is built by the declared suite workflow in #{sources.keys.join(', ')}")
 end
 
-def ladder_clean_verdict(expedited: nil, report_release: false)
+# lock_only_clean: true (status and the expedite pre-check) counts a rung whose
+# commits are ALL release-tooling lock bumps (Release::LockOnlyConsumers) as clean,
+# and names it apart: a full `prepare` carries such an app with no card, so it is
+# not other work an expedite would drag along (review of
+# release-ships-lock-only-consumers). The prepare's own coverage guard reads every
+# commit, as before.
+def ladder_clean_verdict(expedited: nil, report_release: false, lock_only_clean: false)
   # 1. Board signal, BOTH rungs, in ONE conductor call (read-only, runs even in
   #    --dry-run; a read mutates nothing, and one call keeps the prod board's
   #    connection budget intact):
@@ -6461,7 +6500,8 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     "r = #{rel_current}; " \
     "lane = begin; defined?(Release::LaneLease) ? Release::LaneLease.status_lines(r) : nil; " \
     "rescue StandardError => e; ['lane: unavailable (' + e.class.name + ')']; end; " \
-    "puts({ pending: pending, accepted: accepted, lane: lane, " \
+    "#{report_release ? lock_only_drops_ruby : 'drops = []; '}" \
+    "puts({ pending: pending, accepted: accepted, lane: lane, lock_only_dropped: drops, " \
     "release: (r ? { slug: r.slug, state: r.state } : nil) }.to_json)",
     read_only: true
   )
@@ -6476,7 +6516,7 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
   # 2. Git signal, BOTH rungs, from ONE fetch per repo. Skipped under --dry-run
   #    (fetches touch the network); the board signal alone drives the previewed
   #    verdict then.
-  git = ladder_ahead_states
+  git = ladder_ahead_states(lock_only_clean: lock_only_clean)
 
   Release::CleanCheck.evaluate(
     pending_tasks: pending,
@@ -6488,7 +6528,16 @@ def ladder_clean_verdict(expedited: nil, report_release: false)
     # see absences something recorded, and a skipped repo records none.
     expected_repos: git["expected"],
     expedited: expedited
-  )
+  ).merge("lock_only_rungs" => git["lock_only"] || [], "lock_only_dropped" => board["lock_only_dropped"] || [])
+end
+
+# The board read of the lock-only drops on the current and the last shipped
+# release, for `status` (Release::LockOnlyConsumers.drop_status_lines). A board
+# that predates the module, or a failed read, answers none: display only.
+def lock_only_drops_ruby
+  "drops = begin; defined?(Release::LockOnlyConsumers) ? [r, #{rel_last_shipped}].compact.uniq.map { |x| " \
+    "{ slug: x.slug, dropped: Release::LockOnlyConsumers.dropped(x.metadata || {}) } }" \
+    ".reject { |x| x[:dropped].empty? } : []; rescue StandardError; []; end; "
 end
 
 # The git signal for the clean check, BOTH rungs, from ONE fetch per repo:
@@ -6530,14 +6579,15 @@ end
 # against what it was asked to cover — and it is derived HERE, from the same
 # `repos`, so the scope and the reading cannot drift apart.
 # This is the I/O seam the tests stub, the way they stub `conductor`.
-def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
+def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false, lock_only_clean: false)
   # --dry-run takes no fetch, so nothing was expected OR read: an empty scope is
   # what keeps CleanCheck grading it `:unmeasured` rather than partial.
-  return { "release" => [], "accepted" => [], "unreadable" => [], "expected" => [] } if DRY
+  return { "release" => [], "accepted" => [], "unreadable" => [], "expected" => [], "lock_only" => [] } if DRY
 
   release_states = []
   accepted_states = []
   unreadable = []
+  lock_only = []
 
   repos.each do |repo|
     path = repo_path(repo)
@@ -6554,6 +6604,10 @@ def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
     # after the sweep are the next release's, not work this one left behind. Every
     # other caller (status, the expedite pre-check) has no pin and reads the branch.
     acc = rung_ahead(path, "origin/#{RELEASE_BRANCH}", swept_ref(repo))
+    if lock_only_clean
+      rel = lock_only_rung(path, repo, RELEASE_BRANCH, "origin/main", "origin/#{RELEASE_BRANCH}", rel, lock_only)
+      acc = lock_only_rung(path, repo, ACCEPTED_BRANCH, "origin/#{RELEASE_BRANCH}", swept_ref(repo), acc, lock_only)
+    end
     rel.nil? ? unreadable << { "repo" => repo, "rung" => RELEASE_BRANCH }
              : release_states << { "repo" => repo, "ahead" => rel }
     acc.nil? ? unreadable << { "repo" => repo, "rung" => ACCEPTED_BRANCH }
@@ -6561,7 +6615,21 @@ def ladder_ahead_states(repos: release_repo_slugs, require_checkout: false)
   end
 
   { "release" => release_states, "accepted" => accepted_states, "unreadable" => unreadable,
-    "expected" => Array(repos).map(&:to_s) }
+    "expected" => Array(repos).map(&:to_s), "lock_only" => lock_only }
+end
+
+# One rung's count, with a range of release-tooling lock bumps ONLY read as 0 and
+# noted in `found` ({ "repo", "rung", "ahead" }). A nil (unread) or 0 count, or a
+# range whose log cannot be read, is returned as it came.
+def lock_only_rung(path, repo, rung, base, head, ahead, found)
+  return ahead if ahead.nil? || ahead.zero?
+
+  log, ok = git_capture("-C", path, "log", "--format=#{Release::LockOnlyConsumers::LOG_FORMAT}", "--name-only",
+                        "#{base}..#{head}")
+  return ahead unless ok && Release::LockOnlyConsumers.lock_only?(Release::LockOnlyConsumers.parse_log(log))
+
+  found << { "repo" => repo, "rung" => rung, "ahead" => ahead }
+  0
 end
 
 # Commits `head` is ahead of `base` in a checkout, or nil when the count could
@@ -9515,6 +9583,21 @@ def stray_candidate_findings(app_groups, wanted, defer: nil, &ref_for)
   end
 end
 
+# A whole-plan lock refusal (stray candidate, unshipped final, prerelease) for a
+# LOCK-ONLY app drops it instead of aborting the release (review F4 of
+# release-ships-lock-only-consumers): it rides for nobody's card. Asks `read` (a
+# block over a list of groups, answering finding sentences) about each lock-only
+# group alone, drops each one with a finding, and answers the member groups for the
+# caller's own refusal. The caller prunes the drops (prune_lock_only!).
+def drop_lock_only_findings(app_groups, label)
+  only, members = Array(app_groups).partition { |group| lock_only_group?(group) }
+  only.each do |group|
+    found = Array(yield([group]))
+    drop_lock_only!(group, "#{label}: #{found.join('; ')[0, 300]}") if found.any?
+  end
+  members
+end
+
 STRAY_CANDIDATE_REMEDY =
   "A prerelease must never reach production. Either put the gem's task back on this release, so the ship " \
   "publishes the final and re-locks to it, or land a task on the consumer's `accepted` that restores its " \
@@ -9524,6 +9607,10 @@ STRAY_CANDIDATE_REMEDY =
 def refuse_stray_candidates!(app_groups, published_gems)
   return if DRY
 
+  app_groups = drop_lock_only_findings(app_groups, "lock check after the bump") do |groups|
+    unshipped_final_findings(groups, published_gems) { |_repo| "origin/#{RELEASE_BRANCH}" } +
+      stray_candidate_findings(groups, published_gems) { |_repo| "origin/#{RELEASE_BRANCH}" }
+  end
   findings = stray_candidate_findings(app_groups, published_gems) { |_repo| "origin/#{RELEASE_BRANCH}" }
   finals = unshipped_final_findings(app_groups, published_gems) { |_repo| "origin/#{RELEASE_BRANCH}" }
   unless finals.empty?
@@ -9563,6 +9650,10 @@ def refuse_stray_locks_before_publish!(app_groups, gem_plan)
     Release::ShipSequence.consumer_bump_action(text, gem_name, wanted[gem_name]) != :absent
   end
 
+  app_groups = drop_lock_only_findings(app_groups, "lock check before the publish") do |groups|
+    unshipped_final_findings(groups, wanted, defer: defer) { |_repo| ref } +
+      stray_candidate_findings(groups, wanted, defer: defer) { |_repo| ref }
+  end
   finals = unshipped_final_findings(app_groups, wanted, defer: defer) { |_repo| ref }
   unless finals.empty?
     abort!("a consumer is locked to a published gem version no release has shipped — #{finals.join('; ')}. " \
@@ -9767,6 +9858,9 @@ end
 def refuse_prerelease_deploy!(app_groups, ship_sha)
   return if DRY
 
+  app_groups = drop_lock_only_findings(app_groups, "prerelease check before the deploy") do |groups|
+    stray_candidate_findings(groups, {}) { |repo| ship_sha[repo] }
+  end
   findings = stray_candidate_findings(app_groups, {}) { |repo| ship_sha[repo] }
   return if findings.empty?
 
@@ -9822,6 +9916,9 @@ end
 def refuse_unshipped_final_deploy!(app_groups, ship_sha, published_gems)
   return if DRY
 
+  app_groups = drop_lock_only_findings(app_groups, "unshipped-final check before the deploy") do |groups|
+    unshipped_final_findings(groups, published_gems) { |repo| ship_sha[repo] }
+  end
   findings = unshipped_final_findings(app_groups, published_gems) { |repo| ship_sha[repo] }
   return if findings.empty?
 
@@ -10469,147 +10566,154 @@ def repin_consumers(app_groups, published_gems, ship_sha)
   # with the gems already live and this machine possibly without them).
   await_published_gems!(published_gems, "bin/release ship") unless DRY
   step("re-lock consumers of #{gem_names.join(', ')} to the final version (after all gems live, before any deploy)")
+  # A lock-only app's failed re-pin DROPS it (lock_only_attempt); the caller prunes
+  # it. Only a member app's failure stops the ship (review F4).
   app_groups.each do |group|
-    repo = group["repo"]
-    path = repo_path(repo)
+    lock_only_attempt(group, "re-pin") { repin_consumer!(group, gem_names, published_gems, ship_sha) }
+  end
+end
 
-    if DRY
-      step("  #{repo}: bundle lock --update <gem> --conservative (ship workspace @ frozen; a candidate floor or " \
-           "a branch ref on the Gemfile line becomes ~> x.y) → read the lock back → commit + " \
-           "push origin #{RELEASE_BRANCH} (idempotent; no-op if already on the final)")
+# Re-lock ONE consumer to the finals (repin_consumers).
+def repin_consumer!(group, gem_names, published_gems, ship_sha)
+  repo = group["repo"]
+  path = repo_path(repo)
+
+  if DRY
+    step("  #{repo}: bundle lock --update <gem> --conservative (ship workspace @ frozen; a candidate floor or " \
+         "a branch ref on the Gemfile line becomes ~> x.y) → read the lock back → commit + " \
+         "push origin #{RELEASE_BRANCH} (idempotent; no-op if already on the final)")
+    return
+  end
+
+  with_ship_workspace(repo) do
+    workspace = ship_workspace!(repo, ship_sha[repo])
+
+    # The workspace HEAD must BE the frozen SHA. It is by construction (it was
+    # just reset --hard onto it), so this asserts the pin actually took rather
+    # than trusting it: EVERY decision and edit below reads this tree, commits on
+    # this HEAD, and pushes it to `release`, so a wrong HEAD here would ship
+    # un-QA'd code. (The old check was the same invariant on the primary's local
+    # `release` branch, where an un-pushed local commit could sit.)
+    local_head, local_ok = git_capture("-C", workspace, "rev-parse", "HEAD")
+    abort!("could not read the ship workspace HEAD in #{repo} for re-pin") unless local_ok
+    if local_head.strip != ship_sha[repo]
+      abort!("#{repo} ship workspace HEAD (#{short(local_head.strip)}) is not the QA-frozen SHA " \
+             "(#{short(ship_sha[repo])}) — REFUSING to build the re-pin on the wrong base")
+    end
+
+    # DECIDE FROM THE FROZEN TREE — never from the primary.
+    #
+    # This read used to come from the PRIMARY's Gemfile, and it was safe only
+    # because of two things this change removed: the ship ff'd the primary's `main`
+    # to the frozen SHA, and the preflight refused a dirty/off-main primary. With
+    # the invariant gone, a primary read is a silent, prod-affecting lie in BOTH
+    # directions (carl, PR #517):
+    #   * The primary's `main` is now one release behind BY DEFINITION (nothing
+    #     ff's it). If the FROZEN tree branch-refs a gem while the primary's stale
+    #     main still carries the previous `~> x.y` pin, the decision comes back
+    #     EMPTY, prints a reassuring "already pinned", and the app DEPLOYS A FROZEN
+    #     SHA WHOSE GEMFILE STILL POINTS AT A GIT BRANCH — prod building the gem
+    #     from a branch instead of the published version, which is the exact hazard
+    #     auto-re-pin exists to prevent. It FAILS GREEN.
+    #   * The mirror: a dirty/feature-branch primary that branch-refs a gem the
+    #     frozen tree already pinned would make the rewrite a no-op, stage nothing,
+    #     and abort at the commit — AFTER THE GEMS PUBLISHED.
+    # The tree the re-pin is built ON is the only tree entitled to decide whether
+    # it is needed.
+    ws_gemfile = File.join(workspace, "Gemfile")
+    next unless File.exist?(ws_gemfile)
+
+    frozen  = ship_sha[repo]
+    text    = File.read(ws_gemfile)
+    ws_lock = File.join(workspace, "Gemfile.lock")
+    pending = Release::ShipSequence.gems_to_relock(gem_names, text, File.exist?(ws_lock) ? File.read(ws_lock) : "")
+    if pending.empty?
+      say("  #{repo}: Gemfile at the frozen SHA is already pinned for #{gem_names.join(', ')} — no re-pin")
       next
     end
+    # What QA ran, for the commit message and the gate's abort text.
+    frozen_lock = File.exist?(ws_lock) ? File.read(ws_lock) : ""
+    was = pending.to_h do |gem|
+      resolved = Release::ShipSequence.locked_version(frozen_lock, gem)
+      [gem, Release::ShipSequence.prerelease_version?(resolved) ? resolved : nil]
+    end
+    branch_refd = pending.select { |gem| Release::GemfileRepin.references_branch?(text, gem) }
+    pins = pending.map do |gem|
+      was[gem] ? "#{gem} #{published_gems[gem]} (QA ran #{was[gem]})" : "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}"
+    end
 
-    with_ship_workspace(repo) do
-      workspace = ship_workspace!(repo, ship_sha[repo])
+    # EXACTLY what this run would write — computed up front, because it is both the
+    # content we are about to commit AND the identity a prior partial ship's re-pin
+    # must match to be reusable (see below).
+    expected = text.dup
+    pending.each { |gem| expected = Release::ShipSequence.locked_gemfile(expected, gem, published_gems[gem]) }
 
-      # The workspace HEAD must BE the frozen SHA. It is by construction (it was
-      # just reset --hard onto it), so this asserts the pin actually took rather
-      # than trusting it: EVERY decision and edit below reads this tree, commits on
-      # this HEAD, and pushes it to `release`, so a wrong HEAD here would ship
-      # un-QA'd code. (The old check was the same invariant on the primary's local
-      # `release` branch, where an un-pushed local commit could sit.)
-      local_head, local_ok = git_capture("-C", workspace, "rev-parse", "HEAD")
-      abort!("could not read the ship workspace HEAD in #{repo} for re-pin") unless local_ok
-      if local_head.strip != ship_sha[repo]
-        abort!("#{repo} ship workspace HEAD (#{short(local_head.strip)}) is not the QA-frozen SHA " \
-               "(#{short(ship_sha[repo])}) — REFUSING to build the re-pin on the wrong base")
-      end
+    # The re-pin must build on the QA-frozen SHA. Fetch first so the origin check
+    # reads the TRUE remote (not a stale local origin/release ref), then require
+    # origin/release == frozen so a post-prepare merge to origin can't sneak out
+    # un-QA'd under cover of the re-pin. (A ref read + a fetch — no working tree.)
+    _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
+    abort!("could not fetch origin in #{repo} for re-pin — check the remote, then re-run `bin/release ship`") unless fetched
 
-      # DECIDE FROM THE FROZEN TREE — never from the primary.
-      #
-      # This read used to come from the PRIMARY's Gemfile, and it was safe only
-      # because of two things this change removed: the ship ff'd the primary's `main`
-      # to the frozen SHA, and the preflight refused a dirty/off-main primary. With
-      # the invariant gone, a primary read is a silent, prod-affecting lie in BOTH
-      # directions (carl, PR #517):
-      #   * The primary's `main` is now one release behind BY DEFINITION (nothing
-      #     ff's it). If the FROZEN tree branch-refs a gem while the primary's stale
-      #     main still carries the previous `~> x.y` pin, the decision comes back
-      #     EMPTY, prints a reassuring "already pinned", and the app DEPLOYS A FROZEN
-      #     SHA WHOSE GEMFILE STILL POINTS AT A GIT BRANCH — prod building the gem
-      #     from a branch instead of the published version, which is the exact hazard
-      #     auto-re-pin exists to prevent. It FAILS GREEN.
-      #   * The mirror: a dirty/feature-branch primary that branch-refs a gem the
-      #     frozen tree already pinned would make the rewrite a no-op, stage nothing,
-      #     and abort at the commit — AFTER THE GEMS PUBLISHED.
-      # The tree the re-pin is built ON is the only tree entitled to decide whether
-      # it is needed.
-      ws_gemfile = File.join(workspace, "Gemfile")
-      next unless File.exist?(ws_gemfile)
+    head, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
+    abort!("could not read origin/#{RELEASE_BRANCH} in #{repo} for re-pin") unless ok
+    head = head.strip
 
-      frozen  = ship_sha[repo]
-      text    = File.read(ws_gemfile)
-      ws_lock = File.join(workspace, "Gemfile.lock")
-      pending = Release::ShipSequence.gems_to_relock(gem_names, text, File.exist?(ws_lock) ? File.read(ws_lock) : "")
-      if pending.empty?
-        say("  #{repo}: Gemfile at the frozen SHA is already pinned for #{gem_names.join(', ')} — no re-pin")
+    if head != frozen
+      # origin/release MOVED. Before calling that un-QA'd drift, ask the only
+      # question that matters: IS IT THIS RUN'S OWN RE-PIN, already pushed by a
+      # ship that published the gems and then died? (Release::ShipSequence —
+      # ancestry + Gemfile/Gemfile.lock-only + a BYTE-IDENTICAL Gemfile.) If it is,
+      # the act is already done: ship THAT commit rather than mint a rival with the
+      # same tree, which is what wedged the retry — its push is non-fast-forward
+      # against the re-pin already on the branch, and the ship could never complete.
+      if resumable_repin?(repo, workspace, frozen: frozen, head: head, expected_gemfile: expected,
+                          expect: pending.to_h { |gem| [gem, published_gems[gem]] })
+        say("  #{repo}: the re-pin for #{short(frozen)} is ALREADY on origin/#{RELEASE_BRANCH} " \
+            "(#{short(head)}) — a prior partial ship pushed it. REUSING that commit (minting a second " \
+            "one would be a non-fast-forward and could never land).")
+        @ship_live << "re-pin already live on origin/#{RELEASE_BRANCH} in #{repo} (#{short(head)})"
+        ship_sha[repo] = head
+        relocked[repo] = { "from" => frozen, "to" => head, "pins" => pins }
         next
       end
-      # What QA ran, for the commit message and the gate's abort text.
-      frozen_lock = File.exist?(ws_lock) ? File.read(ws_lock) : ""
-      was = pending.to_h do |gem|
-        resolved = Release::ShipSequence.locked_version(frozen_lock, gem)
-        [gem, Release::ShipSequence.prerelease_version?(resolved) ? resolved : nil]
-      end
-      branch_refd = pending.select { |gem| Release::GemfileRepin.references_branch?(text, gem) }
-      pins = pending.map do |gem|
-        was[gem] ? "#{gem} #{published_gems[gem]} (QA ran #{was[gem]})" : "#{gem} #{Release::GemfileRepin.pessimistic_constraint(published_gems[gem])}"
-      end
 
-      # EXACTLY what this run would write — computed up front, because it is both the
-      # content we are about to commit AND the identity a prior partial ship's re-pin
-      # must match to be reusable (see below).
-      expected = text.dup
-      pending.each { |gem| expected = Release::ShipSequence.locked_gemfile(expected, gem, published_gems[gem]) }
-
-      # The re-pin must build on the QA-frozen SHA. Fetch first so the origin check
-      # reads the TRUE remote (not a stale local origin/release ref), then require
-      # origin/release == frozen so a post-prepare merge to origin can't sneak out
-      # un-QA'd under cover of the re-pin. (A ref read + a fetch — no working tree.)
-      _, fetched = sh("git", "-C", path, "fetch", "origin", "--quiet")
-      abort!("could not fetch origin in #{repo} for re-pin — check the remote, then re-run `bin/release ship`") unless fetched
-
-      head, ok = git_capture("-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}")
-      abort!("could not read origin/#{RELEASE_BRANCH} in #{repo} for re-pin") unless ok
-      head = head.strip
-
-      if head != frozen
-        # origin/release MOVED. Before calling that un-QA'd drift, ask the only
-        # question that matters: IS IT THIS RUN'S OWN RE-PIN, already pushed by a
-        # ship that published the gems and then died? (Release::ShipSequence —
-        # ancestry + Gemfile/Gemfile.lock-only + a BYTE-IDENTICAL Gemfile.) If it is,
-        # the act is already done: ship THAT commit rather than mint a rival with the
-        # same tree, which is what wedged the retry — its push is non-fast-forward
-        # against the re-pin already on the branch, and the ship could never complete.
-        if resumable_repin?(repo, workspace, frozen: frozen, head: head, expected_gemfile: expected,
-                            expect: pending.to_h { |gem| [gem, published_gems[gem]] })
-          say("  #{repo}: the re-pin for #{short(frozen)} is ALREADY on origin/#{RELEASE_BRANCH} " \
-              "(#{short(head)}) — a prior partial ship pushed it. REUSING that commit (minting a second " \
-              "one would be a non-fast-forward and could never land).")
-          @ship_live << "re-pin already live on origin/#{RELEASE_BRANCH} in #{repo} (#{short(head)})"
-          ship_sha[repo] = head
-          relocked[repo] = { "from" => frozen, "to" => head, "pins" => pins }
-          next
-        end
-
-        abort!("#{repo} origin/#{RELEASE_BRANCH} (#{short(head)}) drifted past the QA-frozen SHA " \
-               "(#{short(frozen)}), and the drift is NOT this run's own re-pin (it changes more than " \
-               "Gemfile/Gemfile.lock, or its Gemfile is not what this ship would write) — so code would " \
-               "reach production un-QA'd. Re-run `bin/release prepare` to re-QA before re-pinning.")
-      end
-
-      File.write(ws_gemfile, expected)
-      text = expected
-      # Same read-back the prepare-side bump does, for the same reason: a
-      # `bundle lock --update` that cannot see the version resolves the old one
-      # and still exits 0. `expect:` puts that check INSIDE bundle_lock's
-      # propagation ladder, so a slow index is waited out rather than aborting a
-      # ship that has just published the final. This commit is the last thing
-      # between the frozen SHA and a production deploy.
-      # --conservative for a candidate: only the gem itself may move off the tree QA
-      # ran. `expect:` is not optional here: a lock still on the candidate satisfies
-      # the Gemfile, and bundler keeps it unless the update lands.
-      pending.each do |gem|
-        bundle_lock(workspace, gem, conservative: !branch_refd.include?(gem), expect: published_gems[gem])
-      end
-
-      sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
-      verb = was.values.any? ? "relock" : "repin"
-      _, committed = sh("git", "-C", workspace, "commit", "-m", "#{verb} #{pins.join(', ')}", capture: true)
-      abort!("could not commit the re-pin in #{repo}'s ship workspace") unless committed
-
-      # Push the detached commit onto `release` BY REF. Fast-forward-checked (no
-      # --force), so a release branch that moved under us fails closed here — before
-      # any app deploys.
-      _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
-      abort!("could not push the re-pin to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} move?)") unless pushed
-
-      new_head, = git_capture("-C", workspace, "rev-parse", "HEAD")
-      ship_sha[repo] = new_head.strip # ship the re-pin commit (frozen + re-pin)
-      relocked[repo] = { "from" => frozen, "to" => new_head.strip, "pins" => pins }
-      @ship_live << "re-pinned #{pins.join(', ')} in #{repo}"
+      abort!("#{repo} origin/#{RELEASE_BRANCH} (#{short(head)}) drifted past the QA-frozen SHA " \
+             "(#{short(frozen)}), and the drift is NOT this run's own re-pin (it changes more than " \
+             "Gemfile/Gemfile.lock, or its Gemfile is not what this ship would write) — so code would " \
+             "reach production un-QA'd. Re-run `bin/release prepare` to re-QA before re-pinning.")
     end
+
+    File.write(ws_gemfile, expected)
+    text = expected
+    # Same read-back the prepare-side bump does, for the same reason: a
+    # `bundle lock --update` that cannot see the version resolves the old one
+    # and still exits 0. `expect:` puts that check INSIDE bundle_lock's
+    # propagation ladder, so a slow index is waited out rather than aborting a
+    # ship that has just published the final. This commit is the last thing
+    # between the frozen SHA and a production deploy.
+    # --conservative for a candidate: only the gem itself may move off the tree QA
+    # ran. `expect:` is not optional here: a lock still on the candidate satisfies
+    # the Gemfile, and bundler keeps it unless the update lands.
+    pending.each do |gem|
+      bundle_lock(workspace, gem, conservative: !branch_refd.include?(gem), expect: published_gems[gem])
+    end
+
+    sh("git", "-C", workspace, "add", "Gemfile", "Gemfile.lock")
+    verb = was.values.any? ? "relock" : "repin"
+    _, committed = sh("git", "-C", workspace, "commit", "-m", "#{verb} #{pins.join(', ')}", capture: true)
+    abort!("could not commit the re-pin in #{repo}'s ship workspace") unless committed
+
+    # Push the detached commit onto `release` BY REF. Fast-forward-checked (no
+    # --force), so a release branch that moved under us fails closed here — before
+    # any app deploys.
+    _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{RELEASE_BRANCH}", capture: true)
+    abort!("could not push the re-pin to origin/#{RELEASE_BRANCH} in #{repo} (did #{RELEASE_BRANCH} move?)") unless pushed
+
+    new_head, = git_capture("-C", workspace, "rev-parse", "HEAD")
+    ship_sha[repo] = new_head.strip # ship the re-pin commit (frozen + re-pin)
+    relocked[repo] = { "from" => frozen, "to" => new_head.strip, "pins" => pins }
+    @ship_live << "re-pinned #{pins.join(', ')} in #{repo}"
   end
 end
 
@@ -11019,10 +11123,34 @@ def deploy_app(group, frozen)
          "app #{repo} → main @ frozen #{short(frozen)} (no production deploy target — nothing to dispatch)"
        end)
 
+  # A LOCK-ONLY app (Release::LockOnlyConsumers) deploys FIRST and moves its `main`
+  # only after the deploy and its smoke pass (review F1 of
+  # release-ships-lock-only-consumers). A failure of its own drops it from the
+  # release, and nothing redeploys a dropped app: if its `main` had moved, its bumps
+  # would leave `main..accepted`, so no later sweep would carry it again and
+  # `status` would read no lag while production ran the old tree. Deploying first
+  # keeps `main` (and `accepted`, which advance_accepted re-baselines) where they
+  # were until production runs the release tree. A member app keeps the order it
+  # had: its members' merged:"main" stamp marks the ff before the deploy.
+  if lock_only_group?(group)
+    step("lock-only #{repo}: deploy first; `main` moves only after the deploy passes")
+    deploy_app_dispatch(group, frozen, adapter: adapter, target: target, handler: handler, static_target: static_target)
+    push_frozen_main(repo, frozen)
+    return
+  end
+
   push_frozen_main(repo, frozen)
   # The ff landed on origin — stamp this repo's members merged:"main" (matrix:
   # assembled+main = prod-in-flight; an interrupted re-run reads it as "ff done").
   record_merged_main(Array(group["members"]).map { |m| m["slug"] })
+  deploy_app_dispatch(group, frozen, adapter: adapter, target: target, handler: handler, static_target: static_target)
+end
+
+# Dispatch one app's production deploy through its strategy, after (a member app)
+# or before (a lock-only app) its `main` moves; see deploy_app.
+def deploy_app_dispatch(group, frozen, adapter:, target:, handler:, static_target:)
+  repo = group["repo"]
+  path = repo_path(repo)
 
   # NO DEPLOY TARGET — a registered app with no `prod_deploy` (turf-vault). Its
   # main is advanced and its members stamped merged:"main" above; there is simply
@@ -11245,12 +11373,14 @@ def deploy_satellites_in_parallel(satellites, ship_sha, rel_slug)
   say("  satellite deploys (#{results.count(&:ok)}/#{results.size} live):")
   Release::ParallelDeploy.summary_lines(results).each { |line| say(line) }
   # A lock-only app's failed deploy or smoke DROPS it; only a member app's failure
-  # stops the ship. Its `main` moved first, and git_push_heroku has no rollback (drop_lock_only!).
+  # stops the ship. Its `main` moves only after its deploy passes (deploy_app).
   only = satellites.select { |g| lock_only_group?(g) }.map { |g| g["repo"] }
   results.each do |r|
     next if r.ok || !only.include?(r.repo)
 
-    drop_lock_only!({ "repo" => r.repo, "lock_only" => true }, "production deploy failed: #{r.error.to_s.lines.first.to_s.strip[0, 300]}", main_moved: true)
+    drop_lock_only!({ "repo" => r.repo, "lock_only" => true },
+                    "production deploy failed: #{r.error.to_s.lines.first.to_s.strip[0, 300]}",
+                    main_moved: ship_evidence.key?(r.repo.to_s), production: true)
   end
   failure = Release::ParallelDeploy.failure_message(results.reject { |r| !r.ok && only.include?(r.repo) },
                                                      resume_cmd: "#{RELEASE_SELF_CMD} ship")
@@ -11622,6 +11752,10 @@ def run_seal_smoke(root, ship_sha, rel_slug, reseal: false)
   seal    = result.seal
   summary = seal.summary
   summary = "#{summary} (#{reseal})" if reseal.is_a?(String)
+  # A green seal must not read as "every app is live" when a lock-only app was
+  # dropped (review F3): the seal names the drops.
+  dropped_note = Release::LockOnlyConsumers.seal_note(lock_only_drops)
+  summary = [summary, dropped_note].reject { |part| part.to_s.strip.empty? }.join(" · ") if dropped_note
   smoke_status = ok ? "completed" : "failed"
 
   # Record the seal on prod (best-effort). conductor() abort!s on a heroku-run
@@ -11741,6 +11875,7 @@ def ship
     "resuming_member_ship: (!r.active? && unfinished.positive?), unfinished_members: unfinished, " \
     "repos: Release::Conductor.repo_plan(r), qa_shas: (r.metadata['qa_shas'] || {}), " \
     "gem_candidates: (r.metadata['gem_candidates'] || {}), " \
+    "lock_only_dropped: Release::LockOnlyConsumers.dropped(r.metadata || {}), " \
     "#{Release::DevnetGauntlet::SNAPSHOT_RUBY}}.to_json)",
     read_only: true
   )
@@ -11748,6 +11883,9 @@ def ship
   state    = result["state"]
   repos    = result["repos"] || []
   qa_shas  = result["qa_shas"] || {}
+  # The lock-only apps an earlier step (the prepare) dropped: already out of the
+  # plan, and named by the seal beside this run's own drops.
+  (result["lock_only_dropped"] || {}).each { |repo, why| lock_only_drops[repo.to_s] ||= why.to_s }
   resuming_member_ship = !!result["resuming_member_ship"]
   # Don't ship a candidate that hasn't been assembled + QA'd (the model would
   # otherwise allow assembling→shipped, bypassing the QA gate). The only
@@ -11918,6 +12056,7 @@ def ship
 
   # 4. Re-lock consumers to the finals (after ALL gems live, before any app deploy).
   repin_consumers(app_groups, published_gems, ship_sha)
+  prune_lock_only!(rel_slug, app_groups, repos)
 
   # 4b. The re-lock commit is the tree that deploys: read ITS CI before any deploy.
   run_relock_gate(app_groups, ship_sha)
@@ -11927,6 +12066,7 @@ def ship
   #     deploys, whatever prepared it and whatever the steps above concluded.
   refuse_prerelease_deploy!(app_groups, ship_sha)
   refuse_unshipped_final_deploy!(app_groups, ship_sha, published_gems)
+  prune_lock_only!(rel_slug, app_groups, repos)
 
   # 5. Apps: the hub FIRST and alone, then the satellites CONCURRENTLY (deploy_apps).
   #    A hub failure aborts before any satellite moves; a satellite failure stops
@@ -13278,8 +13418,10 @@ def rollback_read_ruby(slug)
   "cur = #{rel_current}; " \
   "puts({release: {slug: r.slug, state: r.state, deployed_sha: r.deployed_sha, " \
   "shipped_shas: (r.metadata['shipped_shas'] || {}), rolled_back: r.metadata['rolled_back'], " \
+  "lock_only_dropped: Release::LockOnlyConsumers.dropped(r.metadata || {}), " \
   "repos: Release::Conductor.repo_plan(r)}, " \
   "history: earlier.map { |e| {slug: e.slug, deployed_sha: e.deployed_sha, shipped_shas: (e.metadata['shipped_shas'] || {}), " \
+  "lock_only_dropped: Release::LockOnlyConsumers.dropped(e.metadata || {}), " \
   "rolled_back: e.metadata['rolled_back']} }, " \
   "later: later&.slug, shipping: (cur && cur.event_started?('deploy_prod') ? cur.slug : nil)}.to_json)"
 end
