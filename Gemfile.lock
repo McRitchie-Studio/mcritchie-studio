@@ -568,7 +568,7 @@ DEPENDENCIES
   solid_cache (~> 1.0)
   solid_queue (~> 1.4)
   stimulus-rails
-  studio-engine (~> 0.136)
+  studio-engine (~> 0.141)
   tailwindcss-rails (~> 4.5)
   turbo-rails
   tzinfo-data
