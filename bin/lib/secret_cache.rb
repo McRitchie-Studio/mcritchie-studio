@@ -519,6 +519,34 @@ module SecretCache
     update_entry!(name, env) { |meta| meta["last_refresh_failed_at"] = now.utc.iso8601 }
   end
 
+  # A SECOND REFUSAL, MARKED (task agent-op-reads-ratchet). AuthRefresh read the
+  # item fresh after a refusal, and +service+ refused the fresh value too: the
+  # 1Password item itself is bad (revoked, wrong field, wrong account). `bin/secret
+  # status` says so until a later refresh is accepted (#clear_refused!).
+  REFUSED_KEYS = %w[still_refused_at still_refused_by].freeze
+
+  def record_refused!(name, service, env: ENV, now: Time.now)
+    update_entry!(name, env) do |meta|
+      meta["still_refused_at"] = now.utc.iso8601
+      meta["still_refused_by"] = service.to_s
+    end
+  end
+
+  def clear_refused!(name, env: ENV)
+    return false unless (entry(name, env) || {}).key?("still_refused_at")
+
+    update_entry!(name, env) { |meta| REFUSED_KEYS.each { |key| meta.delete(key) } }
+  end
+
+  # The status suffix for a marked refusal, or "".
+  def refused_words(meta, now: Time.now)
+    stamp = time_or_nil(meta["still_refused_at"])
+    return "" unless stamp
+
+    " (REFUSED by #{meta['still_refused_by']} after a fresh read #{duration_words(now - stamp)} ago: " \
+      "check the item in 1Password)"
+  end
+
   def update_entry!(name, env)
     # Bookkeeping never aborts its caller: a sandboxed run that may not touch the
     # folder records nothing, quietly (the read or mint it describes goes on).
@@ -663,6 +691,7 @@ module SecretCache
       line = "  #{name}: #{state[:words]}"
       failed = time_or_nil(meta["last_refresh_failed_at"])
       line += " (last refresh FAILED #{duration_words(now - failed)} ago)" if failed
+      line += refused_words(meta, now: now)
       held = backoff(name, env: env, now: now)
       line += " (1Password #{held[1]}: no op read until #{held[0].iso8601})" if held
       lines << line

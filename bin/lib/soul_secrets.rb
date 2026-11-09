@@ -22,8 +22,8 @@ require_relative "auth_refresh"
 # THE RULES THIS FILE HOLDS
 #   * A soul reads only its own set. A read of an item another soul's set names is
 #     REFUSED and logged (bin/op-reads shows it as action `soul-refused`). An item
-#     no set names is NOT_MANAGED: the caller falls back to the classic read. The
-#     ratchet that closes that fallback is a later task (agent-op-reads-ratchet).
+#     no set names is NOT_MANAGED: the caller falls back to the classic read. A
+#     process that names no soul may not read a soul-set item (#refuse_unnamed!).
 #   * Nothing from an admin vault lands in a soul folder. A config that names one
 #     is refused at load, and the write path refuses it again.
 #   * Each soul's set is a portable unit (ruling 2): #manifest is everything a
@@ -454,6 +454,23 @@ module SoulSecrets
     OpMeter.record(action: "soul-refused", outcome: "refused", via: "soul:#{soul}:#{vault}/#{item}", env: env)
   end
 
+  # THE PLAIN READ OF A SOUL-SET ITEM IS CLOSED (task agent-op-reads-ratchet;
+  # Carl's review of soul-secret-sets). A process that names no soul (no MCR_SOUL,
+  # no --soul) used to read any soul's item straight from 1Password through the
+  # classic `bin/secret <vault> <item>`, so the cross-soul refusal bit only through
+  # the shim. Now such a read is refused when any set names the item, and logged as
+  # `soul-refused` with the soul `none`. Raises Refused naming the owners and the
+  # one-line fix; returns nil when no set names the item (the classic read runs).
+  def refuse_unnamed!(vault, item, cfg:, env: ENV)
+    owners = owners(cfg, vault, item)
+    return nil if owners.empty?
+
+    log_refusal("none", vault, item, env: env)
+    raise Refused, "secret: #{vault}/#{item} is in #{owners.join(', ')}'s soul set, and this process names no soul. " \
+                   "Name it: #{SOUL_ENV}=#{owners.first} bin/secret #{vault} #{item} <field> " \
+                   "(or bin/secret read --soul #{owners.first} ...). The attempt is logged."
+  end
+
   # The kept fields of +item+ for +soul+: the cache first, then one bounded read
   # written back. When the read fails, a copy inside its refresh window still
   # serves. Raises Refused or Unavailable; returns nil when no set names it.
@@ -525,7 +542,41 @@ module SoulSecrets
       fields
     end
     AuthRefresh.run(item: item, service: service, read: first, refresh: fresh, rejected: rejected, env: env,
-                    say: ->(line) { err.puts(line) }, &block)
+                    say: ->(line) { err.puts(line) },
+                    mark: ->(outcome) { mark_refused(soul, entry, service, env: env) if outcome == :still_refused },
+                    &block)
+  end
+
+  # A SECOND REFUSAL, MARKED on the item's own file (task agent-op-reads-ratchet):
+  # `bin/secret sets` then says the item is bad until a later read rewrites the
+  # file (#store writes no mark). Metadata only; the fields are left as they are.
+  def mark_refused(soul, entry, service, env: ENV, now: Time.now)
+    path = File.join(soul_dir(soul, env), item_file(entry["item"]))
+    return false unless File.file?(path) && !File.symlink?(path)
+
+    SecretCache.check_file!(path)
+    data = JSON.parse(File.read(path))
+    data["refused_at"] = now.utc.iso8601
+    data["refused_by"] = service.to_s
+    SecretCache.atomic_write(path, "#{JSON.generate(data)}\n")
+    true
+  rescue StandardError
+    false
+  end
+
+  # [time, service] when the item's file carries a refusal mark, else nil.
+  def refusal(soul, entry, env: ENV)
+    home = SecretCache.readable_dir(env)
+    return nil unless home
+
+    path = File.join(home, soul.to_s, item_file(entry["item"]))
+    return nil unless File.file?(path) && !File.symlink?(path)
+
+    data = JSON.parse(File.read(path))
+    stamp = SecretCache.time_or_nil(data["refused_at"])
+    stamp ? [stamp, data["refused_by"].to_s] : nil
+  rescue StandardError
+    nil
   end
 
   # The fields in the shape `op item get --format json` prints, for a caller that
@@ -550,6 +601,11 @@ module SoulSecrets
                 when :expired then "expired #{SecretCache.duration_words(now - expires)} ago"
                 else "not warmed"
                 end
+        refused = refusal(m["soul"], entry, env: env)
+        if refused
+          words += " (REFUSED by #{refused[1]} after a fresh read #{SecretCache.duration_words(now - refused[0])} ago: " \
+                   "check the item in 1Password)"
+        end
         lines << "  #{entry['vault']}/#{entry['item']}: #{words}"
       end
     end
@@ -628,6 +684,30 @@ module SoulSecrets
       value = fetch(tier, item, field, env)
       @memo[key] = [value, now + SoulSecrets.seconds(tier["lifetime"])]
       value
+    end
+
+    # The admin twin of SoulSecrets.with_refresh, IN MEMORY (Carl's review of
+    # secret-refresh-on-auth-failure). The soul-set refresh writes the fresh copy to
+    # disk, and the write path refuses an admin vault, so an admin item could never
+    # refresh there. Here the block gets the memoized value; when +service+ refuses
+    # it (the block raises AuthRefresh::Rejected, or +rejected+ says so), the memo
+    # entry is dropped, the item is read fresh once into memory, and the block runs
+    # once more. Nothing is written to disk. The allowlist check is #read's, so a
+    # script outside the tier is refused before any read.
+    def with_refresh(item, field, service:, cfg:, env: ENV, program: $PROGRAM_NAME, rejected: nil,
+                     err: $stderr, root: tooling_root, &block)
+      first = -> { read(item, field, cfg: cfg, env: env, program: program, root: root) }
+      fresh = lambda do
+        forget(item, field)
+        read(item, field, cfg: cfg, env: env, program: program, root: root)
+      end
+      AuthRefresh.run(item: item, service: service, read: first, refresh: fresh, rejected: rejected, env: env,
+                      say: ->(line) { err.puts(line) }, &block)
+    end
+
+    # Drop one memoized value; the next #read fetches it.
+    def forget(item, field)
+      @memo.delete([item.to_s, field.to_s])
     end
 
     def fetch(tier, item, field, env)

@@ -82,7 +82,10 @@ module AuthRefresh
   #                credential. Omit it when the block raises Rejected instead.
   #   say       -> line -> where the stderr narration goes (default $stderr)
   #   how       the words for the refresh step, for the narration
-  def run(item:, service:, refresh:, read: -> { }, rejected: nil, env: ENV, say: nil,
+  #   mark      -> outcome -> optional bookkeeping after a refresh: :still_refused
+  #                (so `bin/secret status` / `sets` can say the item is bad) or
+  #                :ok (clear that mark). It may not raise into the caller.
+  def run(item:, service:, refresh:, read: -> { }, rejected: nil, env: ENV, say: nil, mark: nil,
           how: "forgetting the cached copy and reading it fresh from 1Password once")
     item = label(item)
     service = label(service)
@@ -103,13 +106,23 @@ module AuthRefresh
     result, refused = attempt(fresh, rejected) { |value| yield value }
     if refused
       record(item, service, "still-refused", env)
+      note(mark, :still_refused)
       raise StillRefused.new("auth-refresh: #{service} still refuses #{item} after one fresh read from 1Password; " \
                              "stopping. Check the item in 1Password (rotated, revoked, or the wrong field or account).",
                              item: item, service: service, result: result)
     end
     record(item, service, "ok", env)
+    note(mark, :ok)
     say.call("auth-refresh: #{service} accepted the fresh #{item}")
     result
+  end
+
+  # The caller's bookkeeping. Best-effort: a mark that fails never changes the
+  # refresh's own answer.
+  def note(mark, outcome)
+    mark&.call(outcome)
+  rescue StandardError
+    nil
   end
 
   # [result, refused?]. A Rejected raise is a refusal with no result.

@@ -783,8 +783,12 @@ module CiStatus
     @gh_token ? { "GH_TOKEN" => @gh_token } : {}
   end
 
-  def self.gh_auth_refusal?(body)
-    GhAuthRetry.auth_failure?(body) || HTTP_401.match?(body.to_s)
+  # A permission refusal ("not accessible by integration") of a token this process
+  # minted is not one: a fresh token for the same App is refused the same way. Of an
+  # inherited token it is (GhAuthRetry.refreshable?). +token+ is the token the call
+  # rode; by default the held one, else the ambient GH_TOKEN.
+  def self.gh_auth_refusal?(body, token: @gh_token)
+    GhAuthRetry.refreshable?(body, token: token) || HTTP_401.match?(body.to_s)
   end
 
   # TRUE when the held token has reached its re-mint age.
@@ -851,6 +855,7 @@ module CiStatus
     retried, retried_ok = gh_capture(args)
     refused = !retried_ok && gh_auth_refusal?(retried)
     AuthRefresh.record(gh_lane_item, "github", refused ? "still-refused" : "ok")
+    GhAuthRetry.mark_refusal(GhIdentity.resolve(nil), refused ? :still_refused : :ok, ENV)
     [retried, retried_ok]
   end
 

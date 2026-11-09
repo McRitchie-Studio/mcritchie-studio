@@ -1,0 +1,127 @@
+# THE 1PASSWORD READS RATCHET (task agent-op-reads-ratchet). Two numbers that may
+# only go DOWN. Doc: docs/agents/modules/credential-access.md, "The ratchet".
+#
+# WHY (Alex McRitchie, 2026-11-09). Agents should read 1Password less and less.
+# 1Password becomes the place to experiment with credentials and the fallback when
+# a cached copy fails, not the place every run reads from. The account has 1,000
+# reads a day for everyone (credential-access.md); a caller that needs more is
+# the defect.
+#
+# 1. `daily_cap`: the most `op` calls agents may make in any rolling 24 hours, as
+#    bin/op-reads counts them (`bin/op-reads --ratchet`; the counting rule is in
+#    bin/lib/op_reads_ratchet.rb). It is a measure and an alarm, not a block: no
+#    read is ever refused for it. Lower it when the measured number falls; never
+#    raise it. test/lib/op_direct_callers_ratchet_test.rb holds the number to the
+#    one on origin/release, and `cap_history` must never rise.
+#
+# 2. `callers`: every file under bin/, app/ and lib/ that runs `op` itself
+#    (metered or not; bin/lib/op_call_scan.rb finds them). A file that is not
+#    named here fails the ratchet test, which runs in bin/fast-check's
+#    repo-ratchets lane and in CI. A named file that no longer runs `op` fails
+#    too: drop it, so the list shrinks as callers move behind a purpose-built
+#    client (bin/secret, bin/gh-token, SoulSecrets, HerokuToken).
+#
+# ADDING A CALLER is a reviewed change, and the reason says why it cannot use one
+# of those clients. Each entry: `why` (what it reads, and why directly) and
+# `client` (`self` when the file IS a purpose-built client, `remedy-text` when it
+# only prints an `op` command for a person, else the client it should move to).
+
+daily_cap: 450
+
+# Newest last. Each lowering adds a row; the test refuses a row that rises.
+cap_history:
+  - date: 2026-11-09
+    cap: 450
+    why: "first ratchet. Measured rolling 24 h, 2026-10-27 to 2026-11-09: peak 463 (2026-10-27), 425 (2026-11-08), typical 200-400. Two callers spend about 90%: gh-token's deployer mints (about 166 a day, minted per call by design) and agent mints (about 92 a day)."
+
+callers:
+  # ── purpose-built clients: the places a credential SHOULD come from ──────────
+  bin/gh-token:
+    client: self
+    why: "the GitHub App token broker: reads the App key on a cache miss (agent) or per call (deployer)"
+  bin/secret:
+    client: self
+    why: "the classic read, rung 3 by hand; the secret cache and soul sets answer first"
+  bin/lib/secret_cache_cli.rb:
+    client: self
+    why: "bin/secret's Ruby half: op-item cache entries read on a miss"
+  bin/lib/soul_secrets.rb:
+    client: self
+    why: "soul secret sets and the admin tier: one bounded read on a miss, then the cache or memory"
+  bin/lib/heroku_token.rb:
+    client: self
+    why: "HerokuToken: the Heroku API key, read at use and exported once to children"
+  bin/shims/op-cache/op:
+    client: self
+    why: "the release gauntlet's op shim: soul-set items from the cache, anything else to the real op"
+  bin/gh-app-git-credential:
+    client: self
+    why: "git's credential helper: asks bin/gh-token first; mints from 1Password itself only when the broker cannot answer"
+  bin/lib/task_board.rb:
+    client: self
+    why: "the board secret: env, then .env, then one metered read (credential-access.md, env files)"
+  bin/lib/agent_api.rb:
+    client: self
+    why: "the board secret for AgentApi: env, then .env, then one memoized metered read"
+  app/services/gmail/credentials.rb:
+    client: self
+    why: "Gmail::Credentials: GMAIL_OAUTH_CREDENTIAL from env first, else one metered read"
+  app/services/workspace/credentials.rb:
+    client: self
+    why: "Workspace::Credentials: GOOGLE_SERVICE_ACCOUNT_JSON from env first, else one metered read"
+
+  # ── 1Password health, not a credential ──────────────────────────────────────
+  bin/lib/one_password_wait.rb:
+    client: self
+    why: "bin/release --wait-for-1password: a bounded probe read that tells a hung 1Password from a slow one"
+  bin/lib/keep_awake_op_probe.rb:
+    client: self
+    why: "keep-awake's hang probe: one bounded attempt, metered"
+  bin/lib/agent_harness_probe.rb:
+    client: self
+    why: "the dispatcher's `op whoami` probe (costs no read; measured 2026-10-24)"
+  bin/setup-1pass-token:
+    client: self
+    why: "setup: proves a new service-account token with one `op vault list`"
+  bin/lib/agent_setup_cli.rb:
+    client: self
+    why: "agent setup: checks the token and vault access on a new machine"
+
+  # ── setup and provisioning: run by hand, rarely ─────────────────────────────
+  bin/ecosystem-build:
+    client: bin/secret
+    why: "writes <app>/.env.development from r2.<app> only when the file is missing or empty"
+  bin/lib/dev_google_client.rb:
+    client: bin/secret
+    why: "writes the dev OAuth client into each app's .env from google.studio.local"
+  bin/lib/domain_cutover.rb:
+    client: HerokuToken
+    why: "domain cutover: the Heroku and Cloudflare keys for one run"
+  bin/lib/domain_register.rb:
+    client: bin/secret
+    why: "domain registration: the registrar key for one run"
+  bin/lib/heroku_ci_key_rotation.rb:
+    client: self
+    why: "the Heroku CI key rotation: reads and EDITS the item (op item edit needs stdin)"
+  bin/lib/chrome_profiles.rb:
+    client: bin/secret
+    why: "the Chrome profile roster document (op document get)"
+  bin/x-post:
+    client: bin/secret
+    why: "X API keys: env first, else one metered item get"
+
+  # ── backups ─────────────────────────────────────────────────────────────────
+  bin/agents-backup:
+    client: bin/secret
+    why: "the R2 backup keys (r2.mcritchie-agents-backup), five fields read per run (about 5 a day)"
+  bin/r2-backup:
+    client: bin/secret
+    why: "the R2 backup keys for the app buckets"
+
+  # ── remedy text only: these print an `op` command for a person ──────────────
+  bin/lib/conductor_host.rb:
+    client: remedy-text
+    why: "prints the `op read` a new host's operator runs; never executes it"
+  bin/lib/local_services.rb:
+    client: remedy-text
+    why: "prints the `op read` that fills a missing .env key; never executes it"

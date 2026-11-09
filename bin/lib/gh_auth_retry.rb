@@ -28,6 +28,8 @@
 # echoed, logged, or written to disk. `mint` reads the App credentials through the
 # operator's 1Password CLI exactly as docs/agents/modules/credentials.md prescribes.
 require "open3"
+require "set"
+require "digest"
 require_relative "gh_identity"
 require_relative "bounded_command"
 require_relative "auth_refresh"
@@ -51,6 +53,19 @@ module GhAuthRetry
   # verbatim-real-strings test below, which is why it uses gh's actual output.)
   AUTH_FAILURE = /resource not accessible|bad credentials|authentication failed|gh auth login|requires authentication/i
 
+  # A 403 PERMISSION refusal: "Resource not accessible by integration". The App token
+  # is LIVE and its installation lacks the grant. Whether a fresh token helps depends
+  # on WHOSE token was refused (#refreshable?):
+  #   * a token THIS PROCESS minted for its lane: a fresh one for the same App is
+  #     refused the same way (source-control.md), so no refresh (Carl's review of
+  #     secret-refresh-on-auth-failure);
+  #   * an ambient or inherited token: it can belong to ANOTHER App. A deployer
+  #     GH_TOKEN leaked into a build shell (bin/submit's gh_capture says this has
+  #     happened) gets this 403 on `gh pr create`, and minting the lane's own App
+  #     fixes it. So that one still refreshes (review of agent-op-reads-ratchet).
+  # "...by personal access token" always refreshes: gh fell back to the stored PAT.
+  PERMISSION_REFUSAL = /not accessible by integration/i
+
   module_function
 
   # Seconds one forced mint may take: the broker's own 1Password read is bounded
@@ -62,6 +77,37 @@ module GhAuthRetry
   # trigger a mint — re-running those with a fresh token just fails again, slower.
   def auth_failure?(output)
     AUTH_FAILURE.match?(output.to_s)
+  end
+
+  # TRUE when a fresh token could change the answer: a credential refusal, except a
+  # PERMISSION_REFUSAL of a token this process minted itself. +token+ is the token
+  # the refused call rode; nil means the ambient one (env GH_TOKEN, else gh's login).
+  # The one test the refresh paths use (#with_refresh, CiStatus.gh_auth_refusal?).
+  def refreshable?(output, token: nil, env: ENV)
+    return false unless auth_failure?(output)
+    return true unless PERMISSION_REFUSAL.match?(output.to_s)
+
+    tried = token.to_s.strip.empty? ? env["GH_TOKEN"] : token
+    !minted_here?(tried)
+  end
+
+  # Tokens #mint returned in this process, as SHA-256 digests: never a value, never
+  # on disk. They tell a refusal of OUR lane's token from one of an inherited token.
+  def minted_here?(token)
+    !token.to_s.strip.empty? && minted_digests.include?(Digest::SHA256.hexdigest(token.to_s.strip))
+  end
+
+  def remember_minted(token)
+    minted_digests << Digest::SHA256.hexdigest(token.to_s.strip)
+  end
+
+  def minted_digests
+    @minted_digests ||= Set.new
+  end
+
+  # Tests only.
+  def forget_minted!
+    @minted_digests = Set.new
   end
 
   # A fresh App installation token, or nil when one cannot be minted (no 1Password,
@@ -126,6 +172,7 @@ module GhAuthRetry
       return nil
     end
 
+    remember_minted(token)
     token
   rescue StandardError => e
     @last_error = "#{e.class}: #{e.message}"
@@ -134,7 +181,7 @@ module GhAuthRetry
 
   # ONE `gh` call with the shared refresh (bin/lib/auth_refresh.rb): the block runs
   # with +token+ (nil = the ambient login) and returns [output, ok]. When the output
-  # is a credential refusal (auth_failure?), a token is minted fresh (bin/gh-token
+  # is a credential refusal (refreshable?: not a 403 permission refusal), a token is minted fresh (bin/gh-token
   # --force reads the App key from 1Password; the refused cached token is never
   # handed back), and the block runs once more with it. The refresh is logged as
   # `auth-refresh` with via `github:<App item>` (bin/op-reads), never the token.
@@ -145,6 +192,7 @@ module GhAuthRetry
   def with_refresh(identity: nil, root: nil, env: ENV, token: nil, say: nil, &block)
     resolved = GhIdentity.resolve(identity, env: env)
     item = resolved ? GhIdentity.item_for(resolved) : nil
+    tried = nil
     AuthRefresh.run(item: item || "github", service: "github", env: env, say: say,
                     how: "minting a GitHub App token from a fresh 1Password read",
                     read: -> { token },
@@ -154,8 +202,25 @@ module GhAuthRetry
 
                       fresh
                     },
-                    rejected: ->(result) { !result[1] && auth_failure?(result[0]) },
-                    &block)
+                    rejected: ->(result) { !result[1] && refreshable?(result[0], token: tried, env: env) },
+                    mark: ->(outcome) { mark_refusal(resolved, outcome, env) }) do |value|
+      tried = value
+      block.call(value)
+    end
+  end
+
+  # A second refusal marks the cache entry (github.<identity>), so `bin/secret
+  # status` names the bad App item; an accepted refresh clears it. Loaded lazily:
+  # the secret cache needs lib/, and this file also runs from a bin/ tree carried
+  # alone (CiStatus in a relocated checkout), where the mark is simply skipped.
+  def mark_refusal(identity, outcome, env)
+    return unless identity
+
+    require_relative "secret_cache"
+    name = "github.#{identity}"
+    outcome == :still_refused ? SecretCache.record_refused!(name, "github", env: env) : SecretCache.clear_refused!(name, env: env)
+  rescue LoadError, StandardError
+    nil
   end
 
   # Why the most recent acquisition failed, or "" — surfaced by the caller, never

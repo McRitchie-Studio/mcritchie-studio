@@ -22,7 +22,10 @@
 #                      jobs, each a full CI cycle to learn about; locally they take
 #                      ~20s together (test_health 2s, bin_help_flag_class <1s,
 #                      fast_cert_subject 6s, citation_resolution_guard 10s, measured
-#                      2026-10-12). /tasks/submit-checks-before-push.
+#                      2026-10-12). /tasks/submit-checks-before-push. The
+#                      1Password direct-caller ratchet joined 2026-11-09 (about
+#                      1s; task agent-op-reads-ratchet): a new file that runs `op`
+#                      fails fast-check, not only CI.
 #
 # The guards run as CI runs them, over the whole tree; only the CHOICE of guard
 # reads the diff. A guard whose files this checkout does not carry is not
@@ -56,7 +59,8 @@ module CiGuardLanes
       label: "repo-ratchets",
       triggers: [ANY_CHANGE],
       tests: %w[test/lib/test_health_ratchet_test.rb test/lib/bin_help_flag_class_test.rb
-                test/lib/fast_cert_subject_test.rb test/docs/citation_resolution_guard_test.rb],
+                test/lib/fast_cert_subject_test.rb test/docs/citation_resolution_guard_test.rb
+                test/lib/op_direct_callers_ratchet_test.rb],
       scripts: []
     ),
     Guard.new(

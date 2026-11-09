@@ -300,6 +300,20 @@ class AuthRefreshTest < Minitest::Test
     refute_leaks(error.message)
   end
 
+  def test_unit_github_second_refusal_is_marked_in_status_and_an_accepted_refresh_clears_it
+    path, = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path)
+    assert_raises(AuthRefresh::StillRefused) do
+      GhAuthRetry.with_refresh(identity: "agent", env: e, say: ->(_l) { }) { |token| gh(token, "a-token-nobody-has") }
+    end
+    assert_equal "github", SecretCache.entry("github.agent", e)["still_refused_by"]
+    assert_match(/REFUSED by github after a fresh read/, SecretCache.status_lines(env: e).join("\n"))
+
+    GhAuthRetry.with_refresh(identity: "agent", env: e, say: ->(_l) { }) { |token| gh(token, FAKE_MINTED) }
+    refute SecretCache.entry("github.agent", e).key?("still_refused_at"), "an accepted refresh clears the mark"
+    refute_leaks(SecretCache.status_lines(env: e).join("\n"))
+  end
+
   def test_unit_github_mint_failure_keeps_ghs_original_answer
     path, count = broker(ok: false)
     error = assert_raises(AuthRefresh::RefreshFailed) do
@@ -319,6 +333,130 @@ class AuthRefreshTest < Minitest::Test
 
     assert_equal ["merge conflict in CHANGELOG.md", false], result
     assert_equal 0, broker_calls(count)
+  end
+
+  INTEGRATION_403 = "GraphQL: Resource not accessible by integration (createPullRequest)"
+  FAKE_LEAKED = "fake-leaked-deployer-token-not-real"
+
+  # A 403 permission refusal of a token THIS PROCESS minted: a fresh token for the
+  # same App is refused the same way, so no second mint.
+  def test_unit_github_integration_403_of_our_own_minted_token_mints_nothing_more
+    GhAuthRetry.forget_minted!
+    path, count = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path)
+    ours = GhAuthRetry.mint(identity: "agent", env: e)
+    assert_equal 1, broker_calls(count)
+    result = GhAuthRetry.with_refresh(identity: "agent", env: e, token: ours, say: ->(_l) { }) { |_t| [INTEGRATION_403, false] }
+
+    assert_equal [INTEGRATION_403, false], result, "gh's answer is returned untouched"
+    assert_equal 1, broker_calls(count), "no second mint, no fresh read from 1Password"
+    assert_empty refresh_rows, "no auth-refresh row"
+    refute GhAuthRetry.refreshable?(INTEGRATION_403, token: ours, env: {})
+    assert GhAuthRetry.auth_failure?(INTEGRATION_403), "it still words as an auth failure for other readers"
+  ensure
+    GhAuthRetry.forget_minted!
+  end
+
+  # The leaked-deployer case (review of agent-op-reads-ratchet): an inherited GH_TOKEN
+  # of ANOTHER App gets the 403 on `gh pr create`; minting the lane's App fixes it.
+  def test_unit_github_integration_403_of_an_inherited_token_mints_and_retries
+    GhAuthRetry.forget_minted!
+    path, count = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path, "GH_TOKEN" => FAKE_LEAKED)
+    result = GhAuthRetry.with_refresh(identity: "agent", env: e, say: ->(_l) { }) do |t|
+      t == FAKE_MINTED ? ["https://github.com/o/r/pull/1", true] : [INTEGRATION_403, false]
+    end
+
+    assert_equal ["https://github.com/o/r/pull/1", true], result
+    assert_equal 1, broker_calls(count)
+    assert GhAuthRetry.refreshable?(INTEGRATION_403, token: nil, env: { "GH_TOKEN" => FAKE_LEAKED })
+    refute_leaks(refresh_rows.to_s)
+    refute_includes File.exist?(@reads_log) ? File.read(@reads_log) : "", FAKE_LEAKED
+  ensure
+    GhAuthRetry.forget_minted!
+  end
+
+  # CiStatus, and bin/release through it: the held (minted) token is ours; none held
+  # means the ambient one, which may be another App's.
+  def test_unit_ci_status_refusal_tells_our_minted_token_from_an_inherited_one
+    require_relative "../../bin/lib/ci_status"
+    GhAuthRetry.forget_minted!
+    path, = broker
+    ours = GhAuthRetry.mint(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path))
+
+    refute CiStatus.gh_auth_refusal?(INTEGRATION_403, token: ours)
+    assert CiStatus.gh_auth_refusal?(INTEGRATION_403, token: FAKE_LEAKED)
+    assert CiStatus.gh_auth_refusal?("HTTP 401: Bad credentials", token: ours), "an expired token of ours still refreshes"
+  ensure
+    GhAuthRetry.forget_minted!
+  end
+
+  # The PAT fallback is a stale-credential shape: a minted App token fixes it.
+  def test_unit_github_personal_access_token_403_still_refreshes
+    path, count = broker
+    refusal = "GraphQL: Resource not accessible by personal access token (createPullRequest)"
+    result = GhAuthRetry.with_refresh(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path),
+                                      say: ->(_l) { }) { |t| t == FAKE_MINTED ? ["ok", true] : [refusal, false] }
+
+    assert_equal ["ok", true], result
+    assert_equal 1, broker_calls(count)
+  end
+
+  # ── the admin tier: a refresh in memory, never on disk ─────────────────────
+
+  def admin_cfg(script)
+    { "admin_tier" => { "lane" => "deployer", "storage" => "memory", "lifetime" => "15m", "scripts" => [script] } }
+  end
+
+  # The stub op for `op read`: logs its argv words, prints the served key.
+  def admin_op_bin
+    path = File.join(@root, "op-admin")
+    File.write(path, "#!/bin/sh\necho \"$1\" >> #{@op_log}\ncat #{@key_file}\n")
+    File.chmod(0o755, path)
+    path
+  end
+
+  def admin_reads
+    File.exist?(@op_log) ? File.read(@op_log).lines.grep(/\Aread/).size : 0
+  end
+
+  def test_unit_admin_refresh_stays_in_memory_and_reads_once
+    SoulSecrets::Admin.reset!
+    script = File.join(@root, "bin", "admin-script")
+    FileUtils.mkdir_p(File.dirname(script))
+    File.write(script, "")
+    e = env("SECRET_OP_BIN" => admin_op_bin, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "fake-admin-sa-not-real")
+    cache_before = Dir.glob(File.join(@root, "**", "*")).sort
+    calls = []
+    first = SoulSecrets::Admin.read("heroku.studio.admin", "credential", cfg: admin_cfg("bin/admin-script"),
+                                    env: e, program: script, root: @root)
+    assert_equal OLD_KEY, first
+    serve(NEW_KEY) # rotated; the memo still holds the old key
+    err = StringIO.new
+    answer = SoulSecrets::Admin.with_refresh("heroku.studio.admin", "credential", service: "heroku",
+                                             cfg: admin_cfg("bin/admin-script"), env: e, program: script,
+                                             root: @root, err: err) { |value| heroku({ "credential" => value }, calls) }
+
+    assert_equal "200 OK", answer
+    assert_equal 2, calls.size, "one refused call, one retry"
+    assert_equal 2, admin_reads, "the first read and one fresh read; never a third"
+    assert_equal [%w[ok heroku:heroku.studio.admin]], refresh_rows.map { |r| [r["outcome"], r["via"]] }
+    written = Dir.glob(File.join(@root, "**", "*")).sort - cache_before - [@op_log, @reads_log]
+    assert_empty written, "an admin refresh writes nothing to disk"
+    refute_leaks(err.string)
+  ensure
+    SoulSecrets::Admin.reset!
+  end
+
+  def test_unit_admin_refresh_refuses_a_script_outside_the_tier_before_any_read
+    SoulSecrets::Admin.reset!
+    e = env("SECRET_OP_BIN" => admin_op_bin, "OP_ADMIN_SERVICE_ACCOUNT_TOKEN" => "fake-admin-sa-not-real")
+    assert_raises(SoulSecrets::Admin::Refused) do
+      SoulSecrets::Admin.with_refresh("heroku.studio.admin", "credential", service: "heroku",
+                                      cfg: admin_cfg("bin/admin-script"), env: e, program: __FILE__,
+                                      root: @root, err: StringIO.new) { |_v| flunk "never called" }
+    end
+    assert_equal 0, admin_reads
   end
 
   # ── the per-soul warm lock ─────────────────────────────────────────────────

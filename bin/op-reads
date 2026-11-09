@@ -8,6 +8,7 @@
 #   bin/op-reads --by action         # caller (default) | action | context | hour
 #   bin/op-reads --tail 40           # the raw rows, newest last
 #   bin/op-reads --json              # for a script
+#   bin/op-reads --ratchet           # last 24h against daily_cap (exit 1 when over)
 #
 # WHY THIS COMMAND EXISTS. On 2026-08-31 the account-wide quota showed 247
 # read_writes consumed in three hours and the only way to ask what spent them was
@@ -22,10 +23,13 @@
 # not appear in state_store_containment_test.rb's ALLOWED_CONSTRUCTORS — it
 # cannot construct the path to begin with.
 #
-# NO ALARM, NO BUDGET THRESHOLD, ON PURPOSE. That was the operator's explicit
-# call on this task and it is the right one: once the spend is attributable it is
-# findable, and an alarm on a solved problem is noise that trains people to
-# ignore alarms. If you are here to add one, re-read this paragraph first.
+# ONE THRESHOLD, AND IT ONLY GOES DOWN (task agent-op-reads-ratchet, 2026-11-09).
+# This command had no alarm on purpose: once the spend was attributable it was
+# findable. Alex McRitchie then asked that agents read 1Password less and less, so
+# `--ratchet` compares the last 24 hours with `daily_cap` in
+# config/op_direct_callers.yml (bin/lib/op_reads_ratchet.rb says what counts) and
+# exits 1 when over. It refuses no read; it names the caller that grew. The cap is
+# lowered as the spend falls and never raised.
 #
 # COSTS NOTHING. Reading this log spends no quota. (`op service-account ratelimit`
 # was once thought to cost a read; measured 2026-10-24, it moved neither counter.
@@ -34,6 +38,7 @@
 require "json"
 require "time"
 require_relative "lib/op_meter"
+require_relative "lib/op_reads_ratchet"
 
 WINDOW = /\A(\d+)([mhdw])\z/.freeze
 UNITS = { "m" => 60, "h" => 3600, "d" => 86_400, "w" => 604_800 }.freeze
@@ -70,7 +75,7 @@ def key_for(row, group)
 end
 
 # ── options ───────────────────────────────────────────────────────────────────
-opts = { since: "24h", by: "caller", tail: nil, json: false }
+opts = { since: "24h", by: "caller", tail: nil, json: false, ratchet: false }
 args = ARGV.dup
 until args.empty?
   case (arg = args.shift)
@@ -79,6 +84,7 @@ until args.empty?
   when "--tail" then opts[:tail] = (args.shift || "20").to_i
   when "--json" then opts[:json] = true
   when "--all" then opts[:since] = "all"
+  when "--ratchet" then opts[:ratchet] = true
   when "-h", "--help"
     puts File.read(__FILE__).lines[2..27].map { |l| l.sub(/\A# ?/, "") }.join
     exit 0
@@ -86,6 +92,18 @@ until args.empty?
   end
 end
 GROUPS.include?(opts[:by]) or die("--by must be one of #{GROUPS.join(', ')}")
+
+# ── the ratchet: the last 24 hours against daily_cap ─────────────────────────
+if opts[:ratchet]
+  begin
+    cfg = OpReadsRatchet.config
+  rescue OpReadsRatchet::ConfigError => e
+    die(e.message)
+  end
+  rep = OpReadsRatchet.report(OpMeter.records, cfg)
+  puts(opts[:json] ? JSON.pretty_generate(rep) : OpReadsRatchet.lines(rep))
+  exit(rep["over"] ? 1 : 0)
+end
 
 # ── the data ──────────────────────────────────────────────────────────────────
 floor = cutoff(opts[:since])
