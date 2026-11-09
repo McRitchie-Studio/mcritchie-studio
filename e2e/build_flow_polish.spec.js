@@ -229,7 +229,11 @@ test("the domain card asks for availability once its name changes, never on arri
   // A chip tap changes the name: one check, for that name.
   await card.locator("[data-test='build-address-suggestion']", { hasText: `${free}-2` }).click();
   await expect(card.locator("[data-test='build-address-availability']")).toHaveText("Available");
-  await expect.poll(() => checks, { message: "one check, for the tapped name" }).toEqual([`?subdomain=${free}-2`]);
+  // NOTHING MORE HAPPENS: "Available" shows once the tap's check has answered, so the
+  // list already holds it. A second check would come from the card's 250ms debounce
+  // or the page's poll, and neither exposes a tick to wait on: the pause outlasts both.
+  await page.waitForTimeout(500);
+  expect(checks, "one check, for the tapped name").toEqual([`?subdomain=${free}-2`]);
   expect(pageErrors, report()).toHaveLength(0);
 });
 

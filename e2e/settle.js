@@ -31,6 +31,10 @@ async function animationsSettled(page, selector = null, { subtree = true } = {})
         : document.getAnimations();
       return all.filter((a) => a.playState === "running" && ends(a));
     };
+    // A selector that matches nothing would settle at once and prove nothing: refuse it.
+    if (sel && document.querySelectorAll(sel).length === 0) {
+      throw new Error(`animationsSettled: "${sel}" matches no element, so there is nothing to wait on`);
+    }
     await frame(); // a transition a style change just asked for exists from the next frame
     for (let now = running(); now.length > 0; now = running()) {
       await Promise.all(now.map((a) => a.finished.catch(() => {})));

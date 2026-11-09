@@ -15,8 +15,10 @@
 #   server's. The pause is the person typing.
 #   SAMPLED MOTION. An endless CSS loop (a glow, an orbit) is sampled across one cycle, for
 #   a property that must hold at every point of it. The pause is the sampling step.
-#   NOTHING HAPPENS. The spec proves a thing does not happen, and the app has no event or
-#   clock of its own that would have caused it, to wait on instead.
+#   NOTHING HAPPENS. The spec proves a thing does not happen within a window. Where the
+#   row names a page timer (a debounce, a poll, an armed fuse), the page exposes no tick
+#   of that timer to wait on, so the pause outlasts it. Where it names none, nothing the
+#   app schedules would cause the thing, and no event marks its absence.
 e2e/agent_shell_growth.spec.js:
   # 2 bot shield (/build first message, twice); 1 nothing happens: after a reload no
   # stream arrives, so no event would re-type an answer.
@@ -28,11 +30,11 @@ e2e/build_cards_quality.spec.js:
   # 1 bot shield; 1 sampled motion: the orbit ring, 8 samples 500ms apart.
   sleep: 2
 e2e/build_flow_polish.spec.js:
-  # 1 bot shield; 1 sampled motion: the glow trade, 14 samples 250ms apart; 2 nothing
+  # 1 bot shield; 1 sampled motion: the glow trade, 14 samples 250ms apart; 3 nothing
   # happens: a forced tap on a DISABLED button (a browser sends it no click, so there is
-  # no event), and a card that asks nothing on arrival (its poll and its 250ms debounce
-  # expose no tick).
-  sleep: 4
+  # no event), and the domain card asks nothing on arrival and nothing more after a tap's
+  # one check (page timers: its 250ms debounce and the poll, which expose no tick).
+  sleep: 5
 e2e/build_funnel.spec.js:
   # bot shield, twice.
   sleep: 2
