@@ -335,19 +335,60 @@ class AuthRefreshTest < Minitest::Test
     assert_equal 0, broker_calls(count)
   end
 
-  # A 403 PERMISSION refusal: the App token is live and the installation lacks
-  # the grant. A fresh token for the same App fails the same way, so no mint.
-  def test_unit_github_integration_403_is_a_permission_refusal_and_mints_nothing
-    path, count = broker
-    refusal = "GraphQL: Resource not accessible by integration (createPullRequest)"
-    result = GhAuthRetry.with_refresh(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path),
-                                      say: ->(_l) { }) { |_t| [refusal, false] }
+  INTEGRATION_403 = "GraphQL: Resource not accessible by integration (createPullRequest)"
+  FAKE_LEAKED = "fake-leaked-deployer-token-not-real"
 
-    assert_equal [refusal, false], result, "gh's answer is returned untouched"
-    assert_equal 0, broker_calls(count), "no fresh read from 1Password"
+  # A 403 permission refusal of a token THIS PROCESS minted: a fresh token for the
+  # same App is refused the same way, so no second mint.
+  def test_unit_github_integration_403_of_our_own_minted_token_mints_nothing_more
+    GhAuthRetry.forget_minted!
+    path, count = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path)
+    ours = GhAuthRetry.mint(identity: "agent", env: e)
+    assert_equal 1, broker_calls(count)
+    result = GhAuthRetry.with_refresh(identity: "agent", env: e, token: ours, say: ->(_l) { }) { |_t| [INTEGRATION_403, false] }
+
+    assert_equal [INTEGRATION_403, false], result, "gh's answer is returned untouched"
+    assert_equal 1, broker_calls(count), "no second mint, no fresh read from 1Password"
     assert_empty refresh_rows, "no auth-refresh row"
-    refute GhAuthRetry.refreshable?(refusal)
-    assert GhAuthRetry.auth_failure?(refusal), "it still words as an auth failure for other readers"
+    refute GhAuthRetry.refreshable?(INTEGRATION_403, token: ours, env: {})
+    assert GhAuthRetry.auth_failure?(INTEGRATION_403), "it still words as an auth failure for other readers"
+  ensure
+    GhAuthRetry.forget_minted!
+  end
+
+  # The leaked-deployer case (review of agent-op-reads-ratchet): an inherited GH_TOKEN
+  # of ANOTHER App gets the 403 on `gh pr create`; minting the lane's App fixes it.
+  def test_unit_github_integration_403_of_an_inherited_token_mints_and_retries
+    GhAuthRetry.forget_minted!
+    path, count = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path, "GH_TOKEN" => FAKE_LEAKED)
+    result = GhAuthRetry.with_refresh(identity: "agent", env: e, say: ->(_l) { }) do |t|
+      t == FAKE_MINTED ? ["https://github.com/o/r/pull/1", true] : [INTEGRATION_403, false]
+    end
+
+    assert_equal ["https://github.com/o/r/pull/1", true], result
+    assert_equal 1, broker_calls(count)
+    assert GhAuthRetry.refreshable?(INTEGRATION_403, token: nil, env: { "GH_TOKEN" => FAKE_LEAKED })
+    refute_leaks(refresh_rows.to_s)
+    refute_includes File.exist?(@reads_log) ? File.read(@reads_log) : "", FAKE_LEAKED
+  ensure
+    GhAuthRetry.forget_minted!
+  end
+
+  # CiStatus, and bin/release through it: the held (minted) token is ours; none held
+  # means the ambient one, which may be another App's.
+  def test_unit_ci_status_refusal_tells_our_minted_token_from_an_inherited_one
+    require_relative "../../bin/lib/ci_status"
+    GhAuthRetry.forget_minted!
+    path, = broker
+    ours = GhAuthRetry.mint(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path))
+
+    refute CiStatus.gh_auth_refusal?(INTEGRATION_403, token: ours)
+    assert CiStatus.gh_auth_refusal?(INTEGRATION_403, token: FAKE_LEAKED)
+    assert CiStatus.gh_auth_refusal?("HTTP 401: Bad credentials", token: ours), "an expired token of ours still refreshes"
+  ensure
+    GhAuthRetry.forget_minted!
   end
 
   # The PAT fallback is a stale-credential shape: a minted App token fixes it.

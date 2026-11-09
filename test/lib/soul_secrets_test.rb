@@ -371,8 +371,12 @@ class SoulSecretsTest < Minitest::Test
   # bin/secret as a process. Every *_TOKEN in the parent's env is dropped, so no
   # child inherits a real credential; the stub op never echoes its env.
   def secret_process(*args, e)
+    secret_process_at(SECRET_BIN, *args, e)
+  end
+
+  def secret_process_at(bin, *args, e)
     scrub = ENV.keys.select { |k| k.include?("TOKEN") }.to_h { |k| [k, nil] }
-    Open3.capture3(scrub.merge(e).merge("MCR_SOUL" => nil), SECRET_BIN, *args)
+    Open3.capture3(scrub.merge(e).merge("MCR_SOUL" => nil), bin, *args)
   end
 
   def test_unit_a_process_that_names_no_soul_cannot_read_a_soul_set_item
@@ -395,6 +399,21 @@ class SoulSecretsTest < Minitest::Test
     assert_equal 0, status.exitstatus
     assert_equal "plain-fake-value", out
     assert_equal 2, op_calls.size, "the classic whoami and read"
+  end
+
+  # The installed tooling runs bin/secret through a SYMLINKED bin/ (<projects>/.agents/bin
+  # -> tooling/<sha>/bin). The sets config must resolve beside the REAL bin/, not the link.
+  def test_unit_the_guard_finds_the_sets_config_through_a_symlinked_bin
+    link = File.join(@root, "installed", "bin")
+    FileUtils.mkdir_p(File.dirname(link))
+    File.symlink(File.dirname(SECRET_BIN), link)
+    e = env.merge("MCR_SOUL_SECRET_SETS" => nil)
+    _out, err, status = secret_process_at(File.join(link, "secret"), "studio-agents", "solana.mack.agent",
+                                          "private-key", e)
+
+    assert_equal SoulSecrets::REFUSED, status.exitstatus, err
+    assert_match(/in avi's soul set/, err, "the real config/soul_secret_sets.yml was read")
+    assert_empty op_calls, "refused before any 1Password call"
   end
 
   # ── a second refusal is marked (agent-op-reads-ratchet) ─────────────────────

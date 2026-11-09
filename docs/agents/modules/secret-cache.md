@@ -155,11 +155,14 @@ its cached copy, reads the item fresh from 1Password **once**, and tries the cal
 **A named-cause refresh, not a blind retry.** Only a refusal of the credential
 starts it. Any other failure (a 404, a 500, a timeout, a merge conflict) goes back
 to the caller untouched, because a fresh credential does not change it. A 403
-**permission** refusal does not start it either: GitHub's "Resource not accessible
-by integration" means the App token is live and the installation lacks the grant,
-and a fresh token for the same App gets the same answer
-(`GhAuthRetry.refreshable?`). "Resource not accessible by personal access token"
-still refreshes: `gh` fell back to the stored PAT, and a minted App token fixes it.
+**permission** refusal ("Resource not accessible by integration": the App token is
+live and its installation lacks the grant) depends on whose token it was
+(`GhAuthRetry.refreshable?`). A token this process minted for its lane starts no
+refresh: a fresh token for the same App gets the same answer. An inherited or
+ambient token still refreshes, because it can belong to another App (a deployer
+`GH_TOKEN` leaked into a build shell gets this 403 on `gh pr create`, and the
+lane's own App fixes it). "Resource not accessible by personal access token" always
+refreshes: `gh` fell back to the stored PAT.
 A second refusal after the fresh read means the 1Password item itself is bad
 (revoked, the wrong field, the wrong account). The call stops and raises
 `StillRefused`, which names the item and the service, and the item is marked:

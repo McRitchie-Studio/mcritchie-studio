@@ -1199,8 +1199,9 @@ end
 # FOR READS AND FOR WRITES SAFE TO REPEAT (a re-run of a failed run). A write that is
 # not (a merge, a PR create, a workflow dispatch) goes through gh_write_once instead.
 def gh_sh_refreshing(*cmd, chdir: nil)
-  out, ok = sh(*cmd, capture: true, chdir: chdir, env: gh_fresh_env)
-  return [out, ok] if ok || !CiStatus.gh_auth_refusal?(out)
+  env = gh_fresh_env
+  out, ok = sh(*cmd, capture: true, chdir: chdir, env: env)
+  return [out, ok] if ok || !CiStatus.gh_auth_refusal?(out, token: env["GH_TOKEN"])
 
   label = cmd.first(3).join(" ")
   return [out, ok] unless remint_after_refusal(label)
@@ -1217,8 +1218,9 @@ end
 # [:unknown, _] (unreadable: not repeated, failed). Outcome: :ran, :unmintable,
 # :done, :retried or :unknown. The token is never printed.
 def gh_write_once(*cmd, state:, chdir: nil)
-  out, ok = sh(*cmd, capture: true, chdir: chdir, env: gh_fresh_env)
-  return [out, ok, :ran] if ok || !CiStatus.gh_auth_refusal?(out)
+  env = gh_fresh_env
+  out, ok = sh(*cmd, capture: true, chdir: chdir, env: env)
+  return [out, ok, :ran] if ok || !CiStatus.gh_auth_refusal?(out, token: env["GH_TOKEN"])
 
   label = cmd.first(3).join(" ")
   return [out, false, :unmintable] unless remint_after_refusal(label)
@@ -2784,8 +2786,9 @@ end
 # Rides gh_fresh_env, and re-mints once on a credential refusal (a read).
 def pr_state(pr_url)
   argv = ["gh", "pr", "view", pr_url, "--json", "state", "-q", ".state"]
-  out, status = bounded_capture2e(*argv, env: gh_fresh_env)
-  if !status.success? && CiStatus.gh_auth_refusal?(out) && remint_after_refusal("gh pr view")
+  env = gh_fresh_env
+  out, status = bounded_capture2e(*argv, env: env)
+  if !status.success? && CiStatus.gh_auth_refusal?(out, token: env["GH_TOKEN"]) && remint_after_refusal("gh pr view")
     out, status = bounded_capture2e(*argv, env: gh_write_env)
   end
   status.success? && !out.strip.empty? ? out.strip : nil

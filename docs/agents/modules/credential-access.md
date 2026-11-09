@@ -40,8 +40,8 @@ Take the first rung that answers. Never skip down a rung to "be sure".
   or "invalid credential" to a cached copy, forget the copy, read the item fresh
   once, and try once more, through `AuthRefresh` (`SoulSecrets.with_refresh`,
   `SoulSecrets::Admin.with_refresh`, `GhAuthRetry.with_refresh`). A 403 permission
-  refusal ("not accessible by integration") is not a stale copy and starts no
-  refresh. A second refusal stops, names the item, and marks it in
+  refusal ("not accessible by integration") of a token the process minted itself
+  starts no refresh; of an inherited token it does (it may be another App's). A second refusal stops, names the item, and marks it in
   `bin/secret status`. It is a named cause (a rotated credential), never a blind
   retry; each refresh is an `auth-refresh` row in `bin/op-reads`. Detail:
   [`secret-cache.md`](secret-cache.md).
