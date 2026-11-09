@@ -30,6 +30,7 @@
 require "open3"
 require_relative "gh_identity"
 require_relative "bounded_command"
+require_relative "auth_refresh"
 
 module GhAuthRetry
   # The identity is NOT hardcoded here. It used to be (`ITEM = "github.mcritchie-agent"`,
@@ -129,6 +130,32 @@ module GhAuthRetry
   rescue StandardError => e
     @last_error = "#{e.class}: #{e.message}"
     nil
+  end
+
+  # ONE `gh` call with the shared refresh (bin/lib/auth_refresh.rb): the block runs
+  # with +token+ (nil = the ambient login) and returns [output, ok]. When the output
+  # is a credential refusal (auth_failure?), a token is minted fresh (bin/gh-token
+  # --force reads the App key from 1Password; the refused cached token is never
+  # handed back), and the block runs once more with it. The refresh is logged as
+  # `auth-refresh` with via `github:<App item>` (bin/op-reads), never the token.
+  #
+  # Raises AuthRefresh::RefreshFailed when no token can be minted and
+  # AuthRefresh::StillRefused when GitHub refuses the fresh one too; both carry the
+  # refused [output, ok] as #result, so the caller can still print what gh said.
+  def with_refresh(identity: nil, root: nil, env: ENV, token: nil, say: nil, &block)
+    resolved = GhIdentity.resolve(identity, env: env)
+    item = resolved ? GhIdentity.item_for(resolved) : nil
+    AuthRefresh.run(item: item || "github", service: "github", env: env, say: say,
+                    how: "minting a GitHub App token from a fresh 1Password read",
+                    read: -> { token },
+                    refresh: lambda {
+                      fresh = mint(root: root, env: env, identity: identity)
+                      raise StandardError, (last_error.empty? ? "1Password unavailable?" : last_error.lines.last.to_s.strip) unless fresh
+
+                      fresh
+                    },
+                    rejected: ->(result) { !result[1] && auth_failure?(result[0]) },
+                    &block)
   end
 
   # Why the most recent acquisition failed, or "" — surfaced by the caller, never
