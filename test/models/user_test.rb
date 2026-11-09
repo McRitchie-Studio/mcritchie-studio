@@ -324,8 +324,17 @@ class UserTest < ActiveSupport::TestCase
     lookup = ->(*args, **kw) { (calls += 1) == 1 ? nil : real_find_by.call(*args, **kw) }
     User.stub(:create!, ->(*) { raise ActiveRecord::RecordNotUnique, "simulated" }) do
       User.stub(:find_by, lookup) do
-        assert_not_equal stranger, User.from_omniauth(auth, email_verified: true)
+        assert_nil User.from_omniauth(auth, email_verified: true), stranger.name
       end
+    end
+  end
+
+  test "[integration] the race rescue never matches a verified but blank address" do
+    stranger = User.create!(provider: "github", uid: "stranger-blank", name: "Blank Stranger")
+    auth = OmniAuth::AuthHash.new(provider: "google_oauth2", uid: "race-blank",
+                                  info: { email: "  ", name: "Blank Address" })
+    User.stub(:create!, ->(*) { raise ActiveRecord::RecordNotUnique, "simulated" }) do
+      assert_nil User.from_omniauth(auth, email_verified: true), stranger.name
     end
   end
 

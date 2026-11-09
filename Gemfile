@@ -242,7 +242,7 @@ gem "sentry-rails"
 # page with none of its own (studio_page_has_h1?), so the hub passes no
 # brand_heading. Below 0.136.0 nothing raises: the cropper loads from cdnjs
 # outside the policy, and every page with a page header has two h1s.
-gem "studio-engine", "~> 0.136"
+gem "studio-engine", "~> 0.141"
 
 # The component gallery (Lookbook at /admin/style/components, admins only; the
 # engine's router constraint answers everyone else 404). studio-engine never
