@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "English"
 require "time"
 require_relative "bounded_command"
 require_relative "op_meter"
@@ -33,9 +34,11 @@ require_relative "op_meter"
 # service-account token that shell had. A supervisor started with no token logs
 # fail:<exit> (op answered, not signed in), never hung.
 #
-# THE BOUND. Each attempt gets DEADLINE (20) seconds. It runs in its own process
-# group (its pgid is its own pid), and at the deadline BoundedCommand SIGKILLs
-# that group: the probe's own process and nothing else. There is no retry: the
+# THE BOUND. The probe goes through OpMeter.popen, the one metered way into `op`
+# (test/lib/op_reads_are_bounded_test.rb), with deadline: DEADLINE (20 seconds)
+# and retry_uncached: false. popen runs it in its own process group (its pgid is
+# its own pid), and at the deadline BoundedCommand SIGKILLs that group: the
+# probe's own process and nothing else. There is no retry: the
 # probe exists to observe a hang, not to work around it. OP_CACHE=false keeps the
 # 1Password cache daemon out of the path, so a hang here is the CLI, the app or
 # the network.
@@ -108,12 +111,10 @@ module KeepAwake
 
     # Run one probe, log it, meter it. Returns the row as a hash. Never raises
     # a SystemCallError: an absent `op` is a fail:127 row, which is evidence too.
-    # +runner+ is BoundedCommand.run's shape (the unit tests pass a stand-in).
-    def run(env: ENV, now: Time.now.utc, runner: BoundedCommand.method(:run), idle: nil)
+    def run(env: ENV, now: Time.now.utc, idle: nil)
       started = monotonic
-      outcome, meter = attempt(env, runner)
+      outcome = attempt(env)
       elapsed = (monotonic - started).round(1)
-      OpMeter.record(action: "whoami", outcome: meter, via: VIA, env: env)
       idle_s = idle ? idle.call : idle_seconds(env)
       row = { "ts" => now.utc.iso8601, "outcome" => outcome, "seconds" => elapsed,
               "idle_seconds" => idle_s, "pid" => Process.pid }
@@ -121,16 +122,19 @@ module KeepAwake
       row
     end
 
-    def attempt(env, runner)
-      result = runner.call({ "OP_CACHE" => "false" }, [ op_bin(env), "whoami" ],
-                           deadline: deadline(env), pgroup: true, in: File::NULL, err: File::NULL)
-      return [ HUNG, OpMeter::TIMEOUT ] if result.timed_out?
+    # One metered attempt through OpMeter.popen, which records the row in
+    # op-reads.log itself. retry_uncached: false, because the probe observes the
+    # hang rather than working around it; announce: false, because the
+    # supervisor log is not a terminal. `$?` after popen is the attempt's status.
+    def attempt(env)
+      OpMeter.popen({ "OP_CACHE" => "false" }, [ op_bin(env), "whoami" ], via: VIA, env: env, announce: false,
+                                                                            deadline: deadline(env), retry_uncached: false, err: File::NULL)
+      return HUNG if OpMeter.last_hung?
 
-      code = result.success? ? OK : "fail:#{result.exitstatus || '?'}"
-      [ code, code ]
+      status = $CHILD_STATUS
+      status&.success? ? OK : "fail:#{status&.exitstatus || '?'}"
     rescue SystemCallError => e
-      code = e.is_a?(Errno::EACCES) ? "fail:126" : "fail:127"
-      [ code, code ]
+      e.is_a?(Errno::EACCES) ? "fail:126" : "fail:127"
     end
 
     # Seconds since the last keyboard or mouse event (IOHIDSystem's

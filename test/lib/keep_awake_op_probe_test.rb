@@ -27,9 +27,13 @@ class KeepAwakeOpProbeTest < Minitest::Test
     @ioreg = stub("ioreg", %(echo '    | |   "HIDIdleTime" = #{IDLE_NS}'))
     @env = { "MCR_KEEP_AWAKE_DIR" => @dir, "MCR_OP_READS_LOG" => @reads,
              "MCR_KEEP_AWAKE_IOREG" => @ioreg }
+    # The stub op inherits this process's env: no real token may reach it.
+    @token = ENV.delete("OP_SERVICE_ACCOUNT_TOKEN")
+    OpMeter.reset_hang!
   end
 
   def teardown
+    ENV["OP_SERVICE_ACCOUNT_TOKEN"] = @token if @token
     FileUtils.rm_rf(@root)
   end
 
@@ -76,14 +80,23 @@ class KeepAwakeOpProbeTest < Minitest::Test
     assert_equal "4260", logged[3]
     meter = meter_rows.last
     assert_equal %w[whoami timeout keep-awake], meter.values_at(2, 3, 4), "bin/op-reads must see the probe"
+    assert_equal 1, meter_rows.size, "one attempt: the probe never retries a hang"
+  end
+
+  def test_unit_an_op_that_answers_with_an_error_is_a_fail_row
+    op = stub("op", "exit 1")
+    row = KeepAwake::OpProbe.run(env: @env.merge("MCR_KEEP_AWAKE_OP" => op), now: T0)
+
+    assert_equal "fail:1", row["outcome"]
+    assert_equal %w[whoami fail:1], meter_rows.last.values_at(2, 3)
   end
 
   def test_unit_an_answering_op_logs_ok_without_a_cache_daemon
-    op = stub("op", %(printf '%s' "$OP_CACHE" > #{@pidfile}; echo "$1" >> #{@pidfile}))
+    op = stub("op", %([ "$OP_CACHE" = false ] && echo "cache-off $1" > #{@pidfile}))
     row = KeepAwake::OpProbe.run(env: @env.merge("MCR_KEEP_AWAKE_OP" => op), now: T0)
 
     assert_equal "ok", row["outcome"]
-    assert_equal "falsewhoami", File.read(@pidfile).strip, "the probe runs `op whoami` with OP_CACHE=false"
+    assert_equal "cache-off whoami", File.read(@pidfile).strip, "the probe runs `op whoami` with OP_CACHE=false"
     assert_equal %w[whoami ok keep-awake], meter_rows.last.values_at(2, 3, 4)
   end
 

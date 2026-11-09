@@ -32,7 +32,7 @@ class KeepAwakeCommandTest < Minitest::Test
     # The supervisor's 1Password probe: a stub `op` and `ioreg`, so no test ever
     # runs the real CLI or spends a read of the account quota.
     @op_log = File.join(@root, "op.log")
-    @op = stub("op", %(echo "$OP_CACHE $*" >> #{@op_log}))
+    @op = stub("op", %([ "$OP_CACHE" = false ] && echo "cache-off $*" >> #{@op_log}))
     @ioreg = stub("ioreg", %(echo '"HIDIdleTime" = 125000000000'))
   end
 
@@ -65,6 +65,7 @@ class KeepAwakeCommandTest < Minitest::Test
       "MCR_KEEP_AWAKE_OP" => @op,
       "MCR_KEEP_AWAKE_IOREG" => @ioreg,
       "MCR_OP_READS_LOG" => File.join(@root, "op-reads.log"),
+      "OP_SERVICE_ACCOUNT_TOKEN" => nil,
       "TASK_USAGE_SANDBOX" => "1"
     )
   end
@@ -206,7 +207,7 @@ class KeepAwakeCommandTest < Minitest::Test
     probe_log = File.join(@state, "op-probe.log")
     wait_for { File.exist?(probe_log) && !File.read(probe_log).empty? }
 
-    assert_equal "false whoami", File.read(@op_log).lines.first.strip
+    assert_equal "cache-off whoami", File.read(@op_log).lines.first.strip
     out, code = run_cli("status")
     assert_equal 0, code, out
     assert_match(/op probe: last \d\d:\d\d \S+ ok in [\d.]+s, user idle 2m\./, out)
