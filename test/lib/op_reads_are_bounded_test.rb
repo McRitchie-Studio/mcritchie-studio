@@ -11,32 +11,12 @@
 
 require "minitest/autorun"
 require "tmpdir"
+require_relative "../../bin/lib/op_call_scan"
 
 class OpReadsAreBoundedTest < Minitest::Test
   ROOT = File.expand_path("../..", __dir__)
-  SCANNED = %w[bin app lib].freeze
-
-  # The wrapper itself is the one place a raw `op` belongs.
-  WRAPPERS = %w[bin/lib/op_meter.rb bin/lib/op-meter.sh].freeze
-
-  # A line that goes through the wrapper is metered.
-  METERED = /OpMeter\.popen|op_metered\b/
-
-  SUBCOMMANDS = %w[read item inject whoami vault document signin service-account run].freeze
-  # `run` collides with `gh run` when the binary is a variable, so a variable binary
-  # counts only with an op-only subcommand; a literal "op" counts with any.
-  VAR_SUBCOMMANDS = (SUBCOMMANDS - %w[run]).freeze
-  LITERAL_ARGV = /["']op["']\s*,\s*(?:["'](?:#{SUBCOMMANDS.join('|')})["']|\*)/
-  VAR_ARGV = /\[\s*(?:OP|OP_BIN|@?op_bin(?:\([^)]*\))?|@?bin)\s*,\s*["'](?:#{VAR_SUBCOMMANDS.join('|')})["']/
-  # Shell form. In a shell script a command starts a line or follows a separator; in
-  # Ruby it can only run from inside a string, so it must open the string (or a
-  # `$(` inside one). Prose in backticks ("check `op vault list`") is neither.
-  SHELL_BIN = %r{(?:op|"?\$\{?OP(?:_BIN)?\}?"?|/opt/homebrew/bin/op)}
-  SHELL_FORM = /(?:\A|[;&|(]|\$\(|\A\s+)\s*#{SHELL_BIN}\s+(?:#{SUBCOMMANDS.join('|')})\b/
-  RUBY_STRING_FORM = /(?:\A\s*|[(,=]\s*|\$\()["']?(?:op)\s+(?:#{SUBCOMMANDS.join('|')})\b/
-  # A Ruby backtick or %x runs a shell too. Only where an expression starts (a line,
-  # an assignment, a return): prose quotes `op whoami` mid-sentence, and that passes.
-  RUBY_BACKTICK_FORM = /(?:\A\s*|=\s*|\breturn\s+)(?:`|%x[({\[])\s*op\s+(?:#{SUBCOMMANDS.join('|')})\b/
+  # The shapes, the wrappers and the scan live in bin/lib/op_call_scan.rb, shared with
+  # the direct-caller ratchet (test/lib/op_direct_callers_ratchet_test.rb).
 
   # path => [[substring that marks the line, why it may stay, optional regex that
   # must appear within two lines of it (the meter beside an injected or stdin call)]]
@@ -82,37 +62,9 @@ class OpReadsAreBoundedTest < Minitest::Test
     ]
   }.freeze
 
-  def files
-    SCANNED.flat_map { |dir| Dir.glob(File.join(ROOT, dir, "**", "*")) }
-           .select { |p| File.file?(p) && !File.symlink?(p) }
-           .map { |p| p.delete_prefix("#{ROOT}/") }
-           .reject { |p| WRAPPERS.include?(p) || p.start_with?("app/assets/", "bin/node_modules/") }
-           .select { |p| p.end_with?(".rb", ".sh", ".rake") || shebang?(p) }
-  end
-
-  def shebang?(path)
-    File.open(File.join(ROOT, path), &:gets).to_s.start_with?("#!")
-  rescue ArgumentError, SystemCallError
-    false
-  end
-
-  def ruby?(path)
-    path.end_with?(".rb", ".rake") || File.open(File.join(ROOT, path), &:gets).to_s.include?("ruby")
-  end
-
-  # [path, lineno, line] for every unmetered `op` invocation.
-  def hits(paths = files)
-    paths.flat_map do |path|
-      ruby = ruby?(path)
-      all = File.readlines(File.join(ROOT, path)).map { |l| l.scrub.chomp }
-      all.each_with_index.filter_map do |line, i|
-        next if line.lstrip.start_with?("#") || line.match?(METERED)
-
-        found = line.match?(LITERAL_ARGV) || line.match?(VAR_ARGV) ||
-                (ruby ? line.match?(RUBY_STRING_FORM) || line.match?(RUBY_BACKTICK_FORM) : line.match?(SHELL_FORM))
-        [path, i + 1, line.strip, all[[i - 2, 0].max..(i + 2)].join("\n")] if found
-      end
-    end
+  # [path, lineno, line, window] for every unmetered `op` invocation.
+  def hits(paths = nil)
+    OpCallScan.raw_hits(ROOT, paths || OpCallScan.files(ROOT))
   end
 
   def allowed?(path, line, window)
