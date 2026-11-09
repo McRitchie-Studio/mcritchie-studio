@@ -1399,6 +1399,24 @@ class AgentWorktreeTest < Minitest::Test
     assert_equal '[["bin/rails", "db:prepare"], ["bin/rails", "db:test:prepare", "test:prepare"]]', out
   end
 
+  # `list`/`cleanup` flagged "database ... missing" on every desk whose app keeps no
+  # Postgres database (no database at all, or the SQLite token database).
+  def test_desk_uses_postgres_only_for_a_postgres_or_unreadable_app
+    out = run_in_script(<<~RUBY)
+      #{NO_DB_DESK_SETUP}
+      no_db = desk_uses_postgres?(DIR)
+      File.write(File.join(DIR, "config", "application.rb"), %(require "rails/all"\n))
+      File.write(File.join(DIR, "config", "database.yml"), "test:\n  adapter: sqlite3\n  database: storage/test.sqlite3\n")
+      sqlite = desk_uses_postgres?(DIR)
+      File.write(File.join(DIR, "config", "database.yml"), "test:\n  adapter: postgresql\n  database: x_test\n")
+      pg = desk_uses_postgres?(DIR)
+      File.delete(File.join(DIR, "config", "database.yml"))
+      unreadable = desk_uses_postgres?(DIR)
+      print [no_db, sqlite, pg, unreadable].inspect
+    RUBY
+    assert_equal "[false, false, true, true]", out
+  end
+
   # --- sweep coverage: every worktree tree on disk, not just the registry ---
   # config/satellites.yml registers satellite APPS, so repos with worktrees that are not
   # satellites (the gem/library repos) would get NO sweep, silently (`cleanup --reclaim

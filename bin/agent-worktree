@@ -2461,6 +2461,17 @@ def redis_db_from_url(url)
   url.to_s.split("/").last.to_s.split("?").first.to_s
 end
 
+# Does this desk's app keep its database in Postgres, so a missing per-desk database
+# is a real health issue? Not for an app with no database (DeskGuard.no_database_app?)
+# or a SQLite one (the token database, rolio): their stack env still names a Postgres
+# DATABASE_URL, but nothing creates that database, and `list`/`cleanup` reported it
+# "missing" on every such desk. An unreadable adapter counts as Postgres (the old answer).
+def desk_uses_postgres?(dir)
+  return false if DeskGuard.no_database_app?(dir)
+
+  !Release::GateWorkspace.adapter(dir).to_s.start_with?("sqlite")
+end
+
 def database_exists?(db_name)
   return nil if db_name.empty?
   return nil unless system("pg_isready", "-q", out: File::NULL, err: File::NULL)
@@ -2906,7 +2917,7 @@ def stack_record(app, dir)
     code: http_code(port),
     redis_db: redis_db,
     db_name: db_name,
-    db_exists: database_exists?(db_name),
+    db_exists: desk_uses_postgres?(dir) ? database_exists?(db_name) : nil,
     branch: git_branch(dir),
     head: git_head(dir),
     commit_subject: git_commit_subject(dir),
