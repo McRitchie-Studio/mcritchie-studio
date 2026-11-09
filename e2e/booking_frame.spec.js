@@ -173,15 +173,21 @@ test("the frame is cropped to the slot picker at rest and opens fully once it is
 // The home page's crop (211-551) was measured on a 610px frame. Below xl the
 // column is wider, so the frame is capped at 610px (612 with its border) and the
 // crop still fits a tablet (task ms-acquisition-clean-split).
-for (const width of [1024, 820]) {
-  test(`on the home page at ${width}px the calendar keeps its measured width`, async ({ page }) => {
-    await page.setViewportSize({ width, height: 900 });
-    await stubGoogle(page);
-    await page.goto("/");
-    const wrap = page.locator("[data-get-in-touch] [data-booking-wrap]");
-    await wrap.scrollIntoViewIfNeeded();
-    const box = await wrap.evaluate((el) => ({ outer: el.offsetWidth, inner: el.clientHeight }));
-    expect(box.outer).toBe(612);
-    expect(box.inner).toBe(551 - 211 + 12);
-  });
+async function expectMeasuredWidth(page, width) {
+  await page.setViewportSize({ width, height: 900 });
+  await stubGoogle(page);
+  await page.goto("/");
+  const wrap = page.locator("[data-get-in-touch] [data-booking-wrap]");
+  await wrap.scrollIntoViewIfNeeded();
+  const box = await wrap.evaluate((el) => ({ outer: el.offsetWidth, inner: el.clientHeight }));
+  expect(box.outer).toBe(612);
+  expect(box.inner).toBe(551 - 211 + 12);
 }
+
+test("on the home page at 1024px the calendar keeps its measured width", async ({ page }) => {
+  await expectMeasuredWidth(page, 1024);
+});
+
+test("on the home page at 820px the calendar keeps its measured width", async ({ page }) => {
+  await expectMeasuredWidth(page, 820);
+});
