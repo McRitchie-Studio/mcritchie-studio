@@ -1019,6 +1019,38 @@ class Release::ConductorTest < ActiveSupport::TestCase
     assert_equal [a.slug, b.slug].sort, plan.first[:members].map { |m| m[:slug] }.sort
   end
 
+  # Task release-ships-lock-only-consumers: commercial-welding's `accepted` carried
+  # only engine lock bumps, no card named it, and no release ever deployed it.
+  test "repo_plan carries a recorded lock-only repo as a memberless app group after the members" do
+    studio = app_task("studio change", repo: "mcritchie-studio", branch: "feat/studio")
+    rel = Release::Conductor.prepare!(task_slugs: [studio.slug], slug: "rel-lock-only")
+    rel.update!(metadata: Release::LockOnlyConsumers.record(rel.metadata || {}, %w[commercial-welding alex-build]))
+
+    plan = Release::Conductor.repo_plan(rel)
+
+    assert_equal %w[mcritchie-studio commercial-welding alex-build], plan.map { |g| g[:repo] }
+    cw = plan.find { |g| g[:repo] == "commercial-welding" }
+    assert_equal :app, cw[:kind]
+    assert_equal [], cw[:members]
+    assert cw[:lock_only]
+    assert_equal "release", cw[:release_branch]
+    assert_equal "commercial-welding", cw[:qa_app]
+    assert_equal "git_push_heroku", cw[:prod_deploy]["strategy"]
+    assert_equal Release::Repos.prod_deploy("alex-build"), plan.last[:prod_deploy]
+    assert_equal plan.as_json, JSON.parse(plan.to_json)
+  end
+
+  test "repo_plan does not double a lock-only repo a member names, nor carry an unregistered one" do
+    cw = app_task("cw change", repo: "commercial-welding", branch: "feat/cw")
+    rel = Release::Conductor.prepare!(task_slugs: [cw.slug], slug: "rel-lock-only-member")
+    rel.update!(metadata: Release::LockOnlyConsumers.record(rel.metadata || {}, %w[commercial-welding not-a-repo]))
+
+    plan = Release::Conductor.repo_plan(rel)
+
+    assert_equal %w[commercial-welding], plan.map { |g| g[:repo] }
+    assert_equal [cw.slug], plan.first[:members].map { |m| m[:slug] }
+  end
+
   test "repo_plan is JSON-serializable" do
     gem = gem_task("engine", repo: "studio-engine")
     app = app_task("consumer", repo: "turf-monster", branch: "feat/consume")
