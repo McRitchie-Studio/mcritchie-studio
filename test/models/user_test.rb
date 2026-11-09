@@ -344,4 +344,35 @@ class UserTest < ActiveSupport::TestCase
       User.stub(:where, lookup) { assert_nil User.from_omniauth(auth, email_verified: false), holder.email }
     end
   end
+
+  test "[integration] the race rescue still finds a verified address's holder" do
+    holder = User.create!(email: "verified-race@example.com", name: "Holder")
+    auth = OmniAuth::AuthHash.new(provider: "google_oauth2", uid: "race-verified",
+                                  info: { email: "Verified-Race@Example.com ", name: "Holder Again" })
+    calls = 0
+    real_where = User.method(:where)
+    # The first address lookup misses (the holder committed after it ran); the
+    # rescue's lookup is real and finds the holder because Google verified it.
+    lookup = lambda do |*args, **kw|
+      first = args.first.to_s.include?("lower(email)") && (calls += 1) == 1
+      first ? User.none : real_where.call(*args, **kw)
+    end
+    User.stub(:create!, ->(*) { raise ActiveRecord::RecordNotUnique, "simulated" }) do
+      User.stub(:where, lookup) { assert_equal holder, User.from_omniauth(auth, email_verified: true) }
+    end
+  end
+
+  test "[unit] an unmatched race collision is logged with ErrorLog and answers nil" do
+    auth = OmniAuth::AuthHash.new(provider: "google_oauth2", uid: "race-nobody",
+                                  info: { email: "nobody-race@example.com", name: "Nobody" })
+    captured = []
+    User.stub(:create!, ->(*) { raise ActiveRecord::RecordNotUnique, "simulated collision" }) do
+      ErrorLog.stub(:capture!, ->(error) { captured << error }) do
+        assert_nil User.from_omniauth(auth, email_verified: true)
+      end
+    end
+    assert_equal 1, captured.size
+    assert_kind_of ActiveRecord::RecordNotUnique, captured.first
+    assert_equal "simulated collision", captured.first.message
+  end
 end

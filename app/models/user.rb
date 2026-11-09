@@ -208,15 +208,14 @@ class User < ApplicationRecord
       uid: auth.uid,
       email_verified_at: email_verified ? Time.current : nil
     )
-  rescue ActiveRecord::RecordNotUnique
+  rescue ActiveRecord::RecordNotUnique => e
     # Race: a concurrent callback created the user between find_by and create!.
-    # The pair first: it is the identity this callback proved. The email lookup
-    # runs only for a real address, because find_by(email: nil) matches ANY
-    # account without an email, and would sign this caller in as a stranger.
-    # It also needs Google's verification, the same rule as the lookup above
-    # (OPSEC-005): an unverified address hands its holder's account to nobody.
-    email = email_verified ? auth.info.email.to_s.strip.downcase.presence : nil
-    find_by(provider: auth.provider, uid: auth.uid) || (email && where("lower(email) = ?", email).first)
+    # The engine settles it the same way for every app: the (provider, uid) pair
+    # first, then the address only when Google verified it (OPSEC-005) and it is
+    # not blank. Nobody found logs the collision with ErrorLog and answers nil,
+    # never a stranger.
+    Studio::Account.race_winner(self, provider: auth.provider, uid: auth.uid,
+                                      email: auth.info.email, email_verified: email_verified, error: e)
   end
 
   # --- Predicates ------------------------------------------------------------
