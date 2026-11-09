@@ -278,7 +278,10 @@ class EcosystemBuildLocalEnvTest < Minitest::Test
       "HOME" => @dir, "OP_SERVICE_ACCOUNT_TOKEN" => "stub-token", "HEROKU_API_KEY" => "stub-heroku-key",
       "PROJECTS_DIR" => @projects, "MCR_OP_VAULT_AGENT" => nil,
       # The metering shim logs every `op` call; keep the stub's out of the real ledger.
-      "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log")
+      "MCR_OP_READS_LOG" => File.join(@dir, "op-reads.log"),
+      # The migrator's Heroku read caches in Steffon's soul folder: a tmpdir, never
+      # the operator's secret cache (the armed sandbox refuses an unpinned one).
+      "CLAUDE_PROJECTS_DIR" => @dir, "MCR_SECRET_CACHE_DIR" => nil, "TASK_USAGE_SANDBOX" => "1"
     }
     out, _status = Open3.capture2e(base.merge(env), "bash", "-c", script)
     out
