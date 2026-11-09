@@ -1,10 +1,9 @@
 # frozen_string_literal: true
 
-# The release CI gate's ONE automatic re-run, as bin/release's poll spends it
-# (poll_ci_verdict → ci_rerun_once! → ci_rerun_settled?). The decision itself is
-# unit-tested in test/lib/ci_rerun_test.rb; these drive the real poll loop with the
-# GitHub reads stubbed, so they prove the loop re-runs once, reads the re-run to its
-# own conclusion, and treats a second red as real.
+# The release CI gate's red verdict through the real poll loop (poll_ci_verdict →
+# ci_red_once!), GitHub stubbed. A red test lane STOPS and is recorded as `ci_red`
+# (Alex McRitchie's deterministic-CI ruling, 2026-11-08); only the gem-resolution race
+# earns one re-run, recorded as `ci_infra_rerun`. Decision: test/lib/ci_rerun_test.rb.
 #
 #   ruby -Itest test/lib/release_cli_ci_rerun_test.rb
 
@@ -12,10 +11,14 @@ require_relative "release_cli_harness"
 
 class ReleaseCliCiRerunTest < ReleaseCliHarness
   SHA = "c" * 40
+  # The RubyGems CDN race as `gh run view --log-failed` prints it (rantly run 40267136223).
+  RACE = "test\tSet up Ruby\t2026-10-26T10:00:00.0000000Z Your bundle is locked to studio-engine (0.114.1) " \
+         "from rubygems repository https://rubygems.org/, but that version can no longer be found in that source.\n"
+  FAILED_TEST = "test\tRun tests\t2026-11-08T15:01:02.0000000Z bin/rails test test/integration/production_ssl_test.rb:43\n"
 
   # `verdicts` are read in order (the last repeats); `runs_before`/`runs_after` are the
   # workflow runs GitHub reports before and after the re-run is requested.
-  def poll_stub(verdicts:, jobs: ["test"], runs_before: nil, runs_after: nil, rerun_ok: true, log: "")
+  def poll_stub(verdicts:, jobs: ["test"], runs_before: nil, runs_after: nil, rerun_ok: true, log: RACE)
     runs_before ||= [{ "id" => 11, "name" => "CI", "conclusion" => "failure", "run_attempt" => 1,
                        "event" => "push", "status" => "completed", "head_sha" => SHA }]
     runs_after ||= [{ "id" => 11, "name" => "CI", "conclusion" => "success", "run_attempt" => 2,
@@ -46,26 +49,44 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
                 call: %($gate_sops = []; ci = poll_ci_verdict("rantly", #{SHA.inspect}, budget: 60); puts "STATE=\#{ci[:state]} RERUNS=\#{$reruns.inspect}"; puts "SOPS=\#{$gate_sops.inspect}"))
   end
 
-  # [unit] THE FLAKE: red on attempt 1 → one re-run → the re-run's green certifies.
-  def test_a_first_attempt_test_lane_red_is_rerun_once_and_its_green_passes
+  # [unit] THE RULING: a first-attempt test-lane red STOPS. It never calls `gh run
+  # rerun`, and the gate records the failing run id, job and spec on the release.
+  def test_a_red_test_lane_stops_records_the_run_id_and_never_reruns
+    out = poll(poll_stub(verdicts: [{ state: :red, failing: ["test"] }, { state: :green }], log: FAILED_TEST))
+
+    assert_includes out, "STATE=red", "the gate stops on the first red: #{out}"
+    assert_includes out, "RERUNS=[]", "never `gh run rerun`"
+    refute_includes out, "INFRA RE-RUN"
+    assert_includes out, %("sop"=>"ci_red"), "the red is recorded on the gate run, not only printed"
+    assert_includes out, %("result"=>"fail")
+    assert_includes out, "run 11 (CI, attempt 1): jobs test; specs test/integration/production_ssl_test.rb:43"
+    assert_includes out, "fix it forward through a task, re-run the cycle"
+  end
+
+  # [unit] THE INFRA CAUSE: the race in the failing job's own log → one re-run, every
+  # job, recorded as infra with its run id; the re-run's green certifies.
+  def test_the_gem_resolution_race_earns_one_infra_rerun_recorded_as_infra
     out = poll(poll_stub(verdicts: [{ state: :red, failing: ["test"] }, { state: :pending }, { state: :green }]))
 
-    assert_includes out, "AUTOMATIC RE-RUN, the one this gate allows"
+    assert_includes out, "INFRA RE-RUN (RubyGems CDN race"
     assert_includes out, "STATE=green"
     assert_includes out, 'RERUNS=["11"]', "exactly one `gh run rerun 11`"
     refute_includes out, "PARTIAL-RERUN", "every job re-runs, so the executed-set guards read fresh receipts"
-    assert_includes out, %("sop"=>"ci_rerun"), "the re-run is recorded on the gate run, not only printed"
+    assert_includes out, %("sop"=>"ci_infra_rerun"), out
+    assert_match(/INFRA RE-RUN of rantly@\w+ run\(s\) 11 — cause: infra/, out)
   end
 
-  # [unit] A SECOND RED IS REAL: the re-run concluded red, so the gate fails on it.
-  def test_a_second_red_after_the_rerun_is_real
-    runs_after = [{ "id" => 11, "conclusion" => "failure", "run_attempt" => 2, "event" => "push",
+  # [unit] A RED AFTER THE INFRA RE-RUN IS REAL: it stops and is recorded.
+  def test_a_red_after_the_infra_rerun_is_real_and_recorded
+    runs_after = [{ "id" => 11, "name" => "CI", "conclusion" => "failure", "run_attempt" => 2, "event" => "push",
                     "status" => "completed", "head_sha" => SHA }]
     out = poll(poll_stub(verdicts: [{ state: :red, failing: ["test"] }], runs_after: runs_after))
 
-    assert_includes out, "a second red is real"
+    assert_includes out, "RED again for"
     assert_includes out, "STATE=red"
     assert_includes out, 'RERUNS=["11"]', "never a second re-run"
+    assert_includes out, %("sop"=>"ci_red"), out
+    assert_includes out, "run 11 (CI, attempt 2)", out
   end
 
   # [unit] The old attempt's red is still on the SHA until GitHub picks the re-run up.
@@ -80,8 +101,7 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, "STATE=green"
   end
 
-  # [unit] ONCE PER SHA PER PROCESS: a second gate reading the same SHA (a resumed
-  # poll, a second read of the frozen tree) gets no second re-run.
+  # [unit] ONCE PER SHA PER PROCESS: a second gate reading the same SHA gets no second re-run.
   def test_a_second_poll_of_the_same_sha_spends_no_second_rerun
     runs_after = [{ "id" => 11, "conclusion" => "failure", "run_attempt" => 2, "event" => "push",
                     "status" => "completed", "head_sha" => SHA }]
@@ -98,21 +118,12 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, 'RERUNS=["12"]', "one re-run for the SHA across both polls: #{out}"
   end
 
-  def test_a_real_lint_failure_is_not_rerun
+  def test_a_real_lint_failure_stops
     out = poll(poll_stub(verdicts: [{ state: :red, failing: ["lint"] }], jobs: ["lint"], log: "Offenses: 2"))
 
-    assert_includes out, "no automatic re-run (CI (run 11) failed in lint, which is not a test lane"
+    assert_includes out, "job lint failed with no gem-resolution error"
     assert_includes out, "STATE=red"
     assert_includes out, "RERUNS=[]"
-  end
-
-  # [unit] THE CDN RACE: lint/scan_js died on bundler's resolution error → re-run.
-  def test_the_gem_resolution_error_is_rerun_even_in_a_non_test_job
-    log = "studio-engine (0.114.1) ... can no longer be found in that source"
-    out = poll(poll_stub(verdicts: [{ state: :red }, { state: :green }], jobs: %w[scan_js lint], log: log))
-
-    assert_includes out, "gem-resolution error"
-    assert_includes out, "STATE=green"
   end
 
   def test_a_refused_rerun_reads_the_red_as_it_stands
@@ -120,6 +131,7 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
 
     assert_includes out, "was refused"
     assert_includes out, "STATE=red"
+    assert_includes out, %("sop"=>"ci_red"), "a refused infra re-run is recorded as the red it is"
   end
 
   # gh's real refusal on an expired App token (rel-20261105-9199b4's log line).
@@ -228,19 +240,37 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, "was refused", out
   end
 
-  def test_the_rerun_is_disarmed_by_env_and_by_the_injected_verdict_seam
+  # [unit] RELEASE_CI_RERUN stays accepted: `off` disarms the infra re-run too, so the
+  # race stops and is recorded; any other value is the default.
+  def test_release_ci_rerun_off_disarms_the_infra_rerun_and_still_records
     off = poll(poll_stub(verdicts: [{ state: :red }]) + %(\nENV["RELEASE_CI_RERUN"] = "off"\n))
     assert_includes off, "RERUNS=[]"
+    assert_includes off, "disarmed by RELEASE_CI_RERUN=off"
+    assert_includes off, %("sop"=>"ci_red")
 
-    injected = run_cli([], setup: %(ENV["RELEASE_CI_STATUS"] = "red"; ENV["RELEASE_CI_POLL_INTERVAL"] = "0"),
-                           call: %(ci = poll_ci_verdict("rantly", #{SHA.inspect}, budget: 5); puts "STATE=\#{ci[:state]}"))
-    assert_includes injected, "STATE=red"
-    refute_includes injected, "AUTOMATIC RE-RUN"
+    on = poll(poll_stub(verdicts: [{ state: :red }, { state: :green }]) + %(\nENV["RELEASE_CI_RERUN"] = "on"\n))
+    assert_includes on, 'RERUNS=["11"]', "a value other than off is the default"
+  end
+
+  # [unit] THE META-TEST SEAM: an injected RELEASE_CI_STATUS still decides the verdict,
+  # and the gate reads no GitHub run, re-runs nothing and records no run.
+  def test_the_injected_verdict_seam_still_works
+    setup = %(ENV["RELEASE_CI_STATUS"] = "red"; ENV["RELEASE_CI_POLL_INTERVAL"] = "0"\n) +
+            %(def ci_workflow_runs(*) = raise("the seam must read no GitHub run")\n)
+    red = run_cli([], setup: setup,
+                      call: %($gate_sops = []; ci = poll_ci_verdict("rantly", #{SHA.inspect}, budget: 5); ) +
+                            %(puts "STATE=\#{ci[:state]} SOPS=\#{$gate_sops.inspect}"))
+    assert_includes red, "STATE=red SOPS=[]", red
+    refute_includes red, "INFRA RE-RUN"
+
+    green = run_cli([], setup: %(ENV["RELEASE_CI_STATUS"] = "green"; ENV["RELEASE_CI_POLL_INTERVAL"] = "0"),
+                        call: %(ci = poll_ci_verdict("rantly", #{SHA.inspect}, budget: 5); puts "STATE=\#{ci[:state]}"))
+    assert_includes green, "STATE=green"
   end
 
   # The run's states in order, one per ci_workflow_runs read (the last repeats), and
   # what it reads after the re-run is requested.
-  def sequenced_stub(verdicts:, runs_seq:, runs_after:, jobs: ["test"])
+  def sequenced_stub(verdicts:, runs_seq:, runs_after:, jobs: ["test"], log: RACE)
     <<~RUBY
       ENV.delete("RELEASE_CI_STATUS")
       ENV["RELEASE_CI_POLL_INTERVAL"] = "0"
@@ -255,7 +285,7 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
         $runs_seq.size > 1 ? $runs_seq.shift : $runs_seq.first
       end
       def ci_failed_job_names(_nwo, _id) = #{jobs.inspect}
-      def ci_failed_log(_nwo, _id) = "Offenses: 1"
+      def ci_failed_log(_nwo, _id) = #{log.inspect}
       def sh(*a, **_k)
         if a[0] == "gh" && a[1] == "run" && a[2] == "rerun"
           $reruns << a[3]
@@ -272,8 +302,8 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
   end
 
   # [unit] THE 2026-10-27 READ: a job went red while its workflow run was still in
-  # progress. The gate holds for the run to complete, THEN spends the one re-run,
-  # instead of printing "no failed workflow run found" and failing.
+  # progress. The gate holds for the run to complete, THEN decides (here the race, so
+  # the infra re-run), instead of reading a run that has not finished.
   def test_a_red_read_while_the_run_is_still_in_progress_waits_for_completion_then_reruns
     setup = sequenced_stub(
       verdicts: [{ state: :red }, { state: :red }, { state: :red }, { state: :pending }, { state: :green }],
@@ -286,56 +316,36 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, "still in progress — holding for the run to complete", out
     assert_equal 1, out.scan("still in progress").size, "said once, not on every read"
     refute_includes out, "no failed workflow run found", out
-    assert_includes out, "AUTOMATIC RE-RUN", out
+    assert_includes out, "INFRA RE-RUN", out
     assert_includes out, 'RERUNS=["21"]', out
     assert_includes out, "STATE=green", out
   end
 
-  # [unit] THE RE-LOCK GATE: a commit measured to differ from the QA-green tree in
-  # Gemfile.lock alone re-runs a first-attempt red in a NON-test job once, and a red
-  # after that re-run is refused, never re-run a second time.
-  def test_the_relock_only_gate_reruns_a_failed_job_once_and_refuses_a_second_time
-    setup = sequenced_stub(verdicts: [{ state: :red }], jobs: ["lint"],
-                           runs_seq: [row(status: "completed", conclusion: "failure")],
-                           runs_after: row(status: "completed", conclusion: "failure", attempt: 2)) +
-            %(\nci_rerun_relock_shas[["turf-monster", #{SHA.inspect}]] = true\n)
-    out = run_cli([], setup: setup, call: <<~CALL)
-      first = poll_ci_verdict("turf-monster", #{SHA.inspect}, budget: 60)
-      second = poll_ci_verdict("turf-monster", #{SHA.inspect}, budget: 0)
-      puts "STATE=\#{first[:state]}/\#{second[:state]} RERUNS=\#{$reruns.inspect}"
-    CALL
+  # [unit] A test lane that went red mid-run is held for, then STOPS with the run's
+  # full failing set on the record.
+  def test_a_red_test_lane_mid_run_is_held_for_then_stops
+    setup = sequenced_stub(
+      verdicts: [{ state: :red }],
+      runs_seq: [row(status: "in_progress", conclusion: nil), row(status: "completed", conclusion: "failure")],
+      runs_after: row(status: "completed", conclusion: "success", attempt: 2), log: FAILED_TEST
+    )
+    out = poll(setup)
 
-    assert_includes out, "re-lock commit", out
-    assert_includes out, "a second red is real", out
-    assert_includes out, 'RERUNS=["21"]', "one re-run, never a second: #{out}"
-    assert_includes out, "STATE=red/red", out
+    assert_includes out, "still in progress", out
+    assert_includes out, "STATE=red", out
+    assert_includes out, "RERUNS=[]", out
+    assert_includes out, "run 21 (CI, attempt 1): jobs test; specs test/integration/production_ssl_test.rb:43", out
   end
 
-  # [unit] Off a re-lock commit the same lint red is a finding: no re-run.
-  def test_without_the_relock_mark_a_lint_red_is_not_rerun
-    setup = sequenced_stub(verdicts: [{ state: :red }], jobs: ["lint"],
+  # [unit] THE RE-LOCK COMMIT gets no wider rule: a lint red on it is a finding and
+  # stops, as it does anywhere (the old any-job re-lock re-run is gone).
+  def test_a_lint_red_on_a_relock_commit_stops
+    setup = sequenced_stub(verdicts: [{ state: :red }], jobs: ["lint"], log: "Offenses: 1",
                            runs_seq: [row(status: "completed", conclusion: "failure")],
                            runs_after: row(status: "completed", conclusion: "failure", attempt: 2))
     out = poll(setup)
 
     assert_includes out, "RERUNS=[]", out
-  end
-
-  # [unit] The mark is MEASURED: a diff past the QA-green tree that touches code
-  # leaves the ordinary rule in force.
-  def test_mark_relock_only_reads_the_diff
-    setup = <<~RUBY
-      $names = "Gemfile.lock\n"
-      def git_capture(*args) = (args.include?("diff") ? [$names, true] : ["", false])
-      def repo_path(_repo) = "/stub"
-    RUBY
-    out = run_cli([], setup: setup, call: <<~CALL)
-      a = mark_relock_only!("turf-monster", { "from" => "f" * 40 }, "1" * 40)
-      $names = "Gemfile.lock\napp/models/x.rb\n"
-      b = mark_relock_only!("turf-monster", { "from" => "f" * 40 }, "2" * 40)
-      puts "MARKS=\#{a.inspect}/\#{b.inspect} \#{ci_rerun_relock_shas.keys.map(&:last).map { |s| s[0] }.inspect}"
-    CALL
-
-    assert_includes out, 'MARKS=true/false ["1"]', out
+    assert_includes out, "STATE=red", out
   end
 end

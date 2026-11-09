@@ -30,7 +30,7 @@ Studio.configure do |config|
   # The DRAFTED title and description; the operator edits them at
   # /admin/link_preview, and Studio.site_identity reads the result.
   config.site_title = "McRitchie Studio"
-  config.site_description = "Alex McRitchie's studio in Denver: acquiring and growing proven businesses, and building the software and agents that run them."
+  config.site_description = "Alex McRitchie's studio in Denver: building the websites, software and agents that run proven businesses."
 
   config.app_name = "McRitchie Studio"
   config.session_key = :studio_user_id

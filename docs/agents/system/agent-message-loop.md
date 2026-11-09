@@ -1980,7 +1980,10 @@ Turbo hover prefetch gets a 204 and spends nothing.
 - **Bot shield.** The first message carries `/contact`'s defences (`BrowserProof`): a
   honeypot (a hit stores nothing) and a signed render time the page's script writes in.
   A first message without it, or under two seconds, is stored `held` with a `bot_shield`
-  event and never answered; the visitor reads "send it again".
+  event and never answered; the visitor reads "send it again". A signed-in sender is never
+  shielded. The admin message page (`/admin/agent_messages/:id`) names a shield hold as the
+  shield's, with its reason and whether the row was sent signed in, never as the answerers'
+  role line.
 - **Cards.** Alex's prompt gains an INTAKE section (`ContextBuilder#intake_block`): the
   playbook from `docs/agents/agents/alex/intake.md`, the request's state from the bundle's
   `intake` key (`BuildIntake::Context`), and the card format. Alex offers a card as a

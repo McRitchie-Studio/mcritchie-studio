@@ -21,7 +21,8 @@
 # THE HOLD IS A HEURISTIC, NOT A BOUND. max-age=60 is what RubyGems asks for, not
 # what every edge does: on 2026-10-29 Fastly edges answered with copies 442s and
 # 2709s old. The hold narrows the race; it cannot observe a runner's edge, so the
-# CI re-run backstop (bin/lib/ci_rerun.rb) still stands behind it.
+# gate's one named infra re-run (bin/lib/ci_rerun.rb, recorded as `ci_infra_rerun`)
+# still stands behind it.
 #
 # PURE: the probe, the clock and the sleeper are injected, so the tests drive every
 # outcome (served at once, served after N polls, never served) with no network and

@@ -446,8 +446,9 @@ class ReleaseShipFinalGemTest < ReleaseCliHarness
     assert_includes out, "THIS IS THE RE-LOCK COMMIT eeeeeee (QA-frozen fffffff + studio-engine 0.10.0 (QA ran 0.10.0.rc1))"
     assert_includes out, "the final gem version is published and tagged"
     assert_includes out, "NOTHING is deployed"
-    assert_includes out, "gh run rerun"
-    assert_includes out, "the gem skips as live, the re-lock is reused, and this gate reads again"
+    assert_includes out, "do NOT re-run it by hand", "a red re-lock commit is a defect to fix, never a retry"
+    assert_includes out, "fix it forward through a task"
+    refute_includes out, "the gem skips as live, the re-lock is reused", "the old hand re-run recovery is gone"
     refute_includes out, "GATE-PASSED"
   end
 

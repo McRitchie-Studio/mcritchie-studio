@@ -149,7 +149,7 @@
         </div>
       </div>
 
-      <div class="min-w-0 xl:row-span-3 xl:grid xl:grid-rows-subgrid [&_[data-booking-wrap]]:mx-0!" data-test="get-in-touch-booking">
+      <div class="min-w-0 xl:row-span-3 xl:grid xl:grid-rows-subgrid [&_[data-booking-wrap]]:max-w-[610px] xl:[&_[data-booking-wrap]]:mx-0!" data-test="get-in-touch-booking">
         <%= render "landing/get_in_touch_head", section: "booking", title: "Book a Call", name: "Alex",
                    role: "Builder", photo: "/people/alex-mcritchie.webp", alt: "Alex McRitchie" %>
         <%# Its own crop: at this half-width column (~610px inside the border)
@@ -157,7 +157,11 @@
             site-wide crop (config/initializers/studio.rb, measured for
             /schedule's wider column, bottom 613) would show Google's credit
             lines. The note under the card still credits Google and links the
-            full booking page. Re-measure if the column width changes. %>
+            full booking page. The frame is capped at 610px (612 with its
+            border) at every width, so a tablet's full-width column cannot
+            change Google's layout under the crop (at 990px the box moves to
+            188-528). Below xl it stays centred; at xl mx-0! drops the engine's
+            auto margins, which shrink a grid item to its content. %>
         <%= studio_booking_frame(crop: { top: 211, bottom: 551, frame_height: 869 }) %>
       </div>
     </div>

@@ -162,9 +162,11 @@ A repo with **no registry `test_cmd` self-gates** at its own deploy and is
 skipped with its own step note. turf-monster no longer does: it registers CI's
 `test` job and is read like the hub, and only a green read for the exact SHA it
 deploys passes its declared `prod_deploy.ci_verified_arg` to `bin/deploy`, which then
-skips re-running that suite. A red read earns one automatic re-run when the rule in
-[`production-deploy`](../../agents/steffon/sops/production-deploy.md#the-frozen-sha-test-gate-is-a-read)
-allows it; the re-run rides the CI reads' refreshed GitHub token, so a sweep
+skips re-running that suite. A red read stops the gate and is recorded as `ci_red`
+(run id, jobs, specs); only the named infra cause, the RubyGems CDN race, earns one
+re-run, recorded as `ci_infra_rerun`. The rule is in
+[`production-deploy`](../../agents/steffon/sops/production-deploy.md#the-frozen-sha-test-gate-is-a-read);
+the re-run rides the CI reads' refreshed GitHub token, so a sweep
 that outlived its ambient token still spends it. **Do not blank `test_cmd` to get past a red
 gate** — a blank reads as "self-gates" and skips the READ, which silently disarms
 the last gate before production; the supported override is
@@ -338,15 +340,12 @@ the candidate lock. It stamps the release with the flow and the candidates; this
 gate refuses a candidate the stamp does not name, and act 7 refuses a prerelease
 lock whatever produced it.
 
-**A red re-lock commit gets one automatic re-run first.** The read measures that the
-commit differs from the QA-green tree in `Gemfile` and `Gemfile.lock` alone, waits
-for its workflow run to complete, and re-runs a first-attempt red in any job once
-(`gh run rerun <id>`, every job, as every automatic re-run is). A red after that
-re-run is real and is never re-run again. **It then refuses the ship before any
-deploy, with the final already published.** The refusal says so, and names the two
-ways forward: re-run that commit's CI run by hand if the gate could not, and re-run
-`bin/release ship` (it resumes), or, for a red that reproduces, fix through a task
-on `accepted` and re-run `bin/release prepare`.
+**A red re-lock commit gets the same rule as any red.** The read waits for its
+workflow run to complete. It re-runs the red once only when every failing job shows
+bundler's gem-resolution error (the infra re-run); any other red is recorded as
+`ci_red`. **It then refuses the ship before any deploy, with the final already
+published.** The refusal says so, and names the way forward: find the cause, fix it
+through a task on `accepted`, and re-run `bin/release prepare`. Never a hand re-run.
 The interruption table is in
 [`production-deploy.md`](../../agents/steffon/sops/production-deploy.md).
 
