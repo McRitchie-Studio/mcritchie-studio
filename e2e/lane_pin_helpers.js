@@ -5,6 +5,15 @@ const { animationsSettled, frames } = require("./settle");
 // must be a separate file: forcing classic scrollbars is a LAUNCH option, and Playwright
 // takes launch options only at a file's top level.
 
+// A scroll has landed: its frame has run and the transitions it set off on the pinned
+// line (navbar, page header row) and the lane headers are done. Not the whole page:
+// the live board restarts its own short animations.
+const PINNED = ".vt-pinned-header, [data-pin='page'], [data-test='stage-header']";
+async function scrollSettled(page) {
+  await frames(page);
+  await animationsSettled(page, PINNED);
+}
+
 // SCROLL TO THE BOTTOM OF THE BOARD, not the bottom of the DOCUMENT.
 //
 // These checks are about a lane header pinning *while its own lane scrolls beneath it*, and
@@ -13,16 +22,6 @@ const { animationsSettled, frames } = require("./settle");
 // (tasks/_desk_panel), so the document bottom is well past the lanes. This addresses the
 // board directly, and clamps to the document, so a page where the board IS last scrolls
 // exactly as far as the document allows.
-// A scroll has landed: its frame has run (sticky positions, scroll events, the
-// navbar's scroll-linked collapse starting) and the transitions it set off on the
-// pinned line (the navbar, the page header's row) and the lane headers are done. The
-// whole page is not waited on: the live board restarts its own short animations.
-const PINNED = ".vt-pinned-header, [data-pin='page'], [data-test='stage-header']";
-async function scrollSettled(page) {
-  await frames(page);
-  await animationsSettled(page, PINNED);
-}
-
 async function scrollToBoardBottom(page) {
   await page.evaluate(() => {
     const board = document.querySelector("[data-test='kanban-board']");
