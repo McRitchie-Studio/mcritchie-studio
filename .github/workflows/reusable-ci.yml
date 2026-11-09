@@ -7,8 +7,10 @@ name: Reusable CI
 # INPUTS, AND EVERY DEFAULT IS THE HUB'S OWN SUITE. The hub's ci.yml calls this file
 # with no `with:`, so it runs every lane below exactly as written in the defaults. An
 # app in another repo calls it with the inputs its own tree needs, and the jobs check
-# out the CALLER's repo: every script a lane runs (`.github/scripts/await-gem-propagation.sh`,
-# `bin/brakeman`, `bin/rubocop`, `bin/test-js`) is the caller's.
+# out the CALLER's repo: every script a lane runs (`bin/brakeman`, `bin/rubocop`,
+# `bin/test-js`) is the caller's. The one exception is
+# `.github/scripts/await-gem-propagation.sh`: a caller with no copy runs the hub's, from
+# this workflow's own commit, so every consumer waits for a just-published gem.
 #
 # A lane input switches a whole lane off for an app that has no such lane; its jobs
 # then report `skipped`. test/lib/ci_workflow_triggers_test.rb pins this input set and
@@ -49,7 +51,7 @@ on:
         type: string
         default: default
       await-gem-propagation:
-        description: Run .github/scripts/await-gem-propagation.sh before bundling.
+        description: Run .github/scripts/await-gem-propagation.sh before bundling (the caller's copy, else the hub's).
         type: boolean
         default: true
       lane-image:
@@ -127,9 +129,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # A caller with no copy of its own runs the hub's script, from this workflow's own
+      # commit (job.workflow_sha): the hub is public, so the caller's token reads it.
+      - name: Fetch the hub's RubyGems await script
+        if: ${{ inputs.await-gem-propagation && hashFiles('.github/scripts/await-gem-propagation.sh') == '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: McRitchie-Studio/mcritchie-studio
+          ref: ${{ job.workflow_sha }}
+          path: .hub-ci
+          sparse-checkout: .github/scripts/await-gem-propagation.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Await RubyGems propagation for locked gems
         if: ${{ inputs.await-gem-propagation }}
-        run: .github/scripts/await-gem-propagation.sh
+        run: |
+          script=.github/scripts/await-gem-propagation.sh
+          [ -f "$script" ] || script=.hub-ci/$script
+          status=0; "$script" || status=$?
+          rm -rf .hub-ci
+          exit "$status"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -189,9 +209,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # A caller with no copy of its own runs the hub's script, from this workflow's own
+      # commit (job.workflow_sha): the hub is public, so the caller's token reads it.
+      - name: Fetch the hub's RubyGems await script
+        if: ${{ inputs.await-gem-propagation && hashFiles('.github/scripts/await-gem-propagation.sh') == '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: McRitchie-Studio/mcritchie-studio
+          ref: ${{ job.workflow_sha }}
+          path: .hub-ci
+          sparse-checkout: .github/scripts/await-gem-propagation.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Await RubyGems propagation for locked gems
         if: ${{ inputs.await-gem-propagation }}
-        run: .github/scripts/await-gem-propagation.sh
+        run: |
+          script=.github/scripts/await-gem-propagation.sh
+          [ -f "$script" ] || script=.hub-ci/$script
+          status=0; "$script" || status=$?
+          rm -rf .hub-ci
+          exit "$status"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -328,9 +366,27 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
 
+      # A caller with no copy of its own runs the hub's script, from this workflow's own
+      # commit (job.workflow_sha): the hub is public, so the caller's token reads it.
+      - name: Fetch the hub's RubyGems await script
+        if: ${{ inputs.await-gem-propagation && hashFiles('.github/scripts/await-gem-propagation.sh') == '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: McRitchie-Studio/mcritchie-studio
+          ref: ${{ job.workflow_sha }}
+          path: .hub-ci
+          sparse-checkout: .github/scripts/await-gem-propagation.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Await RubyGems propagation for locked gems
         if: ${{ inputs.await-gem-propagation }}
-        run: .github/scripts/await-gem-propagation.sh
+        run: |
+          script=.github/scripts/await-gem-propagation.sh
+          [ -f "$script" ] || script=.hub-ci/$script
+          status=0; "$script" || status=$?
+          rm -rf .hub-ci
+          exit "$status"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -649,9 +705,27 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
 
+      # A caller with no copy of its own runs the hub's script, from this workflow's own
+      # commit (job.workflow_sha): the hub is public, so the caller's token reads it.
+      - name: Fetch the hub's RubyGems await script
+        if: ${{ inputs.await-gem-propagation && hashFiles('.github/scripts/await-gem-propagation.sh') == '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: McRitchie-Studio/mcritchie-studio
+          ref: ${{ job.workflow_sha }}
+          path: .hub-ci
+          sparse-checkout: .github/scripts/await-gem-propagation.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Await RubyGems propagation for locked gems
         if: ${{ inputs.await-gem-propagation }}
-        run: .github/scripts/await-gem-propagation.sh
+        run: |
+          script=.github/scripts/await-gem-propagation.sh
+          [ -f "$script" ] || script=.hub-ci/$script
+          status=0; "$script" || status=$?
+          rm -rf .hub-ci
+          exit "$status"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
@@ -866,9 +940,27 @@ jobs:
           sudo rm -f /usr/local/bin/chromedriver /usr/bin/chromedriver || true
           echo "chromedriver remaining on PATH: $(which chromedriver 2>/dev/null || echo none)"
 
+      # A caller with no copy of its own runs the hub's script, from this workflow's own
+      # commit (job.workflow_sha): the hub is public, so the caller's token reads it.
+      - name: Fetch the hub's RubyGems await script
+        if: ${{ inputs.await-gem-propagation && hashFiles('.github/scripts/await-gem-propagation.sh') == '' }}
+        uses: actions/checkout@v7
+        with:
+          repository: McRitchie-Studio/mcritchie-studio
+          ref: ${{ job.workflow_sha }}
+          path: .hub-ci
+          sparse-checkout: .github/scripts/await-gem-propagation.sh
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
       - name: Await RubyGems propagation for locked gems
         if: ${{ inputs.await-gem-propagation }}
-        run: .github/scripts/await-gem-propagation.sh
+        run: |
+          script=.github/scripts/await-gem-propagation.sh
+          [ -f "$script" ] || script=.hub-ci/$script
+          status=0; "$script" || status=$?
+          rm -rf .hub-ci
+          exit "$status"
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1

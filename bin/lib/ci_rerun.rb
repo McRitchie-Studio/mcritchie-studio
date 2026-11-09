@@ -34,9 +34,12 @@
 #      failed-step log. A job that failed any other way (an assertion, a lint
 #      offence, a timeout in a test) is a finding, so the whole verdict stops.
 #
-# The durable fix for the race is an on-runner propagation wait in each consumer's
-# CI (turf-monster's `.github/scripts/await-gem-propagation.sh`); every infra
-# re-run on the record is evidence that a consumer still lacks it.
+# The durable fix for the race is the on-runner propagation wait,
+# `.github/scripts/await-gem-propagation.sh` (turf-monster's own copy; every app on
+# the hub's reusable-ci.yml runs the hub's). It reads /info as bundler does on several
+# connections and fails as GEM_NOT_SERVED_ON_RUNNER, which this rule does not match,
+# so a late CDN now stops the gate with a named cause. Every infra re-run still on
+# the record is evidence that a consumer bundled without that wait.
 #
 # The caller (bin/release.rb#poll_ci_verdict) decides at most ONCE per repo and SHA
 # per process and reads an infra re-run to its own conclusion. A red after it is

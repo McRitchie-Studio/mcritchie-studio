@@ -104,6 +104,32 @@ class CiBundleRetryTest < Minitest::Test
                  "the early exit is what EPIPEs curl and produces the false negative above")
   end
 
+  # A CONSUMER WITH NO COPY STILL WAITS. reusable-ci.yml checks out the CALLER's tree, and
+  # the seven studio-engine consumers that call it ship no await script, so each await
+  # step there is preceded by a sparse checkout of the hub's script at this workflow's
+  # own commit, and the step falls back to it. Task consumers-await-gem-propagation.
+  def test_reusable_ci_await_steps_fall_back_to_the_hubs_script
+    doc = YAML.load_file(File.join(ROOT, ".github/workflows/reusable-ci.yml"), aliases: true)
+    sites = doc.fetch("jobs").flat_map do |job_name, job|
+      steps = job.fetch("steps", [])
+      steps.each_with_index.filter_map do |step, i|
+        next unless step["run"].to_s.include?(AWAIT_SCRIPT)
+
+        [job_name, steps[i - 1], step]
+      end
+    end
+    assert_operator sites.size, :>=, 1, "no await steps found in reusable-ci.yml"
+
+    sites.each do |job_name, fetch, await|
+      assert_equal "actions/checkout@v7", fetch["uses"], "#{job_name}: the hub-script fetch must precede the await"
+      assert_equal "McRitchie-Studio/mcritchie-studio", fetch.dig("with", "repository"), job_name
+      assert_equal "${{ job.workflow_sha }}", fetch.dig("with", "ref"), "#{job_name}: the workflow's own commit"
+      assert_includes fetch["if"].to_s, "hashFiles('.github/scripts/#{AWAIT_SCRIPT}') == ''",
+                      "#{job_name}: only a caller without its own copy fetches the hub's"
+      assert_includes await["run"], ".hub-ci/", "#{job_name}: the await step falls back to the hub's copy"
+    end
+  end
+
   def test_every_gem_installing_step_waits_for_propagation_first
     sites = gem_installing_steps
 

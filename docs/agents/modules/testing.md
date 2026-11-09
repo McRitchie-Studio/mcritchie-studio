@@ -63,13 +63,14 @@ inputs and no secrets, and every input's default is the hub's own suite.
 
 An app's `ci.yml` may call the same file by name
 (`uses: McRitchie-Studio/mcritchie-studio/.github/workflows/reusable-ci.yml@main`).
-The lanes check out the app's tree, so each script a lane runs is the app's own.
+The lanes check out the app's tree, so each script a lane runs is the app's own. The
+RubyGems await is the exception: an app without its own copy runs the hub's.
 
 | Input | Default (the hub) | What an app sets it for |
 |-------|-------------------|-------------------------|
 | `javascript`, `island-animator`, `playwright`, `rails-shards`, `system` | `true` | `false` switches off a lane the app does not have; its jobs report `skipped` |
 | `rubygems` | `default` | A pinned RubyGems for `ruby/setup-ruby` |
-| `await-gem-propagation` | `true` | `false` when the app ships no `.github/scripts/await-gem-propagation.sh` |
+| `await-gem-propagation` | `true` | Leave it `true`. An app with no `.github/scripts/await-gem-propagation.sh` runs the hub's copy, from the workflow's own commit; `false` lets a just-published gem race the CDN |
 | `postgres-image` | `ghcr.io/mcritchie-studio/postgres:17` | The app's production major, on the same mirror (`.github/workflows/mirror-ci-images.yml` copies `postgres:17`, `postgres:18` and `redis:8`; the packages are public, so any app's run token pulls them) |
 | `gem-audit-command` | empty | `bin/bundler-audit`, as one more static check |
 | `importmap-audit-command` | `bin/importmap-audit-ci` | `bin/importmap audit` |

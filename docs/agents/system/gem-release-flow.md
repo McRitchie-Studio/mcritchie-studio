@@ -25,7 +25,11 @@ Two things the old flow lacked are now in place, and they are what make B safe:
    rationed read capped by `RELEASE_GEM_VERSIONS_FULL_MAX_TIME`; and the `.gem`) on
    every read for `RELEASE_GEM_SETTLE_S` (60s), and it installs locally. A timeout is
    `GEM_NOT_SERVED`, nothing pushed, naming the surface that missed. CI runs
-   `.github/scripts/await-gem-propagation.sh` before `bundle install`. The 0.48.0
+   `.github/scripts/await-gem-propagation.sh` before `bundle install`, on the runner:
+   it reads `/info/<gem>` as bundler does on several separate connections, and the
+   `.gem`, and fails as `GEM_NOT_SERVED_ON_RUNNER` on a copy that still lacks the
+   version (RubyGems soft-purges the index, so one fresh read proves nothing about
+   the next connection). The 0.48.0
    cause cannot recur, and the wait is already paid at prepare under A, so B adds
    none.
 2. **Allocation and the `v*` tag.** In August a stranded version needed a person to
@@ -58,15 +62,16 @@ and GitHub (UTC; Denver is UTC-6).
 | ship gate read (credited greens) and authority | 20:12 | ~20:13 | 1 | stays |
 | gem `release-check --build` (the engine suite, again), build, contents compare | ~20:13 | 20:24:11 (`0.116.1` registered on RubyGems) | 11 | gone: prepare ran it |
 | CDN await, re-lock six consumers, push six commits | 20:24:11 | 20:26:50 (last re-lock commit) | 2.7 | gone |
-| re-lock gate: six fresh CI runs | 20:25:55 (first run starts) | 20:43:02 (last settles: mcritchie-industries, attempt 2 after a `ci / system` flake) | 17 | gone |
+| re-lock gate: six fresh CI runs | 20:25:55 (first run starts) | 20:43:02 (last settles: mcritchie-industries, attempt 2 after a `ci / system` red) | 17 | gone |
 | hub deploy dispatched | 20:44:08 | | | starts here |
 | hub, then five satellites, post-deploy hook, seal, cardless re-lock | 20:44 | 20:59 | 15 | stays |
 
-Without the flake the slowest re-lock run settled at 20:40:27 (cyvasse), so the
+Without that second attempt the slowest re-lock run settled at 20:40:27 (cyvasse), so the
 re-lock gate alone costs 14 to 17 minutes and the gem segment as a whole 28 to 31.
 **Saving per gem release: about 30 minutes off a 47-minute ship (the ship becomes
 about 16 minutes), plus one full CI run per consumer (six here) and the
-re-lock-only flake retry.** Prepare does not grow: it already published, tagged and
+re-lock run's second attempt.** (That second attempt was the RubyGems CDN race, a
+cause with a fix: consumers now wait on the runner for the gem.) Prepare does not grow: it already published, tagged and
 checksummed one artifact and ran the gem's suite before it; it now does that for `X`
 instead of `X.rcN`.
 
@@ -79,8 +84,8 @@ unchanged in shape by B.
    runs `X`. The ship proves the two equal file by file, which is good, but the tree
    that deploys is still a commit QA never ran. Under B the gem bytes, the lock and the
    app SHA are the ones the pre-QA gate, QA and CI all read.
-2. **It removes the slowest serial wait in the ship**, and the one place a CI flake
-   could hold production (the 2026-10-28 ship spent a retry on one).
+2. **It removes the slowest serial wait in the ship**, and the one place a CI red with no cause in the commit
+   could hold production (the 2026-10-28 ship spent a re-run on one).
 3. **It removes the `accepted` divergence** every gem release created (the re-lock
    commit landed on `release` alone, and each consumer needed a merge reconcile).
 4. **The cost is small and bounded.** A red QA burns one version number. Version

@@ -520,9 +520,9 @@ checkout or network fault before the tests start) stop too: no log line proves t
 cause the way bundler's words prove the race, so they get a cause like any red. Why
 the race stays: the commit is correct and
 only the CDN was late, so a stop would hand you a re-run with nothing to fix. Each
-`ci_infra_rerun` on the record shows that a consumer's CI still lacks the on-runner
-propagation wait (turf-monster's `.github/scripts/await-gem-propagation.sh`); file
-that wait as the fix forward. `RELEASE_CI_RERUN=off` disarms the infra re-run too;
+`ci_infra_rerun` on the record shows that the on-runner propagation wait
+(`.github/scripts/await-gem-propagation.sh`; every app on the hub's reusable CI runs
+the hub's copy) did not hold; file the run id against that wait as the fix forward. `RELEASE_CI_RERUN=off` disarms the infra re-run too;
 any other value is the default. The same rule runs in `prepare`'s gates (G3, the gem
 CI gate). Code: `bin/lib/ci_rerun.rb`, `bin/release.rb#poll_ci_verdict`.
 
