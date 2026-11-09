@@ -36,6 +36,12 @@ Take the first rung that answers. Never skip down a rung to "be sure".
   the few allowed exceptions are listed there, each with its reason.
 - **A process reads a key once.** Memoize it (`AgentApi#op_secret`), or export it
   for the children (`HerokuToken.export_once!`). A retry bills too.
+- **A refused credential earns one fresh read, no more.** When a service answers 401
+  or "invalid credential" to a cached copy, forget the copy, read the item fresh
+  once, and try once more, through `AuthRefresh` (`SoulSecrets.with_refresh`,
+  `GhAuthRetry.with_refresh`). A second refusal stops and names the item. It is a
+  named cause (a rotated credential), never a blind retry; each refresh is an
+  `auth-refresh` row in `bin/op-reads`. Detail: [`secret-cache.md`](secret-cache.md).
 - **GitHub tokens come only from `bin/gh-token`.** For the agent identity it serves
   the shared cache and reads 1Password only on a miss or expiry. The deployer
   identity is minted per call by design and is never cached (`CACHEABLE_IDENTITIES`);

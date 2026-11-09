@@ -82,7 +82,7 @@ module AuthRefresh
   #                credential. Omit it when the block raises Rejected instead.
   #   say       -> line -> where the stderr narration goes (default $stderr)
   #   how       the words for the refresh step, for the narration
-  def run(item:, service:, refresh:, read: -> {}, rejected: nil, env: ENV, say: nil,
+  def run(item:, service:, refresh:, read: -> { }, rejected: nil, env: ENV, say: nil,
           how: "forgetting the cached copy and reading it fresh from 1Password once")
     item = label(item)
     service = label(service)

@@ -298,7 +298,7 @@ class AuthRefreshTest < Minitest::Test
     path, count = broker
     error = assert_raises(AuthRefresh::StillRefused) do
       GhAuthRetry.with_refresh(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path),
-                               say: ->(_l) {}) { |token| gh(token, "a-token-nobody-has") }
+                               say: ->(_l) { }) { |token| gh(token, "a-token-nobody-has") }
     end
 
     assert_equal 1, broker_calls(count), "one mint, never a second"
@@ -311,7 +311,7 @@ class AuthRefreshTest < Minitest::Test
     path, count = broker(ok: false)
     error = assert_raises(AuthRefresh::RefreshFailed) do
       GhAuthRetry.with_refresh(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path),
-                               say: ->(_l) {}) { |token| gh(token, FAKE_MINTED) }
+                               say: ->(_l) { }) { |token| gh(token, FAKE_MINTED) }
     end
 
     assert_equal 1, broker_calls(count)
@@ -322,7 +322,7 @@ class AuthRefreshTest < Minitest::Test
   def test_unit_github_a_non_auth_failure_mints_nothing
     path, count = broker
     result = GhAuthRetry.with_refresh(identity: "agent", env: env("GH_AUTH_TOKEN_BIN" => path),
-                                      say: ->(_l) {}) { |_t| ["merge conflict in CHANGELOG.md", false] }
+                                      say: ->(_l) { }) { |_t| ["merge conflict in CHANGELOG.md", false] }
 
     assert_equal ["merge conflict in CHANGELOG.md", false], result
     assert_equal 0, broker_calls(count)
