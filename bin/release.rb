@@ -3194,7 +3194,7 @@ def lock_only_consumer_repos(member_repos, held_repos: [])
     end
 
     step("  #{Release::LockOnlyConsumers.riding_line(repo, commits)}")
-    swept_shas[repo] = sha
+    swept_shas[repo] = sha unless DRY
     repo
   end
 end
@@ -5457,10 +5457,19 @@ def prepare
   #     its own registry entry. Recorded on the release below, so the repo plan of
   #     every later step carries it. Only a full sweep: `--task` curates the sweep
   #     and `--expedite` proves the ladder carries one task, so neither adds a repo.
+  #     A DRY RUN NAMES THEM AND CARRIES NONE: it takes no fetch, so its read is as
+  #     of the last fetch, and the preview's promote and plan stay those the members
+  #     alone make (the same tree every dry-run meta-test pins).
   lock_only = []
   if plan["sweep"].any? && task_slugs.empty? && !expedite
-    lock_only = lock_only_consumer_repos(member_repos, held_repos: detect["held_repos"] || [])
-    promote_repos = (promote_repos + lock_only).uniq
+    found = lock_only_consumer_repos(member_repos, held_repos: detect["held_repos"] || [])
+    if DRY
+      step("[dry-run] a live sweep re-reads these after its fetch and carries each that still qualifies: " \
+           "#{found.join(', ')}") if found.any?
+    else
+      lock_only = found
+      promote_repos = (promote_repos + lock_only).uniq
+    end
   end
 
   promote_accepted_to_release!(promote_repos, label: slug) if promote_repos.any?

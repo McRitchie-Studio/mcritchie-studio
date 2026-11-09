@@ -99,6 +99,7 @@ class ReleaseLockOnlyConsumersTest < Minitest::Test
 
     assert_equal %w[commercial-welding], out[/RIDES=(.*)/, 1].to_s.split(","), out
     refute_match(/RAN: git .* fetch/, out, "a dry run takes no fetch: #{out}")
+    assert_equal "", out[/PINS=(.*)/, 1].to_s, "a dry run pins nothing: #{out}"
   end
 
   # The record: the lock-only repos ride the sweep's own transaction, before repo_plan.
