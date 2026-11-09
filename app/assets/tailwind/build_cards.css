@@ -172,18 +172,77 @@
   outline-offset: 4px;
 }
 
-/* Every slide carries its caption, and the engine fades all but the open one's
-   to opacity 0, which leaves them in the accessibility tree. Hidden here too,
-   after the fade, so the outline holds one h2 (the open app's) and a screen
-   reader reads one caption. The space stays, so the row never changes height. */
-.portfolio-row .carousel-slide .carousel-caption { transition: opacity 300ms ease, visibility 0s; }
-.portfolio-row .carousel-slide:not([data-current]) .carousel-caption {
+/* The Portfolio row's layout (Alex McRitchie, 2026-11-08). The engine region
+   becomes a grid: the prev and next arrows flank the stack, vertically centred
+   on it, and a fixed row under the stack holds the one caption (the page's
+   caption stack, laid over that row). The engine's two control wrappers are
+   plain divs, so they step aside (display: contents) and the arrows take grid
+   places; until the controller connects they stay hidden, as the engine has
+   them. The row has no dots ("we can drop this"): display: none takes them out
+   of the tab order and the accessibility tree; the status line still speaks.
+   The row does not autoplay, so the engine draws no pause button. Targets 44px. */
+.portfolio-stage {
+  --pc-caption-h: 9.5rem;
+  --pc-arrow: 2.75rem;
+  position: relative;
+}
+.portfolio-row {
+  display: grid;
+  grid-template-columns: var(--pc-arrow) 1fr var(--pc-arrow);
+  grid-template-rows: auto var(--pc-caption-h);
+  column-gap: 0.75rem;
+}
+.portfolio-row > .carousel-track { grid-row: 1; grid-column: 2; }
+.portfolio-row .carousel-controls,
+.portfolio-row .carousel-arrows { display: contents; }
+.portfolio-row .carousel-dots { display: none; }
+.portfolio-row [data-carousel-target="prev"] { grid-row: 1; grid-column: 1; align-self: center; }
+.portfolio-row [data-carousel-target="next"] { grid-row: 1; grid-column: 3; align-self: center; }
+.portfolio-row .carousel-button {
+  width: var(--pc-arrow);
+  height: var(--pc-arrow);
+}
+
+/* The one caption, laid over the row the grid keeps for it, every app's caption
+   in one cell so they cross-fade in place: the leaving one fades out, then the
+   arriving one fades in, never two at once. The hidden ones are also visibility:
+   hidden, so the outline holds one h2 and a screen reader reads one caption. */
+.portfolio-captions {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: var(--pc-caption-h);
+  display: grid;
+  padding-top: 1.5rem;
+  text-align: center;
+  pointer-events: none;
+}
+.portfolio-caption {
+  grid-area: 1 / 1;
+  padding-inline: 1rem;
+  opacity: 0;
   visibility: hidden;
-  transition: opacity 300ms ease, visibility 0s linear 300ms;
+  transition: opacity 140ms ease, visibility 0s linear 140ms;
+}
+.portfolio-caption[data-current] {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 180ms ease 140ms, visibility 0s;
+}
+
+/* On a phone the stack needs the width: the arrows lie small over the side
+   cards at the edges, clear of the front card, and the caption gets more room. */
+@media (width < 40rem) {
+  .portfolio-stage { --pc-caption-h: 11rem; }
+  .portfolio-row { grid-template-columns: 0 1fr 0; column-gap: 0; }
+  .portfolio-row [data-carousel-target="prev"] { grid-column: 2; justify-self: start; z-index: 20; }
+  .portfolio-row [data-carousel-target="next"] { grid-column: 2; justify-self: end; z-index: 20; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .portfolio-card,
   .portfolio-row .portfolio-card,
-  .portfolio-row .carousel-slide .carousel-caption { transition: none; }
+  .portfolio-caption,
+  .portfolio-caption[data-current] { transition: none; }
 }

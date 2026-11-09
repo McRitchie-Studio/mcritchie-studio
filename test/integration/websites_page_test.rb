@@ -31,7 +31,7 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     end
     # The row loops (both arrows always live). It opens on the first app once the engine's
     # visual wrap is installed (a looping spotlight starts at slide 0); an engine before it
-    # opens a spotlight on the middle app. Either opening passes; the dots must agree with it.
+    # opens a spotlight on the middle app. Either opening passes.
     middle = BuildGallery.examples.size / 2
     assert_operator middle, :>, 0, "one app has no middle to open on, so this measures nothing"
     assert_select "#{carousel} .carousel-slide[data-current]", count: 1
@@ -41,28 +41,31 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     assert_select "#{carousel} button[aria-label='Previous slide'][aria-controls='websites-apps'][aria-disabled='false']", count: 1
     assert_select "#{carousel} button[aria-label='Next slide'][aria-controls='websites-apps']", count: 1
     assert_select "#{carousel} button[aria-label='Next slide'][aria-disabled='true']", count: 0
-    assert_select "#{carousel} button.carousel-dot", count: BuildGallery.examples.size
-    assert_select "#{carousel} button.carousel-dot[aria-current='true']", count: 1
-    assert_select "#{carousel} button.carousel-dot[aria-current='true'][aria-label=?]", "Go to slide #{opened + 1}", count: 1
+    # The engine still writes its dots; the row hides them (display: none, build_cards.css),
+    # and the browser tier proves them gone. It draws no pause button: the row does not autoplay.
+    assert_select "#{carousel} .carousel-autoplay", count: 0
     assert_select "[data-test='websites-grid']", count: 0
   end
 
-  # Alex McRitchie, 2026-11-08: "Build yours" moved from the intro to under the row.
-  test "the page has one h1, and Build yours comes after the carousel, not in the intro" do
+  # Alex McRitchie, 2026-11-08: the CTA moved from the intro to under the caption, and
+  # reads "Build Your Website".
+  test "the page has one h1, and Build Your Website comes after the carousel, not in the intro" do
     get websites_path
 
     assert_select "h1", count: 1
     assert_select "section h1 ~ a[href=?]", build_path, count: 0
-    assert_select "a[data-test='websites-build-cta'][href=?]", build_path, text: "Build yours", count: 1
+    assert_select "a[data-test='websites-build-cta'][href=?]", build_path, text: "Build Your Website", count: 1
+    assert_select "a", text: "Build yours", count: 0
     html = response.body
-    assert_operator html.index("data-test=\"websites-carousel\""), :<, html.index("data-test=\"websites-build-cta\""),
-                    "the CTA follows the carousel in DOM order"
+    assert_operator html.index("data-portfolio-captions"), :<, html.index("data-test=\"websites-build-cta\""),
+                    "the CTA follows the carousel and its caption in DOM order"
   end
 
-  # Alex McRitchie, 2026-11-08: the still is the whole card, and the name, host and
-  # blurb are the row's caption, which the carousel shows under the open slide only.
-  # /build keeps its own card.
-  test "each slide is the app's still alone, and its name, host and blurb are the slide's caption" do
+  # Alex McRitchie, 2026-11-08: the still is the whole card, and the open app's name,
+  # host and blurb are ONE caption under the stack: a stack of one per app outside the
+  # moving slides, the first app's marked current until portfolio_captions.js follows
+  # the row. /build keeps its own card.
+  test "each slide is the app's still alone, and the apps' captions are one stack under the row" do
     get websites_path
 
     examples = BuildGallery.examples
@@ -71,8 +74,8 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     card = "#{row} a.portfolio-card[data-test='build-example'][target='_blank'][rel='noopener']"
     assert_select card, count: examples.size
     assert_select "#{row} .build-gallery-card", { count: 0 }, "not /build's card"
-    assert_select "#{card} [data-test='build-example-name'], #{card} [data-test='build-example-blurb'], #{card} [data-test='portfolio-card-body']",
-                  { count: 0 }, "nothing is written over the still"
+    assert_select "#{row} [data-test='build-example-name'], #{row} [data-test='build-example-blurb'], #{row} .carousel-caption",
+                  { count: 0 }, "nothing is written over or under a still inside the row"
     examples.each do |example|
       assert_select "#{card}[href=?][aria-label=?]", example.url, example.name, count: 1 do
         if example.image
@@ -80,14 +83,22 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
         end
       end
       assert_select "#{card}[href=?][style*=?]", example.url, "--pc-primary:", count: 1
-      assert_select "#{row} .carousel-slide[aria-label=?] .carousel-caption [data-test='portfolio-caption']", example.name, count: 1 do
+    end
+
+    captions = "[data-portfolio-stage] > [data-portfolio-captions] > [data-test='portfolio-caption']"
+    assert_select captions, count: examples.size
+    examples.each do |example|
+      assert_select "#{captions}[data-portfolio-url=?]", example.url, count: 1 do
         assert_select "h2.type-h2[data-test='build-example-name']", text: example.name, count: 1
         assert_select "[data-test='build-example-host'].font-mono", text: URI.parse(example.url).host, count: 1
         assert_select "[data-test='build-example-blurb']", text: example.blurb, count: 1
       end
     end
-    assert_select "#{row} [data-test='portfolio-caption'][aria-live]", count: 0 # the status line speaks, not the caption
-    [ "Prisoner's Dilemma", "Rantly" ].each { |name| assert_select "#{row} [data-test='build-example-name']", text: name, count: 1 }
+    assert_select "#{captions}[data-current]", count: 1
+    assert_select "#{captions}[data-current][data-portfolio-url=?]:not([aria-hidden])", examples.first.url, count: 1
+    assert_select "#{captions}[aria-hidden='true']", count: examples.size - 1
+    assert_select "#{captions}[aria-live]", count: 0 # the carousel's status line speaks, not the caption
+    assert_select "#{row} [role='status'][aria-live='polite']", count: 1
   end
 
   # [component] The row is the helper's style, and it loops on either engine.
@@ -105,19 +116,17 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     end
   end
 
-  test "the carousel asks for autoplay and loop only as the installed engine declares them" do
+  # Alex McRitchie, 2026-11-08: the dots and the pause button go, so the row does not
+  # autoplay (moving content owes a visible pause, WCAG 2.2.2). The loop still rides
+  # carousel_optional_locals, so an engine without it still renders.
+  test "the row loops but never autoplays" do
     get websites_path
 
-    template = ActionController::Base.new.lookup_context.find_template("studio/carousel", [], true)
-    declares = template.source[WebsitesHelper::STRICT_LOCALS, 1].to_s
-    # Until the engine has them (task carousel-autoplay-and-loop) the page still renders: an
-    # undeclared local would raise. Once it has them, the row carries what the engine makes of them.
     assert_response :success
-    if declares.match?(/\bautoplay:/)
-      assert_match(/autoplay/i, css_select("[data-test='websites-carousel']").first.to_html, "the engine's autoplay reaches the row")
-    else
-      assert_no_match(/autoplay/i, css_select("[data-test='websites-carousel']").first.attributes.values.map(&:value).join(" "))
-    end
+    row = css_select("[data-test='websites-carousel']").first
+    assert_nil row["data-carousel-autoplay"], "no autoplay timer"
+    assert_select "[data-test='websites-carousel'] button[aria-label='Pause slideshow']", count: 0
+    assert_equal "", row["data-carousel-loop"]
   end
 
   test "the logged-out sidebar is one line per link, with Sign In, Chat and one Apps link" do

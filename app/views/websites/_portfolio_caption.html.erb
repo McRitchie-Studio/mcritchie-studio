@@ -1,13 +1,15 @@
-<%# The /websites row's caption for one app: its name, its host and its blurb.
-    studio/_carousel writes one per slide (caption:) and shows only the open
-    slide's, under the row, so the words change as the row moves. The name is
-    the open app's h2 (type-h2, Alex McRitchie, 2026-11-08); the other slides'
-    captions are visibility: hidden (build_cards.css, portfolio-row), so the
-    heading outline and a screen reader meet one h2, the open app's. It is not a
-    live region: the carousel's status line already says which app is open. %>
+<%# locals: (example:, current: false) %>
+<%# The /websites caption for one app: its name (the open app's h2, type-h2), its
+    host and its blurb. The page renders one per app in a single stack under the
+    carousel (websites/index), and portfolio_captions.js marks the open app's
+    data-current as the row moves. The others are visibility: hidden
+    (build_cards.css), so the heading outline and a screen reader meet one h2, the
+    open app's. It is not a live region: the carousel's status line already says
+    which app is open. Spacing (Alex McRitchie, 2026-11-08): room above the name,
+    the host tight under it, a clear gap before the blurb. %>
 <% host = (URI.parse(example.url).host rescue nil) || example.url %>
-<div class="text-center" data-test="portfolio-caption">
+<div class="portfolio-caption" data-test="portfolio-caption" data-portfolio-url="<%= example.url %>"<%= " data-current".html_safe if current %><%= ' aria-hidden="true"'.html_safe unless current %>>
   <h2 class="type-h2 text-heading" data-test="build-example-name"><%= example.name %></h2>
-  <span class="block mt-1 font-mono text-xs text-secondary leading-5" data-test="build-example-host"><%= host %></span>
-  <span class="block mt-1 text-sm text-secondary leading-5" data-test="build-example-blurb"><%= example.blurb %></span>
+  <p class="mt-1 font-mono text-xs text-secondary leading-5" data-test="build-example-host"><%= host %></p>
+  <p class="mt-3 text-sm text-secondary leading-5" data-test="build-example-blurb"><%= example.blurb %></p>
 </div>
