@@ -1671,8 +1671,8 @@ on a monthly cadence, tracked like any other task.
 
 - **Triggers:** suite wall-clock regression, flake-rate climbing, an
   "inverted pyramid" smell (E2E count growing while unit coverage stalls).
-- **Actions:** flaky → `quarantine` lane + a follow-up task (never silently
-  skip); redundant → delete the higher-tier test when a lower tier now covers
+- **Actions:** red then green at one SHA → its cause card and a fix (never a
+  retry, never a silent skip); redundant → delete the higher-tier test when a lower tier now covers
   it (push coverage *down* the pyramid); dead → remove tests for removed
   behavior.
 - **KPIs (tie to Avi's rework-rate):** suite wall-clock per lane, flake rate,

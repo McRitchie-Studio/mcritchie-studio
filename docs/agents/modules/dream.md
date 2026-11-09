@@ -407,9 +407,9 @@ One format puts every dream decision to Alex McRitchie in chat, at wrap and on d
 
 1 · ADD · step/qa-release/prepare · 0 of 5 used
    Q: "At `bin/release prepare`, `accepted` CI is red on one e2e spec. Do I eject the PR?"
-   A: "Not yet. Re-run the WHOLE run and eject only if it is red again."
-   Why: "A spec fresh on `accepted` can be flaky; an ejection costs the PR its release."
-   Evidence: source 2026-10-15 · qa-release · sops/qa-release/rerun-the-whole-run-before-ejecting.md
+   A: "Not yet. Read the failed job's log and name the cause. A product or test cause ejects; infra or harness gets its cause card and a fix forward."
+   Why: "A same-SHA red then green is a defect with a cause; an ejection on a guess costs the PR its release."
+   Evidence: source 2026-11-08 · qa-release · sops/qa-release/name-the-cause-before-ejecting.md
    My call: approve — a judgment call at a step, and no command can make it
 
 2 · SWAP · soul/carl · 20 of 20 used

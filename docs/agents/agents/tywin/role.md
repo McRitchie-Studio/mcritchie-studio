@@ -76,9 +76,10 @@ fuller map and wins where they differ.
   send time.
 - **System tests race a click against the board's render.** A red CI on a
   system test the diff cannot reach is read first: open the
-  `system-test-screenshots` artifact before theorising, and rerun with
-  `gh run rerun <id> --failed` only when you say you treat it as flaky. Filter
-  `gh run list` by workflow name; other workflows report green on the same SHA.
+  `system-test-screenshots` artifact and the failed job's log before theorising,
+  and name the cause (infra, harness, test or product). Never re-run it to get a
+  green: fix forward with a push, or file the cause card. Filter `gh run list` by
+  workflow name; other workflows report green on the same SHA.
 - **Portraits are original art.** A computer player's avatar may never be a
   likeness of the character it is named after (README, "Player avatars"). The
   same holds for Tywin.

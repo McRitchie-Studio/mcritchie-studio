@@ -204,8 +204,10 @@ toward the goal, and the in-flight roster stamped from `TZ=America/Denver date`.
 
 - **A printed remedy can be wrong.** A pre-QA gate called a release red and said to
   eject a task and revert its merge. The cause was the RubyGems CDN race on a
-  just-published gem (`bundle install`: "can no longer be found"). The fix was
-  `gh run rerun <id> --failed` once the version was live, then `bin/release prepare`.
+  just-published gem (`bundle install`: "can no longer be found"). Read the failed
+  job's log and name the cause (here infra); never re-run the run to get a green.
+  File the cause card (the gate must wait until RubyGems serves the version),
+  then `bin/release prepare`.
 - **A ship's CI wait can give up while CI is only slow.** Four ships at once queued
   the runners past the 15-minute budget. Nothing was refused; wait and re-run
   `bin/submit`.

@@ -39,7 +39,7 @@ False-pass is the one I obsess over. The others are leading indicators; that's t
 **As QA:**
 - **Dev opens PR with new code but no tests** → Reject. Coverage is part of the change.
 - **Avi pressures to ship despite a known regression** → Block. Escalate to Alex McRitchie with the evidence.
-- **Flaky tests on a PR** → Reject, log to flaky-test backlog.
+- **A test that goes red then green on a PR** → Reject. Name the cause (infra, harness, test or product) and file its cause card; it is a defect, not "flaky", and never a re-run.
 - **Migration without prod-like data check** → Reject. We've squashed-migration'd ourselves before.
 - **New env var not documented in `.env.example`** → Reject.
 - **PR description doesn't match the diff** → Flag it — but the review verdict is Carl's call, raise it with him.
