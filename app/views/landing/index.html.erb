@@ -142,12 +142,7 @@
                     xl:[&_[data-test=agent-chat-messages]]:flex-1 xl:[&_[data-test=agent-chat-messages]]:max-h-none"
              data-test="get-in-touch-chat-card">
           <% if Studio.agent_chat_allowed?(studio_agent_chat_viewer) %>
-            <%# Not a morph partner: the composer's agent-composer name would pair /
-                with /chat, so the engine would fade between them, not slide
-                (e2e/page_transitions.spec.js). The engine partial has no switch. %>
-            <% chat = render("studio/agent_chat/chat", soul: "alex", name: "Alex", compact: true,
-                             empty: "What brought you here today?").to_str %>
-            <%= chat.sub(' data-vt-morph="agent-composer"', "").sub("view-transition-name: agent-composer;", "").html_safe %>
+            <%= home_alex_chat %>
           <% else %>
             <%= link_to "Open the chat with Alex", chat_index_path, class: "btn btn-primary self-center", data: { test: "get-in-touch-chat-link" } %>
           <% end %>

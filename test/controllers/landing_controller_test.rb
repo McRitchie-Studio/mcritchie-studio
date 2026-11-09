@@ -90,6 +90,8 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     body = response.body
     assert_operator body.index('data-test="get-in-touch-chat"'), :<, body.index('data-test="get-in-touch-booking"'), "the chat comes first (left)"
     assert_select "[data-test=agent-chat]", 1
+    assert_select "[data-test=agent-chat][data-agent-chat-turns-url=?]", "/agent_chat/turns?since=#{AgentMessage.maximum(:id).to_i}"
+    assert_not_includes body, "agent-composer", "/ is no morph partner of /chat"
     assert_not_includes body, "Chat Over Video"
     assert_not_includes body, "Chat Right Now"
     assert_not_includes body, "Is This Your Business?", "the criteria cards left / on 2026-11-08"
