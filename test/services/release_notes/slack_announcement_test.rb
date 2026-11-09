@@ -238,4 +238,16 @@ class ReleaseNotesSlackAnnouncementTest < ActiveSupport::TestCase
       assert_match(/Slack posts: 0 sent \/ 1 failed \(RuntimeError: boom\)/, result[:line])
     end
   end
+
+  test "[unit] the general summary names a lock-only app the release dropped" do
+    release = shipped_release!
+    release.update!(metadata: Release::LockOnlyConsumers.drop(
+      release.metadata.merge(Release::LockOnlyConsumers::LOCK_ONLY_KEY => %w[rantly commercial-welding]),
+      "rantly" => "production deploy failed: smoke /up 503"
+    ))
+    text = ReleaseNotes::SlackAnnouncement.new(release: release).general_text
+
+    assert_includes text, "Lock bumps only (no card): commercial-welding"
+    assert_includes text, "Dropped (lock bumps only, not shipped by this release): rantly — production deploy failed"
+  end
 end

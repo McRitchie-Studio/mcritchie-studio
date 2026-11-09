@@ -273,4 +273,37 @@ class Release
       assert_nil turf_only.devops_backfill_step(rake_in_target: false), "only the hub range counts"
     end
   end
+
+  class RollbackPlanLockOnlyDropTest < ActiveSupport::TestCase
+    RANTLY = { "strategy" => "git_push_heroku", "remote" => "https://git.heroku.com/rantly.git", "branch" => "main" }.freeze
+
+    # Review F2 of release-ships-lock-only-consumers: a release that DROPPED a
+    # lock-only app did not ship it, even where an older run recorded its `main`.
+    test "[unit] a release that dropped the app is walked past for its previous SHA" do
+      target = { "slug" => "rel-new", "state" => "shipped", "shipped_shas" => { "rantly" => "rr33333333" },
+                 "repos" => [ { "repo" => "rantly", "kind" => "app", "prod_deploy" => RANTLY } ] }
+      history = [
+        { "slug" => "rel-mid", "shipped_shas" => { "rantly" => "rr22222222" },
+          "lock_only_dropped" => { "rantly" => "production deploy failed: smoke" } },
+        { "slug" => "rel-old", "shipped_shas" => { "rantly" => "rr11111111" } }
+      ]
+      plan = RollbackPlan.build(target: target, history: history)
+
+      app = plan.apps.find { |a| a.repo == "rantly" }
+      assert_equal %w[rr33333333 rr11111111 rel-old], [ app.from_sha, app.to_sha, app.to_release ]
+    end
+
+    test "[unit] a dropped app is named in the plan and not rolled back" do
+      target = { "slug" => "rel-new", "state" => "shipped", "deployed_sha" => "hub2222222",
+                 "shipped_shas" => { "mcritchie-studio" => "hub2222222" },
+                 "lock_only_dropped" => { "rantly" => "production deploy failed: smoke" },
+                 "repos" => [ { "repo" => "mcritchie-studio", "kind" => "app",
+                                "prod_deploy" => { "strategy" => "github_actions", "workflow" => "prod-deploy.yml" } } ] }
+      plan = RollbackPlan.build(target: target, history: [ { "slug" => "rel-old", "shipped_shas" => { "mcritchie-studio" => "hub1111111" } } ])
+
+      assert_equal %w[mcritchie-studio], plan.apps.map(&:repo)
+      assert(plan.lines.any? { |l| l.include?("rantly was dropped from rel-new (production deploy failed: smoke) — not rolled back") },
+             plan.lines.join("\n"))
+    end
+  end
 end

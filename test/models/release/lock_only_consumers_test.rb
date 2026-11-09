@@ -165,4 +165,29 @@ class Release::LockOnlyConsumersTest < ActiveSupport::TestCase
                           live_locks: { "a" => "0.130.0" }, accepted_locks: { "a" => "0.130.0" }).first
     assert_includes line, "needs a lock bump"
   end
+
+  # --- what the release says about its lock-only apps (task lock-only-drop-follow-ups) ---
+
+  test "[unit] notes_lines name the apps that rode and each drop with its reason" do
+    meta = M.drop({ M::LOCK_ONLY_KEY => %w[commercial-welding rantly] }, "rantly" => "production deploy failed: smoke /up 503")
+    lines = M.notes_lines(meta)
+
+    assert_equal "Lock bumps only (no card): commercial-welding", lines.first
+    assert_includes lines.last, "Dropped (lock bumps only, not shipped by this release): rantly — production deploy failed"
+    assert_equal [], M.notes_lines({})
+  end
+
+  test "[unit] the seal note names the drops, or nothing" do
+    assert_equal "lock-only dropped, not shipped: rantly, alex-build", M.seal_note("rantly" => "x", "alex-build" => "y")
+    assert_nil M.seal_note({})
+  end
+
+  test "[unit] a production-stage drop is visible in status" do
+    lines = M.drop_status_lines([ { "slug" => "rel-x", "dropped" => { "rantly" => "production deploy failed: smoke" } } ])
+
+    assert_equal 1, lines.size
+    assert_includes lines.first, "DROPPED rantly from rel-x: production deploy failed: smoke"
+    assert_includes lines.first, "the next sweep carries it again"
+    assert_equal [], M.drop_status_lines(nil)
+  end
 end
