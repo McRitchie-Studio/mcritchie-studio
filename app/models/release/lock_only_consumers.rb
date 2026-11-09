@@ -138,6 +138,45 @@ class Release
       meta
     end
 
+    # --- what the release says about its lock-only apps (task lock-only-drop-follow-ups) ---
+    # Review F3: a drop lived only in the metadata and the ship log. The release
+    # notes, the Slack announce, the seal and `bin/release status` now say it.
+
+    # The lines the release notes and the Slack summary add: the lock-only apps
+    # the release carried, then each one it dropped, with the reason. [] when the
+    # release had none.
+    def notes_lines(metadata)
+      lines = []
+      carried = recorded(metadata)
+      lines << "Lock bumps only (no card): #{carried.join(', ')}" if carried.any?
+      dropped(metadata).each do |repo, reason|
+        lines << "⚠️ Dropped (lock bumps only, not shipped by this release): #{repo} — #{reason}"
+      end
+      lines
+    end
+
+    # The short note the production smoke seal's summary carries, or nil. A seal
+    # that is green must not read as "every app is live".
+    def seal_note(drops)
+      repos = drops.to_h.keys.map(&:to_s).reject(&:empty?)
+      repos.empty? ? nil : "lock-only dropped, not shipped: #{repos.join(', ')}"
+    end
+
+    # `bin/release status` lines for the drops on the current and the last shipped
+    # release. `releases` is [{ "slug", "dropped" => { repo => reason } }].
+    def drop_status_lines(releases)
+      Array(releases).flat_map do |release|
+        release = release.to_h
+        release["dropped"].to_h.map do |repo, reason|
+          "DROPPED #{repo} from #{release['slug']}: #{reason} — its `main` did not move with the release, so " \
+            "the next sweep carries it again; `heroku releases` names what production runs"
+        end
+      end
+    end
+
+    # The repos a release dropped, read from a metadata hash that may be absent.
+    def dropped_repos(metadata) = dropped(metadata || {}).keys
+
     # The migrations a lock-only repo's commits carry, for the prepare line.
     def migrations(commits)
       Array(commits).flat_map { |c| Array(c["files"]) }.select { |f| ENGINE_MIGRATION.match?(f.to_s) }.uniq
