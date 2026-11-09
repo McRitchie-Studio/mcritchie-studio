@@ -47,28 +47,35 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     assert_select "[data-test='websites-grid']", count: 0
   end
 
-  # Alex McRitchie, 2026-11-06: the whole card is the app's still, with its name, host and
-  # blurb on a shade over the lower part. /build keeps its own card.
-  test "each slide is a full-bleed portfolio card: the still fills it and the text sits on the shade" do
+  # Alex McRitchie, 2026-11-08: the still is the whole card, and the name, host and
+  # blurb are the row's caption, which the carousel shows under the open slide only.
+  # /build keeps its own card.
+  test "each slide is the app's still alone, and its name, host and blurb are the slide's caption" do
     get websites_path
 
     examples = BuildGallery.examples
     assert_operator examples.size, :>=, 4, "Cyvasse, Turf Monster, Prisoner's Dilemma and Rantly at least"
-    card = "[data-test='websites-carousel'] a.portfolio-card[data-test='build-example'][target='_blank'][rel='noopener']"
+    row = "[data-test='websites-carousel']"
+    card = "#{row} a.portfolio-card[data-test='build-example'][target='_blank'][rel='noopener']"
     assert_select card, count: examples.size
-    assert_select "[data-test='websites-carousel'] .build-gallery-card", { count: 0 }, "not /build's card"
+    assert_select "#{row} .build-gallery-card", { count: 0 }, "not /build's card"
+    assert_select "#{card} [data-test='build-example-name'], #{card} [data-test='build-example-blurb'], #{card} [data-test='portfolio-card-body']",
+                  { count: 0 }, "nothing is written over the still"
     examples.each do |example|
-      assert_select "#{card}[href=?]", example.url, count: 1 do
-        assert_select "img.absolute.inset-0.object-cover[data-test='build-example-image'][alt=?]", "#{example.name}, as it looks live", count: 1
-        assert_select "[data-test='portfolio-card-body'].absolute.bottom-0", count: 1 do
-          assert_select "[data-test='build-example-name']", text: example.name, count: 1
-          assert_select "[data-test='build-example-host'].font-mono", text: URI.parse(example.url).host, count: 1
-          assert_select "[data-test='build-example-blurb'].line-clamp-2", text: example.blurb, count: 1
+      assert_select "#{card}[href=?][aria-label=?]", example.url, example.name, count: 1 do
+        if example.image
+          assert_select "img.absolute.inset-0.h-full.w-full.object-cover[data-test='build-example-image'][alt=?]", example.name, count: 1
         end
       end
-      assert_select "#{card}[href=?][style*=?]", example.url, "--pc-shade: rgb(", count: 1
+      assert_select "#{card}[href=?][style*=?]", example.url, "--pc-primary:", count: 1
+      assert_select "#{row} .carousel-slide[aria-label=?] .carousel-caption [data-test='portfolio-caption']", example.name, count: 1 do
+        assert_select "[data-test='build-example-name']", text: example.name, count: 1
+        assert_select "[data-test='build-example-host'].font-mono", text: URI.parse(example.url).host, count: 1
+        assert_select "[data-test='build-example-blurb']", text: example.blurb, count: 1
+      end
     end
-    [ "Prisoner's Dilemma", "Rantly" ].each { |name| assert_select "#{card} [data-test='build-example-name']", text: name, count: 1 }
+    assert_select "#{row} [data-test='portfolio-caption'][aria-live]", count: 0 # the status line speaks, not the caption
+    [ "Prisoner's Dilemma", "Rantly" ].each { |name| assert_select "#{row} [data-test='build-example-name']", text: name, count: 1 }
   end
 
   # [component] The row is the helper's style, and it loops on either engine.

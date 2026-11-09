@@ -138,14 +138,11 @@
 }
 
 /* ── The /websites portfolio card (app/views/websites/_portfolio_card.html.erb) ──
-   Alex McRitchie, 2026-11-06: the app's still fills the whole card and a shade
-   rises over its lower part, with the name, host and blurb on top. The text
-   block is filled with --pc-shade (the app's dark panel at
-   BuildGallery::PORTFOLIO_SHADE_ALPHA, measured at AA over pure white) and a
-   gradient above it fades the same shade in from clear, so the still reads at
-   the top and the text never sits on bare image. The colours are fixed in both
-   hub themes: the card is a picture of a dark app. Unlayered, so it wins over
-   the utilities on the same elements. */
+   Alex McRitchie, 2026-11-08: the app's still is the whole card, and its name,
+   host and blurb sit in one caption under the row (websites/_portfolio_caption,
+   the carousel's caption:). The card keeps a ring of the app's own primary
+   (--pc-primary, WebsitesHelper#portfolio_card_style) that lights on hover and
+   keyboard focus. Unlayered, so it wins over the utilities on the same element. */
 
 .portfolio-card {
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--pc-primary) 35%, transparent);
@@ -157,21 +154,6 @@
   box-shadow: inset 0 0 0 1px var(--pc-primary),
               0 0 18px 2px color-mix(in srgb, var(--pc-primary) 35%, transparent);
 }
-
-.portfolio-card-body {
-  background-color: var(--pc-shade);
-}
-.portfolio-card-body::before {
-  content: "";
-  position: absolute;
-  inset-inline: 0;
-  bottom: 100%;
-  height: 3rem;
-  background: linear-gradient(to bottom, transparent, var(--pc-shade));
-  pointer-events: none;
-}
-.portfolio-card-name { color: var(--pc-name); }
-.portfolio-card-text { color: var(--pc-text); }
 
 @media (prefers-reduced-motion: reduce) {
   .portfolio-card { transition: none; }

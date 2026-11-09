@@ -1,27 +1,20 @@
-<%# One /websites portfolio card (Alex McRitchie, 2026-11-06): the app's dark-mode
-    still fills the whole card, a shade of the app's own dark panel rises over its
-    lower part, and the name, the host and a two-line blurb sit on the shade.
+<%# One /websites portfolio card (Alex McRitchie, 2026-11-08: "I really want the
+    image to be the whole card and the description changes at the bottom"). The
+    app's dark-mode still is the whole card, and nothing sits over it. The name,
+    the host and the blurb are the row's caption (websites/_portfolio_caption),
+    which the carousel shows under the open slide only. The link is named for
+    the app, so a screen reader and Tab hear the name the picture shows.
     /build keeps its own card (build/_gallery_card); this one is /websites only.
 
-    The text block is filled with the shade (--pc-shade, the palette's panel at
-    BuildGallery::PORTFOLIO_SHADE_ALPHA) and a gradient fades it in above the
-    text, so the still shows through at the top. The still under the text is
-    never known, so the name and text are measured against the shade laid over
-    pure white, the worst case (test/models/build_gallery_test.rb, and in the
-    browser e2e/websites_portfolio.spec.js). The colours ride in as custom
-    properties (WebsitesHelper#portfolio_card_style): the app's palette, #rrggbb
-    only, or the Studio shade. The card looks the same in both hub themes: it is
-    a picture of a dark app.
-
-    The motion loop plays over the still on mouse hover or keyboard focus, as on
+    The ring takes the app's primary (WebsitesHelper#portfolio_card_style). The
+    motion loop plays over the still on mouse hover or keyboard focus, as on
     /build (app/javascript/gallery_motion.js, the same data hooks). %>
-<% host = (URI.parse(example.url).host rescue nil) || example.url %>
-<%= link_to example.url, target: "_blank", rel: "noopener",
+<%= link_to example.url, target: "_blank", rel: "noopener", aria: { label: example.name },
       class: "portfolio-card group relative block aspect-[4/3] overflow-hidden rounded-2xl bg-surface-alt focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary",
       style: portfolio_card_style(example),
       data: { test: "build-example", portfolio_card: true, gallery_motion: (true if example.motion) } do %>
   <% if example.image %>
-    <%= image_tag example.image, alt: "#{example.name}, as it looks live", loading: "lazy",
+    <%= image_tag example.image, alt: example.name, loading: "lazy",
           class: "absolute inset-0 h-full w-full object-cover object-left-top transition-transform duration-500 group-hover:scale-[1.03] motion-reduce:transition-none motion-reduce:group-hover:scale-100",
           data: { test: "build-example-image" } %>
     <% if example.motion %>
@@ -31,12 +24,6 @@
              data-gallery-motion-video data-test="build-example-motion"></video>
     <% end %>
   <% else %>
-    <span class="absolute inset-0 flex items-start justify-center pt-10 text-6xl" aria-hidden="true"><%= example.emoji %></span>
+    <span class="absolute inset-0 flex items-center justify-center text-6xl" aria-hidden="true"><%= example.emoji %></span>
   <% end %>
-  <span class="portfolio-card-body absolute inset-x-0 bottom-0 block px-4 pb-3 pt-0.5 text-left" data-test="portfolio-card-body">
-    <span class="portfolio-card-name block text-base font-bold leading-6 truncate" data-test="build-example-name"><%= example.name %></span>
-    <span class="portfolio-card-text block font-mono text-xs leading-5 truncate" data-test="build-example-host"><%= host %></span>
-    <span class="portfolio-card-text mt-1 text-xs leading-4 line-clamp-2" title="<%= example.blurb %>"
-          data-test="build-example-blurb"><%= example.blurb %></span>
-  </span>
 <% end %>

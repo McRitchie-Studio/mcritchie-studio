@@ -11,8 +11,11 @@
     set too long to grid, in its cascade style (Alex McRitchie, 2026-11-08): a looping
     3D stack, the open app in front and two each side stepping back (three on a phone).
     portfolio_carousel_style picks it once the installed engine has it (task
-    carousel-cascade-style) and keeps the spotlight on an engine before it. Each slide is a full-bleed portfolio card
-    (websites/_portfolio_card); /build keeps its own gallery card.
+    carousel-cascade-style) and keeps the spotlight on an engine before it.
+    Each slide is the app's still and nothing else; the name, host and blurb are
+    the caption (websites/_portfolio_caption), which both styles show under the
+    open slide only, so it changes as the row moves (Alex McRitchie, 2026-11-08).
+    The card is websites/_portfolio_card; /build keeps its own gallery card.
     Autoplay and loop (Alex McRitchie, 2026-11-06) are the engine's: the row asks for
     them through carousel_optional_locals, which passes only the locals the installed
     studio/_carousel declares, so the page autoplays once the engine that has them
@@ -20,7 +23,8 @@
 <div class="max-w-5xl mx-auto px-4" style="padding-bottom: 4rem;">
   <%= render layout: "studio/carousel",
         locals: { label: "Live apps", items: @examples, per_view: 3, id: "websites-apps", style: portfolio_carousel_style,
-                  slide_label: ->(example) { example.name }, data: { test: "websites-carousel" } }
+                  slide_label: ->(example) { example.name },
+                  caption: ->(example) { render("websites/portfolio_caption", example: example) }, data: { test: "websites-carousel" } }
                   .merge(carousel_optional_locals(autoplay: 6, loop: true)) do |example| %>
     <%= render "websites/portfolio_card", example: example %>
   <% end %>
