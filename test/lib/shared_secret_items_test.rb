@@ -1,14 +1,9 @@
 # frozen_string_literal: true
 
-# [unit] config/shared_secret_items.yml and SecretCache.read_ref (task
-# secret-silos-phase-two): the Discord webhooks, the R2 backup keys and the
-# Google service account are served from the secret cache, and 1Password is read
-# only on a miss or an expiry.
-#
-# Every case runs against a tmpdir cache (CLAUDE_PROJECTS_DIR, sandbox armed), a
-# tmpdir read log, and a stub `op` that prints FAKE values and logs its argv
-# words only, never its env. Every *_TOKEN leaves ENV for the test, so no child
-# inherits a real credential.
+# [unit] config/shared_secret_items.yml and SecretCache.read_ref: shared items
+# are served from the secret cache; 1Password is read on a miss or an expiry.
+# A tmpdir cache and read log under the armed sandbox; a stub `op` that prints
+# FAKE values and logs argv words, never env; every *_TOKEN leaves ENV.
 #
 #   ruby -Itest test/lib/shared_secret_items_test.rb
 
