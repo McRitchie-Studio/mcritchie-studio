@@ -1,5 +1,3 @@
-# The bin/ deadline primitive: pure Ruby, no gems, safe to load in the app.
-require_relative "../../../bin/lib/bounded_command"
 require "json"
 
 module Gmail
@@ -128,34 +126,25 @@ module Gmail
                          "— re-copy the object from bin/gmail-oauth-mint; a pasted line break inside a value is the usual cause"
       end
 
+      # THE SECRET CACHE FIRST (task secret-silos-phase-two). The field is a shared
+      # item (config/shared_secret_items.yml), so SecretCache.read_ref serves a fresh
+      # copy from <projects>/.secret-cache and reads 1Password only on a miss or an
+      # expiry, then stores it. Scratch Drive and Gmail scripts start a new process
+      # each run, and each used to spend one read.
+      #
       # Bounded on purpose, and by SIGKILL to op's whole process group
-      # (BoundedCommand, the bound under every bin/ 1Password read). A
-      # SIGALRM-based bound (Timeout.timeout, `alarm`) is none: `op` ignores
-      # SIGALRM (observed 2026-10-27). A kill of the pid alone left anything op
-      # started holding the pipes. OP_CACHE=false skips the cache daemon, whose
-      # hang after a reboot made every read wait fifteen minutes (2026-10-21).
+      # (OpMeter.popen over BoundedCommand, the bound under every bin/ 1Password
+      # read): one attempt, OP_CACHE=false. A SIGALRM-based bound (Timeout.timeout,
+      # `alarm`) is none: `op` ignores SIGALRM (observed 2026-10-27). OP_CACHE=false
+      # skips the cache daemon, whose hang after a reboot made every read wait
+      # fifteen minutes (2026-10-21). The read is metered (bin/op-reads, via
+      # `gmail-credentials`). Required lazily so boot and eager load never pull bin/ code; on
+      # a dyno the env credential answers first and this never runs.
       def shell_read_from_op(item)
-        out, _err, status = BoundedCommand.capture3({ "OP_CACHE" => "false" }, "op", "read", item,
-                                                    deadline: op_timeout_seconds)
-        meter_op_read(status)
-        return nil unless status.success?
-
-        out.to_s.strip.presence
+        require File.expand_path("../../../bin/lib/secret_cache", __dir__)
+        SecretCache.read_ref(item, via: "gmail-credentials", op_bin: "op", deadline: op_timeout_seconds).presence
       rescue SystemCallError, IOError
         # `op` absent or unreachable — not an error, just an unconfigured desk.
-        nil
-      end
-
-      # Recorded in bin/op-reads like every other 1Password read on this Mac
-      # (docs/agents/modules/credential-access.md). After the read, never instead of
-      # it: this path keeps its own single bounded attempt, and OpMeter.record never
-      # raises. Required lazily so boot and eager load never pull bin/ code; on a
-      # dyno `op` is absent, the spawn raises above, and nothing is recorded.
-      def meter_op_read(status)
-        require File.expand_path("../../../bin/lib/op_meter", __dir__)
-        OpMeter.record(action: "read", via: "gmail-credentials",
-                       outcome: status.timed_out? ? OpMeter::TIMEOUT : OpMeter.outcome_for(status.status))
-      rescue StandardError, LoadError
         nil
       end
 

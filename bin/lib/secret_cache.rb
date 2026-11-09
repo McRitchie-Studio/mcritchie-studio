@@ -6,6 +6,7 @@ require "fileutils"
 require "securerandom"
 require_relative "projects_root"
 require_relative "op_vaults"
+require_relative "op_meter"
 require_relative "../../lib/task_usage_sandbox"
 
 # SecretCache — the shared local cache for credentials that EXPIRE or ROTATE.
@@ -420,7 +421,7 @@ module SecretCache
     data = read_json(MANIFEST, env: env) || {}
     entries = data["entries"].is_a?(Hash) ? data["entries"] : {}
     merged = {}
-    DEFAULT_ENTRIES.each { |name, meta| merged[name] = meta.merge(entries[name].is_a?(Hash) ? entries[name] : {}) }
+    defaults(env).each { |name, meta| merged[name] = meta.merge(entries[name].is_a?(Hash) ? entries[name] : {}) }
     entries.each { |name, meta| merged[name] ||= meta if meta.is_a?(Hash) }
     merged
   rescue Unsafe
@@ -591,7 +592,133 @@ module SecretCache
                  .compact.max
   end
 
-  # ── values for op-item entries (none by default) ──────────────────────────
+  # ── shared items (config/shared_secret_items.yml) ──────────────────────────
+  #
+  # Long-lived fields every soul reads (Discord webhooks, the R2 backup keys, the
+  # Google service account), served from this folder as op-item entries (task
+  # secret-silos-phase-two). The config file says why each is here.
+
+  SHARED_ITEMS_ENV = "MCR_SHARED_SECRET_ITEMS"
+  SHARED_DEFAULT_WINDOW = 3600
+  DURATION = /\A(\d+)\s*([smhd])\z/.freeze
+  UNITS = { "s" => 1, "m" => 60, "h" => 3600, "d" => 86_400 }.freeze
+
+  class ConfigError < StandardError; end
+
+  def shared_items_path(env = ENV)
+    override = env[SHARED_ITEMS_ENV].to_s.strip
+    override.empty? ? File.expand_path("../../config/shared_secret_items.yml", __dir__) : File.expand_path(override)
+  end
+
+  # "7d", "12h", "30m" in seconds.
+  def duration_seconds(value)
+    match = DURATION.match(value.to_s.strip)
+    raise ConfigError, "shared secret items: #{value.inspect} is not a duration (30m, 12h, 7d)" unless match
+
+    match[1].to_i * UNITS.fetch(match[2])
+  end
+
+  # The op-item entries the config names, validated. Raises ConfigError on a
+  # malformed file or an admin vault (an admin value never lands on disk).
+  def shared_item_entries!(env = ENV)
+    require "yaml"
+    data = YAML.safe_load(File.read(shared_items_path(env)))
+    items = data.is_a?(Hash) ? data["items"] : nil
+    raise ConfigError, "shared secret items: `items` is not a map" unless items.is_a?(Hash)
+
+    items.each_with_object({}) do |(name, spec), out|
+      out[name.to_s] = shared_entry(name.to_s, spec, env)
+    end
+  end
+
+  def shared_entry(name, spec, env)
+    unless spec.is_a?(Hash) && %w[item field lifetime].all? { |k| !spec[k].to_s.strip.empty? }
+      raise ConfigError, "shared secret items: #{name} needs item, field and lifetime"
+    end
+
+    vault = if spec["lane"]
+              lane = OpVaults.lane(spec["lane"].to_s.to_sym)
+              named = env[lane[:vault_env]].to_s.strip
+              named.empty? ? lane[:default_vault] : named
+            else
+              spec["vault"].to_s.strip
+            end
+    raise ConfigError, "shared secret items: #{name} names no lane or vault" if vault.empty?
+    if spec["lane"].to_s == "deployer" || admin_vault?(vault, env)
+      raise ConfigError, "shared secret items: #{name} is in the admin vault #{vault}; an admin value is never cached on disk"
+    end
+
+    lifetime = duration_seconds(spec["lifetime"])
+    window = spec["refresh_window"] ? duration_seconds(spec["refresh_window"]) : [SHARED_DEFAULT_WINDOW, lifetime / 10].min
+    { "kind" => "op-item", "vault" => vault, "item" => spec["item"].to_s, "field" => spec["field"].to_s,
+      "lifetime" => spec["lifetime"].to_s, "lifetime_seconds" => lifetime,
+      "refresh_window_seconds" => window, "owner" => "steffon",
+      "source" => "1Password #{vault}/#{spec['item']} (field #{spec['field']})",
+      "readers" => Array(spec["readers"]).map(&:to_s), "contingency" => CONTINGENCY }
+  rescue ArgumentError, KeyError => e
+    raise ConfigError, "shared secret items: #{name}: #{e.message}"
+  end
+
+  # The same, or {} when the file is missing or broken: a bin/ tree carried
+  # without its config caches nothing extra, and every read goes to 1Password.
+  def shared_item_entries(env = ENV)
+    shared_item_entries!(env)
+  rescue ConfigError, SystemCallError, StandardError
+    {}
+  end
+
+  # Every default entry: the built-in ones and the shared items.
+  def defaults(env = ENV)
+    shared_item_entries(env).merge(DEFAULT_ENTRIES)
+  end
+
+  # "op://vault/item/field" as [vault, item, field], or nil.
+  def parse_ref(ref)
+    match = %r{\Aop://([^/]+)/([^/]+)/(.+)\z}.match(ref.to_s.strip)
+    match ? [match[1], match[2], match[3]] : nil
+  end
+
+  # THE ONE READ for a shared item (bin/agents-backup, bin/r2-backup --op,
+  # Workspace::Credentials, Gmail::Credentials): the cached copy when it is fresh
+  # (logged `cache-hit`, quota-free), else one bounded, metered `op read`, stored
+  # when the config names the field. A ref no entry names is read every time. A
+  # run that may not touch the folder (an armed test that pinned none) reads
+  # without the cache. Returns the value, or nil when the read failed or came
+  # back empty. NEVER prints the value; `op` stderr is discarded.
+  #
+  #   deadline  seconds one attempt may take (OpMeter's default when nil)
+  #   op_bin    the `op` to run (SECRET_OP_BIN, else /opt/homebrew/bin/op)
+  def read_ref(ref, via:, env: ENV, op_bin: nil, deadline: nil, now: Time.now)
+    vault, item, field = parse_ref(ref)
+    raise ArgumentError, "secret cache: #{via}: not an op:// reference" unless vault
+
+    found = readable_dir(env) ? item_entry(vault, item, field, env) : nil
+    found = nil if found && admin_entry?(found.last, env)
+    if found
+      cached = cached_item(found.first, env: env, now: now)
+      if cached
+        OpMeter.record(action: "cache-hit", outcome: "ok", via: "#{via}:#{vault}/#{item}", env: env)
+        return cached
+      end
+    end
+
+    value = op_read(ref, via: via, env: env, op_bin: op_bin, deadline: deadline)
+    return nil if value.empty?
+
+    store_item(found.first, value, env: env, now: now) if found
+    value
+  end
+
+  def op_read(ref, via:, env:, op_bin:, deadline:)
+    bin = op_bin || (env["SECRET_OP_BIN"].to_s.strip.empty? ? "/opt/homebrew/bin/op" : env["SECRET_OP_BIN"].to_s.strip)
+    # OP_CACHE=false from the first attempt (a hung cache daemon is never asked),
+    # so the uncached retry would only repeat it: one attempt, killed at the deadline.
+    out = OpMeter.popen(OpMeter::CACHE_BYPASS, [bin, "read", ref], via: via, env: env, deadline: deadline,
+                                                                    retry_uncached: false, announce: false, err: File::NULL)
+    $?&.success? ? out.to_s.strip : ""
+  end
+
+  # ── values for op-item entries ────────────────────────────────────────────
 
   def value_file(name)
     "item.#{name.to_s.gsub(/[^A-Za-z0-9._-]/, '_')}.json"

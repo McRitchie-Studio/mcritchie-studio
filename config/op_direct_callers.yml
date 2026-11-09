@@ -45,6 +45,9 @@ callers:
   bin/lib/secret_cache_cli.rb:
     client: self
     why: "bin/secret's Ruby half: op-item cache entries read on a miss"
+  bin/lib/secret_cache.rb:
+    client: self
+    why: "SecretCache.read_ref: a shared item (config/shared_secret_items.yml) from the cache, else one bounded read; serves agents-backup, r2-backup --op, Workspace and Gmail credentials"
   bin/lib/soul_secrets.rb:
     client: self
     why: "soul secret sets and the admin tier: one bounded read on a miss, then the cache or memory"
@@ -60,12 +63,6 @@ callers:
   bin/lib/agent_api.rb:
     client: self
     why: "the board secret for AgentApi: env, then .env, then one memoized metered read"
-  app/services/gmail/credentials.rb:
-    client: self
-    why: "Gmail::Credentials: GMAIL_OAUTH_CREDENTIAL from env first, else one metered read"
-  app/services/workspace/credentials.rb:
-    client: self
-    why: "Workspace::Credentials: GOOGLE_SERVICE_ACCOUNT_JSON from env first, else one metered read"
 
   # ── 1Password health, not a credential ──────────────────────────────────────
   bin/lib/one_password_wait.rb:
@@ -106,14 +103,6 @@ callers:
   bin/x-post:
     client: bin/secret
     why: "X API keys: env first, else one metered item get"
-
-  # ── backups ─────────────────────────────────────────────────────────────────
-  bin/agents-backup:
-    client: bin/secret
-    why: "the R2 backup keys (r2.mcritchie-agents-backup), five fields read per run (about 5 a day)"
-  bin/r2-backup:
-    client: bin/secret
-    why: "the R2 backup keys for the app buckets"
 
   # ── remedy text only: these print an `op` command for a person ──────────────
   bin/lib/conductor_host.rb:

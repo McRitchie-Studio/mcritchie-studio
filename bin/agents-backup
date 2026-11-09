@@ -11,7 +11,7 @@
 require_relative "lib/cli_arg_guard"
 require_relative "lib/agents_backup"
 require_relative "lib/op_vaults"
-require_relative "lib/op_meter" # every op read bounded and metered (OpMeter.popen)
+require_relative "lib/secret_cache" # the keys: cache first, then one bounded, metered op read
 
 USAGE = <<~TXT
   usage: bin/agents-backup plan [<source>]
@@ -60,8 +60,9 @@ sources = AgentsBackup.sources(default_sources)
 def creds!
   fields = %w[access-key-id secret-access-key endpoint crypt-password crypt-salt]
   values = fields.to_h do |field|
-    value = OpMeter.popen({}, ["op", "read", OpVaults.ref(AgentsBackup::ITEM, field)],
-                          via: "agents-backup", err: File::NULL).to_s.strip
+    # A shared item (config/shared_secret_items.yml): served from the secret cache
+    # for 7 days, so a nightly run costs 1Password nothing between expiries.
+    value = SecretCache.read_ref(OpVaults.ref(AgentsBackup::ITEM, field), via: "agents-backup", op_bin: "op").to_s
     abort("agents-backup: could not read #{field} from #{AgentsBackup::ITEM} — NOTHING ran.") if value.empty?
     [field, value]
   end

@@ -394,7 +394,7 @@ class SoulSecretsTest < Minitest::Test
 
   def test_unit_a_process_that_names_no_soul_still_reads_an_item_no_set_names
     e = env(op("echo plain-fake-value"))
-    out, _err, status = secret_process("studio-agents", "discord.webhooks", "release-notes-webhook", e)
+    out, _err, status = secret_process("studio-agents", "x.studio.agents", "api-key", e)
 
     assert_equal 0, status.exitstatus
     assert_equal "plain-fake-value", out
