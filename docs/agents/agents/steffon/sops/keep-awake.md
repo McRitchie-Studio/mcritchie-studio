@@ -54,9 +54,13 @@ collects the evidence.
   `fail:<exit>`, the seconds it took, the user-idle seconds (from `ioreg -c
   IOHIDSystem`, `HIDIdleTime`; `-` when unknown), and the supervisor pid.
 - Each probe is also metered in `op-reads.log` (action `whoami`, via
-  `keep-awake`; a hang is `timeout`), so `bin/op-reads` counts it. Budget one read
-  per probe: about 58 a day of holding. The supervisor probes, not `renew`, so
-  more holders do not cost more reads and `renew` never waits on `op`.
+  `keep-awake`; a hang is `timeout`), so `bin/op-reads` counts it. `op whoami`
+  was measured on 2026-10-24 to spend no quota; budget one read per probe anyway,
+  about 58 a day of holding. The supervisor probes, not `renew`, so more holders
+  do not cost more reads, `renew` never waits on `op`, and the probe runs on
+  schedule even when a holder forgets to renew.
+- The probe uses the token of the shell that ran `keep-awake start`. With no
+  token, `op` answers "not signed in" and the row reads `fail:<exit>`, not `hung`.
 - A hang proven longer than 10 minutes (the first and last hung probes at least
   10 minutes apart) posts one macOS notification that names the window. One note
   per window; `op-probe.noted` remembers it across a supervisor restart.

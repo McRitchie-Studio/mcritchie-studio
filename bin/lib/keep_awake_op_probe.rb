@@ -19,12 +19,19 @@ require_relative "op_meter"
 # minutes. If `renew` probed, N holders would spend N reads and each renew would
 # block for up to 20 seconds. So the one supervisor probes at the renewal
 # cadence (EVERY), and at HUNG_EVERY while a hang is open, so the window's edges
-# are tight. A hung attempt never reached the server, so it costs no quota.
+# are tight.
 #
-# THE COST. `op whoami` with the service-account token spends one read of the
-# account quota. At one probe per 25 minutes that is about 58 reads a day of
-# holding. Every probe is recorded through OpMeter (action `whoami`, via
-# `keep-awake`), so `bin/op-reads` counts it like any other call.
+# THE COST. `op whoami` was measured on 2026-10-24 to move neither the
+# token's read counter nor the account's read_write counter
+# (bin/lib/agent_harness_probe.rb). Budget it as one read anyway, about 58 a day
+# of holding, in case that changes. Every probe is recorded through OpMeter
+# (action `whoami`, via `keep-awake`; a hang is `timeout`), so `bin/op-reads`
+# counts it like any other call.
+#
+# THE TOKEN. The probe runs with the supervisor's environment, which it
+# inherited from the agent shell that ran `keep-awake start`, so it carries the
+# service-account token that shell had. A supervisor started with no token logs
+# fail:<exit> (op answered, not signed in), never hung.
 #
 # THE BOUND. Each attempt gets DEADLINE (20) seconds. It runs in its own process
 # group (its pgid is its own pid), and at the deadline BoundedCommand SIGKILLs
