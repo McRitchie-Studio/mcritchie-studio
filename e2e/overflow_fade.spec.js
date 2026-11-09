@@ -534,7 +534,7 @@ const RO_LEDGER = () => {
 
 // One Turbo hop, read once it has landed: Turbo's turbo:load (after the swap, or the
 // restore), then the frames in which Alpine starts each fade and its observer.
-async function hop(page, go, url) {
+async function turboHop(page, go, url) {
   const loads = await armTurboLoads(page);
   await go();
   await page.waitForURL(url);
@@ -570,18 +570,18 @@ test("one live observer per fade survives eight Turbo hops, Back and Forward inc
     // snapshot cache AND resets this ledger, so a leak would be invisible.
     const ledgers = [start];
     for (let hop = 0; hop < 4; hop += 1) {
-      await hop(page, () => page.locator('[data-test="task-card-title"]').first().click(), /\/devops\/tasks\/[^/]+$/);
+      await turboHop(page, () => page.locator('[data-test="task-card-title"]').first().click(), /\/devops\/tasks\/[^/]+$/);
       ledgers.push(await read());
       check(ledgers[ledgers.length - 1], `hop ${hop * 2 + 1} (task detail)`);
 
-      await hop(page, () => page.goBack(), /\/devops\/tasks$/);
+      await turboHop(page, () => page.goBack(), /\/devops\/tasks$/);
       ledgers.push(await read());
       check(ledgers[ledgers.length - 1], `hop ${hop * 2 + 2} (Back to the board)`);
 
       if (hop === 1) {
-        await hop(page, () => page.goForward(), /\/devops\/tasks\/[^/]+$/);
+        await turboHop(page, () => page.goForward(), /\/devops\/tasks\/[^/]+$/);
         check(await read(), "Forward to the task detail");
-        await hop(page, () => page.goBack(), /\/devops\/tasks$/);
+        await turboHop(page, () => page.goBack(), /\/devops\/tasks$/);
         check(await read(), "Back again from Forward");
       }
     }
