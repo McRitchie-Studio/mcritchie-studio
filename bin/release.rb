@@ -8748,7 +8748,7 @@ def install_engine_migrations!(workspace, repo, gem_names)
   copied = after.to_s.lines.map(&:strip).reject { |line| before.to_s.include?(line) }
   step("  #{repo}: installed #{copied.length} engine migration(s) — #{copied.join(', ')}")
 
-  dump_consumer_schema!(workspace, repo)
+  dump_consumer_schema!(workspace, repo, copied)
 end
 
 # Does this workspace's app define the engine installer for `gem_name`?
@@ -8773,10 +8773,13 @@ def workspace_engine_task(workspace, repo, gem_name)
 end
 
 # Run the workspace's migrations against a throwaway database so the dumper
-# rewrites db/schema.rb, then drop it. The URL comes from the same helper the gate
+# rewrites db/schema.rb, then drop it. It runs in STAGES
+# (Release::EngineMigrationInstall.dump_stages): the consumer's own migrations
+# first, then each engine migration in `engine_files` alone, so a refusal names the
+# engine migration that changed each line, or says the committed schema was stale. The URL comes from the same helper the gate
 # uses, so a SQLite app (rolio) is handed nil and stays on its own workspace file
 # rather than a postgres:// URL it cannot use.
-def dump_consumer_schema!(workspace, repo)
+def dump_consumer_schema!(workspace, repo, engine_files = [])
   base = gate_database_url(repo, role: "ship")
   url = Release::EngineMigrationInstall.throwaway_database_url(base_url: base, repo: repo, pid: Process.pid)
 
@@ -8799,27 +8802,51 @@ def dump_consumer_schema!(workspace, repo)
   env = url ? env.merge("DATABASE_URL" => url, "TEST_DATABASE_URL" => url) : env.merge("DATABASE_URL" => nil, "TEST_DATABASE_URL" => nil)
 
   begin
-    _, created = sh("bin/rails", "db:create", "db:schema:load", "db:migrate", chdir: workspace, env: env, capture: true)
-    abort!("#{repo}: could not migrate a throwaway database to refresh db/schema.rb — the migration would " \
-           "otherwise land unrun and every suite would fail on a pending migration") unless created
+    schema_path = File.join(workspace, "db/schema.rb")
+    previous, = git_capture("-C", workspace, "show", "HEAD:db/schema.rb")
+    migration_files = Dir.glob(File.join(workspace, "db/migrate/*.rb"))
+    stages = Release::EngineMigrationInstall.dump_stages(migration_files: migration_files, engine_files: engine_files)
+    stages = stages.map do |stage|
+      stage_env = stage[:version] ? env.merge("VERSION" => stage[:version]) : env
+      _, migrated = sh("bin/rails", *stage[:tasks], chdir: workspace, env: stage_env, capture: true)
+      abort!("#{repo}: could not migrate a throwaway database to refresh db/schema.rb " \
+             "(#{stage[:engine_migration] || "this repo's own migrations"}) — the migration would otherwise land " \
+             "unrun and every suite would fail on a pending migration") unless migrated
 
-    diff, = git_capture("-C", workspace, "diff", "--", "db/schema.rb")
-    old_schema, = git_capture("-C", workspace, "show", "HEAD:db/schema.rb")
-    new_schema = File.exist?(File.join(workspace, "db/schema.rb")) ? File.read(File.join(workspace, "db/schema.rb")) : ""
+      current = File.exist?(schema_path) ? File.read(schema_path) : ""
+      diffed = stage.merge(diff: schema_text_diff(repo, previous, current), old_schema: previous, new_schema: current)
+      previous = current
+      diffed
+    end
+
     # A check constraint Postgres re-printed after the load is tolerated only on
     # Postgres's own word, asked of this same throwaway database. SQLite (no URL)
     # gets no callable, so any rewritten line there still refuses.
     equivalent = url && ->(table:, old_expr:, new_expr:) { check_constraints_equivalent?(url, table, old_expr, new_expr) }
-    unless Release::EngineMigrationInstall.schema_dump_safe?(diff, old_schema: old_schema, new_schema: new_schema,
-                                                                   equivalent: equivalent)
-      abort!("#{repo}: refreshing db/schema.rb removed or rewrote existing schema, not just the new table. " \
-             "That means this repo's committed schema was already behind its own migrations; fix that in the " \
-             "repo, then re-run `bin/release prepare`.\n#{diff}")
-    end
+    refusal = Release::EngineMigrationInstall.schema_refusal(repo, stages, equivalent: equivalent)
+    abort!(refusal) if refusal
   ensure
     # Only a database WE named gets dropped. With no URL the app is on its own
     # workspace file, which dies with the workspace.
     sh("bin/rails", "db:drop", chdir: workspace, env: env, capture: true) if url
+  end
+end
+
+# The unified diff between two db/schema.rb texts, from `git diff --no-index`.
+# FAIL CLOSED: git answers 0 (same) or 1 (different); anything else (git missing,
+# a bad path) aborts, because an empty diff would read as "nothing removed".
+def schema_text_diff(repo, old_text, new_text)
+  return "" if old_text == new_text
+
+  Dir.mktmpdir("release-schema-diff") do |dir|
+    old_path = File.join(dir, "old_schema.rb")
+    new_path = File.join(dir, "new_schema.rb")
+    File.write(old_path, old_text)
+    File.write(new_path, new_text)
+    out, status = bounded_capture2e("git", "diff", "--no-index", "--no-color", "--", old_path, new_path)
+    abort!("#{repo}: could not diff db/schema.rb stages (git diff exited #{status.exitstatus}):\n#{out}") \
+      unless status.exitstatus == 1
+    out
   end
 end
 
