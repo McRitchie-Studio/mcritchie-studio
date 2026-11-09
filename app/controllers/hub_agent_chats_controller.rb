@@ -31,6 +31,11 @@ class HubAgentChatsController < ApplicationController
   protect_from_forgery with: :exception
   before_action :no_store
   before_action :require_soul!
+  # The poll reads the session and never writes it back. The session is a
+  # cookie, so a poll that started before a session write (the first-name
+  # ask's "Skip for now") would land after it and restore the old copy. The
+  # home page's chat polls while that ask is open (task get-in-touch-side-by-side).
+  before_action -> { request.session_options[:skip] = true }, only: :turns
 
   def create
     # Voice stays with admins, as POST /voice/takes does; anyone else's `voice` is dropped.
@@ -54,7 +59,10 @@ class HubAgentChatsController < ApplicationController
 
     fold_on_sign_in
     thread_key = visitor.thread_key
-    rows = thread_key ? AgentChat.rows(thread_key, after: after_param, limit: limit_param) : []
+    # `since` is a floor under `after`: the home page's chat starts fresh and
+    # shows only turns newer than its render (LandingHelper#home_alex_chat).
+    after = [ after_param, id_param(:since) ].compact.max
+    rows = thread_key ? AgentChat.rows(thread_key, after: after, limit: limit_param) : []
     render json: { turns: AgentChat::Turns.for(rows), pending: AgentChat::Turns.pending?(thread_key) }
   rescue AgentChat::Visitor::Invalid => e
     render json: { error: e.message }, status: :unprocessable_entity
@@ -120,10 +128,12 @@ class HubAgentChatsController < ApplicationController
     nil
   end
 
-  def after_param
-    raw = params[:after].to_s
+  def after_param = id_param(:after)
+
+  def id_param(name)
+    raw = params[name].to_s
     return nil if raw.empty?
-    raise AgentChat::Visitor::Invalid, "after must be a message id" unless raw.match?(/\A\d{1,18}\z/)
+    raise AgentChat::Visitor::Invalid, "#{name} must be a message id" unless raw.match?(/\A\d{1,18}\z/)
 
     raw.to_i
   end

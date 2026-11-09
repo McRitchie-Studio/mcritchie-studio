@@ -208,4 +208,34 @@ class HubChatVisitorTest < ActionDispatch::IntegrationTest
     assert_equal AgentChat.user_thread_key("alex", victim.id), row.thread_key
     assert_equal victim.id, row.envelope["user_id"]
   end
+
+  # [integration] A poll never sends the session cookie back: a poll in flight
+  # would otherwise undo a session write made meanwhile ("Skip for now").
+  test "[integration] the turns poll leaves the session cookie alone" do
+    log_in_as users(:viewer)
+    get "/agent_chat/turns", params: { soul: "alex" }
+
+    assert_response :success
+    key = Rails.application.config.session_options[:key]
+    assert_no_match(/^#{Regexp.escape(key)}=/, Array(response.headers["Set-Cookie"]).join("\n"))
+  end
+
+  # [integration] The home page's chat starts fresh: `since` hides the turns
+  # before it, the thread keeps them, and a bad value is refused.
+  test "[integration] since floors the poll; the thread keeps everything" do
+    log_in_as users(:viewer)
+    post "/agent_chat/messages", params: { soul: "alex", text: "earlier visit" }
+    floor = AgentMessage.maximum(:id)
+    post "/agent_chat/messages", params: { soul: "alex", text: "this visit" }
+
+    texts = ->(body) { body["turns"].map { |turn| turn["text"] || turn["content"] } }
+    get "/agent_chat/turns", params: { soul: "alex", since: floor }
+    assert_equal [ "this visit" ], texts.call(response.parsed_body)
+
+    get "/agent_chat/turns", params: { soul: "alex" }
+    assert_equal [ "earlier visit", "this visit" ], texts.call(response.parsed_body)
+
+    get "/agent_chat/turns", params: { soul: "alex", since: "x" }
+    assert_response :unprocessable_entity
+  end
 end

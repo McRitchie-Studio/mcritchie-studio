@@ -1,0 +1,12 @@
+<%# locals: (section:, title:, name:, role:, photo:, alt: "") %>
+<%# One section head in the home page's Get in Touch band (task
+    get-in-touch-side-by-side): the portrait in a ringed circle, the name, the
+    role, then the section's big title, all centred over its card. Both
+    sections render this, so the two heads are the same height and the cards
+    under them start on one line. %>
+<div class="flex flex-col items-center text-center mb-4" data-test="get-in-touch-<%= section %>-head">
+  <%= safe_image_tag(photo, alt: alt, class: "w-24 h-24 rounded-full object-cover ring-4 ring-primary/40 shadow-lg mb-3") %>
+  <p class="font-semibold text-heading leading-tight"><%= name %></p>
+  <p class="text-xs text-secondary leading-tight mb-2"><%= role %></p>
+  <h3 class="text-3xl font-extrabold text-heading"><%= title %></h3>
+</div>

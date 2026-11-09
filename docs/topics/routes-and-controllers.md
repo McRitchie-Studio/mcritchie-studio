@@ -49,7 +49,7 @@ Public today: the landing, legal, about, Marketing Kit, packages, `/build` funne
 `/schedule`, `/links`, unsubscribe and email-tracking pages, sign-in, the NFL pages,
 and `/tasks/:slug/local_review`.
 
-- `/` — Landing page (hero with Denver bg, about, get in touch with the Google booking frame, acquisition criteria, contact)
+- `/` — Landing page (hero with Denver bg, about, get in touch with a compact chat with Alex beside the Google booking frame, contact)
 - `/contact` — Public contact form and SMS opt-in page (`ContactSubmissionsController`). GET renders the form, three unticked consent boxes and the carrier disclosure; POST stores a `ContactSubmission` and emails alex@mcritchie.studio through the engine outbox. Bounded by `rate_limit` (5 per minute per IP) and a honeypot field. The app sends no SMS; the phone provider does. This URL is registered with the carrier, so do not move it.
 - `/privacy` — Combined Privacy Policy and Messaging Terms and Conditions. Carriers read it during SMS registration; its sending number and consent wording must agree with `ContactSubmission`. Section 15, Google User Data (`#google-user-data`), is what Google's OAuth verification reviews: what each Google permission reads, the Limited Use statement, and how to disconnect.
 - `/dashboard` — Dashboard (agents, task pipeline, activity feed)

@@ -125,7 +125,10 @@ test("on the home page Schedule a call goes to the inline calendar instead of op
   await frame(page).scrollIntoViewIfNeeded();
   await expect(frame(page)).toHaveAttribute("src", /gv=true$/);
   await expect(wrap).not.toHaveClass(/is-open/);
-  await link.scrollIntoViewIfNeeded();
+  // The page's bottom, not just the link: the calendar band sits right above
+  // the footer, so centring the link alone can leave the calendar on screen.
+  await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  await expect(link).toBeInViewport();
   await expect(wrap).not.toBeInViewport();
   expect(asked).toHaveLength(1);
   await link.click();
