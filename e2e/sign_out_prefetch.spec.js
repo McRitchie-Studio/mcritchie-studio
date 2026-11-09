@@ -1,14 +1,11 @@
 // A pointer resting on Log out never signs the browser out (task
-// build-funnel-held-message-cause). The engine's Log out is a GET to /logout, and
-// Turbo prefetches a link the pointer rests on for 100ms: that prefetch ran the
-// sign-out, and its Set-Cookie dropped the session while the page still drew the
-// user. Since engine 0.141.1 (task engine-logout-never-prefetched) the engine owns
-// the fix: its Log out carries data-turbo-prefetch="false", so Turbo never even
-// considers it, studio/sign_out_prefetch cancels any other /logout link, and
-// Studio::ErrorHandling answers a prefetch that still arrives with 204. The hub
-// keeps no copy (task hub-adopts-engine-logout-guard); this proves the hub's own
-// menu gets the engine's behaviour. The engine's spec holds the controls (a sibling
-// row that does prefetch, the attribute and the listener each removed).
+// build-funnel-held-message-cause): Turbo's 100ms hover prefetch of GET /logout
+// once ran the sign-out. Since engine 0.141.1 (engine-logout-never-prefetched) the
+// engine owns the fix: Log out carries data-turbo-prefetch="false", so Turbo never
+// considers it, and Studio::ErrorHandling answers any prefetch that still arrives
+// with 204. The hub keeps no copy (hub-adopts-engine-logout-guard); this proves
+// the hub's own menu gets the engine's behaviour. The controls live in the engine's
+// spec of the same name.
 const { test, expect } = require("@playwright/test");
 const { loginWithMagicLink, VISITOR } = require("./helpers");
 
