@@ -1,14 +1,9 @@
 # frozen_string_literal: true
 
-# The on-runner RubyGems wait, .github/scripts/await-gem-propagation.sh, driven end to
-# end with a stub `curl` on PATH, so no test touches the network.
-#
-# THE INCIDENT it pins (rel-20261109-900044, hub run 42589062630, job 129065907960):
-# the old script read /info ONCE, saw studio-engine 0.141.0, printed "this edge is fully
-# caught up", and bundler on the same runner fetched /info 8s later and did not get it.
-# RubyGems soft-purges /info with stale-while-revalidate, and each connection lands on
-# another CDN node, so one fresh read proves nothing about the next. The script now
-# passes only when every one of AWAIT_READS separate reads lists the version.
+# .github/scripts/await-gem-propagation.sh end to end, with a stub `curl` on PATH.
+# The incident (rel-20261109-900044): one fresh /info read printed "fully caught up"
+# and bundler on the same runner missed the version 8s later. The script now passes
+# only when every one of AWAIT_READS separate reads lists the version.
 #
 #   ruby -Itest test/lib/await_gem_propagation_script_test.rb
 
