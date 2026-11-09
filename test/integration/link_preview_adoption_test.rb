@@ -47,6 +47,7 @@ class LinkPreviewAdoptionTest < ActionDispatch::IntegrationTest
   test "the drafted copy is the hub's, not the engine fallback" do
     assert_equal "McRitchie Studio", Studio.site_title
     assert_match(/\AAlex McRitchie's studio/, Studio.site_description)
+    refute_match(/acqui/i, Studio.site_description, "acquisitions live on McRitchie Industries (task ms-acquisition-clean-split)")
     assert File.file?(Rails.public_path.join("og.png")), "public/og.png is the last-resort image"
   end
 
