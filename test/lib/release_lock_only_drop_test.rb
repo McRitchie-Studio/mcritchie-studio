@@ -102,6 +102,7 @@ class ReleaseLockOnlyDropTest < Minitest::Test
     assert_includes out, "CONTINUED", "a lock-only failure must not abort the ship: #{out}"
     refute_includes out, "ABORTED", out
     assert_includes out, "DROPPED rantly from this release — production deploy failed", out
+    assert_includes out, "rollback` skips a dropped app", "main moved: the warning must not say the bumps wait: #{out}"
     assert_includes out, "LEFT=mcritchie-studio,turf-monster", out
   end
 
@@ -121,6 +122,7 @@ class ReleaseLockOnlyDropTest < Minitest::Test
 
     assert_includes out, "DEPLOYED: mcritchie-studio", out
     assert_includes out, "LEFT=mcritchie-studio REPOS=mcritchie-studio", out
+    assert_includes out, "rollback` skips a dropped app", out
     refute_includes out, "ABORTED", out
   end
 

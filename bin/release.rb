@@ -3222,15 +3222,24 @@ def lock_only_group?(group) = group.is_a?(Hash) && group["lock_only"] == true
 def lock_only_drops = (@lock_only_drops ||= {})
 def lock_only_unrecorded = (@lock_only_unrecorded ||= {})
 
-def drop_lock_only!(group, reason)
+def drop_lock_only!(group, reason, main_moved: false)
   repo = group["repo"].to_s
   LOCK_ONLY_DROP_GUARD.synchronize do
     lock_only_drops[repo] ||= reason
     lock_only_unrecorded[repo] ||= reason
   end
+  # A production-stage drop comes AFTER push_frozen_main: `main` moved, the Heroku push may be live, and
+  # git_push_heroku runs no rollback. Say so; a dropped app is outside `bin/release rollback`'s plan.
+  tail = if main_moved
+           "Its `main` and `#{ACCEPTED_BRANCH}` may already be at the release tree, so no sweep carries it again " \
+             "and `status` reads no lag. Nothing rolled it back, and `#{RELEASE_SELF_CMD} rollback` skips a " \
+             "dropped app. Read `heroku releases -a <its app>`: a new release whose /up is down → `heroku " \
+             "rollback`; no new release → re-push `main` to its prod_deploy remote by hand."
+         else
+           "Its bumps wait on `#{ACCEPTED_BRANCH}` for the next release; `#{RELEASE_SELF_CMD} status` names its engine lag."
+         end
   say("  ⚠ DROPPED #{repo} from this release — #{reason}. It rode with no member (its `#{ACCEPTED_BRANCH}` held " \
-      "only lock bumps), so the member apps carry on without it. Its bumps wait on `#{ACCEPTED_BRANCH}` for the " \
-      "next release; `#{RELEASE_SELF_CMD} status` names its engine lag.")
+      "only lock bumps), so the member apps carry on without it. #{tail}")
 end
 
 # Run one lock-only step for `group`. Answers true when it passed; for a lock-only
@@ -3241,7 +3250,8 @@ def lock_only_attempt(group, label)
 rescue SystemExit => e
   raise unless lock_only_group?(group)
 
-  drop_lock_only!(group, "#{label} failed: #{e.message.to_s.sub(/\A✗ /, '').lines.first.to_s.strip[0, 300]}")
+  drop_lock_only!(group, "#{label} failed: #{e.message.to_s.sub(/\A✗ /, '').lines.first.to_s.strip[0, 300]}",
+                  main_moved: label == "production deploy")
   false
 end
 
@@ -11235,12 +11245,12 @@ def deploy_satellites_in_parallel(satellites, ship_sha, rel_slug)
   say("  satellite deploys (#{results.count(&:ok)}/#{results.size} live):")
   Release::ParallelDeploy.summary_lines(results).each { |line| say(line) }
   # A lock-only app's failed deploy or smoke DROPS it; only a member app's failure
-  # stops the ship (each app ran its own deploy, smoke and rollback above).
+  # stops the ship. Its `main` moved first, and git_push_heroku has no rollback (drop_lock_only!).
   only = satellites.select { |g| lock_only_group?(g) }.map { |g| g["repo"] }
   results.each do |r|
     next if r.ok || !only.include?(r.repo)
 
-    drop_lock_only!({ "repo" => r.repo, "lock_only" => true }, "production deploy failed: #{r.error.to_s.lines.first.to_s.strip[0, 300]}")
+    drop_lock_only!({ "repo" => r.repo, "lock_only" => true }, "production deploy failed: #{r.error.to_s.lines.first.to_s.strip[0, 300]}", main_moved: true)
   end
   failure = Release::ParallelDeploy.failure_message(results.reject { |r| !r.ok && only.include?(r.repo) },
                                                      resume_cmd: "#{RELEASE_SELF_CMD} ship")
