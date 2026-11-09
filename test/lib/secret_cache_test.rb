@@ -512,11 +512,14 @@ class SecretCacheTest < Minitest::Test
     bash = ->(command) { { "tool_name" => "Bash", "tool_input" => { "command" => command } } }
 
     ["bin/secret status", "/Users/alex/projects/.agents/bin/secret refresh github.agent --if-under 45",
-     "bin/secret prewarm 2>&1 | tail -3", "bin/secret forget harness-key", "bin/secret contingency github.agent"].each do |cmd|
+     "bin/secret prewarm 2>&1 | tail -3", "bin/secret forget harness-key", "bin/secret contingency github.agent",
+     "bin/secret warm avi", "bin/secret sets", "bin/secret manifest avi"].each do |cmd|
       refute hook.reads_secret_material?(bash.call(cmd)), cmd
     end
     ["bin/secret get github.agent", "bin/secret agents agent.heroku 'api key'",
-     "bin/secret status; bin/secret get github.agent"].each do |cmd|
+     "bin/secret status; bin/secret get github.agent",
+     "bin/secret read --soul avi studio-agents solana.mack.agent private-key",
+     "bin/secret item-json --soul avi studio-agents solana.mack.agent"].each do |cmd|
       assert hook.reads_secret_material?(bash.call(cmd)), cmd
     end
   end
