@@ -362,6 +362,40 @@ class FastCheckTest < Minitest::Test
     end
   end
 
+  # A Rails app with NO DATABASE (the showcase apps) has no db:test:prepare task, so the
+  # default prepare command died before any lane ran. It still prepares (the asset
+  # hook) and still runs its lanes; only the database step is gone, and it says so.
+  # Task token-database-for-new-apps.
+  def test_a_no_database_rails_app_prepares_with_test_prepare_alone
+    with_repo do |dir, write|
+      write_fake_rails(dir)
+      write.call("config/application.rb", %(require "rails"\n# require "active_record/railtie"\nrequire "action_controller/railtie"\n))
+      out, code, lines = run_check(dir, extra_env: { "FAST_CHECK_TEST_PREPARE_CMD" => nil,
+                                                     "FAST_CHECK_TEST_CMD" => nil,
+                                                     "FAST_CHECK_RUBOCOP_CMD" => "true" })
+      rails = lines.select { |l| l[0] == "RAILS" }.map { |l| l[1..] }
+
+      assert_equal ["test:prepare"], rails[0], "no database: prepare must not name db:test:prepare"
+      assert_equal ["test", "test/models/widget_test.rb"], rails[1], "the test lanes still run"
+      assert_match(/Rails app with no database/, out)
+      refute_match(/uninitialized constant ActiveRecord/, out)
+      assert_equal 0, code, out
+    end
+  end
+
+  def test_an_app_that_loads_activerecord_keeps_db_test_prepare
+    with_repo do |dir, write|
+      write_fake_rails(dir)
+      write.call("config/application.rb", %(require "rails/all"\n))
+      _out, _code, lines = run_check(dir, extra_env: { "FAST_CHECK_TEST_PREPARE_CMD" => nil,
+                                                       "FAST_CHECK_TEST_CMD" => nil,
+                                                       "FAST_CHECK_RUBOCOP_CMD" => "true" })
+      rails = lines.select { |l| l[0] == "RAILS" }.map { |l| l[1..] }
+
+      assert_equal ["db:test:prepare", "test:prepare"], rails[0]
+    end
+  end
+
   # --- registry-gated repos ---------------------------------------------------------
 
   def test_a_gem_repo_runs_its_registry_gate_and_no_rails_lane

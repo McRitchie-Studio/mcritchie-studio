@@ -26,7 +26,9 @@ resume with `bin/task begin <task-slug>`). Steps 4-9 apply either way.
 5. **Verify assets and test DB** — `app/assets/builds/tailwind.css` exists; else run
    `RAILS_ENV=test bin/rails db:test:prepare test:prepare` (the env var is load-bearing).
 6. **Boot, then prove the URL** — `bin/agent-worktree up <app> <task-slug>` runs
-   `db:prepare` and polls `/up`; hand out a URL only after it returns 200.
+   `db:prepare` and polls `/up`; hand out a URL only after it returns 200. An app
+   with no database skips `db:prepare` and says why
+   ([`token-database.md`](token-database.md)).
 7. **Know your data** — the stack DB starts from schema + seeds; seed what the demo needs.
 8. **Run tests through the wrapper** — `bin/agent-worktree test <app> <task-slug>` in
    EVERY repo (hermetic, isolated test DB, `PARALLEL_WORKERS=1`). A plain `bin/rails test`

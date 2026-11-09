@@ -41,7 +41,7 @@ own 404, not the app's `404.html`.
 
 ## What an app must be
 
-- No database, no add-ons, and only GET routes whose pages depend on nothing but the
+- No database (the empty [token database](token-database.md) counts as none: it holds nothing and nothing opens it), no add-ons, and only GET routes whose pages depend on nothing but the
   checked-in code (the showcase apps read YAML under `data/`).
 - **`bin/static-build`** in the repo: writes the whole site into `$OUT` for host
   `$HOST`, including `index.html` and `up/index.html` (the smoke reads `/up`). Rantly's

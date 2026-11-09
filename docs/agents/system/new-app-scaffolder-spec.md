@@ -58,6 +58,10 @@ After prompts, confirm summary and proceed.
    ```bash
    rails new ~/projects/<slug> --skip-test --skip-system-test --database=postgresql --template=mcritchie-studio/bin/templates/satellite.rb
    ```
+   A managed satellite takes the engine's sign-in, so it starts on Postgres. A
+   standalone or client app starts on the token database instead
+   (`--database=sqlite3`, then the recipe in
+   [`../modules/token-database.md`](../modules/token-database.md)).
    Template (also new file, `bin/templates/satellite.rb`) does:
    - Adds gems: `tailwindcss-rails`, `studio-engine` (pinned to the current release series), `sentry-ruby`, `sentry-rails`
    - Generates `config/initializers/studio.rb` with the right `app_name`, `session_key`, `configure_sso_user`

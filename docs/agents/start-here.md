@@ -30,6 +30,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | **App templates (base vs web3 bolt-on)** | `mcritchie-studio/docs/agents/system/app-templates.md` |
 | Ports, servers, callbacks | `mcritchie-studio/docs/agents/modules/ports-and-processes.md` |
 | Object storage (R2 buckets and tokens; legacy S3) | `mcritchie-studio/docs/agents/modules/object-storage.md` |
+| The token database (an empty SQLite database for a new app, the upgrade to Postgres, how the tooling treats an app with no database) | `mcritchie-studio/docs/agents/modules/token-database.md` |
 | Static apps on Cloudflare R2 (the `static_cloudflare` strategy, `bin/static-downgrade`, how the showcase apps move) | `mcritchie-studio/docs/agents/modules/static-cloudflare.md` |
 | Asset library plan (storage tiers, Wave 2 cutover recipe, asset catalog, AWS exit) | `mcritchie-studio/docs/agents/system/asset-library-plan.md` |
 | R2 cutover record: the hub and Turf Monster cutovers as run, and the step 7 checklist | `mcritchie-studio/docs/agents/system/r2-cutover-record.md` |

@@ -258,7 +258,15 @@ registry_gate = ReleaseRegistry.registry_gated?(repo)
 
 test_cmd = ENV.fetch("FAST_CHECK_TEST_CMD") { registry_test_cmd || "bin/rails test" }
 rubocop_cmd = ENV.fetch("FAST_CHECK_RUBOCOP_CMD", "bin/rubocop")
-test_prepare_cmd = ENV.fetch("FAST_CHECK_TEST_PREPARE_CMD", "bin/rails db:test:prepare test:prepare")
+# A RAILS APP WITH NO DATABASE (the showcase apps: no config/database.yml, and
+# config/application.rb loads no ActiveRecord) has no db:test:prepare task at all, so
+# the default command would die before any test ran. Its lane still RUNS: Rails'
+# test:prepare (the asset build) is all there is to prepare. Proven from the tree's
+# FILES (DeskGuard.no_database_app?), never from a failed boot.
+no_database = DeskGuard.no_database_app?(root)
+default_test_prepare = no_database ? "bin/rails test:prepare" : "bin/rails db:test:prepare test:prepare"
+test_prepare_cmd = ENV.fetch("FAST_CHECK_TEST_PREPARE_CMD", default_test_prepare)
+warn "fast-check: #{DeskGuard.no_database_note(root)}" if no_database
 # A repo that declares its own gate has no Rails test database to prepare, so the
 # lane does not APPLY to it. Declared from the registry, never inferred from whether
 # bin/rails happens to exist: a skip inferred from a missing binary turns every

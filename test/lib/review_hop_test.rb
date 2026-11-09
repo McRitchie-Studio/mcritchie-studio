@@ -53,6 +53,21 @@ class ReviewHopTest < Minitest::Test
     assert_equal :mint_ok, v.code
   end
 
+  # [unit] a 404 mint is an app that draws no local-review route (no Studio.routes: an app
+  # with no database or on the token database), named as that, not as a broken redirect.
+  def test_mint_404_names_an_app_without_the_local_review_route
+    v = ReviewHop.mint(status: 404, location: nil)
+
+    refute v.ok?
+    assert_equal :mint_no_route, v.code
+    assert_includes v.detail, "token-database.md"
+  end
+
+  # [unit] a non-404, non-redirect answer keeps its old verdict
+  def test_mint_500_is_still_not_a_redirect
+    assert_equal :mint_not_redirect, ReviewHop.mint(status: 500, location: nil).code
+  end
+
   # [unit] MISSING_EMAIL: no reviewer resolves, engine redirects to the sign-in page (never a
   # `/signin 200` pass).
   # [unit] the OTHER magic-link shape is consumable too. turf-monster overrides

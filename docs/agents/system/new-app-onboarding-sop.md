@@ -85,7 +85,7 @@ will never sign a transaction. Most apps are web2. See
 |---|---|---|
 | Engine | consume `studio-engine` from RubyGems | `studio-engine` for the site footer (§7); vendor anything else you need |
 | Auth | engine passwordless + hub SSO | own auth (the app's call) |
-| DB | Postgres | **SQLite is fine for a demo**; Postgres when it matters |
+| DB | Postgres | **The token database by default**: an empty SQLite file, no add-on, so desks and the pre-flight work from day one ([`token-database.md`](../modules/token-database.md)); Postgres the day it must keep data, or take the engine's sign-in or the local-review hop |
 | External adapters (AI, payments, …) | mock-first behind a swappable adapter | same — mock-first behind a swappable adapter |
 | Object storage | **prompt Alex McRitchie: provision buckets, y/n?** | same prompt — a silly little app says no |
 

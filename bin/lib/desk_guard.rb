@@ -90,6 +90,10 @@ require_relative "remedy"
 #     no test database, so this guard has no job there and ADMITS WITHOUT BOOTING. That is
 #     INAPPLICABILITY, not a soft pass — and it is emphatically not "the boot failed, so
 #     allow". See rails_repo?, which is where that line is drawn and defended.
+#   * a desk in a Rails app with NO DATABASE (the showcase apps: config/application.rb
+#     loads no ActiveRecord, and there is no config/database.yml) is inapplicable for the
+#     same reason, proven from the same kind of evidence: files, never a boot. See
+#     no_database_app?.
 module DeskGuard
   module_function
 
@@ -101,6 +105,11 @@ module DeskGuard
   # and a declared test database to boot INTO. A repo with neither has no test DB at all.
   RAILS_ENTRYPOINT = File.join("bin", "rails")
   DATABASE_CONFIG = File.join("config", "database.yml")
+  # Where a Rails app chooses its frameworks. An app with no database leaves
+  # ActiveRecord out here (`# require "active_record/railtie"`); see no_database_app?.
+  APPLICATION_CONFIG = File.join("config", "application.rb")
+  # An UNCOMMENTED require of all of Rails or of ActiveRecord's railtie.
+  ACTIVE_RECORD_REQUIRE = %r{^[ \t]*require[ \t(]+["'](?:rails/all|active_record/railtie)["']}
 
   # Read back the database the app ACTUALLY connects to in the test env. Reading
   # `connection_db_config` does NOT open a connection, so the probe is safe against a desk
@@ -128,12 +137,21 @@ module DeskGuard
     # only fail. This is NOT "boot failed, so allow" — see rails_repo? for why that
     # distinction is the whole ballgame.
     return nil unless rails_repo?(repo)
+    # INAPPLICABLE too: a Rails app that PROVABLY has no database, in the repo AND in
+    # the desk. Proven from files, never from a boot; see no_database_app?.
+    return nil if no_database_app?(repo) && no_database_app?(desk)
 
     shared = Release::GateWorkspace.declared_test_database(repo).to_s.strip
     resolved, output, booted = (resolver || method(:resolve)).call(desk, env: env)
     resolved = resolved.to_s.strip
 
     return unresolved_refusal(desk, output) if !booted || resolved.empty?
+    # A FILE inside the desk is private by CONTAINMENT, so it needs no shared name to
+    # compare against. Checked before the shared-name read on purpose: a desk that
+    # adds a token SQLite database to a repo whose primary has none yet (rantly,
+    # task rantly-adopts-token-database) has no readable shared name, and is still
+    # provably private. A bare name, or a file outside the desk, still falls through.
+    return nil if file_inside_desk?(resolved, desk)
     return unreadable_config_refusal(desk, repo, resolved) if shared.empty?
     return nil if private_db?(resolved: resolved, desk: desk, shared: shared)
 
@@ -197,6 +215,48 @@ module DeskGuard
   def rails_repo?(repo)
     root = File.expand_path(repo.to_s)
     File.exist?(File.join(root, RAILS_ENTRYPOINT)) || File.exist?(File.join(root, DATABASE_CONFIG))
+  end
+
+  # Is `dir` a Rails app that PROVABLY has no database? The showcase apps
+  # (weekly-lock, portfolio, 10and5, ...) are Rails apps that load no ActiveRecord:
+  # no test database exists, `db:prepare`/`db:test:prepare` are not even tasks, and
+  # the probe dies on `uninitialized constant ActiveRecord`. Before this, that boot
+  # failure took the UNPROVEN path and refused, which is right in kind (a boot
+  # failure is never "no app") but wrong in fact: there is nothing to protect.
+  #
+  # So this is decided on FILES, like rails_repo?, and only by POSITIVE proof. All
+  # three must hold:
+  #   * bin/rails exists (it is a Rails app, not a gem: that case is rails_repo?'s),
+  #   * config/database.yml does not (no declared database at all), and
+  #   * config/application.rb exists and requires neither `rails/all` nor
+  #     `active_record/railtie` outside a comment.
+  # A missing or unreadable application.rb proves nothing and answers false, so a
+  # half-built app keeps the STRICT path. The residual, stated: ActiveRecord loaded
+  # some other way (a gem requiring its railtie) with no database.yml. Such an app
+  # can only reach a database through DATABASE_URL, which a desk points at its own.
+  def no_database_app?(dir)
+    root = File.expand_path(dir.to_s)
+    return false unless File.exist?(File.join(root, RAILS_ENTRYPOINT))
+    return false if File.exist?(File.join(root, DATABASE_CONFIG))
+
+    application = File.join(root, APPLICATION_CONFIG)
+    return false unless File.file?(application)
+
+    !File.read(application).match?(ACTIVE_RECORD_REQUIRE)
+  rescue SystemCallError
+    false
+  end
+
+  # The line a tool prints when it leaves the database steps out for such an app.
+  def no_database_note(dir)
+    "#{File.expand_path(dir.to_s)} is a Rails app with no database (no #{DATABASE_CONFIG}, and " \
+      "#{APPLICATION_CONFIG} loads no ActiveRecord), so there is no database to prepare. A new app " \
+      "takes the token database instead: docs/agents/modules/token-database.md"
+  end
+
+  # PURE. A file-backed database path (SQLite) that resolves inside the desk.
+  def file_inside_desk?(resolved, desk)
+    Release::GateWorkspace.file_backed?(resolved) && private_db?(resolved: resolved, desk: desk, shared: "")
   end
 
   # IO. Boot the app in `root` at RAILS_ENV=test and read back the database it connects to.
