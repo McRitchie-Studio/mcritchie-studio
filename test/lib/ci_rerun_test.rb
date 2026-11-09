@@ -161,10 +161,10 @@ class CiRerunTest < Minitest::Test
   # --- the record -------------------------------------------------------------
 
   def test_specs_in_names_minitest_rspec_and_playwright_locations
-    log = "bin/rails test test/models/task_test.rb:12\nrspec ./spec/models/user_spec.rb:7 # User works\n" \
+    log = "bin/rails test test/models/gadget_test.rb:12\nrspec ./spec/models/user_spec.rb:7 # User works\n" \
           "  1) [chromium] › e2e/survey_flow.spec.js:158:5 › survey › submits\nOffenses: app/models/x.rb:3:1\n"
 
-    assert_equal ["test/models/task_test.rb:12", "spec/models/user_spec.rb:7", "e2e/survey_flow.spec.js:158"],
+    assert_equal ["test/models/gadget_test.rb:12", "spec/models/user_spec.rb:7", "e2e/survey_flow.spec.js:158"],
                  CiRerun.specs_in(log)
     assert_equal [], CiRerun.specs_in(nil)
   end
