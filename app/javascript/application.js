@@ -1,7 +1,5 @@
 // Configure your import map in config/importmap.rb. Read more: https://github.com/rails/importmap-rails
 import "@hotwired/turbo-rails"
-// Turbo never prefetches a sign-out (GET /logout): a pointer resting on Log out signed the browser out.
-import "sign_out_prefetch"
 import "dropping_text"
 // The shared agent web chat (first page: /applications/:slug/chat): delegated listeners, inert on every other page.
 import "agent_chat"
