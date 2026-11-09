@@ -469,9 +469,14 @@ jobs:
           name: playwright-report-shard-${{ matrix.shard }}
           # test-results holds each failed spec's error-context.md (the page's DOM at
           # the failure): the evidence a red needs to name its cause (task deterministic-ci).
+          # log/test.log is the e2e server's own log: every request, its session's user,
+          # and each row it wrote. The test env logs to that file, not to stdout, so the
+          # runner's log never carries it; without it a red shows what the page drew and
+          # not why the server drew it (task build-funnel-held-message-cause).
           path: |
             playwright-report
             test-results
+            log/test.log
           if-no-files-found: ignore
 
   # THE EXECUTED-SET GATE. The `playwright` job above can prove its specs PASSED; it cannot
