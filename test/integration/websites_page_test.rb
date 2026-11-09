@@ -22,7 +22,9 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
     carousel = "section[data-test='websites-carousel'][aria-roledescription='carousel'][aria-label='Live apps']"
     assert_select carousel, count: 1
     assert_select "#{carousel}[data-studio-controller='carousel']", count: 1
-    assert_select "#{carousel}.carousel-spotlight", count: 1 # the spotlight style: the centred app full size
+    # The cascade where the installed engine has it (Alex McRitchie, 2026-11-08), else the spotlight.
+    style = ActionController::Base.new.view_context.extend(WebsitesHelper).portfolio_carousel_style
+    assert_select "#{carousel}.carousel-#{style}", count: 1
     assert_select "#{carousel} .carousel-slide[role='group']", count: BuildGallery.examples.size
     BuildGallery.examples.each do |example|
       assert_select "#{carousel} .carousel-slide[aria-label=?] [data-test='build-example']", example.name, count: 1
@@ -67,6 +69,21 @@ class WebsitesPageTest < ActionDispatch::IntegrationTest
       assert_select "#{card}[href=?][style*=?]", example.url, "--pc-shade: rgb(", count: 1
     end
     [ "Prisoner's Dilemma", "Rantly" ].each { |name| assert_select "#{card} [data-test='build-example-name']", text: name, count: 1 }
+  end
+
+  # [component] The row is the helper's style, and it loops on either engine.
+  test "the Portfolio row renders in the helper's style and loops" do
+    get websites_path
+
+    style = ActionController::Base.new.view_context.extend(WebsitesHelper).portfolio_carousel_style
+    other = style == :cascade ? :spotlight : :cascade
+    row = "section[data-test='websites-carousel']"
+    assert_select "#{row}.carousel-#{style}[data-carousel-loop]", count: 1
+    assert_select "#{row}.carousel-#{other}", count: 0
+    if style == :cascade
+      assert_select "#{row}[data-carousel-visible='5']", count: 1 # the engine drops to three on a phone
+      assert_select "#{row} .carousel-slide[data-cascade-step='0'][aria-label=?]", BuildGallery.examples.first.name, count: 1
+    end
   end
 
   test "the carousel asks for autoplay and loop only as the installed engine declares them" do
