@@ -166,6 +166,14 @@ class HerokuTokenTest < Minitest::Test
     assert_equal "HRKU-caller", env["HEROKU_API_KEY"]
   end
 
+  # [unit] With no seam, the `op` that answers is the first on PATH, as before;
+  # never an absolute path that skips a stub (ecosystem-build's Phase 4 test).
+  def test_the_op_is_found_on_path_when_no_seam_names_one
+    assert_equal "op", HerokuToken.secret_env({}, nil)["SECRET_OP_BIN"]
+    assert_equal "/x/op", HerokuToken.secret_env({ "SECRET_OP_BIN" => "/x/op" }, nil)["SECRET_OP_BIN"]
+    assert_equal @op, HerokuToken.secret_env({ "SECRET_OP_BIN" => "/x/op" }, @op)["SECRET_OP_BIN"]
+  end
+
   def test_refusal_matches_herokus_401_wording_only
     assert HerokuToken.refusal?(" !    Invalid credentials provided.")
     assert HerokuToken.refusal?("HTTP Error 401 for GET https://api.heroku.com/apps")

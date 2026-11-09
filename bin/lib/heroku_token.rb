@@ -243,10 +243,14 @@ module HerokuToken
 
   READER = "bin/lib/heroku_token.rb"
 
-  # The env the secret tooling reads: +op_bin+ (the test seam) as SECRET_OP_BIN.
+  # The env the secret tooling reads, with the `op` to run as SECRET_OP_BIN:
+  # +op_bin+ or HEROKU_TOKEN_OP_BIN (the test seam), else a SECRET_OP_BIN already
+  # set, else `op` from PATH, as HerokuToken always ran it. Never SoulSecrets'
+  # absolute default: a stub `op` first on PATH must stay the one that answers.
   def secret_env(env, op_bin)
     bin = (op_bin || env["HEROKU_TOKEN_OP_BIN"]).to_s.strip
-    bin.empty? || bin == "op" ? env.to_h : env.to_h.merge("SECRET_OP_BIN" => bin)
+    bin = env["SECRET_OP_BIN"].to_s.strip if bin.empty?
+    env.to_h.merge("SECRET_OP_BIN" => bin.empty? ? "op" : bin)
   end
 
   def config!(_name, spec, env)
