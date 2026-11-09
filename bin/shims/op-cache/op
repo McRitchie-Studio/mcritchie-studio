@@ -2,7 +2,7 @@
 # bin/shims/op-cache/op — an `op` that answers `op item get` from a soul's
 # secret cache. bin/release puts this folder first on the devnet gauntlet
 # driver's PATH (gauntlet_child_env), so turf-monster's KeyStore, which runs
-# `op item get <title> --vault <vault> --format json`, reads the wallet the
+# `op item get` on an item title (a vault flag and --format json), reads the wallet the
 # release warmed instead of 1Password. Doc: docs/agents/modules/secret-cache.md.
 #
 # WHY. On the night of 2026-11-08 a release waited four hours on one live

@@ -30,19 +30,18 @@ class SoulSecretsTest < Minitest::Test
     "souls" => {
       "avi" => {
         "service_account" => { "token_env" => "OP_SERVICE_ACCOUNT_TOKEN_AVI" },
-        "items" => [{ "item" => "solana.mack.agent", "vault" => "studio-agents",
+        "items" => [{ "item" => "solana.mack.agent", "lane" => "agent",
                       "fields" => ["private-key", "wallet-address"], "lifetime" => "1d", "refresh_window" => "2h",
                       "readers" => ["bin/release"] }]
       },
       "steffon" => {
         "service_account" => { "token_env" => "OP_SERVICE_ACCOUNT_TOKEN_STEFFON" },
-        "items" => [{ "item" => "heroku.studio.agents", "vault" => "studio-agents", "fields" => ["credential"],
+        "items" => [{ "item" => "heroku.studio.agents", "lane" => "agent", "fields" => ["credential"],
                       "lifetime" => "12h", "readers" => ["bin/lib/heroku_token.rb"] }]
       },
       "pokemon" => { "items" => [] }
     },
-    "admin_tier" => { "vault_env" => "MCR_OP_VAULT_ADMIN", "default_vault" => "studio-agents-admin",
-                      "token_env" => "OP_ADMIN_SERVICE_ACCOUNT_TOKEN", "storage" => "memory", "lifetime" => "15m",
+    "admin_tier" => { "lane" => "deployer", "storage" => "memory", "lifetime" => "15m",
                       "scripts" => ["bin/allowed-admin-script"] }
   }.freeze
 
@@ -129,12 +128,25 @@ class SoulSecretsTest < Minitest::Test
 
   def test_unit_an_admin_vault_item_in_a_soul_set_is_refused_at_load
     bad = Marshal.load(Marshal.dump(CONFIG))
-    bad["souls"]["avi"]["items"] << { "item" => "solana.turf.server", "vault" => "studio-agents-admin",
+    bad["souls"]["avi"]["items"] << { "item" => "solana.turf.server", "lane" => "deployer",
                                       "fields" => ["private-key"], "lifetime" => "1h" }
     File.write(@config, YAML.dump(bad))
 
     error = assert_raises(SoulSecrets::ConfigError) { cfg }
     assert_includes error.message, "admin vault"
+  end
+
+  # The config names a lane, never a vault: the vault follows bin/lib/op_vaults.rb.
+  def test_unit_an_items_vault_resolves_from_its_lane_and_honours_the_override
+    assert_equal "studio-agents", cfg["souls"]["avi"]["items"][0]["vault"]
+    moved = env(answering_op, "MCR_OP_VAULT_AGENT" => "renamed-agents")
+    assert_equal "renamed-agents", SoulSecrets.manifest("avi", cfg(moved))["items"][0]["vault"]
+    refute_match(/^\s*vault:/, File.read(REAL_CONFIG), "the real config names lanes, not vault literals")
+
+    bad = Marshal.load(Marshal.dump(CONFIG))
+    bad["souls"]["avi"]["items"][0]["lane"] = "nope"
+    File.write(@config, YAML.dump(bad))
+    assert_raises(SoulSecrets::ConfigError) { cfg }
   end
 
   def test_unit_an_item_must_name_the_fields_it_keeps_and_a_lifetime

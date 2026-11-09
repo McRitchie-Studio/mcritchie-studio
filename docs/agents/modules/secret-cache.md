@@ -175,7 +175,7 @@ gauntlet. Task `soul-secret-sets`.
 
 | Fact | Value |
 |---|---|
-| Config | `config/soul_secret_sets.yml`: one set per soul in `config/souls.yml` (a test holds every roster soul to a set, even an empty one). Each item names `item`, `vault`, `fields` (only these labels are kept on disk), `lifetime`, optional `refresh_window` (default a tenth of the lifetime) and `readers` |
+| Config | `config/soul_secret_sets.yml`: one set per soul in `config/souls.yml` (a test holds every roster soul to a set, even an empty one). Each item names `item`, `lane` (an `OpVaults` lane, never a vault literal: `agent` resolves to `MCR_OP_VAULT_AGENT`, else its default, on the reading machine; `deployer` is refused), `fields` (only these labels are kept on disk), `lifetime`, optional `refresh_window` (default a tenth of the lifetime) and `readers` |
 | Folder | `<cache>/<soul>/`, `0700`; one `item.<item>.json` per item, `0600`, written by the same `O_EXCL \| O_NOFOLLOW` temp-file-then-rename path. The folder and file guards (mode, owner, symlink, git) apply |
 | Admin vault | refused twice: at config load (a soul set that names an admin-vault item does not load) and at write (`AdminVaultRefused`) |
 | Bound | every `op` call goes through `OpMeter.popen`, at most 20 s an attempt (`SoulSecrets::OP_DEADLINE_CAP`; 14 s by default). After a hang the warm pass stops calling `op` |
@@ -267,7 +267,8 @@ agent never holds the value.
   script's own process. It refuses (and logs `admin-refused`) unless the process's
   entry point (`$PROGRAM_NAME`, resolved) is one of `admin_tier.scripts` in the
   same tooling tree. It reads with `OP_ADMIN_SERVICE_ACCOUNT_TOKEN`, never from a
-  soul folder, bounded, and keeps the value in memory for `admin_tier.lifetime`
+  soul folder, bounded (vault and token from the `deployer` lane in
+  `bin/lib/op_vaults.rb`), and keeps the value in memory for `admin_tier.lifetime`
   (15 min). There is **no** `bin/secret` command that prints an admin value.
 - **The allowlist** is the scripts that read an admin item today (`bin/release.rb`,
   `bin/gh-token`, `bin/heroku-token`, `bin/heroku-secret-set`,

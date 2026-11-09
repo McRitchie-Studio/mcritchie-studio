@@ -6,6 +6,7 @@ require "yaml"
 require "fileutils"
 require_relative "secret_cache"
 require_relative "op_meter"
+require_relative "op_vaults"
 
 # SoulSecrets — each soul's own set of 1Password items, warmed into the secret
 # cache at launch and read from there. Config: config/soul_secret_sets.yml. Doc:
@@ -97,6 +98,18 @@ module SoulSecrets
     data
   end
 
+  # The vault a lane reads on this machine: the lane's override variable, else its
+  # default (bin/lib/op_vaults.rb is the single source; never a literal here).
+  def lane_vault(lane, env = ENV)
+    spec = OpVaults.lane(lane)
+    named = env[spec[:vault_env]].to_s.strip
+    named.empty? ? spec[:default_vault] : named
+  rescue ArgumentError => e
+    raise ConfigError, "soul secret sets: #{e.message}"
+  end
+
+  # Each item names an OpVaults lane (`lane: agent`), never a vault. The vault is
+  # resolved here, on the machine that reads it, and stored on the entry.
   def validate_set!(soul, set, env = ENV)
     raise ConfigError, "soul secret sets: #{soul.inspect} is not a soul slug" unless SLUG.match?(soul.to_s)
     raise ConfigError, "soul secret sets: #{soul}'s set is not a map" unless set.is_a?(Hash)
@@ -105,10 +118,11 @@ module SoulSecrets
     raise ConfigError, "soul secret sets: #{soul}.items is not a list" unless items.is_a?(Array)
 
     items.each do |entry|
-      unless entry.is_a?(Hash) && !entry["item"].to_s.strip.empty? && !entry["vault"].to_s.strip.empty?
-        raise ConfigError, "soul secret sets: #{soul} has an item with no `item` or `vault`"
+      unless entry.is_a?(Hash) && !entry["item"].to_s.strip.empty? && !entry["lane"].to_s.strip.empty?
+        raise ConfigError, "soul secret sets: #{soul} has an item with no `item` or `lane`"
       end
-      if SecretCache.admin_vault?(entry["vault"], env)
+      entry["vault"] = lane_vault(entry["lane"], env)
+      if entry["lane"].to_s == "deployer" || SecretCache.admin_vault?(entry["vault"], env)
         raise ConfigError, "soul secret sets: #{soul} names #{entry['item']} from the admin vault " \
                            "#{entry['vault']}; admin items live in admin_tier, never in a soul's set"
       end
@@ -125,6 +139,9 @@ module SoulSecrets
   def validate_admin!(tier)
     raise ConfigError, "soul secret sets: admin_tier is not a map" unless tier.is_a?(Hash)
 
+    unless tier["lane"].to_s == "deployer"
+      raise ConfigError, "soul secret sets: admin_tier.lane must be `deployer` (bin/lib/op_vaults.rb)"
+    end
     unless tier["storage"].to_s == "memory"
       raise ConfigError, "soul secret sets: admin_tier.storage #{tier['storage'].inspect} is not implemented; " \
                          "only `memory` is (the doc names the threat a disk tier carries)"
@@ -152,7 +169,8 @@ module SoulSecrets
         lifetime = seconds(entry["lifetime"])
         window = entry.key?("refresh_window") ? seconds(entry["refresh_window"]) : lifetime / 10
         {
-          "item" => entry["item"].to_s, "vault" => entry["vault"].to_s, "fields" => entry["fields"].map(&:to_s),
+          "item" => entry["item"].to_s, "lane" => entry["lane"].to_s, "vault" => entry["vault"].to_s,
+          "fields" => entry["fields"].map(&:to_s),
           "lifetime_seconds" => lifetime, "refresh_window_seconds" => window,
           "readers" => Array(entry["readers"]).map(&:to_s)
         }
@@ -169,6 +187,8 @@ module SoulSecrets
       e.merge("lifetime" => e["lifetime_seconds"].to_i, "refresh_window" => e["refresh_window_seconds"].to_i)
     end
     validate_set!(data["soul"].to_s, { "items" => items }, env)
+    # The vault is re-resolved from the lane on THIS machine.
+    data["items"].each_with_index { |e, i| e["vault"] = items[i]["vault"] }
     data
   rescue JSON::ParserError, NoMethodError, TypeError
     raise ConfigError, "soul secret sets: #{path} is not a #{FORMAT} manifest"
@@ -506,11 +526,10 @@ module SoulSecrets
     end
 
     def vault(tier, env)
-      named = env[tier["vault_env"].to_s].to_s.strip
-      named.empty? ? tier["default_vault"].to_s : named
+      SoulSecrets.lane_vault(tier["lane"], env)
     end
 
-    # The value of op://<admin vault>/<item>/<field>, for an allowlisted script.
+    # The value of one admin item's field, for an allowlisted script.
     def read(item, field, cfg:, env: ENV, program: $PROGRAM_NAME, now: Time.now, root: tooling_root)
       tier = SoulSecrets.validate_admin!(cfg["admin_tier"])
       unless allowed?(program, tier, root: root)
@@ -529,8 +548,9 @@ module SoulSecrets
     end
 
     def fetch(tier, item, field, env)
-      token = env[tier["token_env"].to_s].to_s
-      raise SoulSecrets::Unavailable, "secret: #{tier['token_env']} is not set; the admin tier cannot read" if token.strip.empty?
+      token_env = OpVaults.token_env(tier["lane"])
+      token = env[token_env].to_s
+      raise SoulSecrets::Unavailable, "secret: #{token_env} is not set; the admin tier cannot read" if token.strip.empty?
 
       ref = "op://#{vault(tier, env)}/#{item}/#{field}"
       out = OpMeter.popen({ "OP_SERVICE_ACCOUNT_TOKEN" => token }, [SoulSecrets.op_bin(env), "read", ref],
