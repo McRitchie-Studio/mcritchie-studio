@@ -1,7 +1,9 @@
 # frozen_string_literal: true
 
-# The release CI gate's ONE automatic re-run (bin/lib/ci_rerun.rb): which red verdicts
-# earn it, which never do, and when the re-run counts as the second verdict.
+# The release CI gate's red-verdict decision (bin/lib/ci_rerun.rb): a red stops and is
+# recorded (Alex McRitchie's deterministic-CI ruling, 2026-11-08), except the one named
+# infra cause (bundler's gem-resolution error in every failing job), which earns one
+# re-run; and when that re-run counts as the second verdict.
 #
 #   ruby -Itest test/lib/ci_rerun_test.rb
 
@@ -60,72 +62,122 @@ class CiRerunTest < Minitest::Test
     refute CiRerun.resolution_error?(WRAPPED_LOG.sub("can no longer be", "is"))
   end
 
-  def test_a_wrapped_race_in_a_static_job_earns_the_rerun
+  def test_a_wrapped_race_in_a_static_job_earns_the_infra_rerun
     decision = CiRerun.plan(runs: [run_row(40_938_601_557)], jobs_by_run: { 40_938_601_557 => ["ci / static"] },
                             log_for: ->(_id) { WRAPPED_LOG })
 
     assert_equal :rerun, decision[:action], decision[:reason]
+    assert_equal "infra", decision[:cause]
   end
 
   # --- plan ------------------------------------------------------------------
 
-  # [unit] THE FLAKE: a first-attempt red whose failing jobs are all test lanes is re-run.
-  def test_a_first_attempt_test_lane_red_earns_one_rerun
-    plan = CiRerun.plan(runs: [run_row(40_237_591_268)], jobs_by_run: { 40_237_591_268 => ["test"] })
+  MINITEST_LOG = "test\tRun tests\t2026-11-08T15:01:02.0000000Z Failure:\n" \
+                 "test\tRun tests\t2026-11-08T15:01:02.1000000Z ProductionSslTest#test_redirect [test/integration/production_ssl_test.rb:43]:\n" \
+                 "test\tRun tests\t2026-11-08T15:01:02.2000000Z bin/rails test test/integration/production_ssl_test.rb:43\n"
 
-    assert_equal :rerun, plan[:action]
-    assert_equal [40_237_591_268], plan[:run_ids]
-    assert_includes plan[:reason], "test lane test failed on attempt 1"
+  # [unit] THE RULING: a first-attempt test-lane red is a defect with a cause, never a
+  # retry. It stops, and the plan carries the run id, job and spec for the record.
+  def test_a_first_attempt_test_lane_red_stops_and_names_run_job_and_spec
+    plan = CiRerun.plan(runs: [run_row(40_237_591_268)], jobs_by_run: { 40_237_591_268 => ["test"] },
+                        log_for: ->(_id) { MINITEST_LOG })
+
+    assert_equal :stop, plan[:action]
+    refute plan.key?(:run_ids), "nothing to re-run"
+    assert_includes plan[:reason], "test lane test failed with no gem-resolution error"
+    failure = plan[:failures].first
+    assert_equal 40_237_591_268, failure["run_id"]
+    assert_equal ["test"], failure["jobs"]
+    assert_equal ["test"], failure["test_lanes"]
+    assert_equal ["test/integration/production_ssl_test.rb:43"], failure["specs"]
   end
 
-  # [unit] THE RACE: lint and scan_js are not test lanes, but their log is the resolution error.
-  def test_a_non_test_job_with_the_gem_resolution_error_earns_one_rerun
+  # [unit] THE RACE: lint and scan_js died on the resolution error → the one infra re-run.
+  def test_a_non_test_job_with_the_gem_resolution_error_earns_the_infra_rerun
     plan = CiRerun.plan(runs: [run_row(40_267_136_223)], jobs_by_run: { 40_267_136_223 => %w[scan_js lint] },
                         log_for: ->(_id) { RACE_LOG })
 
     assert_equal :rerun, plan[:action]
+    assert_equal "infra", plan[:cause]
+    assert_equal [40_267_136_223], plan[:run_ids]
     assert_includes plan[:reason], "gem-resolution error"
   end
 
-  def test_a_real_lint_failure_is_never_rerun
+  # [unit] A test lane whose own log carries the resolution error is the race too.
+  def test_a_test_lane_that_died_on_the_resolution_error_is_infra
+    log = WRAPPED_LOG.gsub("scan_ruby\t", "test\t")
+    plan = CiRerun.plan(runs: [run_row(3)], jobs_by_run: { 3 => ["test"] }, log_for: ->(_id) { log })
+
+    assert_equal :rerun, plan[:action], plan[:reason]
+  end
+
+  # [unit] One job on the race, another on an assertion: the assertion is a finding.
+  # The test lane cannot borrow the scan job's resolution error.
+  def test_a_race_in_one_job_does_not_cover_a_real_failure_in_another
+    log = WRAPPED_LOG + MINITEST_LOG
+    plan = CiRerun.plan(runs: [run_row(4)], jobs_by_run: { 4 => %w[scan_ruby test] }, log_for: ->(_id) { log })
+
+    assert_equal :stop, plan[:action], plan[:reason]
+    assert_includes plan[:reason], "test lane test failed with no gem-resolution error"
+    assert_equal ["test/integration/production_ssl_test.rb:43"], plan[:failures].first["specs"]
+  end
+
+  def test_a_real_lint_failure_stops
     plan = CiRerun.plan(runs: [run_row(7)], jobs_by_run: { 7 => %w[lint test] },
                         log_for: ->(_id) { "Offenses: 3" })
 
-    assert_equal :none, plan[:action]
-    assert_includes plan[:reason], "lint, which is not a test lane"
+    assert_equal :stop, plan[:action]
+    assert_includes plan[:reason], "jobs lint, test failed with no gem-resolution error"
   end
 
-  # [unit] NEVER MORE THAN ONE: a run already on attempt 2 is a second red, and it is real.
+  # [unit] NEVER MORE THAN ONE: a run already on attempt 2 was re-run; its red is real.
   def test_a_run_already_rerun_is_never_rerun_again
-    plan = CiRerun.plan(runs: [run_row(9, attempt: 2)], jobs_by_run: { 9 => ["test"] })
+    plan = CiRerun.plan(runs: [run_row(9, attempt: 2)], jobs_by_run: { 9 => ["scan_js"] }, log_for: ->(_id) { RACE_LOG })
 
-    assert_equal :none, plan[:action]
-    assert_includes plan[:reason], "a second red is real"
+    assert_equal :stop, plan[:action]
+    assert_includes plan[:reason], "this red is real"
   end
 
-  def test_one_ineligible_run_refuses_the_whole_rerun
+  def test_one_ineligible_run_stops_the_whole_verdict
     runs = [run_row(1), run_row(2, attempt: 2)]
-    plan = CiRerun.plan(runs: runs, jobs_by_run: { 1 => ["test"], 2 => ["test"] })
+    plan = CiRerun.plan(runs: runs, jobs_by_run: { 1 => ["lint"], 2 => ["lint"] }, log_for: ->(_id) { RACE_LOG })
 
-    assert_equal :none, plan[:action], "the gate re-runs every failed run or none"
+    assert_equal :stop, plan[:action], "the gate re-runs every failed run or none"
+    assert_equal [1, 2], plan[:failures].map { |f| f["run_id"] }, "every failed run is on the record"
   end
 
-  def test_cancelled_scheduled_and_jobless_runs_are_not_rerun
-    assert_equal :none, CiRerun.plan(runs: [run_row(1, conclusion: "cancelled")], jobs_by_run: { 1 => ["test"] })[:action]
-    assert_equal :none, CiRerun.plan(runs: [run_row(1, event: "schedule")], jobs_by_run: { 1 => ["test"] })[:action]
-    deploy = CiRerun.plan(runs: [run_row(1, event: "workflow_dispatch")], jobs_by_run: { 1 => ["deploy"] },
-                          log_for: ->(_id) { "is locked to studio-engine (0.1.0) ... can no longer be found in that source" })
-    assert_equal :none, deploy[:action], "a dispatched deploy run is never re-run, even on the resolution error"
-    assert_equal :rerun, CiRerun.plan(runs: [run_row(1, event: "pull_request")], jobs_by_run: { 1 => ["test"] })[:action]
-    assert_equal :none, CiRerun.plan(runs: [run_row(1)], jobs_by_run: {})[:action]
-    assert_equal :none, CiRerun.plan(runs: [], jobs_by_run: {})[:action]
+  def test_cancelled_scheduled_dispatched_and_jobless_runs_stop
+    race = ->(_id) { RACE_LOG }
+    assert_equal :stop, CiRerun.plan(runs: [run_row(1, conclusion: "cancelled")], jobs_by_run: { 1 => ["lint"] }, log_for: race)[:action]
+    assert_equal :stop, CiRerun.plan(runs: [run_row(1, event: "schedule")], jobs_by_run: { 1 => ["lint"] }, log_for: race)[:action]
+    deploy = CiRerun.plan(runs: [run_row(1, event: "workflow_dispatch")], jobs_by_run: { 1 => ["deploy"] }, log_for: race)
+    assert_equal :stop, deploy[:action], "a dispatched deploy run is never re-run, even on the resolution error"
+    assert_equal :rerun, CiRerun.plan(runs: [run_row(1, event: "pull_request")], jobs_by_run: { 1 => ["lint"] },
+                                      log_for: race)[:action]
+    assert_equal :stop, CiRerun.plan(runs: [run_row(1)], jobs_by_run: {}, log_for: race)[:action]
+    assert_equal :stop, CiRerun.plan(runs: [], jobs_by_run: {})[:action]
   end
 
-  def test_a_pure_test_lane_flake_reads_no_log
-    reads = 0
-    CiRerun.plan(runs: [run_row(1)], jobs_by_run: { 1 => ["test"] }, log_for: ->(_id) { reads += 1 && "" })
+  # --- the record -------------------------------------------------------------
 
-    assert_equal 0, reads, "the log read is only for a non-test job"
+  def test_specs_in_names_minitest_rspec_and_playwright_locations
+    log = "bin/rails test test/models/task_test.rb:12\nrspec ./spec/models/user_spec.rb:7 # User works\n" \
+          "  1) [chromium] › e2e/survey_flow.spec.js:158:5 › survey › submits\nOffenses: app/models/x.rb:3:1\n"
+
+    assert_equal ["test/models/task_test.rb:12", "spec/models/user_spec.rb:7", "e2e/survey_flow.spec.js:158"],
+                 CiRerun.specs_in(log)
+    assert_equal [], CiRerun.specs_in(nil)
+  end
+
+  def test_red_record_names_run_jobs_specs_and_the_next_step
+    failures = [{ "run_id" => 11, "name" => "CI", "attempt" => 1, "jobs" => ["test"],
+                  "specs" => ["test/integration/production_ssl_test.rb:43"] }]
+    line = CiRerun.red_record("rantly", "ccccccc", failures, "CI (run 11): test lane test failed")
+
+    assert_includes line, "CI RED rantly@ccccccc"
+    assert_includes line, "run 11 (CI, attempt 1): jobs test; specs test/integration/production_ssl_test.rb:43"
+    assert_includes line, "fix it forward through a task, re-run the cycle"
+    assert_includes CiRerun.red_record("rantly", "c", [], "none"), "no failed run read"
   end
 
   # --- failed_runs / settled? ---------------------------------------------------
@@ -144,41 +196,6 @@ class CiRerunTest < Minitest::Test
     refute CiRerun.settled?([run_row(1, attempt: 2, status: "in_progress")], [1]), "the re-run is still running"
     refute CiRerun.settled?([], [1]), "an unreadable run is not settled"
     assert CiRerun.settled?([run_row(1, attempt: 2, conclusion: "failure")], [1])
-  end
-
-  # --- the re-lock rule (relock_only:) --------------------------------------
-
-  # [unit] THE RE-LOCK GATE: the commit differs from the QA-green tree in the lock
-  # alone, so a first-attempt red in ANY job (here lint, with no resolution error in
-  # its log) earns the one re-run, and its second red is refused.
-  def test_the_relock_only_gate_reruns_a_failed_job_once_and_refuses_a_second_time
-    first = CiRerun.plan(runs: [run_row(5)], jobs_by_run: { 5 => ["lint"] },
-                         log_for: ->(_id) { "Offenses: 1" }, relock_only: true)
-    assert_equal :rerun, first[:action]
-    assert_equal [5], first[:run_ids]
-    assert_includes first[:reason], "re-lock commit"
-
-    second = CiRerun.plan(runs: [run_row(5, attempt: 2)], jobs_by_run: { 5 => ["lint"] }, relock_only: true)
-    assert_equal :none, second[:action], "a re-lock red after the re-run is real"
-    assert_includes second[:reason], "a second red is real"
-
-    ordinary = CiRerun.plan(runs: [run_row(5)], jobs_by_run: { 5 => ["lint"] }, log_for: ->(_id) { "Offenses: 1" })
-    assert_equal :none, ordinary[:action], "off a re-lock commit, a lint red stays a finding"
-  end
-
-  def test_the_relock_rule_still_never_reruns_a_cancelled_or_dispatched_run
-    assert_equal :none, CiRerun.plan(runs: [run_row(1, conclusion: "cancelled")], jobs_by_run: { 1 => ["x"] },
-                                     relock_only: true)[:action]
-    assert_equal :none, CiRerun.plan(runs: [run_row(2, event: "workflow_dispatch")], jobs_by_run: { 2 => ["x"] },
-                                     relock_only: true)[:action]
-  end
-
-  def test_relock_only_diff_is_gemfile_and_gemfile_lock_alone
-    assert CiRerun.relock_only_diff?(["Gemfile.lock\n"])
-    assert CiRerun.relock_only_diff?(%w[Gemfile Gemfile.lock])
-    refute CiRerun.relock_only_diff?(%w[Gemfile.lock app/models/task.rb]), "code rode along"
-    refute CiRerun.relock_only_diff?([]), "no diff vouches for nothing"
-    refute CiRerun.relock_only_diff?(["engine/Gemfile.lock"])
   end
 
   # --- in_progress? -----------------------------------------------------------

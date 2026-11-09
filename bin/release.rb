@@ -4411,7 +4411,7 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   last_state = nil
   refreshes = CiStatus.gh_auth_summary[:refreshes]
   ci = nil
-  rerun = nil # the run ids this poll re-ran, once one is spent
+  rerun = nil # the run ids of the one infra re-run, once it is spent
   holding_red = false # said once: a red read while its run is still in progress
   loop do
     ci = ci_verdict(repo, sha)
@@ -4422,16 +4422,17 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
         # The re-run's FIRST attempt is still on the SHA until GitHub picks the re-run
         # up, so a red read before it settles is the old verdict, not the second one.
         if ci_rerun_settled?(repo, sha, rerun)
-          say("  ✗ #{repo}: CI is RED again for #{short(sha)} after the automatic re-run — a second red is real")
+          say("  ✗ #{repo}: CI is RED again for #{short(sha)} after the infra re-run — this red is real")
+          ci_red_after_rerun!(repo, sha)
           return ci
         end
         action = :wait
-      elsif (decision = ci_rerun_once!(repo, sha)) == :pending
-        # One job is red but its workflow run is still going: GitHub cannot re-run it
-        # yet, so hold until it completes and decide then (the one re-run is unspent).
+      elsif (decision = ci_red_once!(repo, sha)) == :pending
+        # One job is red but its workflow run is still going: the failing set is not
+        # final and GitHub cannot re-run it, so hold until it completes and decide then.
         unless holding_red
           say("  #{repo}: CI RED for #{short(sha)} while a workflow run on it is still in progress — holding for " \
-              "the run to complete before deciding the one automatic re-run")
+              "the run to complete before reading the failure")
         end
         holding_red = true
         action = :wait
@@ -4457,30 +4458,40 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   end
 end
 
-# --- THE ONE AUTOMATIC RE-RUN (bin/lib/ci_rerun.rb) ---------------------------
+# --- A RED CI VERDICT: STOP AND RECORD, OR THE ONE INFRA RE-RUN (bin/lib/ci_rerun.rb) ---
 #
-# A red verdict whose failed runs are all first-attempt test-lane failures, or a
-# non-test job that died on bundler's gem-resolution error (the CDN race), is re-run
-# ONCE, loudly, and polled to its own conclusion. ALL of the run's jobs are re-run
-# (`gh run rerun <id>`, never `--failed`): the hub's `*_executed_set` guards re-read
-# every shard's receipt, and a partial re-run leaves them reading the old attempt's. Never
-# more than once per repo and SHA in a process; a second red is real. Every read
-# fails CLOSED into "no re-run", so the gate's verdict is never softer than before.
-# Disarmed by RELEASE_CI_RERUN=off, and inert under an injected RELEASE_CI_STATUS
-# (the meta-tests' verdict seam reaches no GitHub run to re-run).
-# The re-run and its log read ride the reads' refreshed token (gh_sh_refreshing),
-# so a sweep that outlived its ambient GitHub token still spends the re-run.
+# Alex McRitchie's deterministic-CI ruling (2026-11-08): a same-SHA red→green is a
+# defect with a cause, never a retry. So a red STOPS the gate, and the gate records
+# the failing run ids, jobs and spec locations on the release's gate record as a
+# `ci_red` SOP, so the next agent starts from the evidence. The gate no longer
+# re-runs a red test lane.
+#
+# ONE named exception, the infra cause: when every failing job of every failed
+# first-attempt commit run shows bundler's gem-resolution error in its own log (the
+# RubyGems CDN race behind the release's own gem publish), the gate re-runs those
+# runs ONCE, every job (`gh run rerun <id>`, never `--failed`, so the hub's
+# `*_executed_set` guards re-read every shard's receipt), records it as a
+# `ci_infra_rerun` SOP with the cause and run ids, and reads the re-run to its own
+# conclusion. A red after it is real: it is recorded and stops the gate.
+#
+# RELEASE_CI_RERUN is still read: `off` disarms the infra re-run as well, so that
+# red stops too; any other value is the default. An injected RELEASE_CI_STATUS (the
+# meta-tests' verdict seam) reaches no GitHub run, so it reads and records nothing.
+# Every read fails CLOSED into "stop", so the gate is never softer than before.
+# The re-run and the log read ride the reads' refreshed token (gh_sh_refreshing).
 def ci_rerun_disarmed?
-  ENV["RELEASE_CI_RERUN"].to_s.strip.downcase == "off" || !ENV["RELEASE_CI_STATUS"].to_s.empty?
+  ENV["RELEASE_CI_RERUN"].to_s.strip.downcase == "off"
 end
 
-# Spend the one re-run when the rule allows it. Returns the re-run ids, nil, or
-# :pending — a commit-triggered run on the SHA is still unfinished, so nothing can
-# be re-run or judged yet and the one re-run is NOT spent (the caller holds).
-def ci_rerun_once!(repo, sha)
+def ci_verdict_injected? = !ENV["RELEASE_CI_STATUS"].to_s.empty?
+
+# Read a red once per repo and SHA. Returns the infra re-run's run ids, nil (the red
+# stops; it is recorded), or :pending (a commit-triggered run on the SHA is still
+# unfinished, so nothing is decided yet and the caller holds).
+def ci_red_once!(repo, sha)
   @ci_reruns ||= {}
   key = [repo, sha.to_s]
-  return nil if @ci_reruns.key?(key) || ci_rerun_disarmed? || DRY
+  return nil if @ci_reruns.key?(key) || ci_verdict_injected? || DRY
 
   nwo = repo_name_with_owner(repo)
   if nwo.empty?
@@ -4492,46 +4503,48 @@ def ci_rerun_once!(repo, sha)
   return :pending if CiRerun.in_progress?(all_runs, sha)
 
   @ci_reruns[key] = nil
-  runs = CiRerun.failed_runs(all_runs, sha)
-  plan = CiRerun.plan(runs: runs, jobs_by_run: runs.to_h { |r| [r["id"], ci_failed_job_names(nwo, r["id"])] },
-                      log_for: ->(id) { ci_failed_log(nwo, id) }, relock_only: ci_rerun_relock_shas.key?(key))
-  if plan[:action] != :rerun
-    say("  #{repo}: CI RED for #{short(sha)} — no automatic re-run (#{plan[:reason]})")
-    return nil
+  plan = ci_red_plan(nwo, all_runs, sha)
+  if plan[:action] == :rerun && ci_rerun_disarmed?
+    plan = plan.merge(action: :stop, reason: "#{plan[:reason]}; the infra re-run is disarmed by RELEASE_CI_RERUN=off")
   end
+  return ci_red_stop!(repo, sha, plan) unless plan[:action] == :rerun
 
-  say("  ↻↻ #{repo}: CI RED for #{short(sha)} — AUTOMATIC RE-RUN, the one this gate allows: #{plan[:reason]}. " \
+  say("  ↻↻ #{repo}: CI RED for #{short(sha)} — INFRA RE-RUN (#{CiRerun::INFRA_CAUSE}): #{plan[:reason]}. " \
       "Re-running every job of run#{plan[:run_ids].size == 1 ? '' : 's'} #{plan[:run_ids].join(', ')} " \
-      "(`gh run rerun`, all jobs, so the executed-set guards re-read fresh receipts); a second red is real.")
+      "(`gh run rerun`, all jobs, so the executed-set guards re-read fresh receipts); a red after it is real.")
   plan[:run_ids].each do |id|
     out, ok = gh_sh_refreshing("gh", "run", "rerun", id.to_s, "-R", nwo)
     next if ok
 
     say("  ✗ #{repo}: `gh run rerun #{id}` was refused (#{out.to_s.strip.lines.last.to_s.strip}) — " \
         "reading the red as it stands")
-    return nil
+    return ci_red_stop!(repo, sha, plan.merge(reason: "the infra re-run of run #{id} was refused"))
   end
-  gate_sop("ci_rerun", "↻ AUTOMATIC RE-RUN of #{repo}@#{short(sha)} run(s) #{plan[:run_ids].join(', ')}: #{plan[:reason]}", true)
+  gate_sop("ci_infra_rerun", "↻ INFRA RE-RUN of #{repo}@#{short(sha)} run(s) #{plan[:run_ids].join(', ')} — cause: " \
+                             "infra, #{CiRerun::INFRA_CAUSE}: #{plan[:reason]}", true)
   @ci_reruns[key] = plan[:run_ids]
 end
 
-# { [repo, sha] => true } for each re-lock commit whose diff past the QA-green tree
-# was MEASURED to touch Gemfile and Gemfile.lock alone (test_gate marks it). Its
-# gate re-runs a first-attempt red in any job (CiRerun's re-lock rule).
-def ci_rerun_relock_shas
-  @ci_rerun_relock_shas ||= {}
+# The decision for the SHA's failed runs as GitHub reports them now.
+def ci_red_plan(nwo, all_runs, sha)
+  runs = CiRerun.failed_runs(all_runs, sha)
+  CiRerun.plan(runs: runs, jobs_by_run: runs.to_h { |r| [r["id"], ci_failed_job_names(nwo, r["id"])] },
+               log_for: ->(id) { ci_failed_log(nwo, id) })
 end
 
-# Mark +sha+ for the re-lock rule when `git diff --name-only from..sha` names only
-# Gemfile and Gemfile.lock. Any read fault leaves it unmarked: the ordinary rule.
-def mark_relock_only!(repo, relock, sha)
-  from = relock.is_a?(Hash) ? relock["from"].to_s : ""
-  return false if from.empty? || sha.to_s.empty?
+# A red that stops the gate: say it and record it (`ci_red`, result fail). Returns nil.
+def ci_red_stop!(repo, sha, plan)
+  record = CiRerun.red_record(repo, short(sha), plan[:failures], plan[:reason])
+  say("  #{record}")
+  gate_sop("ci_red", record, false)
+  nil
+end
 
-  names, ok = git_capture("-C", repo_path(repo), "diff", "--name-only", from, sha.to_s)
-  return false unless ok && CiRerun.relock_only_diff?(names.lines)
-
-  ci_rerun_relock_shas[[repo, sha.to_s]] = true
+# The infra re-run came back red: read the second attempt's failures and record them.
+def ci_red_after_rerun!(repo, sha)
+  nwo = repo_name_with_owner(repo)
+  plan = nwo.empty? ? { failures: [] } : ci_red_plan(nwo, ci_workflow_runs(nwo, sha), sha)
+  ci_red_stop!(repo, sha, plan.merge(reason: "red again after the infra re-run"))
 end
 
 # Has every re-run been picked up and concluded? A failed read is "not yet".
@@ -7546,7 +7559,6 @@ def test_gate(repo, frozen_sha:, relock: nil)
   # for the workflow-sized budget (turf's suite outlasts the flat 1200 s window).
   # The frozen SHA is normally credited from the accepted head and keeps the flat one.
   budget = relock ? ci_poll_budget_for(repo, frozen_sha) : ci_poll_timeout
-  mark_relock_only!(repo, relock, frozen_sha) if relock
   verdict = resolve_release_ci_verdict(repo, repo_path(repo), frozen_sha, budget: budget)
   kind = Release::ShipSequence.ship_gate_kind(verdict[:ci], credited: verdict[:credited],
                                                             diverged: verdict[:diverged])
@@ -10232,12 +10244,12 @@ def relock_gate_recovery(repo, relock)
     "#{Array(relock['pins']).join(', ')}). ALREADY DONE and not undone: the final gem version is published and " \
     "tagged, the gem repo's main is advanced, and origin/#{RELEASE_BRANCH} in #{repo} carries the re-lock. NOT " \
     "done: no app's main has moved and NOTHING is deployed. The commit differs from the tree QA passed only in " \
-    "Gemfile and Gemfile.lock, and the final gem was verified to carry the candidate's contents, so this gate " \
-    "waited for the run to complete and re-ran a first-attempt red ONCE by itself (its lines above say whether " \
-    "it did, and why not if it did not). If it did not, re-run the CI run for that commit (`gh run rerun <id>`, " \
-    "all jobs), then `#{RELEASE_SELF_CMD} ship`: the gem skips as live, the re-lock is reused, and this gate " \
-    "reads again. A red after a re-run is not re-run again. If the red reproduces it is a real " \
-    "defect: fix it through a task on `#{ACCEPTED_BRANCH}` and re-run `#{RELEASE_SELF_CMD} prepare` (the final " \
+    "Gemfile and Gemfile.lock, and the final gem was verified to carry the candidate's contents. This gate " \
+    "waited for the run to complete; it re-runs a red by itself ONCE only when every failing job shows bundler's " \
+    "gem-resolution error (the RubyGems CDN race, recorded as `ci_infra_rerun`), and its lines above say whether it " \
+    "did. Any other red is a defect with a cause, recorded as `ci_red` with its run id, jobs and specs: do NOT " \
+    "re-run it by hand. Find the cause (infra, harness, test or product), fix it forward through a task on " \
+    "`#{ACCEPTED_BRANCH}`, and re-run `#{RELEASE_SELF_CMD} prepare` (the final " \
     "stays published; consumers lock it directly and QA runs again)."
 end
 
