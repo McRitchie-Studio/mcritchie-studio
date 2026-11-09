@@ -103,7 +103,8 @@ to RubyGems, prepare reads two verdicts. The gem's own tip must be green
 (`gem_ci_failure`: Engine CI, plus Consumer CI, which tests each consumer's `release`
 against that tip). Each swept app's own CI must be green on its promoted
 `origin/release`, before the lock bump (`pre_publish_gate`). A red in either stops
-prepare with nothing published, so no number is burned. The app read is normally a
+prepare with nothing published, so no number is burned, and its `ci_red` line is
+recorded on a failed `g3_candidate` attempt on the release. The app read is normally a
 credit of the green `accepted` head, not a fresh CI run. The pre-QA gate still runs
 after the bump, on the SHA QA deploys. The order cannot be reversed further: the
 post-bump SHA locks the new version, so its CI cannot resolve until the version is

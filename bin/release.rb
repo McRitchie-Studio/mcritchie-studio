@@ -4800,8 +4800,9 @@ end
 #
 # CHEAP BY CONSTRUCTION. That tree is the promoted `accepted` head, whose green the
 # G3 dedupe credits without a fresh run (resolve_release_ci_verdict), so this costs a
-# read, not a CI cycle, on a normal sweep. Records nothing: the pre-QA gate after the
-# bump is still G3, still reads the post-bump SHA QA deploys, and still records it.
+# read, not a CI cycle, on a normal sweep. A green records nothing: the pre-QA gate after
+# the bump is still G3 and records the post-bump SHA. A red is held as `ci_red`
+# (ci_gate_sop) and recorded on a failed g3_candidate attempt when prepare aborts.
 # A red THERE now means the lock bump itself or a defect with a cause, and a re-run at the same gem
 # tip reuses the live final (publish_gems_for_qa's reuse path), so nothing burns.
 def pre_publish_gate(app_groups, gem_plan)
