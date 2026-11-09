@@ -182,6 +182,76 @@ class AuthRefreshTest < Minitest::Test
     assert_empty op_calls, "the sibling's fresh copy is used; no read of this process's own"
   end
 
+  # THE LOCK AROUND FORGET AND READ (Carl's note on secret-refresh-on-auth-failure).
+  # While another process holds the soul's lock, a refresh neither forgets the
+  # copy nor reads 1Password. When the holder writes no fresh copy within the
+  # wait, the refresh fails (RefreshFailed upstream) and the copy is still there.
+  def hold_soul_lock(soul, e)
+    dir = SoulSecrets.ensure_soul_dir!(soul, e)
+    lock = File.open(File.join(dir, SoulSecrets::WARM_LOCK), File::RDWR | File::CREAT, 0o600)
+    assert lock.flock(File::LOCK_EX | File::LOCK_NB), "the test takes the lock first"
+    lock
+  end
+
+  def test_unit_a_refresh_waits_for_the_souls_lock_and_reads_nothing_under_it
+    e = env
+    SoulSecrets.warm(SoulSecrets.manifest("steffon", cfg(e)), env: e)
+    File.delete(@op_log)
+    entry = SoulSecrets.manifest("steffon", cfg(e))["items"].first
+    lock = hold_soul_lock("steffon", e)
+
+    error = assert_raises(SoulSecrets::Unavailable) do
+      SoulSecrets.refresh_locked("steffon", "heroku.studio.agents", entry, cfg: cfg(e), env: e,
+                                 refused: { "credential" => OLD_KEY }, wait: 0.3)
+    end
+    assert_match(/held steffon's secret lock/, error.message)
+    assert_empty op_calls, "no 1Password read while another process holds the lock"
+    refute_nil SoulSecrets.cached("steffon", entry, env: e), "the copy was not forgotten outside the lock"
+    refute_leaks(error.message)
+  ensure
+    lock&.close
+  end
+
+  def test_unit_a_refresh_that_waited_takes_the_holders_fresh_copy
+    e = env
+    SoulSecrets.warm(SoulSecrets.manifest("steffon", cfg(e)), env: e)
+    File.delete(@op_log)
+    entry = SoulSecrets.manifest("steffon", cfg(e))["items"].first
+    lock = hold_soul_lock("steffon", e)
+    # The holder (a sibling's refresh) has written the fresh copy.
+    SoulSecrets.store("steffon", entry, { "credential" => NEW_KEY }, env: e)
+
+    fields = SoulSecrets.refresh_locked("steffon", "heroku.studio.agents", entry, cfg: cfg(e), env: e,
+                                        refused: { "credential" => OLD_KEY }, wait: 0.3)
+    assert_equal({ "credential" => NEW_KEY }, fields)
+    assert_empty op_calls
+  ensure
+    lock&.close
+  end
+
+  def test_unit_two_racing_refreshes_spend_one_read
+    e = env
+    SoulSecrets.warm(SoulSecrets.manifest("steffon", cfg(e)), env: e)
+    serve(NEW_KEY)
+    File.delete(@op_log)
+    entry = SoulSecrets.manifest("steffon", cfg(e))["items"].first
+    refused = { "credential" => OLD_KEY }
+
+    threads = Array.new(2) do
+      Thread.new { SoulSecrets.refresh_locked("steffon", "heroku.studio.agents", entry, cfg: cfg(e), env: e, refused: refused) }
+    end
+    assert_equal [{ "credential" => NEW_KEY }] * 2, threads.map(&:value)
+    assert_equal 1, op_calls.size, "the second refresh found the first one's copy"
+  end
+
+  # A reader script reads its item from the soul whose set lists it as a reader.
+  def test_unit_a_declared_reader_names_the_owning_soul
+    e = env
+    assert_equal "steffon", SoulSecrets.reader_owner(cfg(e), vault(e), "heroku.studio.agents", "bin/lib/heroku_token.rb")
+    assert_nil SoulSecrets.reader_owner(cfg(e), vault(e), "heroku.studio.agents", "bin/something-else")
+    assert_nil SoulSecrets.reader_owner(cfg(e), "another-vault", "heroku.studio.agents", "bin/lib/heroku_token.rb")
+  end
+
   def test_unit_an_item_no_set_names_is_not_refreshed_here
     e = env
     assert_raises(SoulSecrets::Unavailable) do
