@@ -299,8 +299,8 @@ module SoulSecrets
   def fetch(manifest, entry, env: ENV)
     child_env, = op_env(manifest, env)
     via = "soul:#{manifest['soul']}:#{entry['vault']}/#{entry['item']}"
-    argv = [op_bin(env), "item", "get", entry["item"], "--vault", entry["vault"], "--format", "json"]
-    out = OpMeter.popen(child_env, argv, via: via, env: bounded_env(env), announce: false, err: File::NULL)
+    out = OpMeter.popen(child_env, [op_bin(env), "item", "get", entry["item"], "--vault", entry["vault"], "--format", "json"],
+                        via: via, env: bounded_env(env), announce: false, err: File::NULL)
     raise Unavailable, "1Password is not answering (#{entry['item']})" if OpMeter.last_hung?
     raise Unavailable, "op could not read #{entry['vault']}/#{entry['item']}" unless $?.success?
 

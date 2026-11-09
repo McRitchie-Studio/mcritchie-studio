@@ -15,7 +15,8 @@
 # `op item get` with --format json, for an item the soul's set names: served from
 # the cache (one bounded 1Password read on a miss, written back). Another soul's
 # item: refused, exit 1. An item no set names, and every other `op` command: the
-# real op, unchanged. The value goes to stdout only, as op itself would print it.
+# real op, through the metered, bounded wrapper. The value goes to stdout only,
+# as op itself would print it.
 set -uo pipefail
 
 REAL="${MCR_OP_SHIM_REAL:-/opt/homebrew/bin/op}"
@@ -48,4 +49,12 @@ if [ -n "$SOUL" ] && [ "${1:-}" = "item" ] && [ "${2:-}" = "get" ] && [ -n "${3:
   fi
 fi
 
-exec "$REAL" ${ORIG[@]+"${ORIG[@]}"}
+# The pass-through is metered and bounded like every other `op` call
+# (bin/lib/op-meter.sh): a read the cache could not answer still cannot hang the
+# driver for hours. Without the meter (a relocated tree), the real op runs as is.
+OP_METER_VIA="op-cache-shim:${SOUL:-none}"
+[ -r "$SHIM_DIR/../../lib/op-meter.sh" ] && . "$SHIM_DIR/../../lib/op-meter.sh"
+command -v op_metered >/dev/null 2>&1 || exec "$REAL" ${ORIG[@]+"${ORIG[@]}"}
+rc=0
+op_metered "$REAL" ${ORIG[@]+"${ORIG[@]}"} || rc=$?
+exit "$rc"
