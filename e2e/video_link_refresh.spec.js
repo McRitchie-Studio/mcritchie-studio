@@ -43,7 +43,8 @@ const LETTERED_DEMO = "/videos/test-artist-b-lettered-demo/alt_videos/1";
 
 // The stand-in bucket and the passed-through links endpoint for one page.
 // lapse(): time passes; every link signed so far stops opening.
-// hold() / release(): keep the next links answer back, then let it go.
+// hold() / release(): keep the next links answer back, then let it go. The
+// answer is the server's at the moment it was asked.
 const stage = async (page) => {
   const state = { round: 0, lapsed: new Set(), asked: 0, held: null, open: null, down: false };
   const roundOf = (url) => Number((url.match(/[?&]fresh=(\d+)/) || [])[1] || 0);
@@ -59,9 +60,13 @@ const stage = async (page) => {
   });
   await page.route("**/alt_videos/1/links", async (route) => {
     state.asked += 1;
+    // The server answers as the request stands when it is sent (signed in or
+    // not), so it is asked at once and only its answer is held: route.fetch()
+    // carries the context's cookies as they are when it runs, and a fetch made
+    // on release would answer for a session restored meanwhile.
+    const response = state.down ? null : await route.fetch();
     if (state.held) await state.held;
     if (state.down) return route.fulfill({ status: 503, contentType: "text/plain", body: "" });
-    const response = await route.fetch();
     if (!response.ok()) return route.fulfill({ response });
     const body = await response.json();
     state.round += 1;
