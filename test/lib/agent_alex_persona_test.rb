@@ -47,6 +47,8 @@ class AgentAlexPersonaTest < ActiveSupport::TestCase
   test "the page carries the philosophy and published criteria the rule opens" do
     assert_includes page, "Walker Deibel's *Buy Then Build*"
     assert_includes page, "$1M to $5M in revenue, 10+ years in business"
+    assert_includes page, "mcritchie.industries/looking-to-sell", "selling owners go to MI (task ms-acquisition-clean-split)"
+    refute_match(/book a call (on|at) mcritchie\.studio/i, page)
   end
 
   test "the page names no private contact: no resume phone, no personal email, no studio mailbox" do
