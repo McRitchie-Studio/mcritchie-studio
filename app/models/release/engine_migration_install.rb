@@ -77,10 +77,12 @@ class Release
     # Is this `db/schema.rb` diff one the sweep may commit unreviewed?
     #
     # Installing a migration should ADD a table and move the version stamp.
-    # Anything else — a dropped table, a changed column, a rewritten index — means
-    # the consumer's committed schema was already out of step with its own
-    # migrations, and the sweep would be smuggling that drift into a release
-    # commit labelled "bump gem for QA". Fail closed and let a person look.
+    # Anything else — a dropped table, a changed column, a rewritten index — is
+    # either drift (the consumer's committed schema was out of step with its own
+    # migrations) or an engine migration that altered an existing table. Either
+    # way the sweep would smuggle it into a release commit labelled "bump gem for
+    # QA". Fail closed and let a person look; dump_stages and schema_refusal say
+    # which of the two it was.
     #
     # The version line is the one deletion that is always expected, since the
     # dumper rewrites `define(version: ...)` in place.

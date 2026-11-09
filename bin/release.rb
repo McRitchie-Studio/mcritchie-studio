@@ -8730,7 +8730,7 @@ def install_engine_migrations!(workspace, repo, gem_names)
   installable = gem_names.select { |gem_name| workspace_engine_task(workspace, repo, gem_name) }
   return if installable.empty?
 
-  before, = git_capture("-C", workspace, "status", "--porcelain", "--", "db/migrate")
+  before, = git_capture("-C", workspace, "status", "--porcelain", "--untracked-files=all", "--", "db/migrate")
 
   installable.each do |gem_name|
     task = Release::EngineMigrationInstall.install_task(gem_name)
@@ -8739,7 +8739,7 @@ def install_engine_migrations!(workspace, repo, gem_names)
            "#{gem_name}'s migrations, and shipping without them reddens its suite after the gem is published") unless ok
   end
 
-  after, = git_capture("-C", workspace, "status", "--porcelain", "--", "db/migrate")
+  after, = git_capture("-C", workspace, "status", "--porcelain", "--untracked-files=all", "--", "db/migrate")
   if after.to_s == before.to_s
     say("  #{repo}: no new #{installable.join(', ')} migrations to install")
     return
