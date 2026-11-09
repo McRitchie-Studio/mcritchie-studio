@@ -11,11 +11,10 @@ module WebsitesHelper
   #
   #   carousel_optional_locals(autoplay: 6, loop: true) # => {} on studio-engine 0.132
   def carousel_optional_locals(**wanted)
-    source = lookup_context.find_template("studio/carousel", [], true).source
-    declared = source[STRICT_LOCALS, 1]
+    declared = carousel_strict_locals
     return wanted if declared.nil? # no strict locals: the partial takes any local
 
-    wanted.select { |name, _| declared.match?(/(?:\A|[\s,(])#{Regexp.escape(name.to_s)}:/) }
+    wanted.select { |name, _| carousel_declares?(declared, name) }
   end
 
   # The style the /websites Portfolio row asks studio/_carousel for: :cascade
@@ -25,8 +24,20 @@ module WebsitesHelper
   # cascade style (studio-engine task carousel-cascade-style) and only a cascade
   # takes it, so an engine that declares it accepts style: :cascade. An engine
   # before it raises on :cascade, so the row keeps the spotlight there.
+  # A partial with no strict locals line says nothing either way, so it keeps the
+  # spotlight: asking an engine for a style it lacks raises.
   def portfolio_carousel_style
-    carousel_optional_locals(visible: 5).key?(:visible) ? :cascade : :spotlight
+    declared = carousel_strict_locals
+    declared && carousel_declares?(declared, :visible) ? :cascade : :spotlight
+  end
+
+  # The installed studio/_carousel's strict locals line, or nil without one.
+  def carousel_strict_locals
+    lookup_context.find_template("studio/carousel", [], true).source[STRICT_LOCALS, 1]
+  end
+
+  def carousel_declares?(declared, name)
+    declared.match?(/(?:\A|[\s,(])#{Regexp.escape(name.to_s)}:/)
   end
 
   # The inline custom properties a portfolio card paints its shade and text

@@ -67,6 +67,12 @@ class WebsitesHelperTest < ActionView::TestCase
     end
   end
 
+  test "a partial without strict locals keeps the spotlight: it may not know the cascade" do
+    with_carousel_source("<section><%= label %></section>") do
+      assert_equal :spotlight, portfolio_carousel_style
+    end
+  end
+
   test "the installed engine's carousel renders the style the helper picks, looping" do
     style = portfolio_carousel_style
     html = render(layout: "studio/carousel", locals: { label: "Live apps", items: [ 1, 2, 3 ], style: style, loop: true }) { |item| "slide #{item}" }
