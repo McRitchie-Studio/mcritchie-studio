@@ -13,6 +13,14 @@ module Ci
   # or archived and then came back opens a fresh card (`-2`, `-3`), because the fix that
   # card shipped did not hold.
   #
+  # ONE CARD ACROSS REPOS FOR AN OUTSIDE CAUSE. An infra cause (a GitHub 504 on a
+  # toolchain download, an apt mirror, an image-pull quota) is not in any repo, so its
+  # slug carries no repo (`ci-cause-infra-<key>`, CiCauseDetector.card_slug): one event
+  # that reds six repos' jobs is one card with six-plus occurrences, each naming its
+  # repo, and the card's repositories grow as they arrive. A card, not a ledger: the
+  # ruling wants every red's cause on record where a builder can take it, and the
+  # board already folds, counts and reopens a cause that comes back after a fix.
+  #
   # The class (infra / harness / test / product) is CiCauseDetector's first read of the
   # log; the builder who takes the card confirms it. Task: deterministic-ci.
   class CauseCard
@@ -32,11 +40,23 @@ module Ci
       @occurrence = occurrence.merge("evidence" => Array(cause[:evidence]).first(4), "seen_at" => Time.current.iso8601)
     end
 
+    # Two jobs can file one new outside card at once (six repos red together). The
+    # loser's create hits the unique slug (the index, or the validation when the winner
+    # committed first), so it files again and folds into the winner's card.
     def file!
-      Task.transaction do
-        base = CiCauseDetector.slug(@repo, @cause[:key])
-        open = open_card(base)
-        open ? fold!(open) : create!(next_free_slug(base))
+      tries = 0
+      begin
+        Task.transaction(requires_new: true) do
+          base = CiCauseDetector.card_slug(@repo, @cause)
+          open = open_card(base)
+          open ? fold!(open) : create!(next_free_slug(base))
+        end
+      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+        raise if e.is_a?(ActiveRecord::RecordInvalid) && !e.record.errors.of_kind?(:slug, :taken)
+
+        tries += 1
+        retry if tries < 3
+        raise
       end
     end
 
@@ -63,24 +83,37 @@ module Ci
       list << @occurrence
       cause["occurrences"] = list.last(MAX_OCCURRENCES)
       cause["count"] = cause["count"].to_i + 1
+      add_repo!(meta)
       task.update!(metadata: meta)
       task
     end
 
+    def add_repo!(meta)
+      cause = meta["ci_cause"]
+      cause["repos"] = (Array(cause["repos"].presence || cause["repo"]) | [@repo])
+      devops = meta["devops"] ||= {}
+      devops["repositories"] = Array(devops["repositories"]) | [short_repo]
+    end
+
+    def short_repo = @repo.split("/").last
+
+    def outside? = CiCauseDetector.outside?(@cause)
+
     def create!(slug)
       klass = @cause[:klass].to_s
       key = @cause[:key].to_s
+      where = outside? ? "Outside every repo, first seen in #{@repo}" : @repo
       Task.create!(
         slug: slug,
         title: CiCauseDetector.title(klass, key),
         stage: "designed",
         priority: 1,
-        description: "#{@repo}: #{@cause[:reason]}. Red at #{@occurrence['sha'].to_s[0, 8]} " \
+        description: "#{where}: #{@cause[:reason]}. Red at #{@occurrence['sha'].to_s[0, 8]} " \
                      "(#{@occurrence['run_url']}), green at the same SHA (#{@occurrence['green_run_url']}).",
         metadata: {
           "devops" => {
             "kind" => "bug",
-            "repositories" => [@repo.split("/").last],
+            "repositories" => [short_repo],
             "risk_tags" => ["ci"],
             "acceptance" => ["#{File.basename(key)}'s cause is named and fixed at its source",
                              "the fix adds no retry and no fixed sleep",
@@ -90,7 +123,8 @@ module Ci
                                "Key: #{key}.\nEvidence:\n#{Array(@cause[:evidence]).map { |l| "  #{l}" }.join("\n")}\n\n" \
                                "Every occurrence is under metadata.ci_cause.occurrences. Filed by CiCauseCardJob."
           },
-          "ci_cause" => { "class" => klass, "key" => key, "repo" => @repo, "count" => 1, "occurrences" => [@occurrence] }
+          "ci_cause" => { "class" => klass, "key" => key, "repo" => @repo, "repos" => [@repo], "outside" => outside?,
+                         "count" => 1, "occurrences" => [@occurrence] }
         }
       )
     end

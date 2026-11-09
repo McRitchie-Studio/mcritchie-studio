@@ -1,0 +1,12 @@
+2026-11-09T08:33:07.1252999Z E2E EXECUTED SET: RED
+2026-11-09T08:33:07.1260903Z   425 executed · 4 skipped (4 allowed) · 2 shard report(s) · contract: 610 executed (631 committed − 17 excluded − 4 allowed)
+2026-11-09T08:33:07.1261979Z 
+2026-11-09T08:33:07.1263988Z   ✗ expected one report from each of 3 shard(s) — [1, 2, 3] — but got [1, 2]. A shard whose report never arrived is a shard whose specs never ran, and its ~203 specs are silently uncovered. This is the DROPPED-SHARD vector: delete one entry from the ci.yml `shard:` matrix and every remaining job stays green over a smaller suite.
+2026-11-09T08:33:07.1266300Z 
+2026-11-09T08:33:07.1266907Z   ✗ the lane EXECUTED 425 spec(s); config/e2e_lane.yml pins it at 610 (185 FEWER than the contract).
+2026-11-09T08:33:07.1276037Z If you legitimately ADDED specs: raise `total_specs` AND `executed` in config/e2e_lane.yml in the same commit, and confirm with `npx playwright test --list`.
+2026-11-09T08:33:07.1276978Z 
+2026-11-09T08:33:07.1278692Z   The `playwright` check is GREEN over a set that is not the set this repo agreed to run. Reconcile it deliberately — do not just move the number in config/e2e_lane.yml to match what happened, which is the self-declaration disease this whole lane exists to cure.
+2026-11-09T08:33:07.1305680Z ##[error]Process completed with exit code 1.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes

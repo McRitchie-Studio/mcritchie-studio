@@ -1,0 +1,16 @@
+2026-11-09T07:48:02.5690690Z ##[group]Downloading Ruby
+2026-11-09T07:48:02.5691270Z https://github.com/ruby/ruby-builder/releases/download/ruby-3.3.11/ruby-3.3.11-ubuntu-24.04-x64.tar.gz
+2026-11-09T07:48:13.7646623Z Unexpected HTTP response: 504
+2026-11-09T07:48:13.7646903Z Waiting 18 seconds before trying again
+2026-11-09T07:48:42.9413932Z Unexpected HTTP response: 504
+2026-11-09T07:48:42.9414144Z Waiting 14 seconds before trying again
+2026-11-09T07:49:08.1191778Z Took  65.55 seconds
+2026-11-09T07:49:08.1199249Z ##[endgroup]
+2026-11-09T07:49:08.1241679Z ##[error]Error: Unexpected HTTP response: 504
+    at /__w/_actions/ruby/setup-ruby/v1/dist/index.js:12570:25
+    at Generator.next (<anonymous>)
+    at fulfilled (/__w/_actions/ruby/setup-ruby/v1/dist/index.js:12471:58)
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+2026-11-09T07:49:08.3554694Z ##[error]No files were found with the provided path: e2e-report-shard-3.json. No artifacts will be uploaded.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes

@@ -1,0 +1,33 @@
+2026-11-09T05:47:21.2074729Z   1) [chromium] › e2e/sample_identity.spec.js:22:1 › typing a title repaints the card, and a blank one shows the drafted default 
+2026-11-09T05:47:21.2075131Z 
+2026-11-09T05:47:21.2075317Z     Error: expect(locator).toHaveText(expected) failed
+2026-11-09T05:47:21.2075563Z 
+2026-11-09T05:47:21.2075738Z     Locator:  locator('[data-link-preview-card-title]')
+2026-11-09T05:47:21.2076093Z     Expected: "A title typed just now"
+2026-11-09T05:47:21.2076384Z     Received: "Saved title"
+2026-11-09T05:47:21.2076621Z     Timeout:  5000ms
+2026-11-09T05:47:21.2076749Z 
+2026-11-09T05:47:21.2076828Z     Call log:
+2026-11-09T05:47:21.2077084Z       - Expect "toHaveText" with timeout 5000ms
+2026-11-09T05:47:21.2077610Z       - waiting for locator('[data-link-preview-card-title]')
+2026-11-09T05:47:21.2078354Z         14 × locator resolved to <div data-link-preview-card-title="" class="lp-card-title text-heading">Saved title</div>
+2026-11-09T05:47:21.2078886Z            - unexpected value "Saved title"
+2026-11-09T05:47:21.2079069Z 
+2026-11-09T05:47:21.2079074Z 
+2026-11-09T05:47:21.2079157Z       28 |
+2026-11-09T05:47:21.2079533Z       29 |   await page.fill('[data-link-preview-input="title"]', "A title typed just now");
+2026-11-09T05:47:21.2080033Z     > 30 |   await expect(title).toHaveText("A title typed just now");
+2026-11-09T05:47:21.2080373Z          |                       ^
+2026-11-09T05:47:21.2080599Z       31 |
+2026-11-09T05:47:21.2080938Z       32 |   // Blank means "use the draft", so the card must say what a blank save would
+2026-11-09T05:47:21.2081438Z       33 |   // send — the page's own fallback, not an empty line.
+2026-11-09T05:47:21.2081801Z         at /__w/studio-engine/studio-engine/e2e/sample_identity.spec.js:30:23
+2026-11-09T05:47:21.2081970Z 
+2026-11-09T05:47:21.2082321Z     Error Context: test-results/sample_identity-typing-a-tit-38680-e-shows-the-drafted-default-chromium/error-context.md
+2026-11-09T05:47:21.2082594Z 
+2026-11-09T05:47:21.2082651Z   1 failed
+2026-11-09T05:47:21.2083083Z     [chromium] › e2e/sample_identity.spec.js:22:1 › typing a title repaints the card, and a blank one shows the drafted default 
+2026-11-09T05:47:21.2083396Z   226 passed (5.3m)
+2026-11-09T05:47:21.2425944Z ##[error]Process completed with exit code 1.
+2026-11-09T00:00:00.0000000Z Post job cleanup.
+2026-11-09T00:00:00.0000001Z Cleaning up orphan processes

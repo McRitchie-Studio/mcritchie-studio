@@ -103,13 +103,134 @@ class CiCauseDetectorTest < Minitest::Test
     assert_equal ["harness", "web-server-boot"], [c[:klass], c[:key]]
   end
 
-  def test_an_unexplained_red_job_is_harness_keyed_by_job
-    c = only(CiCauseDetector.causes(job_name: "ci / static", log: "2026-11-02T08:00:00Z Process completed with exit code 1.\n"))
+  UNEXPLAINED = <<~LOG
+    2026-11-02T08:00:00.0000000Z ##[group]Run bin/brakeman-ci
+    2026-11-02T08:00:01.0000000Z brakeman: 2 new warnings
+    2026-11-02T08:00:01.0000001Z ##[error]Process completed with exit code 1.
+    2026-11-02T08:00:02.0000000Z Post job cleanup.
+    2026-11-02T08:00:02.0000001Z Cleaning up orphan processes
+  LOG
+
+  def test_an_unexplained_red_job_is_harness_keyed_by_job_with_its_first_error_line
+    c = only(CiCauseDetector.causes(job_name: "ci / static", log: UNEXPLAINED))
     assert_equal ["harness", "job:ci / static"], [c[:klass], c[:key]]
+    assert_equal ["brakeman: 2 new warnings", "##[error]Process completed with exit code 1."], c[:evidence]
+    refute(c[:evidence].any? { |l| l.include?("cleanup") || l.include?("orphan") })
   end
 
-  def test_an_executed_set_echo_is_no_cause
-    assert_empty CiCauseDetector.causes(job_name: "ci / e2e_executed_set", log: PLAYWRIGHT)
+  def test_a_red_job_with_no_error_line_yields_no_cause
+    log = "2026-11-02T08:00:00Z Post job cleanup.\n2026-11-02T08:00:01Z Cleaning up orphan processes\n"
+    assert_empty CiCauseDetector.causes(job_name: "ci / static", log: log)
+    assert_equal [{ job: "ci / static", cause: nil, follows: nil }],
+                 CiCauseDetector.attempt_causes([{ name: "ci / static", log: log }])
+  end
+
+  # ── 2026-11-09: one GitHub 504 on ruby/setup-ruby's download, 15 cards. Replayed
+  # from the real job logs, trimmed (test/fixtures/files/ci_cause_2026_11_09).
+  REPLAY = File.expand_path("../fixtures/files/ci_cause_2026_11_09", __dir__)
+  DOWNLOAD_504 = {
+    "turf-monster" => { "playwright (3)" => "playwright-3", "static" => "static-a" },
+    "mcritchie-studio" => { "ci / rails (3)" => "ci-rails-3", "ci / static" => "ci-static",
+                            "ci / playwright (3)" => "ci-playwright-3", "ci / rails plan" => "ci-rails-plan" },
+    "cyvasse" => { "ci / system" => "ci-system" },
+    "voicebox" => { "scan-js" => "scan-js" },
+    "studio-engine" => { "mcritchie-industries suite vs this engine" => "industries-suite",
+                         "turf-monster suite vs this engine" => "turf-monster-suite",
+                         "moms_app suite vs this engine" => "moms-app-suite",
+                         "mcritchie_studio suite vs this engine(shard 4/4)" => "mcritchie-studio-suite-shard-4",
+                         "browser lane (playwright) (2)" => "browser-lane-playwright-2" }
+  }.freeze
+
+  def replay(repo, file) = File.read(File.join(REPLAY, "#{repo}__#{file}.log"))
+
+  def test_a_setup_ruby_504_is_infra_toolchain_download_not_harness
+    c = only(CiCauseDetector.causes(job_name: "voicebox / scan-js", log: replay("voicebox", "scan-js")))
+    assert_equal ["infra", "toolchain-download"], [c[:klass], c[:key]]
+    assert(c[:evidence].any? { |l| l.include?("ruby-builder/releases/download/ruby-3.3.11") })
+    assert_equal "##[error]Error: Unexpected HTTP response: 504", c[:evidence].last
+  end
+
+  def test_the_2026_11_09_504_across_five_repos_is_one_outside_cause
+    slugs = DOWNLOAD_504.flat_map do |repo, jobs|
+      jobs.map do |name, file|
+        c = only(CiCauseDetector.causes(job_name: name, log: replay(repo, file)))
+        assert_equal ["infra", "toolchain-download"], [c[:klass], c[:key]], "#{repo} #{name}"
+        CiCauseDetector.card_slug("McRitchie-Studio/#{repo}", c)
+      end
+    end
+    assert_equal 13, slugs.size
+    assert_equal ["ci-cause-infra-toolchain-download"], slugs.uniq
+  end
+
+  def test_a_retried_504_that_recovered_is_not_the_fault
+    # The census job's own setup-ruby retried past a 504; its red is the census.
+    log = replay("studio-engine", "browser-lane-executed-set")
+    assert_includes log, "Unexpected HTTP response: 504"
+    refute_equal "toolchain-download", only(CiCauseDetector.causes(job_name: "x", log: log))[:key]
+  end
+
+  def test_turf_e2e_executed_set_attaches_to_playwright_3
+    jobs = [{ name: "playwright (3)", log: replay("turf-monster", "playwright-3") },
+            { name: "static", log: replay("turf-monster", "static-b") },
+            { name: "e2e_executed_set", log: replay("turf-monster", "e2e_executed_set") }]
+    out = CiCauseDetector.attempt_causes(jobs)
+    census = out.select { |e| e[:job] == "e2e_executed_set" }
+    assert_equal [["playwright (3)", "toolchain-download"]], census.map { |e| [e[:follows], e[:cause][:key]] }
+    assert_equal 3, out.size
+  end
+
+  def test_two_census_lanes_with_the_same_shard_each_follow_their_own_lane
+    jobs = { "ci / playwright (3)" => "ci-playwright-3", "ci / static" => "ci-static", "ci / rails (3)" => "ci-rails-3",
+             "ci / e2e_executed_set" => "ci-e2e_executed_set", "ci / rails_executed_set" => "ci-rails_executed_set" }
+           .map { |name, file| { name: name, log: replay("mcritchie-studio", file) } }
+    follows = CiCauseDetector.attempt_causes(jobs).select { |e| e[:follows] }.to_h { |e| [e[:job], e[:follows]] }
+    assert_equal({ "ci / e2e_executed_set" => "ci / playwright (3)", "ci / rails_executed_set" => "ci / rails (3)" }, follows)
+  end
+
+  def test_studio_engine_census_jobs_follow_their_dropped_shard
+    browser = CiCauseDetector.attempt_causes(
+      [{ name: "browser lane (playwright) (2)", log: replay("studio-engine", "browser-lane-playwright-2") },
+       { name: "browser lane executed-set", log: replay("studio-engine", "browser-lane-executed-set") }]
+    )
+    assert_equal ["browser lane (playwright) (2)"], browser.filter_map { |e| e[:follows] }
+    rails = CiCauseDetector.attempt_causes(
+      [{ name: "mcritchie_studio suite vs this engine(shard 4/4)", log: replay("studio-engine", "mcritchie-studio-suite-shard-4") },
+       { name: "moms_app suite vs this engine", log: replay("studio-engine", "moms-app-suite") },
+       { name: "mcritchie_studio executed-set", log: replay("studio-engine", "mcritchie-studio-executed-set") }]
+    )
+    assert_equal ["mcritchie_studio suite vs this engine(shard 4/4)"], rails.filter_map { |e| e[:follows] }
+    assert_equal ["toolchain-download"], rails.map { |e| e[:cause][:key] }.uniq
+  end
+
+  def test_a_census_with_no_failed_shard_to_follow_is_read_as_its_own_job
+    out = CiCauseDetector.attempt_causes([{ name: "e2e_executed_set", log: replay("turf-monster", "e2e_executed_set") }])
+    e = only(out)
+    assert_nil e[:follows]
+    assert_equal ["harness", "job:e2e_executed_set"], [e[:cause][:klass], e[:cause][:key]]
+    assert(e[:cause][:evidence].any? { |l| l.include?("##[error]") })
+  end
+
+  def test_missing_shards_reads_both_census_spellings
+    assert_equal [3], CiCauseDetector.missing_shards(replay("turf-monster", "e2e_executed_set"))
+    assert_equal [4], CiCauseDetector.missing_shards(replay("studio-engine", "mcritchie-studio-executed-set"))
+    assert_equal [2, 4], CiCauseDetector.missing_shards("  · missing receipts for shard(s) 2, 4 of 4\n")
+    assert_empty CiCauseDetector.missing_shards(UNEXPLAINED)
+  end
+
+  def test_an_ambiguous_shard_sibling_is_never_guessed
+    assert_nil CiCauseDetector.shard_sibling("lint executed-set", 2, ["a (2)", "b (2)"])
+  end
+
+  def test_site_identity_still_yields_its_own_test_cause
+    c = only(CiCauseDetector.causes(job_name: "browser lane (playwright) (3)", log: replay("studio-engine", "site-identity")))
+    assert_equal ["test", "e2e/sample_identity.spec.js"], [c[:klass], c[:key]]
+    assert_equal "ci-cause-studio-engine-e2e-sample-identity-spec-js", CiCauseDetector.card_slug("McRitchie-Studio/studio-engine", c)
+  end
+
+  def test_a_gem_the_index_lost_is_an_outside_gem_index_cause
+    c = only(CiCauseDetector.causes(job_name: "ci / rails (1)", log: replay("mcritchie-studio", "gem-index")))
+    assert_equal ["infra", "gem-index"], [c[:klass], c[:key]]
+    assert_equal "ci-cause-infra-gem-index", CiCauseDetector.card_slug("McRitchie-Studio/mcritchie-studio", c)
   end
 
   def test_every_class_is_one_of_the_four
@@ -126,6 +247,7 @@ class CiCauseDetectorTest < Minitest::Test
     assert_equal long, CiCauseDetector.slug("o/r", "SomeVeryLongMinitestClassNameThatGoesOnAndOnForeverAndEverTest")
     assert_equal "Find test cause sample_race", CiCauseDetector.title("test", "e2e/sample_race.spec.js")
     assert_equal 4, CiCauseDetector.title("infra", "apt-mirror").split.size
+    assert_equal "Find harness cause rails (3)", CiCauseDetector.title("harness", "job:ci / rails (3)")
   end
 
   private
