@@ -45,6 +45,7 @@ import "workflows_cycle"
 import "voice_chat"
 // The logo grid backdrop: tiles near the pointer light and trail; builds only where [data-logo-grid] is.
 import "logo_grid"
+import "portfolio_captions"
 
 // How a board page's chrome reaches the engine board it wraps (board/engine_board).
 // Installed here, on every page, so it is there before Alpine initialises a board

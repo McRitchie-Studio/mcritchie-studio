@@ -9,6 +9,8 @@ pin "build_domain"
 pin "cta_glow"
 # The logo grid backdrop (app/views/shared/_logo_grid.html.erb; task logo-grid-backdrop).
 pin "logo_grid"
+# The /websites Portfolio caption that follows the open app (websites/index).
+pin "portfolio_captions"
 pin "build_status"
 pin "build_shell"
 pin "agent_shell"

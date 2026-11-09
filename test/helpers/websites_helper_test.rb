@@ -50,6 +50,37 @@ class WebsitesHelperTest < ActionView::TestCase
     assert_includes html, "slide 2"
   end
 
+  # The cascade (task carousel-cascade-style) arrived with visible:, a local only a
+  # cascade takes, so the partial's strict locals are the capability.
+  test "the Portfolio row is a spotlight on an engine without the cascade" do
+    with_carousel_source("<%# locals: (label:, items:, style: :standard, autoplay: nil, loop: false) %>") do
+      assert_equal :spotlight, portfolio_carousel_style
+    end
+  end
+
+  test "the Portfolio row is a cascade once the engine's carousel declares visible:" do
+    with_carousel_source("<%# locals: (label:, items:, style: :standard, loop: false, visible: nil) %>") do
+      assert_equal :cascade, portfolio_carousel_style
+    end
+    with_carousel_source("<%# locals: (label:, items:, invisible: nil) %>") do
+      assert_equal :spotlight, portfolio_carousel_style, "a longer name is not the local"
+    end
+  end
+
+  test "a partial without strict locals keeps the spotlight: it may not know the cascade" do
+    with_carousel_source("<section><%= label %></section>") do
+      assert_equal :spotlight, portfolio_carousel_style
+    end
+  end
+
+  test "the installed engine's carousel renders the style the helper picks, looping" do
+    style = portfolio_carousel_style
+    html = render(layout: "studio/carousel", locals: { label: "Live apps", items: [ 1, 2, 3 ], style: style, loop: true }) { |item| "slide #{item}" }
+
+    assert_includes html, "carousel-#{style}"
+    assert_includes html, "data-carousel-loop"
+  end
+
   test "a card's style carries its palette and the shade at the measured alpha, else the Studio shade" do
     cyvasse = BuildGallery::Example.new(name: "Cyvasse", url: "https://cyvasse.xyz", palette: BuildGallery.palette_for("cyvasse"))
     plain = BuildGallery::Example.new(name: "Plain", url: "https://plain.mcritchie.studio", palette: nil)
