@@ -16,6 +16,7 @@ require "tmpdir"
 require "fileutils"
 require "time"
 require "stringio"
+require "open3"
 require_relative "../../bin/lib/soul_secrets"
 require_relative "../../bin/lib/secret_cache_cli"
 
@@ -48,6 +49,9 @@ class SoulSecretsTest < Minitest::Test
   def setup
     OpMeter.reset_hang!
     SoulSecrets::Admin.reset!
+    # No child inherits a real credential: every *_TOKEN leaves ENV for the test.
+    @saved_tokens = ENV.to_h.select { |k, _| k.include?("TOKEN") }
+    @saved_tokens.each_key { |k| ENV.delete(k) }
     @root = Dir.mktmpdir("soul-secrets-unit")
     @home = File.join(@root, ".secret-cache")
     @op_log = File.join(@root, "op-calls.log")
@@ -58,6 +62,7 @@ class SoulSecretsTest < Minitest::Test
 
   def teardown
     FileUtils.rm_rf(@root)
+    @saved_tokens.each { |k, v| ENV[k] = v }
   end
 
   def op(body)
@@ -357,6 +362,57 @@ class SoulSecretsTest < Minitest::Test
     assert_equal SoulSecrets::REFUSED, cli(%w[read --soul pokemon studio-agents solana.mack.agent private-key], e)[0]
     assert_equal SecretCacheCli::NOT_MANAGED, cli(%w[read --soul avi studio-agents nope password], e)[0]
     assert_equal 2, cli(%w[read studio-agents solana.mack.agent private-key], e.merge("MCR_SOUL" => nil))[0]
+  end
+
+  # ── the plain read is closed (agent-op-reads-ratchet) ──────────────────────
+
+  SECRET_BIN = File.expand_path("../../bin/secret", __dir__)
+
+  # bin/secret as a process. Every *_TOKEN in the parent's env is dropped, so no
+  # child inherits a real credential; the stub op never echoes its env.
+  def secret_process(*args, e)
+    scrub = ENV.keys.select { |k| k.include?("TOKEN") }.to_h { |k| [k, nil] }
+    Open3.capture3(scrub.merge(e).merge("MCR_SOUL" => nil), SECRET_BIN, *args)
+  end
+
+  def test_unit_a_process_that_names_no_soul_cannot_read_a_soul_set_item
+    e = env
+    _out, err, status = secret_process("studio-agents", "solana.mack.agent", "private-key", e)
+
+    assert_equal SoulSecrets::REFUSED, status.exitstatus
+    assert_empty op_calls, "refused before any 1Password call"
+    assert_match(/in avi's soul set/, err)
+    assert_match(/MCR_SOUL=avi/, err, "the refusal names the fix")
+    rows = OpMeter.records(env: e).select { |r| r["action"] == "soul-refused" }
+    assert_equal ["soul:none:studio-agents/solana.mack.agent"], rows.map { |r| r["via"] }
+    refute_includes err, FAKE_KEY
+  end
+
+  def test_unit_a_process_that_names_no_soul_still_reads_an_item_no_set_names
+    e = env(op("echo plain-fake-value"))
+    out, _err, status = secret_process("studio-agents", "discord.webhooks", "release-notes-webhook", e)
+
+    assert_equal 0, status.exitstatus
+    assert_equal "plain-fake-value", out
+    assert_equal 2, op_calls.size, "the classic whoami and read"
+  end
+
+  # ── a second refusal is marked (agent-op-reads-ratchet) ─────────────────────
+
+  def test_unit_a_second_refusal_marks_the_item_in_sets_until_a_read_rewrites_it
+    e = env
+    assert_raises(AuthRefresh::StillRefused) do
+      SoulSecrets.with_refresh("avi", "studio-agents", "solana.mack.agent", service: "solana", cfg: cfg(e), env: e,
+                               err: StringIO.new) { |_f| raise AuthRefresh::Rejected }
+    end
+    _code, sets, = cli(%w[sets], e)
+    assert_match(%r{solana.mack.agent: expires in .*REFUSED by solana after a fresh read}, sets)
+    refute_includes sets, FAKE_KEY
+
+    SoulSecrets.forget("avi", "solana.mack.agent", env: e)
+    SoulSecrets.warm(SoulSecrets.manifest("avi", cfg(e)), env: e)
+    _code, sets, = cli(%w[sets], e)
+    refute_match(/REFUSED/, sets, "a fresh read rewrites the file without the mark")
   end
 
   def test_unit_cli_sets_and_manifest_print_no_value

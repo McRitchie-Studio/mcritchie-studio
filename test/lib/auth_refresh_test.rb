@@ -300,6 +300,20 @@ class AuthRefreshTest < Minitest::Test
     refute_leaks(error.message)
   end
 
+  def test_unit_github_second_refusal_is_marked_in_status_and_an_accepted_refresh_clears_it
+    path, = broker
+    e = env("GH_AUTH_TOKEN_BIN" => path)
+    assert_raises(AuthRefresh::StillRefused) do
+      GhAuthRetry.with_refresh(identity: "agent", env: e, say: ->(_l) { }) { |token| gh(token, "a-token-nobody-has") }
+    end
+    assert_equal "github", SecretCache.entry("github.agent", e)["still_refused_by"]
+    assert_match(/REFUSED by github after a fresh read/, SecretCache.status_lines(env: e).join("\n"))
+
+    GhAuthRetry.with_refresh(identity: "agent", env: e, say: ->(_l) { }) { |token| gh(token, FAKE_MINTED) }
+    refute SecretCache.entry("github.agent", e).key?("still_refused_at"), "an accepted refresh clears the mark"
+    refute_leaks(SecretCache.status_lines(env: e).join("\n"))
+  end
+
   def test_unit_github_mint_failure_keeps_ghs_original_answer
     path, count = broker(ok: false)
     error = assert_raises(AuthRefresh::RefreshFailed) do

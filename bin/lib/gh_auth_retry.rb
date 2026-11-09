@@ -172,7 +172,22 @@ module GhAuthRetry
                       fresh
                     },
                     rejected: ->(result) { !result[1] && refreshable?(result[0]) },
+                    mark: ->(outcome) { mark_refusal(resolved, outcome, env) },
                     &block)
+  end
+
+  # A second refusal marks the cache entry (github.<identity>), so `bin/secret
+  # status` names the bad App item; an accepted refresh clears it. Loaded lazily:
+  # the secret cache needs lib/, and this file also runs from a bin/ tree carried
+  # alone (CiStatus in a relocated checkout), where the mark is simply skipped.
+  def mark_refusal(identity, outcome, env)
+    return unless identity
+
+    require_relative "secret_cache"
+    name = "github.#{identity}"
+    outcome == :still_refused ? SecretCache.record_refused!(name, "github", env: env) : SecretCache.clear_refused!(name, env: env)
+  rescue LoadError, StandardError
+    nil
   end
 
   # Why the most recent acquisition failed, or "" — surfaced by the caller, never

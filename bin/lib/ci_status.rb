@@ -853,6 +853,7 @@ module CiStatus
     retried, retried_ok = gh_capture(args)
     refused = !retried_ok && gh_auth_refusal?(retried)
     AuthRefresh.record(gh_lane_item, "github", refused ? "still-refused" : "ok")
+    GhAuthRetry.mark_refusal(GhIdentity.resolve(nil), refused ? :still_refused : :ok, ENV)
     [retried, retried_ok]
   end
 

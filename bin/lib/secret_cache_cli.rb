@@ -81,6 +81,7 @@ module SecretCacheCli
     when "migrate" then migrate(env, out, err)
     when "prewarm" then prewarm(env, out, err)
     when "read-item" then read_item(argv, env, out, err)
+    when "read-guard" then read_guard(argv, env, err)
     when "warm" then warm(argv, env, out, err)
     when "read" then soul_read(argv, env, out, err, json: false)
     when "item-json" then soul_read(argv, env, out, err, json: true)
@@ -126,6 +127,7 @@ module SecretCacheCli
       line = "  #{name}: #{state[:words]}"
       failed = SecretCache.time_or_nil(meta["last_refresh_failed_at"])
       line += " (last refresh FAILED #{SecretCache.duration_words(now - failed)} ago)" if failed
+      line += SecretCache.refused_words(meta, now: now)
       out.puts(line)
     end
     0
@@ -421,6 +423,21 @@ module SecretCacheCli
   rescue SoulSecrets::Unavailable => e
     err.puts("secret: #{e.message}")
     1
+  end
+
+  # bin/secret's check before a classic read by a process that names no soul:
+  # 0 when no soul set names the item (the classic read runs), REFUSED (4) when one
+  # does. Prints nothing on 0; the refusal's line names the fix. Internal: bin/secret
+  # calls it only when the item's name appears in the sets config.
+  def read_guard(argv, env, err)
+    vault, item = argv
+    return usage_error(err, "name the vault and the item") if vault.to_s.empty? || item.to_s.empty?
+
+    SoulSecrets.refuse_unnamed!(vault, item, cfg: SoulSecrets.config(env), env: env)
+    0
+  rescue SoulSecrets::Refused => e
+    err.puts(e.message)
+    SoulSecrets::REFUSED
   end
 
   # ── helpers ────────────────────────────────────────────────────────────────
