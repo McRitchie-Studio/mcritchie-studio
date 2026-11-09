@@ -2,12 +2,10 @@ require "minitest/autorun"
 require "open3"
 require "tmpdir"
 
-# The follow-ups to release-ships-lock-only-consumers (Carl's review F1-F6, task
-# lock-only-drop-follow-ups). The REAL bin/release functions; git, the deploy
-# transport and the board are stubbed.
-#
+# Follow-ups to release-ships-lock-only-consumers (task lock-only-drop-follow-ups),
+# on the REAL bin/release functions; git, the deploy and the board are stubbed.
 #   F1  a lock-only app deploys BEFORE its `main` moves, so a failed deploy leaves
-#       `main` behind: the next sweep carries it again and `status` reads its lag.
+#       `main` behind and the next sweep carries it again.
 #   F4  the re-pin and the stray, prerelease and unshipped-final checks drop a
 #       lock-only app instead of aborting the release.
 #   status / --expedite read a rung of lock bumps only as clean, and name it.
