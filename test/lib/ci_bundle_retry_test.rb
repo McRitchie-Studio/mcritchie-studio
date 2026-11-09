@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # Guard test for the CI RubyGems-propagation wait: no job installs gems before checking the
-# versions are visible on the index this runner resolves through; `bundle install` otherwise
+# versions are served to this runner the way bundler reads them; `bundle install` otherwise
 # dies exit 7 claiming the author "has removed" a live version. A WAIT, NOT A RETRY: a retry
 # needs `continue-on-error: true`, which test/lib/ci_workflow_triggers_test.rb forbids. It runs
 # ON THE RUNNER: a conductor-side check speaks only for its own CDN edge. INVARIANT over EVERY
@@ -44,32 +44,25 @@ class CiBundleRetryTest < Minitest::Test
     end
   end
 
-  def test_the_await_script_is_executable_and_fail_soft
+  # FAIL CLOSED ONLY ON A PROVEN MISS. The script may exit 1 (GEM_NOT_SERVED_ON_RUNNER,
+  # a body read without the version at the deadline) and nothing else: no other code,
+  # and no errexit, because `set -e` makes ANY failing command (a curl timeout, a grep
+  # with no match) fatal with no `exit` line for this guard to read. An unreachable
+  # RubyGems still exits 0. Behaviour: test/lib/await_gem_propagation_script_test.rb.
+  def test_the_await_script_is_executable_and_fails_only_on_a_proven_miss
     script = File.join(ROOT, ".github/scripts", AWAIT_SCRIPT)
 
     assert File.exist?(script), "#{script} is missing — every workflow step below invokes it"
     assert File.executable?(script), "#{script} is not executable, so `run:` will fail with permission denied"
 
-    body = File.read(script)
-    code = body.lines.reject { |l| l.strip.start_with?("#") }.join
+    code = File.read(script).lines.reject { |l| l.strip.start_with?("#") }.join
 
-    # POSITIVE form. The previous spelling of this guard refuted exactly
-    # `/^\s*exit\s+1\b/` and nothing else, so `set -euo pipefail` and `exit 2`
-    # both passed GREEN while being just as fatal — a guard that names one
-    # spelling of a failure and calls the class closed. Assert the property
-    # instead: EVERY exit in the script is exit 0, and errexit is never armed.
     exits = code.scan(/^\s*exit\s+(\S+)/).flatten
     refute_empty exits, "the await script has no explicit exit — it must end in an explicit `exit 0`"
+    assert_empty exits - %w[0 1], "the await script exits 0, or 1 on a proven miss; found #{exits.inspect}"
+    assert_equal 1, exits.count("1"), "exactly one hard exit: the GEM_NOT_SERVED_ON_RUNNER refusal"
+    assert_match(/GEM_NOT_SERVED_ON_RUNNER[^\n]*\n\s*exit 1/, code, "the one `exit 1` is the named refusal")
 
-    non_zero = exits.reject { |c| c == "0" }
-    assert_empty non_zero,
-                 "the await script must stay FAIL-SOFT and every exit must be `exit 0`; found #{non_zero.inspect}. " \
-                 "It runs before the install in every job, so any hard exit turns a CDN hiccup into a brand-new " \
-                 "way for CI to go red — the exact opposite of why it exists"
-
-    # `set -e` (in any bundle: -e, -eu, -euo pipefail) makes the NEXT failing
-    # command fatal without an `exit` line anywhere, which is how a fail-soft
-    # script stops being fail-soft while still reading as one.
     set_flags = code.scan(/^\s*set\s+-([a-zA-Z]+)/).flatten
     errexit = set_flags.select { |f| f.include?("e") }
     assert_empty errexit,
@@ -77,29 +70,17 @@ class CiBundleRetryTest < Minitest::Test
                  "aborts the step and fails the job, with no `exit` line for the check above to catch"
   end
 
-  # The whole point of the wait is WHICH FILE it asks about. `/info/<gem>` is a
-  # correlated proxy — the two files publish together — but bundler's "can no
-  # longer be found" is raised from the resolver's version list, built from
-  # `/versions`, and a stale `/versions` additionally makes bundler trust its
-  # cached `/info` and skip re-fetching it. A script that polls only `/info` can
-  # therefore read fresh while the install still fails, which is exactly what
-  # shipped first. This pins the corrected mechanism so it cannot silently
-  # regress to the proxy.
-  def test_the_await_script_polls_the_versions_list_bundler_resolves_through
-    body = File.read(File.join(ROOT, ".github/scripts", AWAIT_SCRIPT))
-    code = body.lines.reject { |l| l.strip.start_with?("#") }.join
+  # WHICH FILE, AND HOW. Bundler 2.5.23 on a runner's cold cache always re-fetches
+  # `/info/<gem>` (compact_index_client/cache.rb `info`), and that body SUPPLIES the
+  # versions the resolver enumerates. So the script reads /info on the index host, on
+  # several separate connections: one read proved nothing in rel-20261109-900044.
+  def test_the_await_script_reads_info_on_several_connections_and_the_gem
+    code = File.read(File.join(ROOT, ".github/scripts", AWAIT_SCRIPT)).lines.reject { |l| l.strip.start_with?("#") }.join
 
-    assert_includes code, "index.rubygems.org/versions",
-                    "the await script must consult /versions — it gates whether bundler re-fetches /info at all"
-
-    assert_includes code, "index.rubygems.org/info/",
-                    "the await script must consult /info — it SUPPLIES the versions the resolver enumerates " \
-                    "(bundler 2.5.23: fetcher/compact_index.rb:30-47 -> parser.rb:43). A fresh /versions is " \
-                    "necessary but NOT sufficient, and an earlier draft broke out on /versions alone"
-
-    assert_match(/--range\s+"?-/, code,
-                 "/versions is ~23MB, so it must be read with an HTTP range request on the tail; " \
-                 "a full GET per job is not an acceptable cost")
+    assert_includes code, "index.rubygems.org", "bundler reads the compact index from index.rubygems.org"
+    assert_includes code, "/info/", "the await script must read /info — it SUPPLIES the versions bundler resolves"
+    assert_includes code, "/gems/", "the await script must check the .gem bundler downloads"
+    assert_match(/READS=\$\{AWAIT_READS:-([2-9]|\d\d+)\}/, code, "more than one read per poll: one read proves nothing")
   end
 
   # `curl … | grep -q` is a false-negative generator here, and it hides in
