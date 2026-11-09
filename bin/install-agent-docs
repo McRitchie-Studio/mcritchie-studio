@@ -1425,6 +1425,41 @@ if [ "$MODE" != "manifest" ] && command -v jq >/dev/null 2>&1; then
     fi
   fi
 
+  # Wire the SubagentStart hook that warms a soul's secret set at launch
+  # (soul-secret-sets; docs/agents/modules/secret-cache.md). Claude Code hands the
+  # hook the subagent's agent_type, which is the soul's slug for every soul
+  # definition this installer writes. `bin/secret warm --hook` starts a detached,
+  # bounded warm only when that soul's set has an entry that is not fresh, prints
+  # nothing and always exits 0, so it cannot stop or slow a launch. Same
+  # discipline as SessionEnd: prune every other copy, append ours once at the
+  # fixed path, never touch the operator's own SubagentStart hooks.
+  warm_path="$HOOK_BIN/secret warm --hook"
+  tmp="$(mktemp)"
+  if jq --arg path "$warm_path" 'if .hooks.SubagentStart then
+        .hooks.SubagentStart |= (
+          map(.hooks = ((.hooks // []) | map(select((((.command // "") | test("/bin/secret warm --hook")) and ((.command // "") != $path)) | not))))
+          | map(select(((.hooks // []) | length) > 0))
+        )
+      else . end' "$settings" > "$tmp"; then
+    if ! cmp -s "$settings" "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (removed old SubagentStart secret-warm hooks)"
+    else
+      rm -f "$tmp"
+    fi
+  else
+    rm -f "$tmp"
+  fi
+  if ! jq -e --arg path "$warm_path" '[(.hooks.SubagentStart // [])[]?.hooks[]?.command // empty | select(. == $path)] | length > 0' "$settings" >/dev/null 2>&1; then
+    tmp="$(mktemp)"
+    if jq --arg cmd "$warm_path" '.hooks //= {} | .hooks.SubagentStart = ((.hooks.SubagentStart // []) + [{hooks: [{type: "command", command: $cmd, timeout: 5}]}])' "$settings" > "$tmp"; then
+      mv "$tmp" "$settings"
+      echo "  $settings (added SubagentStart hook -> $warm_path)"
+    else
+      rm -f "$tmp"
+    fi
+  fi
+
   # Wire the SessionStart insights hook so a FRESH session hatches with the top-N
   # curated Insight Bank lessons injected as context — the OPSD learning loop's
   # feed-forward (output) stage, so banked grades stop being write-only. The hook
