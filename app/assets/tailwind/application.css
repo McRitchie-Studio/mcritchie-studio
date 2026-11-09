@@ -405,12 +405,6 @@
   font-size: calc(var(--type-base, 16px) * 1.5);
 }
 
-@utility criterion-value {
-  /* Sized to keep the longest header ("Service Business") on one line,
-     including the tight md 3-column breakpoint. */
-  font-size: calc(var(--type-base, 16px) * 1);
-}
-
 @utility dropping-texts {
   /* Dropping text animation (JS-driven, see dropping_text.js) */
   display: inline-block;

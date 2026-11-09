@@ -66,15 +66,9 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_select "a[href='#about']", 0, "no in-page link points at the dropped section"
   end
 
-  # Was "shows only the full-width video chat card", pinning the "Chat Over
-  # Video" heading. That card held the Sprintful widget; the section now holds
-  # the Google booking frame and no card heading (/tasks/professional-site-footer).
-  # [component] Side by side (task get-in-touch-side-by-side): the compact chat
-  # with Alex on the left (first when stacked), the booking calendar on the
-  # right, equal columns from xl up. Each column is a subgrid over the same
-  # three rows so the two cards match in height. Each section opens with the
-  # same head: the AI Alex over Chat Now, Alex McRitchie's photo over Book a
-  # Call. The page holds exactly one chat.
+  # [component] Task get-in-touch-side-by-side: Chat Now (AI Alex) left, Book a
+  # Call (Alex McRitchie's photo) right, equal subgrid columns from xl up so the
+  # cards match. One chat per page; the old Sprintful card copy stays gone.
   test "[component] get in touch band puts the chat with Alex beside the booking frame" do
     get root_path
 
@@ -98,6 +92,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_select "[data-test=agent-chat]", 1
     assert_not_includes body, "Chat Over Video"
     assert_not_includes body, "Chat Right Now"
+    assert_not_includes body, "Is This Your Business?", "the criteria cards left / on 2026-11-08"
   end
 
   # The home page's own "Get In Touch" section is gone; the site footer carries
