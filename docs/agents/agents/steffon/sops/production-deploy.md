@@ -347,12 +347,12 @@ be undone. In order, after production authority:
 
 **A red re-lock commit.** The refusal names the commit (`THIS IS THE RE-LOCK COMMIT …`).
 It differs from the tree QA passed only in `Gemfile` and `Gemfile.lock`, and the final
-gem was compared with the candidate, so the gate has already waited for that commit's
-run to complete and re-run a first-attempt red once by itself (its `↻↻ … AUTOMATIC
-RE-RUN` line, or the reason it did not). If it did not, re-run that commit's CI run
-(`gh run rerun <id>`, all jobs), then `bin/release ship`. A red that reproduces is a defect:
-fix it through a task on `accepted` and have Avi re-run `prepare`. The final stays
-published; consumers then lock it directly and QA runs again.
+gem was compared with the candidate. The gate waited for that commit's run to complete.
+It re-ran the red once by itself only if every failing job showed the gem-resolution
+error (its `↻↻ … INFRA RE-RUN` line). Any other red is a defect with a cause, recorded
+as `ci_red`: do not re-run it by hand. Find the cause, fix it through a task on
+`accepted`, and have Avi re-run `prepare`. The final stays published; consumers then
+lock it directly and QA runs again.
 
 **An older ship must never follow a candidate.** A ship from tooling without the
 candidate flow publishes the final and deploys the frozen lock, candidate included.
@@ -498,27 +498,45 @@ the second adds the re-lock recovery text. Every app with a
 neither. A green read is also what lets turf's `bin/deploy` skip its local suite
 (**App deploys** above).
 
-**One automatic re-run.** A red read earns ONE re-run of the failed workflow runs
-(`gh run rerun <id>`, every job, so the `*_executed_set` guards re-read fresh
-receipts) when each failed run is on its first attempt, failed or timed out (never
-cancelled, never a schedule run), and every failing job is a test lane (a suite, a
-shard, the browser lane, their executed-set) or died on bundler's gem-resolution
-error (`… can no longer be found in that source`: the RubyGems CDN race, where the
-runner's edge lagged the conductor's). It prints `↻↻ <repo>: CI RED … AUTOMATIC
-RE-RUN` with the reason, and the re-run gets a fresh poll window. A second red is
-real and fails the gate (`CI is RED again … a second red is real`); a red lint or
-scan is never re-run. The same rule runs in `prepare`'s gates (G3, the gem CI gate).
-`RELEASE_CI_RERUN=off` disarms it. Code: `bin/lib/ci_rerun.rb`,
-`bin/release.rb#poll_ci_verdict`.
+**A red stops the gate. The gate does not re-run it.** Alex McRitchie's
+deterministic-CI ruling (2026-11-08): a same-SHA red then green is a defect with a
+cause (infra, harness, test or product), never a retry. So a red test lane stops the
+ship. The gate prints `✗ CI RED <repo>@<sha> — run <id> (…): jobs …; specs …` and
+records the same line on the release's gate record as a `ci_red` SOP: every failed
+run id, its failing jobs, and the spec locations its log names. Until 2026-11-08 the
+gate re-ran a first-attempt red test lane once and shipped on the green
+(rel-20261108-730c77, Cyvasse). It no longer does.
+
+**One named infra re-run.** One red has a known cause outside the commit: the
+RubyGems CDN race. The release publishes a gem, and a consumer's `bundle install`
+runs on a runner whose CDN edge does not list the version yet (`… can no longer be
+found in that source`). The gate re-runs that red ONCE, every job (`gh run rerun
+<id>`), only when every failed run is a first-attempt push or pull_request run and
+**every** failing job shows bundler's gem-resolution error in its own log. It prints
+`↻↻ <repo>: CI RED … INFRA RE-RUN (RubyGems CDN race …)` and records a
+`ci_infra_rerun` SOP with the cause and the run ids. A red after that re-run is real,
+is recorded as `ci_red`, and stops the gate. Why it stays: the commit is correct and
+only the CDN was late, so a stop would hand you a re-run with nothing to fix. Each
+`ci_infra_rerun` on the record shows that a consumer's CI still lacks the on-runner
+propagation wait (turf-monster's `.github/scripts/await-gem-propagation.sh`); file
+that wait as the fix forward. `RELEASE_CI_RERUN=off` disarms the infra re-run too;
+any other value is the default. The same rule runs in `prepare`'s gates (G3, the gem
+CI gate). Code: `bin/lib/ci_rerun.rb`, `bin/release.rb#poll_ci_verdict`.
+
+**What you do on a red.** Do not re-run it by hand. Read the `ci_red` line: the run
+id, the jobs, the specs. Find the cause and class it: infra, harness, test or
+product (the cause card `CiCauseCardJob` files carries the same classes; see
+[`testing.md`](../../../modules/testing.md#a-red-then-green-is-a-defect-with-a-cause)).
+Fix it forward through a task on `accepted`, or eject the member that carries it
+(`bin/release eject <task> --feedback "…"`). Then re-run the cycle: Avi re-runs
+`prepare`, and you ship the new candidate.
 
 The decision waits for the run to finish. A check-run goes red as soon as one job
-fails, while the rest of the run is still going, and GitHub cannot re-run a run in
-progress; the gate prints `CI RED … while a workflow run on it is still in progress —
-holding for the run to complete` and decides once it is done (2026-10-27 it printed
-`no failed workflow run found` instead and spent its one chance). On a **re-lock
-commit** (candidate rollback only), which the gate measures to differ from the QA-green tree in `Gemfile` and
-`Gemfile.lock` alone, a first-attempt red in ANY job earns the one re-run, a lint
-included; a red after it is still real and is never re-run.
+fails, while the rest of the run is still going; the failing set is not final and
+GitHub cannot re-run a run in progress. The gate prints `CI RED … while a workflow run
+on it is still in progress — holding for the run to complete` and decides once it is
+done. A **re-lock commit** gets no wider rule: a red there is read the same way (the
+any-job re-lock re-run was removed with the test-lane re-run).
 
 Every check-run on the SHA counts except a run proven **schedule-triggered** (a nightly
 such as UI Budget or r2-backup attaches to `main`'s head but tests production, not the
@@ -528,7 +546,7 @@ commit); an unprovable one still counts. Detail:
 | You see | It means | You do |
 |---|---|---|
 | `GitHub CI GREEN @ <sha> — credited — …` or `… — the SHA's own run …` | The tree earned its green. | Nothing — the gate passed. |
-| `test gate FAILED … called frozen <sha> RED (<checks>)` | A broken frozen commit, read red after the one automatic re-run, or red in a lane the re-run rule does not cover (its `no automatic re-run (…)` line says why). | Read the failing check; fix forward on `release`, or `bin/release eject <task> --feedback "…"` and have Avi re-run `prepare`. **Do not ship.** |
+| `test gate FAILED … called frozen <sha> RED (<checks>)` | A defect in the frozen commit, or a red after the one infra re-run. The `✗ CI RED …` line above it (and the `ci_red` SOP) names the run id, jobs and specs. | Find the cause (infra, harness, test or product); fix forward through a task, or `bin/release eject <task> --feedback "…"`; have Avi re-run `prepare`. **Do not re-run CI by hand. Do not ship.** |
 | `test gate FAILED … UNREADABLE` | A token fault; the gate did not poll. | `eval "$(bin/gh-auth-refresh --export)"`, then re-run `bin/release ship`. |
 | `test gate HELD … shares neither SHA nor tree with the accepted head … OWN run has NO green verdict` | Nothing could vouch for this tree yet. | Let CI conclude on the frozen SHA, then re-run `ship`. |
 | `test gate HELD … NO green verdict for frozen <sha> (pending …) after polling ~1200s` | CI is still building. | Wait, or widen `RELEASE_CI_POLL_TIMEOUT`; re-run `ship`. |

@@ -372,14 +372,23 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
    and why you must **not** blank the registry's `qa_test_cmd`:
    [`../../../modules/gates/g3-candidate.md`](../../../modules/gates/g3-candidate.md).
 
-   **One automatic re-run.** A red verdict whose failed runs are each on their first
-   attempt, and whose failing jobs are all test lanes or died on bundler's
-   gem-resolution error (`… can no longer be found in that source`, the RubyGems CDN
-   race), is re-run ONCE, every job (`gh run rerun <id>`), with a loud `↻↻ <repo>: CI
-   RED … AUTOMATIC RE-RUN` line, and read to its own conclusion. A second red is real.
-   The gem CI gate in step 4d takes the same rule. A red lint or scan with no
-   resolution error is never re-run. `RELEASE_CI_RERUN=off` disarms it; the rule is
+   **A red stops the gate; the gate does not re-run it.** Alex McRitchie's
+   deterministic-CI ruling (2026-11-08): a same-SHA red then green is a defect with a
+   cause (infra, harness, test or product), never a retry. A red test lane stops the
+   sweep with `✗ CI RED <repo>@<sha> — run <id> (…): jobs …; specs …`, recorded on the
+   gate as a `ci_red` SOP. One named infra cause still earns ONE re-run, every job
+   (`gh run rerun <id>`): every failing job of a first-attempt commit run shows
+   bundler's gem-resolution error (`… can no longer be found in that source`, the
+   RubyGems CDN race). It prints `↻↻ <repo>: CI RED … INFRA RE-RUN` and is recorded as
+   `ci_infra_rerun` with the run ids. A red after it is real. The gem CI gate in step
+   4d takes the same rule. `RELEASE_CI_RERUN=off` disarms the infra re-run too; the
+   rule and why the infra case stays are in
    [`production-deploy`](../../steffon/sops/production-deploy.md#the-frozen-sha-test-gate-is-a-read).
+
+   **On a red: find the cause, fix forward, re-run the cycle.** Do not re-run CI by
+   hand. Read the `ci_red` line, class the cause (infra, harness, test or product),
+   and fix it through a task on `accepted`, or eject the member that carries it. Then
+   re-run `prepare`.
 
    **How long a sweep can hold.** Each repo's pending wait is sized from its own
    push and pull_request workflows, up to about 105 minutes for studio-engine. Repos
@@ -496,7 +505,7 @@ An abort leaves the same board state as an interruption. Each abort names its ca
 | **CONSUMER LOCK BUMP did not land** (`bundle lock … did not land in <repo> … resolves <old>, wanted <new>`) | **WAIT — nothing to fix.** Watch the compact index bundler reads: `curl -sS https://index.rubygems.org/info/<gem> \| tail -5`, not the API or HTML page. Do **not** bump the version. If sibling consumers already resolved the published version, it is not propagation but a dependency cap in that consumer: land a consumer task running `bundle lock --update <gem> <capped-dep> --conservative` | re-run `prepare`; the published version is reused and the bump lands |
 | **`record op failed: no answer within 300s`** (any conductor write) | The `heroku run` client hung (on 2026-10-27 its dyno was already gone) and was killed at the deadline (`RELEASE_RECORD_OP_DEADLINE`, seconds). A best-effort write (release event, gate, crew ticker) warns and the run continues; a deploy-critical write aborts. Whether the write landed is unknown. A re-run is safe: a board write re-applies to the same state, and release notes Discord already took are skipped, never posted twice. An archive step has its own bound (`RELEASE_ARCHIVE_STEP_DEADLINE`) | re-run the same command; it resumes |
 | **`record op returned no JSON`** (prepare's record step) | The record step runs `Release::Conductor` on PRODUCTION via `heroku run`, against production's deployed `config/release_repos.yml` and guards. A repo registered in this same release is unknown there. Ship the hub registry change first: hold the new repo's tasks (`included_in_release: false`) and sweep the hub tasks with `--task`. A conductor guard fix likewise takes effect only once it is live on `main` | re-run `prepare` for the new repo in the next cycle |
-| **SWEEP LOOKS HUNG, or a QA lane is red** (not an abort) | A sweep at 0% CPU with no sockets is waiting in a `gh` child: check `pgrep -P <pid>`, the child's age and the run it watches. On a red, ask whether a test actually ran and failed: a runner setup step, an API 5xx, or a `Bundler::GemNotFound` naming the version this sweep just published ("the author has removed it") is a re-run, never an eject. The gate already spent its one automatic re-run on a first-attempt test-lane red or a gem-resolution red (look for `↻↻ … AUTOMATIC RE-RUN`); a red it did not re-run says why on its `no automatic re-run (…)` line. Re-run by hand only for a cause the rule does not cover, ALL jobs (`gh run rerun <id>`, not `--failed`): the `*_executed_set` guards re-read receipts. A still-open G3 attempt may be a peer's live sweep, and its candidate may absorb your task: read your task's stage once `bin/release status` reads `none active` | let the sweep finish, or re-run `prepare` (it stands down before anything irreversible) |
+| **SWEEP LOOKS HUNG, or a QA lane is red** (not an abort) | A sweep at 0% CPU with no sockets is waiting in a `gh` child: check `pgrep -P <pid>`, the child's age and the run it watches. On a red, read the gate's `✗ CI RED …` line (the `ci_red` SOP): run id, jobs, specs. A `Bundler::GemNotFound` naming the version this sweep just published ("the author has removed it") is the infra race, and the gate already re-ran it once by itself (`↻↻ … INFRA RE-RUN`). Every other red is a defect with a cause, including a runner setup step or an API 5xx: class it (infra, harness, test or product), fix it forward through a task, and re-run the cycle. Never a hand re-run. A still-open G3 attempt may be a peer's live sweep, and its candidate may absorb your task: read your task's stage once `bin/release status` reads `none active` | let the sweep finish, or re-run `prepare` (it stands down before anything irreversible) |
 
 `prepare` never force-ships a red candidate: eject it or fix it forward.
 

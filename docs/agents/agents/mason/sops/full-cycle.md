@@ -145,6 +145,16 @@ interruption is re-running the cycle.
    eject the offender FIRST**, because a bare re-run re-deploys the same member
    code and goes red again. The exit table and the full abort table are in
    [`../../avi/sops/qa-release.md`](../../avi/sops/qa-release.md).
+
+   **A red CI gate is a defect, never a retry.** Alex McRitchie's deterministic-CI
+   ruling (2026-11-08): the gates in `prepare` and `ship` stop on a red test lane
+   and do not re-run it. The `✗ CI RED …` line (the gate's `ci_red` SOP) names the
+   run id, the failing jobs and the specs. Do not re-run CI by hand and do not
+   re-run the cycle on the same code. Find the cause (infra, harness, test or
+   product), fix it forward through a task on `accepted` or eject the member that
+   carries it, then re-run the cycle. The one exception the gate handles by itself
+   is the RubyGems CDN race (`↻↻ … INFRA RE-RUN`, recorded as `ci_infra_rerun`):
+   [`production-deploy`](../../steffon/sops/production-deploy.md#the-frozen-sha-test-gate-is-a-read).
 3. **Ship** — MUTATION, so DIRECT-DRIVE `bin/release ship --mode cleared
    --clearance "<Alex McRitchie's words>" --yes` from THIS session. Do NOT wrap the ship in a subagent: it is the one irreversible gate,
    and a wrapper agent that dies mid-ship would orphan the `release → main` state
