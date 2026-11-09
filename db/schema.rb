@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_08_234215) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -2677,6 +2677,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_234215) do
     t.index ["recording_key"], name: "index_studio_knowledge_docs_on_recording_key", unique: true
     t.index ["s3_key"], name: "index_studio_knowledge_docs_on_s3_key", unique: true
     t.index ["superseded_by_id"], name: "index_studio_knowledge_docs_on_superseded_by_id"
+    t.check_constraint "status::text = ANY (ARRAY['inbox'::character varying::text, 'filed'::character varying::text, 'superseded'::character varying::text])", name: "studio_knowledge_docs_status_known"
   end
 
   create_table "studio_knowledge_expectations", force: :cascade do |t|
@@ -2706,6 +2707,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_234215) do
     t.index ["kind"], name: "index_studio_links_on_kind"
     t.index ["linkable_type", "linkable_id", "kind"], name: "idx_studio_links_owner_kind"
     t.index ["token"], name: "index_studio_links_on_token", unique: true
+    t.check_constraint "kind::text = ANY (ARRAY['magic_link'::character varying::text, 'referral'::character varying::text])", name: "studio_links_kind_known"
   end
 
   create_table "studio_site_identities", force: :cascade do |t|
@@ -2945,6 +2947,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_08_234215) do
     t.datetime "updated_at", null: false
     t.string "warning"
     t.index ["app_name"], name: "index_theme_settings_on_app_name", unique: true
+    t.index ["slug"], name: "index_theme_settings_on_slug", unique: true
   end
 
   create_table "tiktok_connections", force: :cascade do |t|
