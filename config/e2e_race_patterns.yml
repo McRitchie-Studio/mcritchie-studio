@@ -1,29 +1,64 @@
 # The race-pattern ratchet (bin/lib/e2e_race_patterns.rb): each e2e file that held a
 # fixed sleep (`sleep`) or a one-time visibility branch (`branch`) when the lint landed,
 # with its count. A count may only fall, and must equal the file (lower it in the same
-# commit that removes one); a file not listed holds none. Every row is a named debt:
-# wait on the state instead. Task deterministic-ci, 2026-11-06.
+# commit that removes one); a file not listed holds none. Task deterministic-ci, 2026-11-06.
+#
+# Task hub-e2e-real-condition-waits (2026-11-08) replaced every sleep that stood in for a
+# condition with a wait on that condition (e2e/settle.js: frames, animationsSettled,
+# turbo:load; expect.poll; an in-page event count). What is left is a PAUSE THAT STAYS:
+# a duration the behaviour itself is made of, with no event to wait on. The why is on each
+# row. A row is still a ceiling: it may fall, never rise.
+#
+#   BOT SHIELD. BrowserProof (app/services/browser_proof.rb) refuses a first message posted
+#   under two seconds after the page was rendered, by the SERVER's wall clock. The page
+#   shows nothing when the two seconds pass, and Playwright's clock cannot move the
+#   server's. The pause is the person typing.
+#   SAMPLED MOTION. An endless CSS loop (a glow, an orbit) is sampled across one cycle, for
+#   a property that must hold at every point of it. The pause is the sampling step.
+#   NOTHING HAPPENS. The spec proves a thing does not happen, and the app has no event or
+#   clock of its own that would have caused it, to wait on instead.
 e2e/agent_shell_growth.spec.js:
+  # 2 bot shield (/build first message, twice); 1 nothing happens: after a reload no
+  # stream arrives, so no event would re-type an answer.
   sleep: 3
 e2e/branded_loader.spec.js:
+  # bot shield.
   sleep: 1
 e2e/build_cards_quality.spec.js:
+  # 1 bot shield; 1 sampled motion: the orbit ring, 8 samples 500ms apart.
   sleep: 2
 e2e/build_flow_polish.spec.js:
+  # 1 bot shield; 1 sampled motion: the glow trade, 14 samples 250ms apart; 2 nothing
+  # happens: a forced tap on a DISABLED button (a browser sends it no click, so there is
+  # no event), and a card that asks nothing on arrival (its poll and its 250ms debounce
+  # expose no tick).
   sleep: 4
 e2e/build_funnel.spec.js:
+  # bot shield, twice.
   sleep: 2
 e2e/contact_opt_in.spec.js:
+  # bot shield: the /contact form's MIN_FILL_SECONDS, read from the page and counted
+  # from the page load.
   sleep: 1
 e2e/deployments_exit_fx.spec.js:
+  # The two stimuli are timing: archives sent one beat apart (the board's own
+  # data-beat-ms), and two archives sent 200ms apart so their 760ms exits overlap.
   sleep: 2
 e2e/deployments_live.spec.js:
+  # nothing happens: a blocked card stays visible; nothing scheduled would hide it.
   sleep: 1
 e2e/helpers.js:
   branch: 1
 e2e/landing_build_cta.spec.js:
+  # sampled motion: the CTA glow, 14 samples 250ms apart.
   sleep: 1
 e2e/video_link_refresh.spec.js:
+  # nothing happens, four times: no links request reaches the stand-in bucket after the
+  # page says it sent none, after a visit away (past the armed one-second fuse), after a
+  # tab return, and after a timer that found its links element gone.
   sleep: 4
 e2e/video_search_rows.spec.js:
+  # nothing happens: a pick made inside the search debounce stands (no event when the
+  # cancelled debounce would have fired), and a late answer does not reopen the list
+  # (the page exposes no "answer handled" moment past the response).
   sleep: 2

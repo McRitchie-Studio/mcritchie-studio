@@ -1000,8 +1000,13 @@ nobody files it under "flaky". The system holds that line in five places:
 - **No race spellings.** A fixed sleep (`waitForTimeout`) and a one-time visibility
   branch (`if (await x.isVisible())`, `isVisible().catch(...)`) are banned in `e2e/`:
   wait on the state (`expect(locator)`, `expect.poll`, a product marker such as
-  `data-placed`). Files that held them keep a ceiling in `config/e2e_race_patterns.yml`
-  that may only fall. Guard: `test/lib/e2e_race_patterns_test.rb`.
+  `data-placed`). For a frame, a transition or a Turbo visit, use `e2e/settle.js`:
+  `frames` (a scroll, a resize or a ResizeObserver has landed), `animationsSettled`
+  (every animation with an end is done) and `armTurboLoads`/`turboLoaded`. Files that
+  held them keep a ceiling in `config/e2e_race_patterns.yml` that may only fall; each
+  row that is left is a pause that stays (the bot shield's server clock, sampling an
+  endless loop, a "nothing happens" with no app event), and says why on the row.
+  Guard: `test/lib/e2e_race_patterns_test.rb`.
 
 ## Test Suite Catalog
 
