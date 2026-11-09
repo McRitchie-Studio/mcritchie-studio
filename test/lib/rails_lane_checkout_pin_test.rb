@@ -18,9 +18,13 @@ class RailsLaneCheckoutPinTest < Minitest::Test
     jobs = YAML.load_file(WORKFLOW).fetch("jobs")
 
     LANE_JOBS.each do |job|
-      checkouts = jobs.fetch(job).fetch("steps").select { |step| step["uses"].to_s.start_with?("actions/checkout") }
+      # The caller's tree only: the hub-script fetch before the gem await names its own
+      # `repository:` and checks out one file beside the tree, never the tree itself.
+      checkouts = jobs.fetch(job).fetch("steps").select do |step|
+        step["uses"].to_s.start_with?("actions/checkout") && step.dig("with", "repository").nil?
+      end
 
-      assert_equal 1, checkouts.size, "#{job}: one checkout"
+      assert_equal 1, checkouts.size, "#{job}: one checkout of the tree under test"
       assert_equal "${{ github.sha }}", checkouts.first.dig("with", "ref"),
                    "#{job} must check out github.sha, or the executed-set gate can read a different tree"
     end

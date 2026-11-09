@@ -1,92 +1,75 @@
 #!/usr/bin/env bash
 #
-# Wait for the locally published gem versions pinned in Gemfile.lock to appear
-# on the RubyGems `/versions` index THIS RUNNER resolves through, before
-# anything tries to install them.
+# Hold `bundle install` until THIS runner reads each locally published gem pinned in
+# Gemfile.lock the way bundler will read it, on independent connections, every time.
 #
-# WHICH FILE, AND WHY IT IS THIS ONE. The compact index has two files that
-# matter here. `/info/<gem>` lists each version's dependencies. `/versions` is
-# the master list, one line per publish: `<gem> <version> <md5>`, where the md5
-# is a checksum OF THAT GEM'S `/info` FILE.
+# WHAT BUNDLER READS (bundler 2.5.23, the version every lockfile pins). The runner's
+# bundler cache (~/.bundle/cache/compact_index) is COLD: setup-ruby caches only
+# vendor/bundle. So:
+#   · `/versions` is fetched whole, but on a cold cache it only supplies a non-nil
+#     checksum, and a non-nil checksum that does not match a missing local file
+#     ALWAYS re-fetches /info (compact_index_client/cache.rb `info`). Its contents
+#     cannot hide a version from a cold-cache install, so it is not read here.
+#   · `/info/<gem>` on index.rubygems.org (fetcher/base.rb rewrites rubygems.org to
+#     the index host) SUPPLIES the versions the resolver enumerates. One plain GET,
+#     HTTP/1.1, `Accept-Encoding: gzip;q=1.0,deflate;q=0.6,identity;q=0.3`
+#     (Gem::Net::HTTP's default), each worker thread on its OWN connection. A lock
+#     pin that is not in that body is the "can no longer be found in that source" /
+#     "Could not find studio-engine-X in locally installed gems" red.
+#   · `https://rubygems.org/gems/<gem>-<version>.gem`, the download, for a gem that
+#     is not already installed.
 #
-# The two files split the job, and getting the split backwards is easy — an
-# earlier draft of this script did (verified against bundler 2.5.23, the version
-# both lockfiles pin):
+# WHY ONE READ PROVED NOTHING (rel-20261109-900044, hub run 42589062630, job
+# 129065907960). The previous version of this script read /info once and printed
+# "studio-engine 0.141.0 is on /versions AND /info — this edge is fully caught up" at
+# 08:52:18Z, 124s after the 08:50:14Z publish. Bundler on the SAME runner fetched
+# /info at 08:52:24-28Z and did not get 0.141.0. The `javascript` job of the same run
+# probed at 08:52:17Z and bundled 0.141.0 fine at 08:52:26Z. The cause is how
+# RubyGems invalidates the CDN: on a publish it SOFT-purges /info/<gem> and
+# /versions (rubygems.org lib/gem_cache_purger.rb and
+# app/jobs/upload_info_file_job.rb: `FastlyPurgeJob ... soft: true`, stored with
+# `surrogate-control: max-age=3600, stale-while-revalidate=1800`). A soft-purged
+# Fastly copy is ALLOWED to answer with the pre-publish body while it revalidates,
+# and each new connection lands on a different cache node (measured 2026-11-09: 30
+# fresh connections to index.rubygems.org, 30 distinct `x-served-by` nodes). So one
+# fresh answer on curl's connection says nothing about bundler's connection.
 #
-#   · `/info/<gem>` SUPPLIES THE VERSIONS the resolver enumerates.
-#     `fetcher/compact_index.rb:30-47` → `compact_index_client.info(name)` →
-#     `parser.rb:43` parses the /info body. The "can no longer be found" raise
-#     is `definition.rb:594`. `Parser#versions` is never called on this path.
-#   · `/versions` GATES WHETHER /info IS RE-FETCHED. Its third field is an md5
-#     of that gem's /info file (`parser.rb:53-57`), and `cache.rb:29-38` skips
-#     the network entirely when the local /info already matches it.
+# THE CONDITION. Each poll makes AWAIT_READS separate curl processes (so separate
+# connections, as bundler's threads use) read /info/<gem> with bundler's headers,
+# then checks the .gem. The gem passes only when EVERY read lists the version and the
+# .gem answers 2xx. A stale read is also what makes that node revalidate, so polling
+# drains the stale copies this runner can reach; it is a bounded wait on a measured
+# condition, not a sleep. An old pin passes on the first poll in about a second.
 #
-# So a fresh `/versions` is NECESSARY BUT NOT SUFFICIENT: confirming it and then
-# skipping /info leaves the resolver reading a file nobody checked. This script
-# therefore confirms BOTH, and never breaks on /versions alone.
+# FAIL CLOSED ON A PROVEN MISS (Alex McRitchie's deterministic-CI ruling, 2026-11-08).
+# At AWAIT_TIMEOUT, if the last poll READ a body without the version (or the .gem
+# answered 4xx), the step fails with GEM_NOT_SERVED_ON_RUNNER and names the surface:
+# bundler would fail anyway, with the false claim that the author removed the gem.
+# If the last poll could not reach RubyGems at all, the step warns and exits 0: a
+# full bundler-cache hit installs nothing from the network and can still go green,
+# and a partial one fails in bundler with a network error, not a false one.
 #
-# SIGPIPE, and why every read here uses a command substitution rather than a
-# pipe: `curl … | grep -q` looks right and is a false-negative generator. `grep
-# -q` exits on its FIRST match, curl then dies of EPIPE, and under `pipefail`
-# that non-zero status becomes the pipeline's — so a genuine hit reads as a
-# miss. MEASURED against the live index: a match early in the tail returned
-# pipeline status 56 (curl write error) while the same query for the LAST line
-# returned 0. The bug is invisible for a just-published version, which sits at
-# the very end and lets curl finish writing — i.e. it hides in exactly the case
-# this script is written for, and bites every other one.
-#
-# WHY THIS EXISTS. `bin/release prepare` publishes a gem, commits the consumer
-# `Gemfile.lock` bump onto `origin/release`, and that commit triggers CI seconds
-# later. A job whose bundler cache misses then goes to the network for a version
-# published moments ago — and RubyGems does not serve a new version from every
-# CDN edge at once. `bundle install` dies with exit code 7 and the actively
-# misleading claim that the author "has removed" a version that is perfectly
-# live.
-#
-# It fired on BOTH releases of 2026-08-16, in different repos and different jobs:
-#   · rel-20260816-92c013 — mcritchie-studio `lint`   @ abfdcf8 (run 31928197053)
-#   · rel-20260816-53fa78 — turf-monster    `scan_js` @ 5302c71 (run 31931534886)
-# Each time the pre-QA gate read the red and ABORTED the sweep, after the
-# promote, publish, tag and lock bump had all already succeeded. Each time a
-# plain re-run of the failed job went green on the SAME SHA with no code change.
-# The tell: sibling jobs on the same commit bundled fine — they restored a usable
-# cache and never hit the network at all.
-#
-# WHY IT RUNS HERE, ON THE RUNNER. The sweep already waits for the compact index
-# before it bumps consumer locks, and that wait passed both times. A check from
-# the conductor's machine proves what the CONDUCTOR's CDN edge serves; it cannot
-# speak for the edge a GitHub runner will hit minutes later. This polls the same
-# host, from the same network, seconds before the install — which is the only
-# place the question can actually be answered.
-#
-# FAIL-SOFT BY DESIGN — read this before adding an `exit 1`. This script NEVER
-# fails the job. If a version never appears it warns and returns 0, leaving
-# exactly today's behaviour in place. That property is what keeps it off the
-# critical path: it can only ever turn a red green, never the reverse, so it
-# cannot become a new way for CI to break. It is also why it needs no
-# `continue-on-error` anywhere — which matters, because
-# test/lib/ci_workflow_triggers_test.rb forbids that key outright, on the
-# grounds that a lane which runs, fails, and reports green is the same lie as a
-# lane that runs nothing.
+# SIGPIPE: every read is a command substitution, never `curl | grep -q`. `grep -q`
+# exits on its first match, curl dies of EPIPE, and under `pipefail` a hit reads as
+# a miss (measured: status 56). `grep -c` reads the whole input.
 #
 set -uo pipefail
 
 GEMS=${AWAIT_GEMS:-"studio-engine solana-studio"}
 LOCK=${AWAIT_LOCK:-Gemfile.lock}
-TIMEOUT=${AWAIT_TIMEOUT:-120}
-INTERVAL=${AWAIT_INTERVAL:-10}
-# How much of the /versions tail to read. The file is append-only, so a version
-# published seconds ago sits at the very end. MEASURED 2026-08-16: the whole file
-# is 23,157,880 bytes and a 256KiB tail reached back ~4 hours of RubyGems publish
-# volume — far more margin than this script needs, at ~1% of the transfer.
-TAIL_BYTES=${AWAIT_TAIL_BYTES:-262144}
+TIMEOUT=${AWAIT_TIMEOUT:-300}
+INTERVAL=${AWAIT_INTERVAL:-5}
+READS=${AWAIT_READS:-8}
+INDEX_URL=${AWAIT_INDEX_URL:-https://index.rubygems.org}
+GEM_URL=${AWAIT_GEM_URL:-https://rubygems.org}
+# Gem::Net::HTTP sends this when the request has no Range header, which is bundler's
+# cold-cache /info read.
+NET_HTTP_ACCEPT_ENCODING="gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
 
-# Every value below is used in arithmetic or as a curl argument. A non-numeric
-# override would otherwise fail mid-flight — and this script must never be the
-# reason a job goes red — so fall back to the defaults instead of dying.
-case $TIMEOUT in ''|*[!0-9]*) TIMEOUT=120 ;; esac
-case $INTERVAL in ''|*[!0-9]*) INTERVAL=10 ;; esac
-case $TAIL_BYTES in ''|*[!0-9]*) TAIL_BYTES=262144 ;; esac
+# A non-numeric override must not crash arithmetic mid-flight: use the default.
+case $TIMEOUT in ''|*[!0-9]*) TIMEOUT=300 ;; esac
+case $INTERVAL in ''|*[!0-9]*) INTERVAL=5 ;; esac
+case $READS in ''|*[!0-9]*|0) READS=8 ;; esac
 
 if [ ! -f "$LOCK" ]; then
   echo "::debug::$LOCK not found — nothing to await"
@@ -104,61 +87,61 @@ for gem in $GEMS; do
     continue
   fi
 
-  # A /versions line is "<gem> <version> <md5-of-that-gems-info-file>". Anchor
-  # both ends of the version with the surrounding spaces: without the TRAILING
-  # space, "0.5.1 " would also match the line for 0.5.10 — studio-engine ships
-  # both. Dots are escaped so they cannot match an arbitrary character.
-  pattern="^${gem} $(printf '%s' "$version" | sed 's/\./\\./g') "
-
-  # `/info/<gem>` lists a version as "<version> <deps>|<checksums>".
+  # `/info/<gem>` lists a version as "<version> <deps>|<checksums>". The trailing
+  # space keeps 0.5.1 from matching 0.5.10; dots are escaped.
   info_pattern="^$(printf '%s' "$version" | sed 's/\./\\./g') "
-
-  # `/info` is NECESSARY on every path, so it is never skipped; `/versions` is
-  # the freshness gate on top of it. Both are read with the substitution OUTSIDE
-  # the pipeline — see the SIGPIPE note in the header. `grep -c` counts instead
-  # of short-circuiting, and its own non-zero exit on "no match" is absorbed by
-  # the `|| true` so `pipefail` has nothing to propagate.
-  seen_info_only=0
+  gem_file="${GEM_URL}/gems/${gem}-${version}.gem"
+  polls=0
 
   while :; do
-    versions_tail=$(curl -fsS --max-time 20 --range "-${TAIL_BYTES}" \
-                      "https://index.rubygems.org/versions" 2>/dev/null || true)
-    info_body=$(curl -fsS --max-time 20 \
-                  "https://index.rubygems.org/info/${gem}" 2>/dev/null || true)
+    polls=$(( polls + 1 ))
+    listed=0
+    stale=0
+    unreachable=0
 
-    on_versions=$(printf '%s\n' "$versions_tail" | grep -cE "$pattern" || true)
-    on_info=$(printf '%s\n' "$info_body" | grep -cE "$info_pattern" || true)
+    read_n=0
+    while [ "$read_n" -lt "$READS" ]; do
+      read_n=$(( read_n + 1 ))
+      # One curl process per read: a new connection, as each bundler worker opens.
+      if body=$(curl -fsS --http1.1 --compressed --max-time 20 \
+                  -H "Accept-Encoding: ${NET_HTTP_ACCEPT_ENCODING}" \
+                  "${INDEX_URL}/info/${gem}" 2>/dev/null); then
+        hits=$(printf '%s\n' "$body" | grep -cE "$info_pattern" || true)
+        if [ "${hits:-0}" -gt 0 ]; then
+          listed=$(( listed + 1 ))
+        else
+          stale=$(( stale + 1 ))
+        fi
+      else
+        unreachable=$(( unreachable + 1 ))
+      fi
+    done
 
-    # BOTH fresh — the fully-propagated case, and the one a just-published
-    # version reaches within seconds.
-    if [ "${on_versions:-0}" -gt 0 ] && [ "${on_info:-0}" -gt 0 ]; then
-      echo "${gem} ${version} is on /versions AND /info — this edge is fully caught up"
+    # The download bundler makes for a gem it has not installed. -L follows a redirect.
+    gem_status=$(curl -sS -o /dev/null -I -L --max-time 20 -w '%{http_code}' "$gem_file" 2>/dev/null || true)
+    case $gem_status in
+      2??) gem_state=served ;;
+      4??) gem_state=missing ;;
+      *)   gem_state=unreachable ;;
+    esac
+
+    if [ "$listed" -eq "$READS" ] && [ "$gem_state" = served ]; then
+      echo "${gem} ${version} is served: /info listed it on ${READS} of ${READS} separate connections and the .gem answered ${gem_status} (poll ${polls})"
       break
     fi
 
-    # /info alone. This is EXPECTED for any pin older than the tail window: its
-    # /versions line exists, just further back than the range we read. It is
-    # also what a stale-/versions edge looks like for a fresh publish, and the
-    # two are indistinguishable from here — so give /versions a short grace to
-    # catch up, then proceed rather than burn the whole timeout on an old pin
-    # (measured: studio-engine 0.54.1 otherwise waits the full TIMEOUT in every
-    # job). Proceeding is safe on a cold bundler cache, which is the case that
-    # fails: with no local /info to compare against, bundler fetches /info and
-    # sees the version regardless of what /versions says.
-    if [ "${on_info:-0}" -gt 0 ]; then
-      seen_info_only=$(( seen_info_only + 1 ))
-      if [ "$seen_info_only" -ge 2 ] || [ "$(date +%s)" -ge "$deadline" ]; then
-        echo "${gem} ${version} is on /info (the list the resolver enumerates); not in the /versions tail window — proceeding"
-        break
-      fi
-    fi
+    summary="/info listed it on ${listed} of ${READS} connections (${stale} stale, ${unreachable} unreachable); .gem ${gem_state} (${gem_status:-no answer})"
 
     if [ "$(date +%s)" -ge "$deadline" ]; then
-      echo "::warning::${gem} ${version} is not on /info after ${TIMEOUT}s — continuing anyway; bundle install may hit the propagation race"
+      if [ "$stale" -gt 0 ] || [ "$gem_state" = missing ]; then
+        echo "::error::GEM_NOT_SERVED_ON_RUNNER: ${gem} ${version} after ${TIMEOUT}s (${polls} polls): ${summary}. The RubyGems CDN still serves this runner a copy without the version, so bundle install would fail and wrongly report the version as removed. The lock is correct; the CDN is late. Not a race the release gate re-runs."
+        exit 1
+      fi
+      echo "::warning::${gem} ${version}: RubyGems could not be read after ${TIMEOUT}s (${summary}) — continuing; a full bundler-cache hit needs no network"
       break
     fi
 
-    echo "awaiting ${gem} ${version} on the RubyGems index…"
+    echo "awaiting ${gem} ${version}: ${summary}"
     sleep "$INTERVAL"
   done
 done

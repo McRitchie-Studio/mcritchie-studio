@@ -150,7 +150,9 @@ class CiSuiteWorkflowTest < Minitest::Test
     assert_equal "bin/rails db:test:prepare test:system", CiSuiteWorkflow.caller_suite_command(ci, suite_yaml: suite)
     # The javascript lane bundles (bin/test-js links studio-engine's node:test hook), so it
     # awaits the gem propagation first, as every bundling lane does.
-    assert_equal [".github/scripts/await-gem-propagation.sh", "bin/test-js"],
-                 CiSuiteWorkflow.runs(CiSuiteWorkflow.as_called(suite), "javascript")
+    # The await step runs the caller's copy, else the hub's (.hub-ci), so it is a short script.
+    await, test_js = CiSuiteWorkflow.runs(CiSuiteWorkflow.as_called(suite), "javascript")
+    assert_includes await.to_s, "script=.github/scripts/await-gem-propagation.sh"
+    assert_equal "bin/test-js", test_js
   end
 end

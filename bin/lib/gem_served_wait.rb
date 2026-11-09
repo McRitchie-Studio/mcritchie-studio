@@ -20,9 +20,9 @@
 #
 # THE HOLD IS A HEURISTIC, NOT A BOUND. max-age=60 is what RubyGems asks for, not
 # what every edge does: on 2026-10-29 Fastly edges answered with copies 442s and
-# 2709s old. The hold narrows the race; it cannot observe a runner's edge, so the
-# gate's one named infra re-run (bin/lib/ci_rerun.rb, recorded as `ci_infra_rerun`)
-# still stands behind it.
+# 2709s old. The hold narrows the race; it cannot observe a runner's edge. The runner
+# side is .github/scripts/await-gem-propagation.sh, and the gate's one named infra
+# re-run (bin/lib/ci_rerun.rb, `ci_infra_rerun`) still stands behind both.
 #
 # PURE: the probe, the clock and the sleeper are injected, so the tests drive every
 # outcome (served at once, served after N polls, never served) with no network and

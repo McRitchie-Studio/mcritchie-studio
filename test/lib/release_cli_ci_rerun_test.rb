@@ -118,6 +118,47 @@ class ReleaseCliCiRerunTest < ReleaseCliHarness
     assert_includes out, 'RERUNS=["12"]', "one re-run for the SHA across both polls: #{out}"
   end
 
+  # [unit] BEFORE ANY GATE WINDOW (prepare's gem CI gate and pre-publish gate run
+  # before G3 opens): the red is HELD, not dropped, and the next window takes it.
+  def test_a_red_outside_a_gate_window_is_held_for_the_next_window
+    setup = poll_stub(verdicts: [{ state: :red, failing: ["test"] }], log: FAILED_TEST) + <<~RUBY
+      $conductor_calls = []
+      def conductor(ruby, read_only: false) = ($conductor_calls << ruby; {})
+    RUBY
+    out = run_cli([], setup: setup, call: <<~CALL)
+      $gate_sops = nil
+      poll_ci_verdict("rantly", #{SHA.inspect}, budget: 60)
+      puts "HELD=\#{$held_ci_sops.inspect}"
+      record_gate_open("rel-x", "g3_candidate", actor: "avi")
+      puts "WINDOW=\#{$gate_sops.inspect} HELD_AFTER=\#{$held_ci_sops.inspect}"
+    CALL
+
+    assert_match(/HELD=\[\{"sop"=>"ci_red", "cmd"=>"✗ CI RED rantly@/, out, out)
+    assert_match(/WINDOW=\[\{"sop"=>"ci_red"/, out, "the opened window carries the held red: #{out}")
+    assert_includes out, "HELD_AFTER=[]"
+  end
+
+  # [unit] A prepare that aborts before G3 opened records the held red on a failed
+  # g3_candidate attempt, so `ci_red` reaches the release record.
+  def test_held_reds_are_recorded_on_a_failed_g3_attempt
+    out = run_cli([], setup: <<~RUBY, call: <<~CALL)
+      $conductor_calls = []
+      def conductor(ruby, read_only: false) = ($conductor_calls << ruby; {})
+    RUBY
+      $gate_sops = nil
+      record_held_ci_sops!("rel-x")
+      puts "CALLS=\#{$conductor_calls.size}"
+      ci_gate_sop("ci_red", "✗ CI RED studio-engine@abc", false)
+      record_held_ci_sops!("rel-x")
+      puts $conductor_calls.join("\n")
+    CALL
+
+    assert_includes out, "CALLS=0", "nothing held, nothing written"
+    assert_includes out, "GateRun.open!(subject_type: 'release', subject_slug: \"rel-x\", key: \"g3_candidate\""
+    assert_match(/GateRun.close!\(.*key: "g3_candidate", success: false, sops: \[\{"sop"=>"ci_red", "cmd"=>"✗ CI RED studio-engine@abc", "result"=>"fail"\}\]/, out)
+    assert_includes out, %("phase"=>"before_pre_qa")
+  end
+
   def test_a_real_lint_failure_stops
     out = poll(poll_stub(verdicts: [{ state: :red, failing: ["lint"] }], jobs: ["lint"], log: "Offenses: 2"))
 

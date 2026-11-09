@@ -1769,6 +1769,33 @@ end
 # test scopes (e.g. a straggler run) collect nothing.
 $gate_sops = nil
 
+# A CI verdict's `ci_red` / `ci_infra_rerun` read OUTSIDE a gate window. Prepare's gem
+# CI gate (validate_gems_for_qa → gem_ci_failure) and its pre-publish gate run before
+# G3 opens, so gate_sop dropped their reds and the release record never carried them.
+# They are held here instead: the next record_gate_open takes them into its window,
+# and a prepare that aborts before G3 opens records them on a failed g3_candidate
+# attempt (record_held_ci_sops!). Task consumers-await-gem-propagation.
+$held_ci_sops = []
+
+# Record a CI-verdict SOP: on the open gate window, else held for the next one.
+def ci_gate_sop(sop, cmd, ok)
+  return gate_sop(sop, cmd, ok) if $gate_sops
+
+  $held_ci_sops << { "sop" => sop.to_s, "cmd" => cmd.to_s, "result" => ok ? "pass" : "fail" }
+rescue StandardError
+  nil
+end
+
+# A prepare that aborts before G3 opened still records the CI reds it read: one failed
+# g3_candidate attempt carrying them, so `ci_red` is on the release record as the SOPs
+# say. Best-effort, like every gate write.
+def record_held_ci_sops!(release_slug)
+  return if release_slug.to_s.empty? || $held_ci_sops.empty?
+
+  record_gate_open(release_slug, "g3_candidate", actor: "avi")
+  record_gate_close(release_slug, "g3_candidate", false, metadata: { "aborted" => true, "phase" => "before_pre_qa" })
+end
+
 # Push one executed-SOP entry onto the open gate window (no-op outside one).
 # String keys + scalar values only, so the buffer embeds .inspect-safe in the
 # Base64 conductor payload. Never raises — collection must not break the run.
@@ -1785,7 +1812,8 @@ end
 # Open (or re-enter — GateRun.open! reuses the in-flight attempt) the release's
 # gate attempt and start collecting SOPs. Best-effort + dry-run-suppressed.
 def record_gate_open(release_slug, key, actor: nil)
-  $gate_sops = []
+  $gate_sops = $held_ci_sops
+  $held_ci_sops = []
   actor_ruby = actor.to_s.empty? ? "nil" : actor.to_s.inspect
   conductor(
     "run = GateRun.open!(subject_type: 'release', subject_slug: #{release_slug.inspect}, " \
@@ -4576,7 +4604,7 @@ def ci_red_once!(repo, sha)
         "reading the red as it stands")
     return ci_red_stop!(repo, sha, plan.merge(reason: "the infra re-run of run #{id} was refused"))
   end
-  gate_sop("ci_infra_rerun", "↻ INFRA RE-RUN of #{repo}@#{short(sha)} run(s) #{plan[:run_ids].join(', ')} — cause: " \
+  ci_gate_sop("ci_infra_rerun", "↻ INFRA RE-RUN of #{repo}@#{short(sha)} run(s) #{plan[:run_ids].join(', ')} — cause: " \
                              "infra, #{CiRerun::INFRA_CAUSE}: #{plan[:reason]}", true)
   @ci_reruns[key] = plan[:run_ids]
 end
@@ -4592,7 +4620,7 @@ end
 def ci_red_stop!(repo, sha, plan)
   record = CiRerun.red_record(repo, short(sha), plan[:failures], plan[:reason])
   say("  #{record}")
-  gate_sop("ci_red", record, false)
+  ci_gate_sop("ci_red", record, false)
   nil
 end
 
@@ -4772,8 +4800,9 @@ end
 #
 # CHEAP BY CONSTRUCTION. That tree is the promoted `accepted` head, whose green the
 # G3 dedupe credits without a fresh run (resolve_release_ci_verdict), so this costs a
-# read, not a CI cycle, on a normal sweep. Records nothing: the pre-QA gate after the
-# bump is still G3, still reads the post-bump SHA QA deploys, and still records it.
+# read, not a CI cycle, on a normal sweep. A green records nothing: the pre-QA gate after
+# the bump is still G3 and records the post-bump SHA. A red is held as `ci_red`
+# (ci_gate_sop) and recorded on a failed g3_candidate attempt when prepare aborts.
 # A red THERE now means the lock bump itself or a defect with a cause, and a re-run at the same gem
 # tip reuses the live final (publish_gems_for_qa's reuse path), so nothing burns.
 def pre_publish_gate(app_groups, gem_plan)
@@ -5775,6 +5804,8 @@ rescue SystemExit
   # is itself best-effort (it can never raise), and the `raise` below ALWAYS
   # re-raises: the gate write must never mask the abort.
   record_gate_close(rel_slug, "g3_candidate", false, metadata: { "aborted" => true }) if g3_gate == :open
+  # A red read by the gem CI gate or the pre-publish gate, before G3 opened.
+  record_held_ci_sops!(rel_slug) unless g3_gate == :open
   # Drop the assembler claim on an aborted prepare too (best-effort): a re-run is
   # same-instance and simply re-acquires (renews), so freeing it now — rather than
   # waiting out the TTL — lets a different conductor take over sooner if this session
