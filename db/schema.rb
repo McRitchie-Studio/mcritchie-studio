@@ -1834,7 +1834,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_050000) do
     t.string "requested_by", null: false
     t.datetime "updated_at", null: false
     t.index ["mailbox", "created_at"], name: "index_gmail_changes_on_mailbox_and_created_at"
-    t.check_constraint "action::text = ANY (ARRAY['read'::character varying, 'unread'::character varying, 'archive'::character varying, 'inbox'::character varying, 'spam'::character varying, 'not_spam'::character varying, 'label'::character varying, 'unlabel'::character varying, 'move'::character varying, 'filter'::character varying]::text[])", name: "gmail_changes_action_known"
+    t.check_constraint "action::text = ANY (ARRAY['read'::character varying::text, 'unread'::character varying::text, 'archive'::character varying::text, 'inbox'::character varying::text, 'spam'::character varying::text, 'not_spam'::character varying::text, 'label'::character varying::text, 'unlabel'::character varying::text, 'move'::character varying::text, 'filter'::character varying::text])", name: "gmail_changes_action_known"
   end
 
   create_table "google_connections", force: :cascade do |t|
