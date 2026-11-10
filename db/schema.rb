@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_062500) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1638,6 +1638,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
     t.index ["parent_type", "parent_id"], name: "index_error_logs_on_parent_type_and_parent_id"
     t.index ["slug"], name: "index_error_logs_on_slug", unique: true
     t.index ["target_type", "target_id"], name: "index_error_logs_on_target_type_and_target_id"
+    t.check_constraint "slug IS NOT NULL", name: "error_logs_slug_present"
   end
 
   create_table "facts", force: :cascade do |t|
@@ -2646,6 +2647,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
     t.datetime "updated_at", null: false
     t.index ["app_name"], name: "index_studio_geo_settings_on_app_name", unique: true
     t.index ["slug"], name: "index_studio_geo_settings_on_slug", unique: true
+    t.check_constraint "slug IS NOT NULL", name: "studio_geo_settings_slug_present"
   end
 
   create_table "studio_knowledge_docs", force: :cascade do |t|
@@ -2719,6 +2721,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
     t.datetime "updated_at", null: false
     t.index ["app_name"], name: "index_studio_site_identities_on_app_name", unique: true
     t.index ["slug"], name: "index_studio_site_identities_on_slug", unique: true
+    t.check_constraint "slug IS NOT NULL", name: "studio_site_identities_slug_present"
   end
 
   create_table "studio_survey_responses", force: :cascade do |t|
@@ -2948,6 +2951,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
     t.string "warning"
     t.index ["app_name"], name: "index_theme_settings_on_app_name", unique: true
     t.index ["slug"], name: "index_theme_settings_on_slug", unique: true
+    t.check_constraint "slug IS NOT NULL", name: "theme_settings_slug_present"
   end
 
   create_table "tiktok_connections", force: :cascade do |t|
