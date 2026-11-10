@@ -26,7 +26,7 @@ module MarketingKit
       PHOTOS => "Approved photographs",
       MESSAGING => "Company descriptions, taglines, services, proof points, contact block",
       COLLATERAL => "Capabilities statements and other sales pieces",
-      TEMPLATES => "General document, proposal and slideshow templates (File, then Make a copy)",
+      TEMPLATES => "General document, proposal, slideshow and spreadsheet templates (File, then Make a copy)",
       ARCHIVE => "Superseded files. Move, never delete"
     }.freeze
 

@@ -6,8 +6,8 @@
 This is Alex's `marketing-kit` SOP. It gives any brand the kit Commercial Welding
 got in October 2026: one Drive folder with the logos and photos at hand, a
 four-page brand guidelines PDF, General and Proposal Google Doc templates, a
-12-slide Google Slides template, a Brand Guide, 00 Start Here and a tracker
-sheet. One YAML spec drives all of it, and `bin/marketing-kit` turns the spec
+12-slide Google Slides template, a branded Google Sheets template, a Brand
+Guide, 00 Start Here and a tracker sheet. One YAML spec drives all of it, and `bin/marketing-kit` turns the spec
 into files and puts them in Drive.
 
 The guidelines are a reference, not a rulebook. Alex McRitchie, 2026-10-26: "No
@@ -29,7 +29,7 @@ knows one kit can find their way round any other:
 | 01 Brand | Brand Guide · Logos (SVG for print and web, PNG for Office and social) · Kit source (the spec and its doc fragments) |
 | 02 Photography | Every approved photo, named `<SHORT>_photo_<name>.jpg` |
 | 03 Messaging · 04 Sales Collateral | Docs the brand writes itself (`docs:` in the spec) |
-| 05 Templates | `<SHORT> Template — General`, `— Proposal`, `— Slides` |
+| 05 Templates | `<SHORT> Template — General`, `— Proposal`, `— Slides`, `— Sheet` |
 | 06 Archive | Superseded files: move, never delete |
 
 ## Rules that hold for every brand
@@ -125,6 +125,11 @@ brands them. Put the brand's own terms of service in
 `proposal.terms_of_service`, word for word, and only if the owner gave them to
 you.
 
+The Sheet template's head colours come from the palette too: `primary`,
+`accent`, then the first other swatch that carries white text. A brand whose
+palette gives a poor third (two near-identical greys, say) names its three in
+`sheet.sections`, by swatch name or key. See [The Sheet template](#the-sheet-template).
+
 **6. Build and look.**
 
 ```bash
@@ -159,6 +164,8 @@ publish builds a second kit beside it. Each new Doc,
 Sheet or Slides file is an API copy of its upload, because the template gallery
 refuses a file made by upload. Then:
 - export the Slides template to PDF and look at every slide;
+- export the Sheet template to PDF and look at it (`files_export` with
+  `application/pdf`);
 - open each Doc.
 
 Fix anything through the spec, then publish again with `--replace "<file name>"`
@@ -203,6 +210,34 @@ What a publish does to what is already there:
   edited it since. Drive's version history can restore it.
 - Two files with the same name in one folder are reported and skipped; merge
   them in Drive first.
+
+## The Sheet template
+
+`<SHORT> Template — Sheet` is the kit's standard spreadsheet
+(`lib/marketing_kit/sheet_template.rb`, drawn by `script/marketing_kit/office.py`).
+Copy it for any working sheet: a roster, a register, a tracker. Its rules make
+the sheet easy to work in, so keep them in every copy:
+
+| Part | What it is |
+|------|------------|
+| Row 1 | The navbar: a `dark` band with the horizontal dark logo |
+| Rows 2-3 | `[Sheet Title]` and a one-line description |
+| Rows 4-5 | Variables: a label over each value, from column A. Formulas point at them with absolute references |
+| Rows 7-8 | The table head in three colour sections: the darker top row names the section, the lower row names the columns |
+| Row 9 on | The data. Column A is the row's item (its name) |
+
+- **No merged cells.** A section's label sits in its first cell, and the other
+  cells share its colour. Every column can move, sort and filter.
+- **The freeze is at B9.** The head rows and column A stay in view, so you always
+  see which row and which column you are on.
+- **White text on both head rows, at 4.5:1 or better.** The lower row is the
+  brand colour, darkened only as far as white text needs (a near-black colour
+  lightens a step instead, so the two rows still differ). The top row is that
+  colour 30% of the way to black.
+- **A How to use tab** carries these rules for whoever copies it.
+
+Drive keeps the freeze, the hidden gridlines, the logo, the filter, the
+dropdown and the formulas when it converts the `.xlsx` (checked 2026-11-10).
 
 ## Doc masters
 

@@ -68,6 +68,8 @@ module MarketingKit
     def general_template = data[:general_template] || {}
     def proposal = data[:proposal] || {}
     def tracker = data[:tracker] || {}
+    # The Sheet template's options: sections (three swatch names or palette keys) picks its head colours.
+    def sheet = data[:sheet] || {}
     def start_here = data[:start_here] || {}
     def brand_guide = data[:brand_guide] || {}
 
@@ -139,6 +141,7 @@ module MarketingKit
       end
 
       validate_palette!
+      validate_sheet!
       validate_logos!
       validate_photos!
     end
@@ -166,6 +169,14 @@ module MarketingKit
 
       absent = REQUIRED_COLOURS - keys
       raise Error, "#{label}: palette needs #{absent.join(', ')} keys" if absent.any?
+    end
+
+    def validate_sheet!
+      sections = sheet[:sections]
+      return if sections.nil?
+      raise Error, "#{label}: sheet.sections takes exactly three swatch names or palette keys" unless sections.is_a?(Array) && sections.size == 3
+
+      SheetTemplate.new(self).sections
     end
 
     def validate_logos!

@@ -2,6 +2,7 @@
 # Draws a marketing kit's Office files from a JSON payload that lib/marketing_kit/office.rb writes:
 #   office.py slides  payload.json  out.pptx   the 12-slide template (16:9), for Drive to convert to Google Slides
 #   office.py tracker payload.json  out.xlsx   the tracker workbook, for Drive to convert to a Google Sheet
+#   office.py sheet   payload.json  out.xlsx   the Sheet template (lib/marketing_kit/sheet_template.rb), for Drive to convert
 # Every word and colour comes from the payload; this script only lays it out.
 import json, os, sys, tempfile
 
@@ -203,6 +204,113 @@ def tracker(d, out):
     wb.save(out)
     print(f"wrote {out} ({len(d['sheets'])} sheets)")
 
+def sheet(d, out):
+    """The Sheet template. Never merges a cell; freezes under the lower head and right of the item column."""
+    import datetime, re
+    from PIL import Image
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.drawing.image import Image as XImage
+    from openpyxl.drawing.spreadsheet_drawing import OneCellAnchor, AnchorMarker
+    from openpyxl.drawing.xdr import XDRPositiveSize2D
+    from openpyxl.utils import get_column_letter as L
+    from openpyxl.utils.units import pixels_to_EMU
+    from openpyxl.worksheet.datavalidation import DataValidation
+
+    col = {k: v.lstrip("#") for k, v in d["colours"].items()}
+    font = lambda **k: Font(name=d["font"], **k)
+    fill = lambda h: PatternFill("solid", fgColor=h.lstrip("#"))
+    FORMATS = {"date": "mmm d, yyyy", "money": '"$"#,##0.00', "percent": "0.0%"}
+    RIGHT = {"money", "percent", "formula", "date"}
+
+    BAND, TITLE, DESC, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 9)
+    FIRST = HEAD_LOW + 1
+    LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
+    cols, n = d["columns"], len(d["columns"])
+
+    wb = Workbook(); ws = wb.active; ws.title = d["sheet_title"]
+    ws.sheet_view.showGridLines = False
+    for i, c in enumerate(cols): ws.column_dimensions[L(i + 1)].width = c["width"]
+    heights = {BAND: 36, TITLE: 30, DESC: 18, VAR_LABEL: 16, VAR_VALUE: 24, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
+    for r, h in heights.items(): ws.row_dimensions[r].height = h
+
+    # Navbar: the band across the table, the logo centred in its height
+    for c in range(1, n + 1): ws.cell(BAND, c).fill = fill(col["band"])
+    im = Image.open(d["logo"]); lh = 20; lw = round(im.width * lh / im.height)
+    logo = XImage(d["logo"]); logo.width, logo.height = lw, lh
+    pad = (heights[BAND] * 4 // 3 - lh) // 2  # row height is in points; the anchor is in pixels
+    logo.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(10), row=0, rowOff=pixels_to_EMU(pad)),
+                                ext=XDRPositiveSize2D(pixels_to_EMU(lw), pixels_to_EMU(lh)))
+    ws.add_image(logo)
+
+    t = ws.cell(TITLE, 1, d["title"]); t.font = font(size=16, bold=True, color=col["ink"]); t.alignment = Alignment(vertical="center")
+    s = ws.cell(DESC, 1, d["description"]); s.font = font(size=9, italic=True, color=col["grey"]); s.alignment = Alignment(vertical="top")
+
+    # Variables: label over value, one per column from A
+    var_cell = {}
+    for i, v in enumerate(d["variables"]):
+        lab = ws.cell(VAR_LABEL, i + 1, v["label"].upper()); lab.font = font(size=8, bold=True, color=col["grey"])
+        lab.alignment = Alignment(vertical="bottom", indent=1)
+        value = v["value"]
+        if isinstance(value, str): value = value.replace("{first}", str(FIRST)).replace("{last}", str(LAST))
+        cell = ws.cell(VAR_VALUE, i + 1, value)
+        cell.font = font(size=11, bold=True, color=col["ink"]); cell.fill = fill(col["light"])
+        cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        if v["kind"] in FORMATS: cell.number_format = FORMATS[v["kind"]]
+        var_cell[v["label"]] = f"${L(i + 1)}${VAR_VALUE}"
+
+    # The table head: three sections, darker on top, white text on both rows.
+    # A section's label sits in its first cell; the rest share the fill, unmerged.
+    edge = Side(style="medium", color=col["white"])
+    for i, c in enumerate(cols):
+        sec = d["sections"][c["section"]]
+        first = i == 0 or cols[i - 1]["section"] != c["section"]
+        top = ws.cell(HEAD_TOP, i + 1, sec["label"] if first else None)
+        top.fill = fill(sec["top"]); top.font = font(size=10, bold=True, color=col["white"])
+        top.alignment = Alignment(vertical="center", indent=1)
+        low = ws.cell(HEAD_LOW, i + 1, c["head"])
+        low.fill = fill(sec["low"]); low.font = font(size=9, bold=True, color=col["white"])
+        right = c["kind"] in RIGHT
+        low.alignment = Alignment(vertical="center", horizontal="right" if right else "left", indent=1)
+        if first and i:
+            top.border = Border(left=edge); low.border = Border(left=edge)
+
+    # Example rows
+    rule = Side(style="thin", color=col["rule"])
+    for r, row in enumerate(d["rows"], start=FIRST):
+        ws.row_dimensions[r].height = 20
+        for i, v in enumerate(row):
+            c = cols[i]
+            if c["kind"] == "date" and v: v = datetime.date.fromisoformat(v)
+            if c["kind"] == "formula":
+                v = re.sub(r"\{var:([^}]+)\}", lambda m: var_cell[m.group(1)], c["formula"]).replace("{r}", str(r))
+            cell = ws.cell(r, i + 1, v if v != "" else None)
+            cell.font = font(size=10, color=col["ink"], bold=c["kind"] == "item")
+            cell.border = Border(bottom=rule)
+            cell.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
+            if c["kind"] in FORMATS: cell.number_format = FORMATS[c["kind"]]
+            if c["kind"] == "formula": cell.number_format = FORMATS["money"]
+
+    status = [i for i, c in enumerate(cols) if c["kind"] == "status"]
+    if status:
+        dv = DataValidation(type="list", formula1='"' + ",".join(d["statuses"]) + '"', allow_blank=True)
+        ws.add_data_validation(dv); dv.add(f"{L(status[0] + 1)}{FIRST}:{L(status[0] + 1)}{LAST}")
+    ws.auto_filter.ref = f"A{HEAD_LOW}:{L(n)}{FIRST + len(d['rows']) - 1}"
+    ws.freeze_panes = f"B{FIRST}"
+    ws.page_setup.orientation = "landscape"
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+
+    notes = wb.create_sheet(d["notes_title"])
+    notes.sheet_view.showGridLines = False
+    notes.column_dimensions["A"].width = 110
+    for r, line in enumerate(d["notes"], start=1):
+        c = notes.cell(r, 1, line)
+        c.font = font(size=14 if r == 1 else 10, bold=r == 1, color=col["ink"])
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+    wb.save(out)
+    print(f"wrote {out} (freeze {ws.freeze_panes}, {n} columns, {len(d['rows'])} example rows)")
+
 if __name__ == "__main__":
     kind, payload, out = sys.argv[1:4]
-    {"slides": slides, "tracker": tracker}[kind](json.load(open(payload)), out)
+    {"slides": slides, "tracker": tracker, "sheet": sheet}[kind](json.load(open(payload)), out)

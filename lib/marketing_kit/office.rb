@@ -5,9 +5,9 @@ require "open3"
 require "digest"
 
 module MarketingKit
-  # The two Office files: the 12-slide template (.pptx, which Drive converts to
-  # Google Slides) and the tracker workbook (.xlsx, converted to a Google
-  # Sheet). Ruby decides every word and colour here and writes a JSON payload;
+  # The Office files: the 12-slide template (.pptx, which Drive converts to
+  # Google Slides), the Sheet template and the tracker workbook (.xlsx,
+  # converted to Google Sheets). Ruby decides every word and colour here and writes a JSON payload;
   # script/marketing_kit/office.py only draws it (python-pptx and openpyxl,
   # which have no Ruby equivalent good enough for Drive's import).
   class Office
@@ -65,6 +65,7 @@ module MarketingKit
     end
 
     def write_slides(path) = draw("slides", slides_payload, path)
+    def write_sheet(path) = draw("sheet", SheetTemplate.new(@spec).payload, path)
     def write_tracker(inventory, path) = draw("tracker", tracker_payload(inventory), path)
 
     # The venv lives outside the tree so a desk and the primary share it; it is
