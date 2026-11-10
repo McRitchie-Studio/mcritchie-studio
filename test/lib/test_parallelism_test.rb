@@ -14,7 +14,7 @@ class TestParallelismTest < ActiveSupport::TestCase
   # CHANGED 2026-08-18 (/tasks/measure-local-parallel-workers). This used to assert
   # that PARALLEL_WORKERS=4 was honoured LOCALLY. Measured on a quiet machine, 2 of 2
   # trials, that request does not produce a parallel run — it produces four
-  # `pg/connection.rb:944 [BUG] Segmentation fault` dumps at the fork, before any test
+  # `pg/connection.rb:944: [BUG] Segmentation fault` dumps at the fork, before any test
   # runs, plus orphan workers holding the test DB. So the old assertion pinned a
   # setting that could only ever crash. The override still works in CI, where forking
   # is fine, and still works locally to force 1.

@@ -999,11 +999,14 @@ nobody files it under "flaky". The system holds that line in five places:
   (executed-set) that names a missing shard report folds onto that shard's cause. So
   does a census red on a short count while a shard of its own lane failed: a shard
   that crashed still uploads an empty report. A native crash (exit 134, 139 or 142,
-  `Aborted (core dumped)`, the native-abort-report banner) is the harness key
-  `native-abort`, not `web-server-boot`. A later occurrence of the same cause folds
+  `Aborted (core dumped)`, the native-abort-report banner, Ruby's
+  `file:line: [BUG]` header) is the harness key `native-abort`, not `web-server-boot`. A later occurrence of the same cause folds
   into the open card. One cause files under an advisory lock, and an occurrence a
   card of that cause already holds, open or closed, files nothing. History:
   `REPO=<owner/repo> DAYS=14 bin/rails ci:causes:sweep` (`DRY_RUN=1` to list only).
+  Cards filed before the lock: `bin/rails ci:causes:cleanup` merges race twins (a base
+  and its `-2` holding one red) and moves past native crashes onto `native-abort`. It is
+  a dry run unless `APPLY=1`, and an operator runs it after it ships.
 - **Five runs at the door.** The `playwright` lane runs every spec a PR adds or changes
   in five fresh passes (`bin/e2e-repeat-changed`), after the whole suite and outside the
   executed-set receipt. Each pass boots and seeds its own server: under `--repeat-each`

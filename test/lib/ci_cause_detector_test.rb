@@ -281,6 +281,19 @@ class CiCauseDetectorTest < Minitest::Test
     end
   end
 
+  # Ruby's crash report opens with the crashing frame's location, `file:line: [BUG] ...`
+  # (error.c), never a bare `[BUG]` at the line start: the header the old pattern never read.
+  def test_ruby_s_real_file_line_bug_header_is_a_native_abort
+    ["/home/runner/work/app/vendor/bundle/ruby/3.3.0/gems/pg-1.6.3/lib/pg/connection.rb:944: [BUG] Segmentation fault at 0x0000000000000010\n",
+     "[WebServer] /usr/local/bundle/gems/puma-7.2.0/lib/puma/server.rb:312: [BUG] Segmentation fault at 0x0000000000000000\n" \
+     "Error: Process from config.webServer exited early.\n",
+     "-e:1: [BUG] Segmentation fault\n##[error]Process completed with exit code 1.\n"].each do |log|
+      c = only(CiCauseDetector.causes(job_name: "ci / rails (1)", log: log))
+      assert_equal ["harness", "native-abort"], [c[:klass], c[:key]], log
+    end
+    refute_match CiCauseDetector::NATIVE_ABORT, "the commit message mentions [BUG] in passing"
+  end
+
   def test_a_server_that_exits_1_or_times_out_stays_web_server_boot
     ["Error: Process from config.webServer was not able to start. Exit code: 1\n",
      "Error: Process from config.webServer was not able to start. Exit code: 1342\n",
