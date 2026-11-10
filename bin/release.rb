@@ -268,6 +268,7 @@ require_relative "../app/models/release/gh_read_retry"
 # step that runs it and as the remedy an operator re-runs, which is how the remedy
 # lost its `--yes`. Rails-free → unit-tested.
 require_relative "../app/models/release/qa_deploy_command"
+require_relative "../app/models/release/runner_gem_wait"
 # The mint-once-and-retry recovery this lane's gh calls ride (bin/lib/ci_status.rb
 # already requires it for the CI reads; named here because dispatch_and_watch is
 # now a first-class caller and a transitive require is not a dependency).
@@ -7105,6 +7106,9 @@ GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
 # How long every surface must KEEP answering before a consumer lock may be pushed
 # (GemServedWait: one fresh read from this edge is not proof a runner's edge has it).
 GEM_SETTLE_S = Integer(ENV.fetch("RELEASE_GEM_SETTLE_S", GemServedWait::DEFAULT_SETTLE_S.to_s))
+# How many separate bundler-shaped /info reads one poll makes; every one must list the
+# version (GemServedWait::DEFAULT_INFO_READS, the runner script's AWAIT_READS).
+GEM_INFO_READS = [Integer(ENV.fetch("RELEASE_GEM_INFO_READS", GemServedWait::DEFAULT_INFO_READS.to_s)), 1].max
 # One curl's ceiling. Without it a stalled read never returns and the deadline never fires.
 GEM_CURL_MAX_TIME = Integer(ENV.fetch("RELEASE_GEM_CURL_MAX_TIME", "20"))
 
@@ -7140,11 +7144,9 @@ def gem_version_miss(gem_name, version)
 
   # --max-time on every read: a hung connection is a failed read the deadline can count.
   GemServedWait.first_miss([
-    [GemServedWait::SURFACE_INFO, lambda {
-      out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
-                                    format(GEM_INDEX_URL, gem_name))
-      status.success? && gem_index_lists?(out, version)
-    }],
+    # /info as bundler reads it: GEM_INFO_READS separate connections with its gzip
+    # header, every one listing the version (GemServedWait.info_read_argv).
+    [GemServedWait::SURFACE_INFO, -> { GemServedWait.all_reads_list?(gem_info_reads(gem_name), version) }],
     # `/versions`: bundler reads it before any `/info`, so a stale copy there hides
     # the version even when `/info` is fresh. Its own miss names tail vs full read.
     [:versions, -> { (@gem_versions_miss = gem_versions_miss(gem_name, version)).nil? }],
@@ -7154,6 +7156,16 @@ def gem_version_miss(gem_name, version)
       served.success?
     }]
   ]).then { |miss| miss == :versions ? @gem_versions_miss : miss }
+end
+
+# One poll's /info reads: GEM_INFO_READS bodies, each from its own curl process with
+# bundler's headers; nil for a read that failed.
+def gem_info_reads(gem_name)
+  argv = GemServedWait.info_read_argv(format(GEM_INDEX_URL, gem_name), max_time: GEM_CURL_MAX_TIME)
+  Array.new(GEM_INFO_READS) do
+    out, status = Open3.capture2e(*argv)
+    status.success? ? out : nil
+  end
 end
 
 # `/versions` for one probe: nil when served, else the GemServedWait surface that missed.
@@ -7264,8 +7276,9 @@ def await_published_gems!(published_gems, resume = "bin/release prepare")
   pending = published_gems.reject { |gem_name, version| @gems_ready[[gem_name, version.to_s]] }
   return if pending.empty?
 
-  step("await: each published gem must be SERVED by the RubyGems CDN (compact index /info, /versions tail with a " \
-       "rationed full read on a miss, and the .gem; held #{GEM_SETTLE_S}s) and INSTALLED here before anything reads it")
+  step("await: each published gem must be SERVED by the RubyGems CDN (compact index /info read as bundler " \
+       "reads it, on #{GEM_INFO_READS} connections; /versions tail with a rationed full read on a miss; and the " \
+       ".gem; held #{GEM_SETTLE_S}s) and INSTALLED here before anything reads it")
   pending.each do |gem_name, version|
     # Wall time, so the curl calls and the installs count against the budget too.
     started = monotonic_s
@@ -9309,6 +9322,19 @@ end
 # never-touch-the-primary mechanics as ship's repin_consumers), pushed by ref
 # fast-forward-checked. Idempotent: a lock already at the published versions
 # commits nothing; a consumer whose Gemfile never declares the gems is skipped.
+# Name the consumer's CI jobs that will bundle this lock with no runner-side
+# propagation wait (Release::RunnerGemWait). The conductor's hold cannot see a
+# runner's CDN edge; only that wait can. Said, not refused: the lock is right, and a
+# red it causes is the gate's named infra re-run, now with its cause on the page.
+def warn_unguarded_runner_bundles(repo, workspace)
+  files = Dir.glob(File.join(workspace, ".github", "workflows", "*.{yml,yaml}")).sort
+  workflows = files.to_h { |path| [path, File.read(path)] }
+  line = Release::RunnerGemWait.warning(repo, Release::RunnerGemWait.unguarded_jobs(workflows))
+  say("  #{line}") if line
+rescue SystemCallError => e
+  say("  ⚠ #{repo}: could not read its CI workflows (#{e.message}); runner-wait coverage unknown")
+end
+
 def bump_consumer_locks_for_qa(app_groups, published_gems)
   return if published_gems.empty?
 
@@ -9366,6 +9392,7 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
         say("  #{repo}: Gemfile does not declare #{gem_names.join(', ')} — no lock bump")
         next
       end
+      warn_unguarded_runner_bundles(repo, workspace)
 
       # `expected` is what gets COMMITTED; `resolving` adds each candidate's exact
       # requirement for the resolve only, because Bundler takes a prerelease only

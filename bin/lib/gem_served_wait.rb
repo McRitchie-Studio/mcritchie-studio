@@ -84,6 +84,36 @@ module GemServedWait
     end
   end
 
+  # HOW BUNDLER READS `/info/<gem>`, and so how the conductor reads it (task
+  # release-prepare-night-lessons). rel-20261110-208612 published studio-engine 0.143.0;
+  # the conductor's hold passed, the lock bump pushed, and voicebox's scan_ruby (run
+  # 42781359873 on 8709655) ran `bundle install` seconds later and was told 0.143.0 was
+  # "removed", while lint and test in the same run resolved it. The hold had read /info
+  # with ONE plain curl per poll: no Accept-Encoding, so Fastly answered from the
+  # identity copy of the object. Bundler sends Gem::Net::HTTP's gzip header, so it reads
+  # the gzip copy, a separate cache object that a soft purge lets go stale on its own
+  # (stale-while-revalidate=1800, see .github/scripts/await-gem-propagation.sh). And it
+  # reads it on several connections at once, each one able to land on a different node.
+  # So a poll now makes INFO_READS separate reads with bundler's headers, and /info
+  # counts as served only when every read lists the version. The runner script has
+  # read this way since rel-20261109-900044; this brings the conductor level with it.
+  BUNDLER_ACCEPT_ENCODING = "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
+  DEFAULT_INFO_READS = 8
+
+  # PURE. One bundler-shaped read of +url+: its own curl process (so its own
+  # connection), HTTP/1.1, bundler's Accept-Encoding, decompressed for the match.
+  def info_read_argv(url, max_time:)
+    ["/usr/bin/curl", "-sf", "--http1.1", "--compressed", "--max-time", max_time.to_s,
+     "-H", "Accept-Encoding: #{BUNDLER_ACCEPT_ENCODING}", url]
+  end
+
+  # PURE. Did EVERY read list +version+? +bodies+ holds one entry per read; nil is a
+  # read that failed, and counts as a miss (unproven is not served). No reads is a miss.
+  def all_reads_list?(bodies, version)
+    list = Array(bodies)
+    !list.empty? && list.all? { |body| !body.nil? && info_lists?(body, version) }
+  end
+
   # PURE. Does a compact-index `/info/<gem>` body list +version+? Lines read
   # "<version> <deps>|<checksums>"; the version is field one, matched WHOLE, so 0.4
   # never satisfies a wait for 0.47.2.
