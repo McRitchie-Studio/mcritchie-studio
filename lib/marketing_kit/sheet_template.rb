@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module MarketingKit
-  # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: a navbar band with
-  # the logo, a title, a line of description, a row of variables, then a table whose
-  # two-row head is split into three colour sections. Ruby decides every colour and
+  # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: one row with the
+  # light logo and the title, a row of variables, then a table whose two-row head
+  # is split into three colour sections. Ruby decides every colour and
   # word here; script/marketing_kit/office.py only lays the payload out as an
   # .xlsx, which Drive converts to a Google Sheet.
   #
@@ -54,10 +54,9 @@ module MarketingKit
       {
         font: @spec.fonts[:family],
         sheet_title: "Sheet",
-        colours: { band: @spec.colour(:dark), white: WHITE, ink: INK, grey: GREY, light: LIGHT, rule: RULE },
-        logo: @spec.logo_png(:horizontal, :dark),
+        colours: { title: @spec.colour(:title), white: WHITE, ink: INK, grey: GREY, light: LIGHT, rule: RULE },
+        logo: @spec.logo_png(:horizontal, :light),
         title: "[Sheet Title]",
-        description: "[One line on what this sheet tracks, and who keeps it.]",
         sections: sections.each_with_index.map { |s, i| { label: "[Section #{%w[One Two Three][i]}]", top: s.top, low: s.low } },
         columns: COLUMNS,
         variables: VARIABLES,
@@ -87,7 +86,6 @@ module MarketingKit
     # Label above value, side by side from column A. A value may be a formula;
     # {first}/{last} stand for the table's first and last data row in the drawer.
     VARIABLES = [
-      { label: "Prepared by", value: "[Name]", kind: "text" },
       { label: "As of", value: "=TODAY()", kind: "date" },
       { label: "Default rate", value: 0.05, kind: "percent" },
       { label: "Total amount", value: "=SUM(E{first}:E{last})", kind: "money" }
@@ -114,7 +112,7 @@ module MarketingKit
       "which row you are on.",
       "Add a column: insert it inside a section and copy the head cells' format from a neighbour. " \
       "Add a row: insert it inside the table, so totals and dropdowns cover it.",
-      "Variables sit under the title, label over value. Formulas point at them with absolute references ($C$5), " \
+      "Variables sit under the title, label over value. Formulas point at them with absolute references ($B$3), " \
       "so a value changes in one place.",
       "Head colours come from the brand palette. Both head rows are dark enough for white text; " \
       "keep it that way if you recolour a section."

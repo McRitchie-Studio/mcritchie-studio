@@ -223,7 +223,7 @@ def sheet(d, out):
     FORMATS = {"date": "mmm d, yyyy", "money": '"$"#,##0.00', "percent": "0.0%"}
     RIGHT = {"money", "percent", "formula", "date"}
 
-    BAND, TITLE, DESC, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 9)
+    TITLE, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 7)
     FIRST = HEAD_LOW + 1
     LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
     cols, n = d["columns"], len(d["columns"])
@@ -231,20 +231,18 @@ def sheet(d, out):
     wb = Workbook(); ws = wb.active; ws.title = d["sheet_title"]
     ws.sheet_view.showGridLines = False
     for i, c in enumerate(cols): ws.column_dimensions[L(i + 1)].width = c["width"]
-    heights = {BAND: 36, TITLE: 30, DESC: 18, VAR_LABEL: 16, VAR_VALUE: 24, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
+    heights = {TITLE: 40, VAR_LABEL: 16, VAR_VALUE: 24, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
-    # Navbar: the band across the table, the logo centred in its height
-    for c in range(1, n + 1): ws.cell(BAND, c).fill = fill(col["band"])
+    # Title row: the light logo in A, centred in the row's height, and the title beside it in B
     im = Image.open(d["logo"]); lh = 20; lw = round(im.width * lh / im.height)
     logo = XImage(d["logo"]); logo.width, logo.height = lw, lh
-    pad = (heights[BAND] * 4 // 3 - lh) // 2  # row height is in points; the anchor is in pixels
+    pad = (heights[TITLE] * 4 // 3 - lh) // 2  # row height is in points; the anchor is in pixels
     logo.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(10), row=0, rowOff=pixels_to_EMU(pad)),
                                 ext=XDRPositiveSize2D(pixels_to_EMU(lw), pixels_to_EMU(lh)))
     ws.add_image(logo)
 
-    t = ws.cell(TITLE, 1, d["title"]); t.font = font(size=16, bold=True, color=col["ink"]); t.alignment = Alignment(vertical="center")
-    s = ws.cell(DESC, 1, d["description"]); s.font = font(size=9, italic=True, color=col["grey"]); s.alignment = Alignment(vertical="top")
+    t = ws.cell(TITLE, 2, d["title"]); t.font = font(size=16, bold=True, color=col["title"]); t.alignment = Alignment(vertical="center")
 
     # Variables: label over value, one per column from A
     var_cell = {}

@@ -220,15 +220,14 @@ the sheet easy to work in, so keep them in every copy:
 
 | Part | What it is |
 |------|------------|
-| Row 1 | The navbar: a `dark` band with the horizontal dark logo |
-| Rows 2-3 | `[Sheet Title]` and a one-line description |
-| Rows 4-5 | Variables: a label over each value, from column A. Formulas point at them with absolute references |
-| Rows 7-8 | The table head in three colour sections: the darker top row names the section, the lower row names the columns |
-| Row 9 on | The data. Column A is the row's item (its name) |
+| Row 1 | The horizontal light logo in A, and `[Sheet Title]` beside it in B, in the `title` colour |
+| Rows 2-3 | Variables: a label over each value, from column A. Formulas point at them with absolute references |
+| Rows 5-6 | The table head in three colour sections: the darker top row names the section, the lower row names the columns |
+| Row 7 on | The data. Column A is the row's item (its name) |
 
 - **No merged cells.** A section's label sits in its first cell, and the other
   cells share its colour. Every column can move, sort and filter.
-- **The freeze is at B9.** The head rows and column A stay in view, so you always
+- **The freeze is at B7.** The head rows and column A stay in view, so you always
   see which row and which column you are on.
 - **White text on both head rows, at 4.5:1 or better.** The lower row is the
   brand colour, darkened only as far as white text needs (a near-black colour

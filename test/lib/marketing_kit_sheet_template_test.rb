@@ -76,13 +76,14 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
     assert_match(/no swatch or key named "Mauve"/, err.message)
   end
 
-  test "the payload names the template, draws the band in dark and uses the dark horizontal logo" do
+  test "the payload names the template, sets the title in the title colour and uses the light horizontal logo" do
     load_kit do |spec|
       t = T.new(spec)
       p = t.payload
       assert_equal "RF Template — Sheet", t.name
-      assert_equal spec.colour(:dark), p.dig(:colours, :band)
-      assert_equal spec.logo_png(:horizontal, :dark), p[:logo]
+      assert_equal spec.colour(:title), p.dig(:colours, :title)
+      assert_equal spec.logo_png(:horizontal, :light), p[:logo]
+      assert_not_includes p[:variables].map { |v| v[:label] }, "Prepared by"
       assert_equal 3, p[:sections].size
       assert_equal [0, 1, 2], p[:columns].map { |c| c[:section] }.uniq, "every section has columns, in order"
       assert_equal "item", p[:columns].first[:kind], "column A is the row's item, which the freeze keeps"
