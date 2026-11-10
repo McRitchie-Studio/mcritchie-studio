@@ -7,14 +7,15 @@ require Rails.root.join("bin/lib/ci_cause_detector").to_s
 # passed, or a second run at the same SHA), and by `bin/rails ci:causes:sweep` over
 # CI history. It reads the red attempt's failed jobs and their logs from GitHub, hands
 # them to CiCauseDetector.attempt_causes, and files or folds one card per cause. A
-# census job that names a missing shard folds onto that shard's cause, not a card of
-# its own; a job whose log names no ##[error] line is recorded as an ErrorLog row
+# census job that names a missing shard, or that is red on a short count while a shard
+# of its lane failed, folds onto that shard's cause, not a card of its own; a job whose log names no ##[error] line is recorded as an ErrorLog row
 # (the ruling keeps every red on record) and files nothing to the board.
 #
 # Best-effort: a cause card is a record ABOUT CI, so a GitHub read that fails costs
 # this one red its card (an ErrorLog row says so) and never touches the ingest. It is
 # idempotent: an occurrence is keyed on run, attempt and job, so a re-delivered
-# webhook or a second sweep folds nothing twice.
+# webhook or a second sweep folds nothing twice, and two runs at once make one card
+# (Ci::CauseCard#file! holds an advisory lock per cause).
 class CiCauseCardJob < ApplicationJob
   MAX_JOBS = 8
   RED = CiCauseDetector::RED

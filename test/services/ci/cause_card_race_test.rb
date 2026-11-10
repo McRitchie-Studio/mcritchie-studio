@@ -62,14 +62,14 @@ class Ci::CauseCardRaceTest < ActiveSupport::TestCase
 
   def cards = Task.where(slug: BASE).or(Task.where("slug LIKE ?", "#{BASE}-%")).order(:id)
 
-  test "two concurrent files of one occurrence make one card with it once" do
+  test "[unit] two concurrent files of one occurrence make one card with it once" do
     file_together("42745469708/1/129596390504", "42745469708/1/129596390504")
 
     assert_equal [BASE], cards.pluck(:slug), "one red must file one card, never a -2"
     assert_equal ["42745469708/1/129596390504"], cards.sole.metadata.dig("ci_cause", "occurrences").map { |o| o["id"] }
   end
 
-  test "two concurrent files of two occurrences of one cause fold onto one card" do
+  test "[unit] two concurrent files of two occurrences of one cause fold onto one card" do
     file_together("500/1/1", "600/1/1")
 
     assert_equal [BASE], cards.pluck(:slug)
