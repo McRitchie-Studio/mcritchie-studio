@@ -163,7 +163,10 @@ it waits, and reports a missing file only when it fails on a fresh link
 (`clip-page-links-refresh`, shipped to `accepted` on 2026-10-08). The refresh
 ends with its page: a Turbo visit away stops it. When fresh links cannot be had,
 the page says whether the session ended or the server did not answer, and the
-player says its link expired (`recast-wrap-loose-ends`). The source video page
+player says its link expired (`recast-wrap-loose-ends`). A tab that comes back
+while a refresh is on its way asks again if that one fails, so a refusal sent
+before the operator signed in again does not stand (`video-refresh-signed-in-race`).
+The source video page
 (the cast page) is still on fifteen-minute links: its previews are not
 refreshed, and a reload is what renews them.
 `/alt_videos` lists every alt video with

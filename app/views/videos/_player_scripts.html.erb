@@ -9,7 +9,8 @@
   //
   // When it asks: a minute before the links lapse while the tab is showing,
   // on coming back to a tab whose links have lapsed, and when a player fails
-  // on a link that is old (recover). One request at a time. A player that
+  // on a link that is old (recover). One request at a time; a tab that comes
+  // back while one is on its way asks again if that one fails. A player that
   // fails on a link that is still fresh is not asked about again: that file is
   // missing, and the player says so. When the refresh itself was refused or
   // went unanswered there is no fresh link, and the player says that instead
@@ -71,6 +72,11 @@
       // The page these links belong to is gone: nothing here is left to refresh.
       if (!document.querySelector("[data-links-url]")) { this.stop(); return; }
       if (document.hidden || this.fresh()) return;
+      // A refresh already on its way was asked before this wake, for the
+      // session as it was then: the operator may have signed in again (in
+      // another tab) since. Its success serves; its failure answers for a
+      // session that may be gone, so ask once more, now.
+      if (this.inFlight) { this.inFlight.then((ok) => { if (!ok) this.woke(); }); return; }
       this.refresh();
     },
     // Why a player has no fresh link to load, in its own words: the last
