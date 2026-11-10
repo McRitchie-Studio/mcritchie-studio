@@ -7187,12 +7187,13 @@ def gem_version_miss(gem_name, version)
 end
 
 # One poll's /info reads: GEM_INFO_READS bodies, each from its own curl process with
-# bundler's headers; nil for a read that failed.
+# bundler's headers; nil for a read that failed. Bounded twice: curl's own --max-time,
+# and BoundedCommand a few seconds past it.
 def gem_info_reads(gem_name)
   argv = GemServedWait.info_read_argv(format(GEM_INDEX_URL, gem_name), max_time: GEM_CURL_MAX_TIME)
   Array.new(GEM_INFO_READS) do
-    out, status = Open3.capture2e(*argv)
-    status.success? ? out : nil
+    out, result = bounded_capture2e(*argv, deadline: GEM_CURL_MAX_TIME + 5, deadline_env: "RELEASE_GEM_CURL_MAX_TIME")
+    result.success? ? out : nil
   end
 end
 

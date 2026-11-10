@@ -20,18 +20,19 @@ class ReleaseGemRunnerWaitTest < ReleaseCliHarness
       ENV.delete("RELEASE_GEM_INDEXED")
       INFO_BODIES = #{info_bodies.inspect}
       $info_reads = 0
+      OK = Struct.new(:ok) { def success? = ok }
+      def bounded_capture2e(*argv, **)
+        return ["", OK.new(true)] unless argv.last.to_s.include?("/info/")
+
+        puts("INFO-READ " + argv.join(" "))
+        body = INFO_BODIES[$info_reads] || INFO_BODIES.last
+        $info_reads += 1
+        [body, OK.new(true)]
+      end
       module Open3
         def self.capture2e(*argv, **)
-          url = argv.last.to_s
-          ok = Struct.new(:ok) { def success? = ok }
-          if url.include?("/info/")
-            puts("INFO-READ " + argv.join(" "))
-            body = INFO_BODIES[$info_reads] || INFO_BODIES.last
-            $info_reads += 1
-            return [body, ok.new(true)]
-          end
-          return ["studio-engine 0.143.0 abc\\n", ok.new(true)] if url.end_with?("/versions")
-          ["", ok.new(true)]
+          return ["studio-engine 0.143.0 abc\\n", OK.new(true)] if argv.last.to_s.end_with?("/versions")
+          ["", OK.new(true)]
         end
       end
     RUBY
