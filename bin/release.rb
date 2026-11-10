@@ -11409,7 +11409,10 @@ def lock_only_heroku_baseline(adapter)
   heroku_app = Release::ShipSequence.heroku_app_for(adapter)
   return ["", 0] if heroku_app.empty?
 
-  [heroku_app, Release::RollbackPlan.newest_version(heroku_releases(heroku_app, limit: 5))]
+  # A rollback target must be what Heroku SERVES: the newest row only when it is
+  # current and succeeded. A failed or pending newest row gives 0 (no auto rollback).
+  newest = heroku_releases(heroku_app, limit: 5).select { |r| r.is_a?(Hash) }.max_by { |r| r["version"].to_i }
+  [heroku_app, newest && newest["current"] == true && newest["status"] == "succeeded" ? newest["version"].to_i : 0]
 end
 
 # :succeeded, :failed or :pending for the first Heroku release after `after`.
@@ -11427,7 +11430,7 @@ end
 def lock_only_release_phase!(group, heroku_app, before)
   repo = group["repo"]
   if heroku_app.empty? || before.to_i <= 0
-    say("  ⚠ #{repo}: no readable Heroku release list before the push — the release phase is not checked and a " \
+    say("  ⚠ #{repo}: no current, succeeded Heroku release read before the push — the release phase is not checked and a " \
         "failed smoke cannot be rolled back automatically")
     return
   end
@@ -11457,7 +11460,7 @@ def lock_only_smoke_failed!(group, heroku_app, before, smoke, failure)
   return true if wait_for_boot(smoke, attempts: LOCK_ONLY_SMOKE_POLLS, delay: 5)
 
   if heroku_app.empty? || before.to_i <= 0
-    abort!("#{failure}; NOT rolled back: no Heroku release was read before the push — production may run the " \
+    abort!("#{failure}; NOT rolled back: no current, succeeded Heroku release was read before the push — production may run the " \
            "release tree; read `heroku releases` for #{repo} and `heroku rollback` by hand")
   end
 

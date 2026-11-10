@@ -208,4 +208,14 @@ class ReleaseLockOnlyDeployHardeningTest < Minitest::Test
     assert_includes src[check...gate], "prune_lock_only!(rel_slug, app_groups, repos)",
                     "the lock check's drops must be pruned before the pre-publish gate reads the lists"
   end
+
+  # Review zap: a failed newest row (an earlier sweep's failed release phase) is not
+  # what Heroku serves, so it is never the rollback target.
+  def test_a_failed_newest_release_is_never_the_rollback_target
+    out = run_release(%(SMOKE_CODE = "503"\n) + STUB + %(add_release("failed", "Deploy fa11ed0")\n), GROUPS + SHIP)
+
+    refute_includes out, "HEROKU_ROLLBACK", out
+    assert_includes out, "NOT rolled back", out
+    refute_includes out, "PUSH_MAIN: rantly", out
+  end
 end
