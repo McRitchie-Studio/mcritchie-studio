@@ -6,7 +6,22 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
   # test that runs after it in the same browser, in whatever order the seed picks.
   SCREEN_SIZE = [ 1400, 1400 ].freeze
 
-  driven_by :selenium, using: :headless_chrome, screen_size: SCREEN_SIZE
+  # The read budget of every WebDriver command, the session's creation included. Selenium's
+  # stock budget is Net::HTTP's 60s, and the run's FIRST Chrome launch pays the runner's
+  # cold start (Chrome's first launch on a new image: font cache, disk), which on a slow
+  # runner alone can pass 60s: CI runs 40786343848 (2026-10-28) and 42767245996
+  # (2026-11-10) each died with Net::ReadTimeout ~105s into the run, in whichever test the
+  # seed put first (ci-cause-mcritchie-studio-reviewfollowupguardtest).
+  #
+  # IT MUST SIT ON THIS DRIVER. Touching `Capybara.current_session` runs Rails' driver block,
+  # which launches the real Chrome AT ONCE (register_selenium reads `driver.browser` to size
+  # the window). A budget on any other browser guards a launch that is already warm: the
+  # throwaway browser this replaced launched in 0.5s in every sampled run, after the session
+  # had paid the cold start on 60s. Guarded by test/system/cold_start_budget_test.rb.
+  COLD_START_READ_TIMEOUT = 180
+
+  driven_by :selenium, using: :headless_chrome, screen_size: SCREEN_SIZE,
+                       options: { timeout: COLD_START_READ_TIMEOUT }
 
   # The board sits behind the admin wall (AdminWall), so every system test starts as the
   # seeded admin, signed in through the same magic-link door a person uses: the confirm
@@ -17,41 +32,21 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     sign_in_through_magic_link(users(:alex))
   end
 
-  # COLD START IS PAID ONCE, BEFORE ANY TEST, ON ITS OWN BUDGET (hub-flaky-tests-steady).
-  #
-  # Every WebDriver command, the session's creation included, has Net::HTTP's 60s read
-  # budget. The run's FIRST Chrome launch pays the runner's cold start (Chrome's first
-  # launch on a new image: font cache, disk), and on a slow runner that alone can pass 60s:
-  # CI run 40786343848 (2026-10-28) and run 42767245996 (2026-11-10), each ~105s into the
-  # run, died with Net::ReadTimeout. So a throwaway browser makes that first launch here,
-  # on a deadline sized for a cold runner, then renders the app's first page on it.
-  #
-  # ORDER IS LOAD-BEARING (ci-cause-mcritchie-studio-reviewfollowupguardtest). Touching
-  # `Capybara.current_session` builds the Rails-registered driver, which launches Chrome AT
-  # ONCE on the default 60s budget (register_selenium reads `driver.browser` to size the
-  # window). Asked first, it took the cold launch; the throwaway then launched warm (0.5s
-  # in every sampled run) and the 180s budget guarded nothing. Guarded by
-  # test/system/cold_start_order_test.rb.
-  COLD_START_READ_TIMEOUT = 180
-
+  # The first test of a run pays the cold start (hub-flaky-tests-steady): the session's
+  # Chrome launch and the app server's boot, then the app's first render. Each phase is
+  # timed into the log, so a slow one is named rather than inferred from a timeout. Rails
+  # resolves chromedriver (Selenium Manager) earlier, at `driven_by`, when the class loads.
   def self.warm_browser_once
     return if ApplicationSystemTestCase.instance_variable_get(:@browser_warmed)
 
     ApplicationSystemTestCase.instance_variable_set(:@browser_warmed, true)
     clock = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
     started = clock.call
-    options = Selenium::WebDriver::Chrome::Options.new
-    options.add_argument("--headless")
-    http = Selenium::WebDriver::Remote::Http::Default.new(read_timeout: COLD_START_READ_TIMEOUT)
-    driver = Selenium::WebDriver.for(:chrome, options: options, http_client: http) # the cold launch
-    launched = clock.call
-    base_url = Capybara.current_session.server.base_url # the session's (now warm) Chrome, then the app server
+    session = Capybara.current_session # launches the session's Chrome, then boots the app server
     booted = clock.call
-    driver.navigate.to("#{base_url}/") # signed out: the layout, its assets, a real render
-    warn format("system tests: cold start paid before the first test: browser %.1fs, session and server %.1fs, first page %.1fs",
-                launched - started, booted - launched, clock.call - booted)
-  ensure
-    driver&.quit
+    session.visit("/") # signed out: the layout, its assets, a real render
+    warn format("system tests: cold start paid in the first test: browser and server %.1fs, first page %.1fs",
+                booted - started, clock.call - booted)
   end
 
   def sign_in_through_magic_link(user)
