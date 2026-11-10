@@ -19,17 +19,19 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
 
   # COLD START IS PAID ONCE, BEFORE ANY TEST, ON ITS OWN BUDGET (hub-flaky-tests-steady).
   #
-  # Every WebDriver command, the session's creation included, has Selenium's 60s HTTP
-  # read budget. The FIRST test of a run spent it on the runner's cold start instead of
-  # on its own work: CI run 40786343848 (2026-10-28), the seed's first test, failed
-  # with Net::ReadTimeout at the sign-in `visit` after 108s on a blank page, and the
-  # other 35 passed in their normal ~70s. It was not the app: traced, sign-in makes no
-  # outbound connection from the app or the browser. What the first command carries on
-  # a fresh runner and on no later one: Selenium Manager resolving (and downloading) the
-  # chromedriver CI leaves off PATH, Chrome's first launch on a new image (font cache,
-  # disk), and the app server's first render. So a throwaway browser pays all three here,
-  # with a deadline sized for a cold runner, and prints what each phase cost so a slow
-  # one is named in the log rather than inferred from a timeout.
+  # Every WebDriver command, the session's creation included, has Net::HTTP's 60s read
+  # budget. The run's FIRST Chrome launch pays the runner's cold start (Chrome's first
+  # launch on a new image: font cache, disk), and on a slow runner that alone can pass 60s:
+  # CI run 40786343848 (2026-10-28) and run 42767245996 (2026-11-10), each ~105s into the
+  # run, died with Net::ReadTimeout. So a throwaway browser makes that first launch here,
+  # on a deadline sized for a cold runner, then renders the app's first page on it.
+  #
+  # ORDER IS LOAD-BEARING (ci-cause-mcritchie-studio-reviewfollowupguardtest). Touching
+  # `Capybara.current_session` builds the Rails-registered driver, which launches Chrome AT
+  # ONCE on the default 60s budget (register_selenium reads `driver.browser` to size the
+  # window). Asked first, it took the cold launch; the throwaway then launched warm (0.5s
+  # in every sampled run) and the 180s budget guarded nothing. Guarded by
+  # test/system/cold_start_order_test.rb.
   COLD_START_READ_TIMEOUT = 180
 
   def self.warm_browser_once
@@ -38,16 +40,16 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
     ApplicationSystemTestCase.instance_variable_set(:@browser_warmed, true)
     clock = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
     started = clock.call
-    base_url = Capybara.current_session.server.base_url # boots the app server
-    booted = clock.call
     options = Selenium::WebDriver::Chrome::Options.new
     options.add_argument("--headless")
     http = Selenium::WebDriver::Remote::Http::Default.new(read_timeout: COLD_START_READ_TIMEOUT)
-    driver = Selenium::WebDriver.for(:chrome, options: options, http_client: http)
+    driver = Selenium::WebDriver.for(:chrome, options: options, http_client: http) # the cold launch
     launched = clock.call
+    base_url = Capybara.current_session.server.base_url # the session's (now warm) Chrome, then the app server
+    booted = clock.call
     driver.navigate.to("#{base_url}/") # signed out: the layout, its assets, a real render
-    warn format("system tests: cold start paid before the first test: server %.1fs, browser %.1fs, first page %.1fs",
-                booted - started, launched - booted, clock.call - launched)
+    warn format("system tests: cold start paid before the first test: browser %.1fs, session and server %.1fs, first page %.1fs",
+                launched - started, booted - launched, clock.call - booted)
   ensure
     driver&.quit
   end
