@@ -1,14 +1,11 @@
 require "test_helper"
 
-# [unit] Ci::CauseCard#file!: two CiCauseCardJob runs for ONE red (the ingest and the
-# sweep, or a re-delivered webhook) make ONE card. Turf run 42745469708 made two,
-# web-server-boot and -2, 123ms apart, holding the identical occurrence: each run
-# locked the open card, but with no card yet that lock covered zero rows, so both
-# saw none and the second took the next free slug (task ci-cause-card-dedupe-census).
+# [unit] Ci::CauseCard#file!: two CiCauseCardJob runs for ONE red make ONE card.
+# Turf run 42745469708 made web-server-boot and -2, 123ms apart, with one
+# occurrence: a row lock on no card yet serializes nothing (ci-cause-card-dedupe-census).
 #
-# Two real Postgres connections, so transactional tests are off: one shared
-# connection cannot tell a lock from luck. The interleave is pinned, not hoped for
-# (file_together).
+# Two real Postgres connections, so transactional tests are off. The interleave is
+# pinned, not hoped for (file_together).
 class Ci::CauseCardRaceTest < ActiveSupport::TestCase
   self.use_transactional_tests = false
 
