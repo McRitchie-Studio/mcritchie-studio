@@ -237,16 +237,16 @@ def sheet(d, out):
 
     # A2 is square: column A is as wide as row 2 is tall. Row heights are points
     # (4/3 px); a column width in characters draws at about 7 px each plus 5.
-    square = 28
+    square = 34
     wb = Workbook(); ws = wb.active; ws.title = d["sheet_title"]
     ws.sheet_view.showGridLines = False
     ws.column_dimensions["A"].width = round((square - 5) / 7, 2)
     for i, c in enumerate(cols): ws.column_dimensions[L(C(i))].width = c["width"]
-    heights = {MARGIN: 10, TITLE: square * 3 / 4, VAR_VALUE: 18, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
+    heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_VALUE: 18, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
     # The icon fills A2, a few pixels in from each edge
-    pad, size = 3, square - 6
+    pad, size = 4, square - 8
     icon = XImage(d["icon"]); icon.width = icon.height = size
     icon.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(pad), row=TITLE - 1, rowOff=pixels_to_EMU(pad)),
                                 ext=XDRPositiveSize2D(pixels_to_EMU(size), pixels_to_EMU(size)))
