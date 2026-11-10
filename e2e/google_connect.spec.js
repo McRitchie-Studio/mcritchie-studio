@@ -221,3 +221,33 @@ test("at 375px the Gmail modal is named, keeps Continue to Google in view, and i
   expect(body).toContain("%0D%0A");
   expect(body.replaceAll("%0D%0A", "")).not.toMatch(/%0A|%0D/);
 });
+
+// Gmail organize (/tasks/gmail-organize-ability): the Gmail card's second row
+// asks, through the same admin-trust modal, for gmail.modify and
+// gmail.settings.basic alone. It comes back on with what it allows; Turn off
+// forgets it. Nothing here changes a mailbox: the edits are pinned in
+// test/services/google_connect/gmail_editor_test.rb.
+test("an admin turns Gmail organize on from the Gmail card, then off", async ({ page }) => {
+  page.on("dialog", (dialog) => dialog.accept());
+  await loginWithMagicLink(page, "alex@test.com");
+  await page.goto("/integrations");
+  const organize = page.locator(
+    "[data-test='integration-entry'][data-entry='gmail'] [data-test='entry-action'] [data-test='google-write-connection']",
+  );
+  await expect(organize).toHaveAttribute("data-state", "none");
+
+  await organize.getByRole("button", { name: "Connect Gmail organize" }).click();
+  await expect(adminModal(page)).toBeVisible();
+  await adminModal(page).getByRole("link", { name: "Continue to Google" }).click();
+
+  await expect(page).toHaveURL(/\/integrations$/);
+  await expect(page.getByText("Gmail organize connected for stand-in@example.com.")).toBeVisible();
+  await expect(organize).toHaveAttribute("data-state", "connected");
+  await expect(organize.locator("[data-test='google-write-account']")).toHaveText(/Organize on for\s+stand-in@example\.com/);
+  await expect(organize.locator("[data-test='google-write-allows']")).toContainText("the hub never sends, never deletes.");
+  expect(await page.content()).not.toMatch(/stand-in-(refresh|access)/);
+
+  await organize.getByRole("button", { name: "Turn off" }).click();
+  await expect(page.getByText(/Gmail organize disconnected/)).toBeVisible();
+  await expect(organize).toHaveAttribute("data-state", "none");
+});

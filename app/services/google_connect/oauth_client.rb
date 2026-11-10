@@ -26,7 +26,10 @@ module GoogleConnect
   # WHAT IT ASKS FOR: who the account is (openid, email) and one scope per
   # ability (GoogleConnection::ABILITIES): read-only calendar events and Gmail,
   # and Drive's drive.file, which reaches only the files the person picks (or
-  # the app creates). The hub only reads; no reader holds a write path.
+  # the app creates). No reader holds a write path. The one opt-in write
+  # ability, gmail_organize (GoogleConnection::WRITE_ABILITIES), asks for
+  # gmail.modify and gmail.settings.basic on its own Connect, and only
+  # GoogleConnect::GmailEditor uses it (/tasks/gmail-organize-ability).
   #
   # Env vars (names only; values live in 1Password and Heroku config):
   #   GOOGLE_CONNECT_CLIENT_ID      the connections OAuth client's id
@@ -61,8 +64,8 @@ module GoogleConnect
       # Admin console to mark the app Trusted (modals/_gmail_admin).
       def client_id = ENV["GOOGLE_CONNECT_CLIENT_ID"].presence
 
-      # The scopes a sign-in for `abilities` asks for: identity plus each one's read.
-      def scopes_for(abilities) = GoogleConnection::IDENTITY_SCOPES + Array(abilities).map { GoogleConnection.scope_for(_1) }
+      # The scopes a sign-in for `abilities` asks for: identity plus each one's scopes.
+      def scopes_for(abilities) = GoogleConnection::IDENTITY_SCOPES + Array(abilities).flat_map { GoogleConnection.scopes_for(_1) }
 
       def authorize_url(redirect_uri:, state:, abilities:)
         return sign_in_stand_in.authorize_url(redirect_uri:, state:, scopes: scopes_for(abilities)) if sign_in_stand_in

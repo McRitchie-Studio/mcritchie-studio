@@ -64,8 +64,25 @@ class GoogleConnection < ApplicationRecord
   LEGACY_SCOPES = {
     drive: %w[https://www.googleapis.com/auth/drive.readonly]
   }.freeze
-  ABILITY_NAMES = { calendar: "Google Calendar", gmail: "Gmail", drive: "Google Drive" }.freeze
-  # The `ability` param of Connect Google: every ability in one consent.
+  # THE WRITE ABILITIES (/tasks/gmail-organize-ability): opt-in, each asked for
+  # on its own from its own Connect, never by Connect Google (ALL), and never
+  # read into an agent's chat context (GoogleConnect::OwnerContext walks
+  # ABILITIES only). gmail_organize asks for two scopes and counts as granted
+  # only when Google granted both: gmail.modify (read, label, archive, mark
+  # read or unread, spam, Trash) and gmail.settings.basic (filters).
+  # GOOGLE'S GRANT IS WIDER THAN THE HUB'S USE: gmail.modify also lets an app
+  # compose and send, and Google's consent screen says so. The hub never sends:
+  # that is a property of the source, enforced by test/lib/no_gmail_send_test.rb,
+  # as it is for gmail.compose. Neither scope deletes forever, and the hub
+  # moves nothing to Trash: GoogleConnect::GmailEditor has no such action.
+  WRITE_ABILITIES = {
+    gmail_organize: %w[https://www.googleapis.com/auth/gmail.modify
+                       https://www.googleapis.com/auth/gmail.settings.basic]
+  }.freeze
+  # Every ability a Connect may name, read and write: ability => [scopes].
+  ALL_ABILITIES = ABILITIES.transform_values { [ _1 ] }.merge(WRITE_ABILITIES).freeze
+  ABILITY_NAMES = { calendar: "Google Calendar", gmail: "Gmail", drive: "Google Drive", gmail_organize: "Gmail organize" }.freeze
+  # The `ability` param of Connect Google: every READ ability in one consent.
   ALL = "all".freeze
 
   # A sign-in of an account another user already connected.
@@ -87,8 +104,8 @@ class GoogleConnection < ApplicationRecord
   class << self
     def encryption_ready? = Fact.encryption_ready?
 
-    # The ability named by a param or a symbol, or nil when it is not one.
-    def ability(value) = ABILITIES.key?(value.to_s.to_sym) ? value.to_s.to_sym : nil
+    # The ability named by a param or a symbol, read or write, or nil when it is not one.
+    def ability(value) = ALL_ABILITIES.key?(value.to_s.to_sym) ? value.to_s.to_sym : nil
 
     # The abilities a Connect asks for: every one for ALL, else the one it
     # names; nil when the param is neither.
@@ -98,7 +115,11 @@ class GoogleConnection < ApplicationRecord
       ability(value)&.then { [ _1 ] }
     end
 
+    # A read ability's one scope.
     def scope_for(ability) = ABILITIES.fetch(ability.to_sym)
+
+    # Every scope an ability asks for: one for a read ability, two for gmail_organize.
+    def scopes_for(ability) = ALL_ABILITIES.fetch(ability.to_sym)
 
     # The household's connections: those an admin owns. The rows the hub's
     # agents and the /admin/google page read (an app owner's own: .owned_by).
@@ -156,10 +177,10 @@ class GoogleConnection < ApplicationRecord
     # The scopes an ability was granted under before it narrowed (LEGACY_SCOPES).
     def legacy_scopes_for(ability) = LEGACY_SCOPES.fetch(ability.to_sym, [])
 
-    # The abilities among `abilities` whose scope the grant carries.
+    # The abilities among `abilities` whose every scope the grant carries.
     def granted_abilities(grant, abilities)
       scopes = grant["scope"].to_s.split
-      abilities.map(&:to_sym).select { scopes.include?(scope_for(_1)) }
+      abilities.map(&:to_sym).select { (scopes_for(_1) - scopes).empty? }
     end
 
     private
@@ -186,7 +207,7 @@ class GoogleConnection < ApplicationRecord
     # for and every legacy scope: include_granted_scopes echoes an old
     # drive.readonly grant, and taking it would widen a row past what was asked.
     def granted_scopes(grant, abilities)
-      unasked = ABILITIES.values - abilities.map { scope_for(_1) }
+      unasked = ALL_ABILITIES.values.flatten - abilities.flat_map { scopes_for(_1) }
       grant["scope"].to_s.split - unasked - LEGACY_SCOPES.values.flatten
     end
   end
@@ -238,7 +259,10 @@ class GoogleConnection < ApplicationRecord
 
   # Did Google grant this ability? A person can untick it on the consent
   # screen. A legacy scope counts (#legacy?).
-  def can?(ability) = scopes.intersect?([ self.class.scope_for(ability), *self.class.legacy_scopes_for(ability) ])
+  # A write ability counts only when every one of its scopes is held.
+  def can?(ability)
+    (self.class.scopes_for(ability) - scopes).empty? || scopes.intersect?(self.class.legacy_scopes_for(ability))
+  end
 
   # Does this row hold the ability only under its old, wider scope (Drive's
   # drive.readonly)? Such a row reads as it always did until it reconnects.
@@ -249,8 +273,8 @@ class GoogleConnection < ApplicationRecord
   # Does Drive read only the files picked for this row (drive.file)?
   def drive_picked? = scopes.include?(self.class.scope_for(:drive))
 
-  # The abilities this connection grants, in ABILITIES order.
-  def abilities = ABILITIES.keys.select { can?(_1) }
+  # The abilities this connection grants, read and write, in ALL_ABILITIES order.
+  def abilities = ALL_ABILITIES.keys.select { can?(_1) }
 
   # Forgets one ability here and keeps the token for the others. Google cannot
   # revoke a single scope, so the grant itself still holds it until the last
@@ -259,7 +283,7 @@ class GoogleConnection < ApplicationRecord
   def drop!(ability)
     transaction do
       drive_picks.delete_all if ability.to_sym == :drive
-      update!(scope: (scopes - [ self.class.scope_for(ability), *self.class.legacy_scopes_for(ability) ]).join(" ").presence)
+      update!(scope: (scopes - [ *self.class.scopes_for(ability), *self.class.legacy_scopes_for(ability) ]).join(" ").presence)
     end
   end
 end

@@ -10,6 +10,9 @@ class IntegrationsController < ApplicationController
   # marketing cards; nothing is read for them. Their Google cards' Connect
   # opens the sign-in modal, every other card's the contact form.
   GOOGLE_CARDS = { "google_calendar" => :calendar, "gmail" => :gmail, "google_drive" => :drive }.freeze
+  # A card's opt-in write abilities, each a second row under its read
+  # connection (/tasks/gmail-organize-ability): Gmail's card carries Organize.
+  GOOGLE_WRITE_ABILITIES = { "gmail" => [ :gmail_organize ] }.freeze
   GOOGLE_METHOD = "sign_in".freeze
   # The group whose top carries Connect Google (all three at once) for a
   # signed-in user; their Google cards drop the contact-form Connect, since the
@@ -54,7 +57,7 @@ class IntegrationsController < ApplicationController
 
   private
 
-  # { connectable:, own:, calendar: connection|nil, gmail: ..., drive: ... }:
+  # { connectable:, own:, calendar: connection|nil, gmail: ..., drive: ..., gmail_organize: ... }:
   # one query, then each ability's most recent readable connection. An
   # admin's are the household's; anyone else's are their own (own: true,
   # which points the cards at /integrations/google).
@@ -62,7 +65,7 @@ class IntegrationsController < ApplicationController
     own = !admin?
     scope = own ? current_user.google_connections : GoogleConnection.household
     connections = scope.newest_first.to_a.select(&:readable?)
-    @google = GOOGLE_CARDS.values.to_h { |ability| [ ability, connections.find { _1.can?(ability) } ] }
+    @google = (GOOGLE_CARDS.values + GOOGLE_WRITE_ABILITIES.values.flatten).to_h { |ability| [ ability, connections.find { _1.can?(ability) } ] }
     @google[:connectable] = GoogleSignIn.connectable?
     @google[:own] = own
   end

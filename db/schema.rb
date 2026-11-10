@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_050000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1819,6 +1819,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_09_073627) do
     t.string "workflow_name"
     t.index ["head_sha"], name: "index_github_workflow_runs_on_head_sha"
     t.index ["run_id"], name: "index_github_workflow_runs_on_run_id", unique: true
+  end
+
+  create_table "gmail_changes", force: :cascade do |t|
+    t.string "action", null: false
+    t.boolean "applied", default: false, null: false
+    t.integer "changed_count", default: 0, null: false
+    t.datetime "created_at", null: false
+    t.text "error"
+    t.string "label"
+    t.string "mailbox", null: false
+    t.integer "matched_count", default: 0, null: false
+    t.text "query"
+    t.string "requested_by", null: false
+    t.datetime "updated_at", null: false
+    t.index ["mailbox", "created_at"], name: "index_gmail_changes_on_mailbox_and_created_at"
+    t.check_constraint "action::text = ANY (ARRAY['read'::character varying, 'unread'::character varying, 'archive'::character varying, 'inbox'::character varying, 'spam'::character varying, 'not_spam'::character varying, 'label'::character varying, 'unlabel'::character varying, 'move'::character varying, 'filter'::character varying]::text[])", name: "gmail_changes_action_known"
   end
 
   create_table "google_connections", force: :cascade do |t|

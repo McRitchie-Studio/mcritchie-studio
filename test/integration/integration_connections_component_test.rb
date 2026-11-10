@@ -40,13 +40,14 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     assert_equal %w[draft_email knowledge_base], google.css("[data-test='entry-ability']").map { _1["data-ability"] }
     assert_empty google.css("[data-test='ability-via']"), "one way, so no 'via' line"
 
-    { "google_calendar" => "read_calendar", "gmail" => "read_email", "google_drive" => "read_drive" }.each do |key, ability|
+    # Gmail's card also lists its opt-in Organize (/tasks/gmail-organize-ability).
+    { "google_calendar" => %w[read_calendar], "gmail" => %w[read_email organize_email], "google_drive" => %w[read_drive] }.each do |key, abilities|
       entry = card(key)
       assert_equal "live", entry["data-status"], key
       method = entry.at_css("[data-test='entry-method']")
       assert_equal "sign_in", method["data-method"], key
       assert_includes method.at_css("[data-test='method-terms']").text, "One person · One click · May ask you to sign in again"
-      assert_equal [ ability ], entry.css("[data-test='entry-ability']").map { _1["data-ability"] }, key
+      assert_equal abilities, entry.css("[data-test='entry-ability']").map { _1["data-ability"] }, key
       assert_equal "live", entry.at_css("[data-test='entry-ability']")["data-status"]
       assert_not_includes entry.text, "Coming soon"
       assert_equal "Connect", entry.at_css("[data-test='entry-cta']").text.strip, "a visitor's CTA is the normal one"
@@ -493,6 +494,51 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       assert_includes forms.map { _1["action"] }, admin_quickbooks_disconnect_path(first, return_to: "/integrations")
       assert quickbooks_slot.at_css("a[data-test='quickbooks-connect']"), "another company can still connect"
       assert_no_match(Regexp.union("qbo-synthetic-refresh", REALM), response.body)
+    end
+  end
+
+  # Gmail organize (/tasks/gmail-organize-ability): a second row on the Gmail card only.
+  def organize_row = card("gmail").at_css("[data-test='entry-action'] [data-test='google-write-connection']")
+
+  test "[component] the Gmail card alone carries Organize: Connect through the admin-trust modal, off by default" do
+    log_in_as users(:viewer)
+    with_connect_env do
+      get integrations_path
+
+      assert_equal "none", organize_row["data-state"]
+      button = organize_row.at_css("[data-test='google-write-connect']")
+      assert_equal "Connect Gmail organize", button.text.strip
+      assert_equal "gmail-admin", button["data-opens"]
+      assert_equal integrations_google_connect_path(ability: "gmail_organize", return_to: "/integrations"), button["data-href"]
+      assert_equal 1, css_select("[data-test='google-write-connection']").size, "only Gmail's card"
+    end
+  end
+
+  test "[component] organize on shows the account, what it allows and a confirmed Turn off that keeps the read" do
+    log_in_as users(:viewer)
+    organize = GoogleConnection::WRITE_ABILITIES.fetch(:gmail_organize).join(" ")
+    store_google(email: "amcritchie@gmail.com", scope: "openid #{GMAIL} #{organize}", abilities: %i[gmail gmail_organize], user: users(:viewer))
+    with_connect_env do
+      get integrations_path
+
+      assert_equal "connected", organize_row["data-state"]
+      assert_equal "Organize on for amcritchie@gmail.com", organize_row.at_css("[data-test='google-write-account']").text.squish
+      assert_match(/the hub never sends, never deletes/, organize_row.at_css("[data-test='google-write-allows']").text)
+      form = organize_row.at_css("form[data-test='google-write-disconnect']")
+      assert_equal integrations_google_disconnect_path(ability: "gmail_organize", return_to: "/integrations"), form["action"]
+      assert_match(/Gmail reading stays on/, form["data-turbo-confirm"])
+      assert_equal "connected", slot("gmail")["data-state"], "the read row is its own"
+    end
+  end
+
+  test "[component] a Gmail read alone leaves Organize off" do
+    log_in_as users(:viewer)
+    store_google(email: "amcritchie@gmail.com", scope: "openid #{GMAIL}", abilities: %i[gmail], user: users(:viewer))
+    with_connect_env do
+      get integrations_path
+
+      assert_equal "connected", slot("gmail")["data-state"]
+      assert_equal "none", organize_row["data-state"]
     end
   end
 end
