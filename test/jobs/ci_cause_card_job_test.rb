@@ -135,6 +135,15 @@ class CiCauseCardJobTest < ActiveJob::TestCase
     assert_includes ErrorLog.last.message, "ci / static (500/1/31)"
   end
 
+  test "[unit] an occurrence a closed card already holds files no second card" do
+    run_job
+    Task.find_by!(slug: "ci-cause-infra-apt-mirror").update_columns(stage: "shipped")
+
+    # The same red, delivered again (a re-delivered webhook, the sweep): no -2.
+    assert_no_difference("Task.count") { run_job }
+    refute Task.exists?(slug: "ci-cause-infra-apt-mirror-2")
+  end
+
   test "[unit] a create that loses the slug race folds into the card that won" do
     run_job
     card = Task.find_by!(slug: "ci-cause-infra-apt-mirror")
