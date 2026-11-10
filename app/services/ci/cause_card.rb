@@ -40,14 +40,28 @@ module Ci
       @occurrence = occurrence.merge("evidence" => Array(cause[:evidence]).first(4), "seen_at" => Time.current.iso8601)
     end
 
-    # Two jobs can file one new outside card at once (six repos red together). The
-    # loser's create hits the unique slug (the index, or the validation when the winner
-    # committed first), so it files again and folds into the winner's card.
+    # ONE CAUSE FILES ONE AT A TIME. Two CiCauseCardJob runs for one red (the ingest
+    # and the sweep, or a re-delivered webhook) used to race: the row lock on the open
+    # card covers zero rows while no card exists, so both saw none, the first created
+    # the card, and the second saw its slug taken and created `-2` (turf run
+    # 42745469708: web-server-boot and -2, 123ms apart, one occurrence). So a filer
+    # first takes a transaction-scoped advisory lock on the cause's base slug: the
+    # second waits for the first to commit, then reads its card. And an occurrence a
+    # card of this cause already holds, open or closed, files nothing (task
+    # ci-cause-card-dedupe-census).
+    #
+    # Belt and braces: a create that still hits the unique slug (the index, or the
+    # validation when the winner committed first) files again and folds into the
+    # winner's card.
     def file!
       tries = 0
       begin
         Task.transaction(requires_new: true) do
           base = CiCauseDetector.card_slug(@repo, @cause)
+          serialize!(base)
+          held = card_holding_occurrence(base)
+          next held if held
+
           open = open_card(base)
           open ? fold!(open) : create!(next_free_slug(base))
         end
@@ -62,10 +76,27 @@ module Ci
 
     private
 
+    # Held to the end of the outermost transaction; the key is the cause, not a row,
+    # so it serializes the first create too.
+    def serialize!(base)
+      conn = Task.connection
+      conn.execute("SELECT pg_advisory_xact_lock(hashtext(#{conn.quote("ci-cause-card:#{base}")}))")
+    end
+
+    # Every card this cause has had: the base slug and its `-2`, `-3` reopenings.
+    def cards(base)
+      Task.where(slug: base).or(Task.where("slug ~ ?", "^#{Regexp.escape(base)}-[0-9]+$"))
+    end
+
+    # A card of this cause, in any stage, that already lists this occurrence.
+    def card_holding_occurrence(base)
+      cards(base).where("metadata -> 'ci_cause' -> 'occurrences' @> ?::jsonb", [{ "id" => @occurrence["id"] }].to_json)
+                 .order(:id).last
+    end
+
     # The newest card for this cause that is still open, locked for the fold.
     def open_card(base)
-      Task.where(slug: base).or(Task.where("slug ~ ?", "^#{Regexp.escape(base)}-[0-9]+$"))
-          .where.not(stage: CLOSED_STAGES).order(:id).lock.last
+      cards(base).where.not(stage: CLOSED_STAGES).order(:id).lock.last
     end
 
     def next_free_slug(base)

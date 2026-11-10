@@ -1,0 +1,23 @@
+2026-11-10T02:52:08.3709085Z ##[group]Run npm test -- --grep-invert "@devnet" --shard=1/3 --reporter=list,json
+2026-11-10T02:52:08.3709427Z [36;1mnpm test -- --grep-invert "@devnet" --shard=1/3 --reporter=list,json[0m
+2026-11-10T02:52:08.3709714Z shell: sh -e {0}
+2026-11-10T02:52:08.3761017Z ##[endgroup]
+2026-11-10T02:52:08.4821002Z 
+2026-11-10T02:52:08.4821477Z > test
+2026-11-10T02:52:08.4822054Z > npx playwright test --grep-invert @devnet --shard=1/3 --reporter=list,json
+2026-11-10T02:52:08.4822486Z 
+2026-11-10T02:52:10.0106303Z [WebServer] DEPRECATION WARNING: ActiveSupport::Configurable is deprecated without replacement, and will be removed in Rails 8.2.
+2026-11-10T02:52:10.0106709Z [WebServer] 
+2026-11-10T02:52:10.0106969Z [WebServer] You can emulate the previous behavior with `class_attribute`.
+2026-11-10T02:52:10.0107367Z [WebServer]  (called from <main> at /__w/turf-monster/turf-monster/config/application.rb:7)
+2026-11-10T02:52:11.6427108Z [WebServer] DEPRECATION WARNING: ActiveSupport::Configurable is deprecated without replacement, and will be removed in Rails 8.2.
+2026-11-10T02:52:11.6427745Z [WebServer] 
+2026-11-10T02:52:11.6428152Z [WebServer] You can emulate the previous behavior with `class_attribute`.
+2026-11-10T02:52:11.6428802Z [WebServer]  (called from <main> at /__w/turf-monster/turf-monster/config/application.rb:7)
+2026-11-10T02:52:26.0203953Z [WebServer] malloc_consolidate(): unaligned fastbin chunk detected
+2026-11-10T02:52:27.6598649Z [WebServer] Aborted (core dumped)
+2026-11-10T02:52:27.6796911Z Error: Process from config.webServer was not able to start. Exit code: 134
+2026-11-10T02:52:27.6802957Z 
+2026-11-10T02:52:27.7173942Z ##[error]Process completed with exit code 1.
+2026-11-10T02:52:31.0000000Z Post job cleanup.
+2026-11-10T02:52:31.0000001Z Cleaning up orphan processes

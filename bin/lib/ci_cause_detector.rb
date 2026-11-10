@@ -32,6 +32,9 @@ require_relative "ci_failure_digest"
 #     that red as an ErrorLog row, because a red is never dropped silently.
 #   - A census job (executed-set) that names a shard whose report never arrived is a
 #     FOLLOW-ON: its occurrence goes on the cause of that shard (attempt_causes).
+#     So is a census red on a SHORT COUNT while a shard of its own lane failed: a
+#     shard that died still uploads its empty report (if: always()), so every report
+#     "arrives" and only the count says what was lost (turf run 42745469708).
 #
 # IT IS PURE. flips() reads run rows, causes() reads one job's log; the IO (GitHub
 # reads, the board write) lives in app/jobs/ci_cause_card_job.rb. The log parser is
@@ -63,6 +66,17 @@ module CiCauseDetector
   ].freeze
 
   HARNESS = [
+    # A native crash, not a slow boot (task ci-cause-card-dedupe-census, turf run
+    # 42745469708): glibc's malloc abort killed the test server with exit 134, and
+    # the old read filed it as "did not answer /up in time". Above web-server-boot,
+    # which the same log also matches. Exit 134 is SIGABRT, 139 SIGSEGV, and 142 is
+    # turf's native-abort-report shim ending an abort on its 30s SIGALRM; its banner
+    # names the signal whatever the exit code, and Ruby's own crash report opens
+    # "[BUG]". Never the shim's per-step
+    # "ld.so: object ... native-abort-report.so cannot be preloaded" line: the host
+    # docker CLI prints it on every green run.
+    [/native-abort-report: SIG[A-Z]+|^(?:\[WebServer\] )?\[BUG\] |\b(?:Aborted|Segmentation fault) \(core dumped\)|\bmalloc\w*\(\): |free\(\): invalid|double free or corruption|config\.webServer[^\n]*Exit code: (?:134|139|142)\b|##\[error\]Process completed with exit code (?:134|139)\b/,
+     "native-abort", "a native library crashed the process (SIGABRT or SIGSEGV), not a slow boot"],
     [/Timed out waiting \d+ms from config\.webServer|Process from config\.webServer (?:was not able to start|exited early)/i,
      "web-server-boot", "the test server did not answer /up in time"],
     [/Error: .*globalSetup|in global setup/i, "global-setup", "the browser lane's global setup failed"],
@@ -84,6 +98,14 @@ module CiCauseDetector
   # A census lane word → the shard jobs it counts, when its own prefix does not name
   # them (turf's `e2e_executed_set` counts `playwright (N)`).
   LANES = { "e2e" => /playwright|e2e|browser/i, "rails" => /rails/i }.freeze
+
+  # A census red because its lane ran FEWER specs or files than its contract.
+  #   e2e:   "the lane EXECUTED 403 spec(s); config/e2e_lane.yml pins it at 614 (211 FEWER than the contract)"
+  #   rails: "210 committed test file(s) executed NOTHING: …"
+  SHORT_COUNT = /\bEXECUTED \d+ spec\(s\);[^\n]*\(\d+ FEWER than|committed test file\(s\) executed NOTHING/
+
+  # A shard job's name: "… (n)" or "…(shard n/m)".
+  SHARD_SUFFIX = /\((?:shard )?(\d+)(?:\/\d+)?\)\s*\z/
 
   # The classes whose cause lives outside any repo: one card across all repos.
   OUTSIDE = %w[infra].freeze
@@ -143,7 +165,8 @@ module CiCauseDetector
   # PURE. One red attempt's failed jobs → what each one files, as
   # [{ job:, cause:, follows: }]. `jobs` is [{ name:, log: }]. A census job that names
   # a missing shard report FOLLOWS the failed shard job of that number: it gets that
-  # job's causes, and `follows` names the shard job. A job with no cause at all (no
+  # job's causes, and `follows` names the shard job. A census that names no missing
+  # report but is red on a short count follows every failed shard of its own lane. A job with no cause at all (no
   # ##[error] line) comes back once with `cause: nil`, for the caller to record.
   def attempt_causes(jobs)
     jobs = jobs.map { |j| j.to_h.transform_keys(&:to_sym) }
@@ -153,6 +176,7 @@ module CiCauseDetector
     echoes.each do |echo|
       shards = missing_shards(echo[:log])
       targets = shards.filter_map { |n| shard_sibling(echo[:name], n, own.keys) }.uniq
+      targets = lane_shards(echo[:name], own.keys) if shards.empty? && short_count?(echo[:log])
       followed = targets.flat_map { |t| own[t].map { |c| [t, c] } }
       out.concat(if followed.empty?
                    entries(echo[:name].to_s, causes(job_name: echo[:name], log: echo[:log]), nil)
@@ -183,6 +207,18 @@ module CiCauseDetector
   end
 
   def ints(list) = list.to_s.scan(/\d+/).map(&:to_i)
+
+  # PURE. Did the census go red because its lane ran fewer specs or files than its contract?
+  def short_count?(log) = CiFailureDigest.clean(log).any? { |l| l.match?(SHORT_COUNT) }
+
+  # PURE. The failed shard jobs of a census's own lane: the jobs with a shard suffix
+  # that its lane word names (LANES), else that share its prefix. A shard of another
+  # lane is never followed.
+  def lane_shards(echo_name, names)
+    prefix = echo_name.to_s.sub(ECHO_SUFFIX, "")
+    lane = LANES[prefix[/[a-z0-9]+\z/i].to_s.downcase]
+    names.select { |name| name.match?(SHARD_SUFFIX) && (lane ? name.match?(lane) : name.start_with?(prefix)) }
+  end
 
   # PURE. The failed shard job a census counts as shard `n`: a job named "… (n)" or
   # "…(shard n/m)". When two lanes have a shard n, the one that shares the census's

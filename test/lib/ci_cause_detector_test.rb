@@ -234,7 +234,7 @@ class CiCauseDetectorTest < Minitest::Test
   end
 
   def test_every_class_is_one_of_the_four
-    [APT_STALL, DST_FAILURE, PLAYWRIGHT, PRODUCT_ERROR, SERVER_BOOT].each do |log|
+    [APT_STALL, DST_FAILURE, PLAYWRIGHT, PRODUCT_ERROR, SERVER_BOOT, replay_1110("playwright-1")].each do |log|
       CiCauseDetector.causes(job_name: "x", log: log).each { |c| assert_includes CiCauseDetector::CLASSES, c[:klass] }
     end
   end
@@ -248,6 +248,74 @@ class CiCauseDetectorTest < Minitest::Test
     assert_equal "Find test cause sample_race", CiCauseDetector.title("test", "e2e/sample_race.spec.js")
     assert_equal 4, CiCauseDetector.title("infra", "apt-mirror").split.size
     assert_equal "Find harness cause rails (3)", CiCauseDetector.title("harness", "job:ci / rails (3)")
+  end
+
+  # ── 2026-11-10: turf run 42745469708 attempt 1. Shard 1's test server died in a
+  # native malloc abort (exit 134); its report still uploaded (if: always()), empty,
+  # so the census failed on the COUNT and named no missing shard. Replayed from the
+  # real job logs, trimmed (test/fixtures/files/ci_cause_2026_11_10).
+  REPLAY_1110 = File.expand_path("../fixtures/files/ci_cause_2026_11_10", __dir__)
+
+  def replay_1110(file) = File.read(File.join(REPLAY_1110, "turf-monster__#{file}.log"))
+
+  def test_a_native_abort_under_the_test_server_is_its_own_harness_key
+    c = only(CiCauseDetector.causes(job_name: "playwright (1)", log: replay_1110("playwright-1")))
+    assert_equal ["harness", "native-abort"], [c[:klass], c[:key]]
+    refute_includes c[:reason], "/up"
+    assert_includes c[:evidence], "[WebServer] malloc_consolidate(): unaligned fastbin chunk detected"
+  end
+
+  def test_native_abort_keys_exit_134_139_142_and_the_shim_banner
+    [
+      "Error: Process from config.webServer was not able to start. Exit code: 134\n",
+      "Error: Process from config.webServer was not able to start. Exit code: 139\n",
+      "Error: Process from config.webServer exited early. Exit code: 142\n",
+      "[WebServer] Segmentation fault (core dumped)\n##[error]Process completed with exit code 1.\n",
+      "[WebServer] -- native-abort-report: SIGABRT in a Ruby process\n[WebServer] #0 libc.so.6 abort\n" \
+      "Error: Timed out waiting 120000ms from config.webServer.\n",
+      "[WebServer] [BUG] Segmentation fault at 0x0000000000000010\n" \
+      "Error: Process from config.webServer exited early.\n"
+    ].each do |log|
+      c = only(CiCauseDetector.causes(job_name: "playwright (2)", log: log))
+      assert_equal ["harness", "native-abort"], [c[:klass], c[:key]], log
+    end
+  end
+
+  def test_a_server_that_exits_1_or_times_out_stays_web_server_boot
+    ["Error: Process from config.webServer was not able to start. Exit code: 1\n",
+     "Error: Process from config.webServer was not able to start. Exit code: 1342\n",
+     # The host docker CLI prints this on every green run; it is no crash.
+     "ERROR: ld.so: object '/opt/native-abort-report.so' from LD_PRELOAD cannot be preloaded: ignored.\n" \
+     "Error: Timed out waiting 120000ms from config.webServer.\n"].each do |log|
+      assert_equal "web-server-boot", only(CiCauseDetector.causes(job_name: "playwright (2)", log: log))[:key], log
+    end
+  end
+
+  def test_a_short_count_census_follows_the_failed_shard_of_its_lane
+    jobs = [{ name: "playwright (1)", log: replay_1110("playwright-1") },
+            { name: "e2e_executed_set", log: replay_1110("e2e_executed_set") }]
+    assert_empty CiCauseDetector.missing_shards(jobs.last[:log]), "every report arrived; the census failed on the count"
+    out = CiCauseDetector.attempt_causes(jobs)
+    assert_equal [["playwright (1)", "native-abort", nil], ["e2e_executed_set", "native-abort", "playwright (1)"]],
+                 out.map { |e| [e[:job], e[:cause][:key], e[:follows]] }
+  end
+
+  def test_a_short_count_census_follows_only_its_own_lane
+    rails_short = "RAILS EXECUTED SET: RED\n  · 210 committed test file(s) executed NOTHING: test/a_test.rb\n" \
+                  "##[error]Process completed with exit code 1.\n"
+    jobs = [{ name: "ci / playwright (3)", log: SERVER_BOOT }, { name: "ci / rails (3)", log: APT_STALL },
+            { name: "ci / e2e_executed_set", log: replay_1110("e2e_executed_set") },
+            { name: "ci / rails_executed_set", log: rails_short }]
+    follows = CiCauseDetector.attempt_causes(jobs).select { |e| e[:follows] }.to_h { |e| [e[:job], e[:follows]] }
+    assert_equal({ "ci / e2e_executed_set" => "ci / playwright (3)", "ci / rails_executed_set" => "ci / rails (3)" }, follows)
+  end
+
+  def test_a_census_red_for_another_reason_does_not_follow_a_failed_shard
+    other = "E2E EXECUTED SET: RED\n  ✗ 3 spec(s) ran that the contract does not own\n##[error]Process completed with exit code 1.\n"
+    out = CiCauseDetector.attempt_causes([{ name: "playwright (1)", log: SERVER_BOOT }, { name: "e2e_executed_set", log: other }])
+    census = out.find { |e| e[:job] == "e2e_executed_set" }
+    assert_nil census[:follows]
+    assert_equal "job:e2e_executed_set", census[:cause][:key]
   end
 
   private

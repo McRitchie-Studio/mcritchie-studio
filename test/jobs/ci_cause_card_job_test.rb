@@ -135,6 +135,33 @@ class CiCauseCardJobTest < ActiveJob::TestCase
     assert_includes ErrorLog.last.message, "ci / static (500/1/31)"
   end
 
+  test "[unit] an occurrence a closed card already holds files no second card" do
+    run_job
+    Task.find_by!(slug: "ci-cause-infra-apt-mirror").update_columns(stage: "shipped")
+
+    # The same red, delivered again (a re-delivered webhook, the sweep): no -2.
+    assert_no_difference("Task.count") { run_job }
+    refute Task.exists?(slug: "ci-cause-infra-apt-mirror-2")
+  end
+
+  test "[unit] turf run 42745469708 replayed: one native-abort card, the census on it, twice delivered" do
+    replay = Rails.root.join("test/fixtures/files/ci_cause_2026_11_10")
+    turf = [{ "id" => 129596390504, "name" => "playwright (1)", "conclusion" => "failure", "head_sha" => "3e1f" },
+            { "id" => 129596390021, "name" => "playwright (2)", "conclusion" => "success", "head_sha" => "3e1f" },
+            { "id" => 129601999703, "name" => "e2e_executed_set", "conclusion" => "failure", "head_sha" => "3e1f" }]
+    client = FakeClient.new(jobs: turf, logs: { 129596390504 => File.read(replay.join("turf-monster__playwright-1.log")),
+                                                129601999703 => File.read(replay.join("turf-monster__e2e_executed_set.log")) })
+    assert_difference "Task.count", 1 do
+      2.times { CiCauseCardJob.perform_now("McRitchie-Studio/turf-monster", 42745469708, 1, 42745469708, 2, client: client) }
+    end
+
+    card = Task.find_by!(slug: "ci-cause-turf-monster-native-abort")
+    assert_equal [["42745469708/1/129596390504", nil], ["42745469708/1/129601999703", "playwright (1)"]],
+                 card.metadata.dig("ci_cause", "occurrences").map { |o| o.values_at("id", "follows") }
+    refute Task.exists?(slug: "ci-cause-turf-monster-web-server-boot")
+    refute Task.exists?(slug: "ci-cause-turf-monster-job-e2e-executed-set")
+  end
+
   test "[unit] a create that loses the slug race folds into the card that won" do
     run_job
     card = Task.find_by!(slug: "ci-cause-infra-apt-mirror")
