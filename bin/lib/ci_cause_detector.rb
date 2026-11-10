@@ -71,10 +71,11 @@ module CiCauseDetector
     # the old read filed it as "did not answer /up in time". Above web-server-boot,
     # which the same log also matches. Exit 134 is SIGABRT, 139 SIGSEGV, and 142 is
     # turf's native-abort-report shim ending an abort on its 30s SIGALRM; its banner
-    # names the signal whatever the exit code. Never the shim's per-step
+    # names the signal whatever the exit code, and Ruby's own crash report opens
+    # "[BUG]". Never the shim's per-step
     # "ld.so: object ... native-abort-report.so cannot be preloaded" line: the host
     # docker CLI prints it on every green run.
-    [/native-abort-report: SIG[A-Z]+|\b(?:Aborted|Segmentation fault) \(core dumped\)|\bmalloc\w*\(\): |free\(\): invalid|double free or corruption|config\.webServer[^\n]*Exit code: (?:134|139|142)\b|##\[error\]Process completed with exit code (?:134|139)\b/,
+    [/native-abort-report: SIG[A-Z]+|^(?:\[WebServer\] )?\[BUG\] |\b(?:Aborted|Segmentation fault) \(core dumped\)|\bmalloc\w*\(\): |free\(\): invalid|double free or corruption|config\.webServer[^\n]*Exit code: (?:134|139|142)\b|##\[error\]Process completed with exit code (?:134|139)\b/,
      "native-abort", "a native library crashed the process (SIGABRT or SIGSEGV), not a slow boot"],
     [/Timed out waiting \d+ms from config\.webServer|Process from config\.webServer (?:was not able to start|exited early)/i,
      "web-server-boot", "the test server did not answer /up in time"],

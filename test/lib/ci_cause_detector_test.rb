@@ -234,7 +234,7 @@ class CiCauseDetectorTest < Minitest::Test
   end
 
   def test_every_class_is_one_of_the_four
-    [APT_STALL, DST_FAILURE, PLAYWRIGHT, PRODUCT_ERROR, SERVER_BOOT].each do |log|
+    [APT_STALL, DST_FAILURE, PLAYWRIGHT, PRODUCT_ERROR, SERVER_BOOT, replay_1110("playwright-1")].each do |log|
       CiCauseDetector.causes(job_name: "x", log: log).each { |c| assert_includes CiCauseDetector::CLASSES, c[:klass] }
     end
   end
@@ -271,8 +271,10 @@ class CiCauseDetectorTest < Minitest::Test
       "Error: Process from config.webServer was not able to start. Exit code: 139\n",
       "Error: Process from config.webServer exited early. Exit code: 142\n",
       "[WebServer] Segmentation fault (core dumped)\n##[error]Process completed with exit code 1.\n",
-      "[WebServer] -- native-abort-report: SIGABRT\n[WebServer] #0 libc.so.6 abort\n" \
-      "Error: Timed out waiting 120000ms from config.webServer.\n"
+      "[WebServer] -- native-abort-report: SIGABRT in a Ruby process\n[WebServer] #0 libc.so.6 abort\n" \
+      "Error: Timed out waiting 120000ms from config.webServer.\n",
+      "[WebServer] [BUG] Segmentation fault at 0x0000000000000010\n" \
+      "Error: Process from config.webServer exited early.\n"
     ].each do |log|
       c = only(CiCauseDetector.causes(job_name: "playwright (2)", log: log))
       assert_equal ["harness", "native-abort"], [c[:klass], c[:key]], log
