@@ -282,4 +282,21 @@ class ApplicationSystemTestCase < ActionDispatch::SystemTestCase
       sleep 0.05
     end
   end
+
+  # A real phone-width viewport (task system-tests-real-phone-widths). Headless
+  # Chrome will not size a window under 500px, so resize_to(390, ...) runs at 500px;
+  # DevTools device metrics set the viewport itself. After each visit, before you
+  # measure, call assert_viewport_width. It reads clientWidth: under mobile emulation
+  # innerWidth grows to fit an overflowing page. Phone widths only (desktop Linux
+  # Chrome takes 15px of clientWidth for a scrollbar). The override outlives a test.
+  def phone_viewport!(width, height = 844)
+    page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride",
+                                    width: width, height: height, deviceScaleFactor: 1, mobile: true)
+  end
+
+  def assert_viewport_width(width)
+    assert_equal width, evaluate_script("document.documentElement.clientWidth"), "the viewport is #{width}px"
+  end
+
+  teardown { page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride") }
 end

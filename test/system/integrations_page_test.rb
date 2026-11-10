@@ -21,9 +21,9 @@ class IntegrationsPageTest < ApplicationSystemTestCase
   CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom egnyte microsoft_365 quickbooks]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
-  # A headless window will not shrink below about 500px, so the width is set by
-  # device emulation: innerWidth is then the width under test, asserted below.
-  teardown { page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride") }
+  # A headless window will not shrink below 500px, so the width is set by device
+  # emulation and asserted below (ApplicationSystemTestCase#phone_viewport! and
+  # assert_viewport_width; the base class clears the override after each test).
 
   test "[e2e] /integrations loads light and dark at 375, 768 and 1280 with no horizontal scroll" do
     with_connect_env { with_fathom_env { with_egnyte_env { assert_no_sideways_scroll } } }
@@ -190,6 +190,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         visit integrations_discord_path
         page.execute_script("localStorage.setItem('theme', '#{theme}')")
         visit integrations_discord_path
+        assert_viewport_width(width) if width < 500
 
         assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')"), "#{theme} at #{width}"
         assert_selector "[data-test='setup-step']", count: 7
@@ -260,6 +261,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         visit integrations_path
         page.execute_script("localStorage.setItem('theme', '#{theme}')")
         visit integrations_path
+        assert_viewport_width(width) if width < 500
 
         assert_selector "[data-test='google-connect-all'][data-state='none']"
         overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
@@ -334,8 +336,9 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     with_connect_env do
       GoogleConnect::OAuthClient.sign_in_stand_in = GoogleConnectStandIn::SignIn.new
       [ 667, 568 ].each do |height| # an iPhone SE, and the shortest phone still sold
-        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height:, deviceScaleFactor: 1, mobile: true)
+        phone_viewport!(375, height)
         visit integrations_path
+        assert_viewport_width(375)
         within(google_slot("gmail")) { click_on "Connect Gmail" }
         continue = find("[data-test='gmail-admin-continue']")
         # Measure the card at rest, after its entrance animation (a scaled card reports scaled rects).
