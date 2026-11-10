@@ -228,7 +228,7 @@ def sheet(d, out):
     FORMATS = {"date": "mmm d, yyyy", "money": '"$"#,##0.00', "percent": "0.0%"}
     RIGHT = {"money", "percent", "formula", "date"}
 
-    MARGIN, TITLE, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 7)  # the variable labels share the title row
+    MARGIN, TITLE, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 8)
     FIRST = HEAD_LOW + 1
     LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
     X = 2  # the table's first column (B); A is the margin
@@ -244,7 +244,7 @@ def sheet(d, out):
     for i, c in enumerate(cols): ws.column_dimensions[L(C(i))].width = c["width"]
     # A variable marked emphasis (the sheet's headline number) draws larger, so row 3 grows to hold it.
     emphasis = any(v.get("emphasis") for v in d["variables"])
-    heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_VALUE: 26 if emphasis else 18, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
+    heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_LABEL: 12, VAR_VALUE: 26 if emphasis else 20, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
     # The icon fills A2, a few pixels in from each edge
@@ -254,14 +254,21 @@ def sheet(d, out):
                                 ext=XDRPositiveSize2D(pixels_to_EMU(size), pixels_to_EMU(size)))
     ws.add_image(icon)
 
+    # Row 2 is the title alone, so a long one runs on across the row. Under it in B3,
+    # the date an agent last rebuilt the sheet.
     t = ws.cell(TITLE, X, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
-    t.alignment = Alignment(vertical="center")
+    t.alignment = Alignment(vertical="bottom")
+    u = ws.cell(VAR_LABEL, X, f"Last Updated: {d['updated']}"); u.font = font(size=9, color=col["grey"])
+    u.alignment = Alignment(vertical="bottom")
 
-    # Variables: label (row 2) over value (row 3), one per column from C
+    def fmt(item):  # an item's own format wins over its kind's
+        return item.get("format") or FORMATS.get(item["kind"])
+
+    # Variables: label (row 3) over value (row 4), one per column from C
     var_cell = {}
     for i, v in enumerate(d["variables"]):
         at = C(1 + i)
-        lab = ws.cell(TITLE, at, v["label"].upper())
+        lab = ws.cell(VAR_LABEL, at, v["label"].upper())
         lab.font = font(size=8, bold=True, color=col["title"] if v.get("emphasis") else col["grey"])
         lab.alignment = Alignment(vertical="bottom")
         value = v["value"]
@@ -272,7 +279,7 @@ def sheet(d, out):
         big = v.get("emphasis")
         cell.font = font(size=16 if big else 11, bold=True, color=col["title"] if big else col["ink"]); cell.fill = fill(col["light"])
         cell.alignment = Alignment(horizontal="left", vertical="center")
-        if v["kind"] in FORMATS: cell.number_format = FORMATS[v["kind"]]
+        if fmt(v): cell.number_format = fmt(v)
         var_cell[v["label"]] = f"${L(at)}${VAR_VALUE}"
 
     # The table head: three sections, darker on top, white text on both rows.
@@ -306,13 +313,15 @@ def sheet(d, out):
             cell.font = font(size=10, color=col["ink"], bold=c["kind"] == "item")
             cell.border = Border(bottom=rule)
             cell.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
-            if c["kind"] in FORMATS: cell.number_format = FORMATS[c["kind"]]
-            if c["kind"] == "formula": cell.number_format = FORMATS["money"]
+            if c["kind"] == "formula": cell.number_format = c.get("format") or FORMATS["money"]
+            elif fmt(c): cell.number_format = fmt(c)
 
-    status = [i for i, c in enumerate(cols) if c["kind"] == "status"]
-    if status:
-        dv = DataValidation(type="list", formula1='"' + ",".join(d["statuses"]) + '"', allow_blank=True)
-        ws.add_data_validation(dv); dv.add(f"{L(C(status[0]))}{FIRST}:{L(C(status[0]))}{LAST}")
+    # A dropdown on every column that has choices; a status column without its own uses the sheet's statuses.
+    for i, c in enumerate(cols):
+        choices = c.get("choices") or (d["statuses"] if c["kind"] == "status" else None)
+        if not choices: continue
+        dv = DataValidation(type="list", formula1='"' + ",".join(choices) + '"', allow_blank=True)
+        ws.add_data_validation(dv); dv.add(f"{L(C(i))}{FIRST}:{L(C(i))}{LAST}")
     ws.auto_filter.ref = f"{L(X)}{HEAD_LOW}:{L(C(n - 1))}{FIRST + len(d['rows']) - 1}"
     ws.freeze_panes = f"{L(X + 1)}{FIRST}"
     ws.page_setup.orientation = "landscape"

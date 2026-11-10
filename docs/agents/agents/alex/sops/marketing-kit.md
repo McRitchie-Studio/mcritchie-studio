@@ -222,14 +222,15 @@ the sheet easy to work in, so keep them in every copy:
 |------|------------|
 | Row 1, column A | Thin margins |
 | A2 | The brand icon (`icon_light`), in a square cell |
-| Row 2 | `[Sheet Title]` in B2, in the `title` colour; the variable labels from C2 |
-| Row 3 | The variable values, under their labels. Formulas point at them with absolute references. A copy may mark its headline variable `emphasis: true` (a card roster's credit limit): it draws larger, in the `title` colour |
-| Rows 5-6 | The table head from column B, in three colour sections: the darker top row names the section, the lower row names the columns |
-| Row 7 on | The data. Column B is the row's item (its name) |
+| Row 2 | `[Sheet Title]` in B2, in the `title` colour, alone on its row so a long title runs across |
+| Row 3 | `Last Updated: <date>` in B3, which the agent stamps at every build; the variable labels from C3 |
+| Row 4 | The variable values, under their labels. Formulas point at them with absolute references. A copy may mark its headline variable `emphasis: true` (a card roster's credit limit): it draws larger, in the `title` colour |
+| Rows 6-7 | The table head from column B, in three colour sections: the darker top row names the section, the lower row names the columns |
+| Row 8 on | The data. Column B is the row's item (its name). A column may carry `choices` (a dropdown) and its own `format` (`"$"#,##0` for whole dollars) |
 
 - **No merged cells.** A section's label sits in its first cell, and the other
   cells share its colour. Every column can move, sort and filter.
-- **The freeze is at C7.** The variables, the head rows and the item column stay in
+- **The freeze is at C8.** The variables, the head rows and the item column stay in
   view, so you always see which row and which column you are on.
 - **White text on both head rows, at 4.5:1 or better.** The lower row is the
   brand colour, darkened only as far as white text needs (a near-black colour

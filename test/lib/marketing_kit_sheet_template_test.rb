@@ -36,6 +36,12 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
     assert_not_equal "#262A30", T.legible("#262A30")
   end
 
+  test "Last Updated reads as a short date with an ordinal day" do
+    assert_equal "Nov 10th, 2026", T.stamp(Date.new(2026, 11, 10))
+    assert_equal "Jan 1st, 2027", T.stamp(Date.new(2027, 1, 1))
+    assert_equal "Mar 22nd, 2027", T.stamp(Date.new(2027, 3, 22))
+  end
+
   test "contrast matches the WCAG reference points" do
     assert_in_delta 21.0, T.contrast_with_white("#000000"), 0.01
     assert_in_delta 1.0, T.contrast_with_white("#FFFFFF"), 0.01

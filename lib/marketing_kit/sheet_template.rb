@@ -2,14 +2,15 @@
 
 module MarketingKit
   # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: margins on row 1
-  # and column A, the brand icon in A2, the title beside it with the variables,
-  # then a table whose two-row head is split into three colour sections. Ruby decides every colour and
+  # and column A, the brand icon in A2 with the title beside it on a row of its
+  # own, a Last Updated line under the title beside the variables, then a table
+  # whose two-row head is split into three colour sections. Ruby decides every colour and
   # word here; script/marketing_kit/office.py only lays the payload out as an
   # .xlsx, which Drive converts to a Google Sheet.
   #
   # The rules the layout keeps, because they are what make a sheet easy to work in:
   # - no merged cells anywhere, so columns and rows move freely;
-  # - the freeze (C7) sits under the table's lower head and right of the item column,
+  # - the freeze (C8) sits under the table's lower head and right of the item column,
   #   so the head and the row's item stay in view while you scroll;
   # - both head rows carry white text at WCAG AA or better (4.5:1).
   #
@@ -50,6 +51,12 @@ module MarketingKit
       end
     end
 
+    # The day the sheet is built, in Denver, where the businesses are.
+    def today = Time.current.in_time_zone("America/Denver").to_date
+
+    # "Nov 10th, 2026": the Last Updated line an agent stamps at every build.
+    def self.stamp(date) = "#{date.strftime('%b')} #{date.day.ordinalize}, #{date.year}"
+
     def payload
       {
         font: @spec.fonts[:family],
@@ -57,6 +64,7 @@ module MarketingKit
         colours: { title: @spec.colour(:title), white: WHITE, ink: INK, grey: GREY, light: LIGHT, rule: RULE },
         icon: @spec.logo_png(:icon, :light),
         title: "[Sheet Title]",
+        updated: self.class.stamp(today),
         sections: sections.each_with_index.map { |s, i| { label: "[Section #{%w[One Two Three][i]}]", top: s.top, low: s.low } },
         columns: COLUMNS,
         variables: VARIABLES,
@@ -84,8 +92,10 @@ module MarketingKit
       { key: "notes", section: 2, head: "[Notes]", width: 40, kind: "text" }
     ].freeze
 
-    # Label (row 2) over value (row 3), side by side from column C, beside the
-    # title. A variable may carry emphasis: true, the sheet's headline number,
+    # Label (row 3) over value (row 4), side by side from column C, under the
+    # title and beside the Last Updated line. A column or variable may carry its
+    # own number format (format: '"$"#,##0' for whole dollars), and a column its
+    # own dropdown (choices: [...]). A variable may carry emphasis: true, the sheet's headline number,
     # drawn larger in the title colour (a copy of the template sets it, such as a
     # card roster's credit limit). In a value or a formula: {r} is the row, {first}/{last} the table's
     # first and last data row, {col:key} a column's letter and {var:Label} that
@@ -111,11 +121,11 @@ module MarketingKit
       "Make your own: File, then Make a copy. Replace every [bracketed] word; keep the layout.",
       "No merged cells. A section label sits in the first cell of its section; the other cells share its colour. " \
       "This keeps every column free to move, sort and filter.",
-      "Row 1 and column A are margins; A2 holds the brand icon. The freeze holds the head rows and columns A-B. " \
+      "Row 1 and column A are margins; A2 holds the brand icon and row 2 the title. The freeze holds rows 1-7 and columns A-B. " \
       "Keep the row's item (its name) in column B, so you always see which row you are on.",
       "Add a column: insert it inside a section and copy the head cells' format from a neighbour. " \
       "Add a row: insert it inside the table, so totals and dropdowns cover it.",
-      "Variables sit beside the title, label over value. Formulas point at them with absolute references ($C$3), " \
+      "Variables sit under the title, label over value. Formulas point at them with absolute references ($C$4), " \
       "so a value changes in one place.",
       "Head colours come from the brand palette. Both head rows are dark enough for white text; " \
       "keep it that way if you recolour a section."
