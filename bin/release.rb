@@ -102,7 +102,10 @@
 #          token deltas, record devnet_gauntlet complete or fail (which `ship`
 #          reads). A red run exits 4 with no Steffon handoff; a release that
 #          already has one runs no second contest; `--skip-gauntlet` runs none.
-#     `--task` narrows the sweep to the named slugs (operator curation).
+#     `--task` narrows the sweep to the named slugs (operator curation). A named
+#     `assembled` MEMBER of the active release is a RE-FREEZE: nothing is promoted or
+#     swept for it, and the run re-gates, re-deploys QA and re-records qa_shas from
+#     each repo's `release` tip (after a fix lands on `release`).
 #
 #   bin/release eject <task-slug> [--feedback "…"] [--prod] [--dry-run]
 #     BLOCK-ON-REGRESSION: pull ONE offending task off the candidate (the pre-QA

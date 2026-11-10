@@ -17,7 +17,8 @@
 # the consumer re-lock commits; a consumer's `bundle install` can then run on a
 # GitHub runner whose RubyGems CDN edge does not list the version yet ("Your bundle
 # is locked to studio-engine (0.114.1) ... can no longer be found in that source",
-# rantly run 40267136223; alex-build run 40938601557). That red has a KNOWN cause
+# rantly run 40267136223; alex-build run 40938601557; voicebox scan_ruby run
+# 42781359873 on rel-20261110-208612, a stock Rails CI with no runner wait). That red has a KNOWN cause
 # outside the commit under test: the release's own publish racing the CDN. It is
 # proven by bundler's own words in the failed job's log, not inferred from a
 # job's name. Stopping on it would hand an operator a re-run with nothing to fix,
