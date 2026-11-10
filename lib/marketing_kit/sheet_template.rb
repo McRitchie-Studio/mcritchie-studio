@@ -85,7 +85,9 @@ module MarketingKit
     ].freeze
 
     # Label (row 2) over value (row 3), side by side from column C, beside the
-    # title. In a value or a formula: {r} is the row, {first}/{last} the table's
+    # title. A variable may carry emphasis: true, the sheet's headline number,
+    # drawn larger in the title colour (a copy of the template sets it, such as a
+    # card roster's credit limit). In a value or a formula: {r} is the row, {first}/{last} the table's
     # first and last data row, {col:key} a column's letter and {var:Label} that
     # variable's cell, made absolute.
     VARIABLES = [

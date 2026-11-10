@@ -48,6 +48,22 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
     end
   end
 
+  test "an emphasised variable draws larger, in the title colour, on a taller row" do
+    load_kit do |spec|
+      FileUtils.cp(LOGO, spec.logo_png(:icon, :light))
+      Dir.mktmpdir do |out|
+        office = MarketingKit::Office.new(spec)
+        payload = MarketingKit::SheetTemplate.new(spec).payload
+        payload[:variables] = [payload[:variables].last.merge(emphasis: true), payload[:variables].first]
+        path = office.send(:draw, "sheet", payload, File.join(out, "emphasis.xlsx"))
+        xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
+        assert_match(/<row r="3" ht="26"/, xml.fetch("xl/worksheets/sheet1.xml"))
+        title = spec.colour(:title).delete("#")
+        assert_match(%r{<font><name val="Montserrat"/><b val="1"/><color rgb="\h\h#{title}"/><sz val="16"/></font>}, xml.fetch("xl/styles.xml"))
+      end
+    end
+  end
+
   test "a build files the Sheet template in 05 Templates as a Google Sheet" do
     load_kit do |spec|
       office = Class.new do

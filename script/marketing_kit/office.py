@@ -242,7 +242,9 @@ def sheet(d, out):
     ws.sheet_view.showGridLines = False
     ws.column_dimensions["A"].width = round((square - 5) / 7, 2)
     for i, c in enumerate(cols): ws.column_dimensions[L(C(i))].width = c["width"]
-    heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_VALUE: 18, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
+    # A variable marked emphasis (the sheet's headline number) draws larger, so row 3 grows to hold it.
+    emphasis = any(v.get("emphasis") for v in d["variables"])
+    heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_VALUE: 26 if emphasis else 18, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
     # The icon fills A2, a few pixels in from each edge
@@ -259,14 +261,16 @@ def sheet(d, out):
     var_cell = {}
     for i, v in enumerate(d["variables"]):
         at = C(1 + i)
-        lab = ws.cell(TITLE, at, v["label"].upper()); lab.font = font(size=8, bold=True, color=col["grey"])
+        lab = ws.cell(TITLE, at, v["label"].upper())
+        lab.font = font(size=8, bold=True, color=col["title"] if v.get("emphasis") else col["grey"])
         lab.alignment = Alignment(vertical="bottom")
         value = v["value"]
         if isinstance(value, str):
             value = value.replace("{first}", str(FIRST)).replace("{last}", str(LAST))
             value = re.sub(r"\{col:(\w+)\}", lambda m: L(C(next(j for j, c in enumerate(cols) if c["key"] == m.group(1)))), value)
         cell = ws.cell(VAR_VALUE, at, value)
-        cell.font = font(size=11, bold=True, color=col["ink"]); cell.fill = fill(col["light"])
+        big = v.get("emphasis")
+        cell.font = font(size=16 if big else 11, bold=True, color=col["title"] if big else col["ink"]); cell.fill = fill(col["light"])
         cell.alignment = Alignment(horizontal="left", vertical="center")
         if v["kind"] in FORMATS: cell.number_format = FORMATS[v["kind"]]
         var_cell[v["label"]] = f"${L(at)}${VAR_VALUE}"
