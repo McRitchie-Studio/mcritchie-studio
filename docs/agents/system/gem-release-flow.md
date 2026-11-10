@@ -21,7 +21,9 @@ Two things the old flow lacked are now in place, and they are what make B safe:
 
 1. **The propagation wait.** `await_published_gems!` holds every lock bump until
    RubyGems has served the version on every surface bundler reads (the compact index
-   `/info` line; `/versions`, its tail first and, on a tail miss, the whole file under a
+   `/info` line, read as bundler reads it: `RELEASE_GEM_INFO_READS` (8) separate
+   connections with bundler's gzip `Accept-Encoding`, every one listing the version;
+   `/versions`, its tail first and, on a tail miss, the whole file under a
    rationed read capped by `RELEASE_GEM_VERSIONS_FULL_MAX_TIME`; and the `.gem`) on
    every read for `RELEASE_GEM_SETTLE_S` (60s), and it installs locally. A timeout is
    `GEM_NOT_SERVED`, nothing pushed, naming the surface that missed. CI runs
@@ -29,7 +31,12 @@ Two things the old flow lacked are now in place, and they are what make B safe:
    it reads `/info/<gem>` as bundler does on several separate connections, and the
    `.gem`, and fails as `GEM_NOT_SERVED_ON_RUNNER` on a copy that still lacks the
    version (RubyGems soft-purges the index, so one fresh read proves nothing about
-   the next connection). The 0.48.0
+   the next connection). The runner wait is the only one that sees a runner's edge,
+   and a consumer runs it only when its CI does: an app on the hub's `reusable-ci.yml`
+   with `await-gem-propagation: true`, or one with its own copy. At the lock bump
+   prepare names each consumer whose CI bundles without it (`⚠ <repo>: CI bundles
+   without the runner wait (...)`, `Release::RunnerGemWait`); on rel-20261110-208612
+   that was voicebox's stock Rails `scan_ruby`, which lost the race. The 0.48.0
    cause cannot recur, and the wait is already paid at prepare under A, so B adds
    none.
 2. **Allocation and the `v*` tag.** In August a stranded version needed a person to

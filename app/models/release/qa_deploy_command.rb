@@ -30,10 +30,25 @@ class Release
 
     module_function
 
+    # The script, relative to a hub checkout's root.
+    SCRIPT = "bin/qa-server"
+
     # `qa_app` is the registry slug bin/qa-server takes (not the Heroku app name),
     # and `branch` the release branch whose origin ref gets deployed.
-    def for(qa_app:, branch:)
-      "bin/qa-server deploy #{qa_app} origin/#{branch} #{CONFIRM_FLAG}"
+    #
+    # `hub_root:` names the hub checkout the script lives in. bin/release passes its
+    # own (File.expand_path("..", __dir__)) so the command it RUNS and the remedy it
+    # PRINTS work from any cwd. Without it the script path is relative, and a
+    # prepare run from /Users/alex/projects failed every QA deploy with ENOENT
+    # ("could not run bin/qa-server: No such file or directory", rel-20261110-208612).
+    def for(qa_app:, branch:, hub_root: nil)
+      argv(qa_app: qa_app, branch: branch, hub_root: hub_root).join(" ")
+    end
+
+    # The same command as an argv, for the spawn.
+    def argv(qa_app:, branch:, hub_root: nil)
+      script = hub_root.to_s.empty? ? SCRIPT : File.join(hub_root.to_s, SCRIPT)
+      [script, "deploy", qa_app.to_s, "origin/#{branch}", CONFIRM_FLAG]
     end
   end
 end

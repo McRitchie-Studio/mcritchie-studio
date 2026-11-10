@@ -21,9 +21,9 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
   # failed sweep is the damage: a half-finished sweep becomes a commit on `accepted`.
   COMMITTED = "SPY-COMMIT-ARTIFACT-REACHED"
 
-  # bin/release's three sweep helpers spawn CWD-RELATIVE commands (`bin/archive-docs`,
-  # `bin/agent-worktree`, `bin/clean-artifacts`), so a scratch dir with its own `bin/` controls
-  # the child. `archive_docs_exit`: 0 = happy, 1 = fails. `moved` is what a happy sweep reports;
+  # bin/release's three sweep helpers spawn hub tools through hub_bin (`archive-docs`,
+  # `agent-worktree`, `clean-artifacts`); run_archive points hub_bin at a scratch dir's own
+  # `bin/`, so the stubs control the child. `archive_docs_exit`: 0 = happy, 1 = fails. `moved` is what a happy sweep reports;
   # the beat commits only when a doc moved.
   # History: task honour-archive-docs-refusal.
   def with_stub_bin(archive_docs_exit:, dry_run_exit: 0, moved: 1)
@@ -80,7 +80,8 @@ class ReleaseArchiveDocsRefusalTest < Minitest::Test
   # Returns [combined output, exit status]. Unlike the release CLI harness's run_cli this does
   # NOT assert success — a refusal exiting non-zero is the expected result here.
   def run_archive(dir, argv: ["archive", "--yes", "--local"])
-    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{STUBS}; archive)
+    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{STUBS}; ) +
+             %(def hub_bin(name) = File.join(#{dir.inspect}, "bin", name); archive)
     out, err, status = Open3.capture3(SessionEnv.neutralized, "ruby", "-e", script, chdir: dir)
     ["#{out}\n#{err}", status]
   end

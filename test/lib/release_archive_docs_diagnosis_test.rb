@@ -28,8 +28,8 @@ class ReleaseArchiveDocsDiagnosisTest < Minitest::Test
 
   SUMMARY = %(archive-docs-summary: {"moved":1,"moved_paths":["docs/agents/audits/frozen-1.md"]})
 
-  # `dir` holds the cwd-relative bin/ stubs (bin/release spawns `bin/archive-docs` and
-  # friends relative to the working directory) and the hub checkout PROJECTS_DIR resolves.
+  # `dir` holds the bin/ stubs (run_archive points bin/release's hub_bin at them) and the
+  # hub checkout PROJECTS_DIR resolves.
   def with_fixture(archive_docs_exit: 1, dry_run_exit: 0)
     Dir.mktmpdir("release-archive-diagnosis") do |dir|
       write_stubs(dir, archive_docs_exit: archive_docs_exit, dry_run_exit: dry_run_exit)
@@ -83,7 +83,8 @@ class ReleaseArchiveDocsDiagnosisTest < Minitest::Test
   RUBY
 
   def run_archive(dir, argv: ["archive", "--yes", "--local"])
-    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{STUBS}; archive)
+    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{STUBS}; ) +
+             %(def hub_bin(name) = File.join(#{dir.inspect}, "bin", name); archive)
     env = SessionEnv.neutralized("PROJECTS_DIR" => dir)
     out, err, status = Open3.capture3(env, "ruby", "-e", script, chdir: dir)
     ["#{out}\n#{err}", status]
@@ -112,7 +113,7 @@ class ReleaseArchiveDocsDiagnosisTest < Minitest::Test
 
       assert_includes report, "fatal: destination exists", "the MESSAGE must name the real cause:\n#{out}"
       assert_includes report, "DocsArchive::CommandFailed", "the mechanism must be named:\n#{out}"
-      assert_match(/command:\s+bin\/archive-docs --repo=/, report, "the command must be quoted:\n#{out}")
+      assert_match(/command:\s+\S*bin\/archive-docs --repo=/, report, "the command must be quoted:\n#{out}")
       assert_match(/exit status:\s+1/, report, "its exit status must be reported:\n#{out}")
     end
   end

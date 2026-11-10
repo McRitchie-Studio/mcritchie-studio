@@ -102,7 +102,10 @@
 #          token deltas, record devnet_gauntlet complete or fail (which `ship`
 #          reads). A red run exits 4 with no Steffon handoff; a release that
 #          already has one runs no second contest; `--skip-gauntlet` runs none.
-#     `--task` narrows the sweep to the named slugs (operator curation).
+#     `--task` narrows the sweep to the named slugs (operator curation). A named
+#     `assembled` MEMBER of the active release is a RE-FREEZE: nothing is promoted or
+#     swept for it, and the run re-gates, re-deploys QA and re-records qa_shas from
+#     each repo's `release` tip (after a fix lands on `release`).
 #
 #   bin/release eject <task-slug> [--feedback "…"] [--prod] [--dry-run]
 #     BLOCK-ON-REGRESSION: pull ONE offending task off the candidate (the pre-QA
@@ -268,6 +271,7 @@ require_relative "../app/models/release/gh_read_retry"
 # step that runs it and as the remedy an operator re-runs, which is how the remedy
 # lost its `--yes`. Rails-free → unit-tested.
 require_relative "../app/models/release/qa_deploy_command"
+require_relative "../app/models/release/runner_gem_wait"
 # The mint-once-and-retry recovery this lane's gh calls ride (bin/lib/ci_status.rb
 # already requires it for the CI reads; named here because dispatch_and_watch is
 # now a first-class caller and a transitive require is not a dependency).
@@ -361,6 +365,20 @@ require_relative "lib/release_announce" # `bin/release announce`: smoke producti
 
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
+
+# THE HUB CHECKOUT this script runs from, and its bin/. Every hub tool bin/release
+# spawns is named through hub_bin, never as a bare "bin/<tool>": a bare path is
+# resolved against the CALLER's cwd, so a prepare run from /Users/alex/projects
+# failed all three QA deploys with ENOENT ("could not run bin/qa-server: No such
+# file or directory", rel-20261110-208612). A "bin/<tool>" that runs with chdir: a
+# repo's own checkout (bin/rails, bin/bundle) is that repo's binstub and stays
+# relative. The --local conductor's `rails runner` is the one hub tool that needs a
+# full Rails app, which the fixed-path tooling install is not, so it names the hub
+# CHECKOUT (repo_path(APP)) instead. test/lib/release_hub_bin_paths_test.rb holds
+# the class.
+HUB_ROOT = File.expand_path("..", __dir__).freeze
+
+def hub_bin(name) = File.join(HUB_ROOT, "bin", name)
 
 # The self-narration CLI this deploy lane opens+closes role activities through.
 # Same bin the session narrates with — which the capture hook drops from raw
@@ -1745,7 +1763,7 @@ def conductor(ruby, read_only: false)
   ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
-             : ["bin/rails", "runner", payload]
+             : [File.join(repo_path(APP), "bin", "rails"), "runner", payload]
   if DRY && !read_only
     puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
     return {}
@@ -3784,17 +3802,29 @@ end
 # `pr_url`/`pr_urls` fill an unrecorded PR from the task branch. Each read is
 # guarded by respond_to? because the snippet runs on the DEPLOYED conductor, which
 # may predate the derived readers; there it reads the stamps exactly as before.
+#
+# THE RE-FREEZE (task release-prepare-night-lessons). A slug --task names that is an
+# `assembled` MEMBER of the active release rides along as a `refreeze: true` row. It is
+# no sweep candidate (it is already on the release), so before this it fell to 1b's
+# "not sweepable" refusal, and the only way to re-record qa_shas after a fix landed on
+# `release` was to name some unrelated still-`reviewed` task (rel-20261110-208612). The
+# CLI never promotes or re-pins for such a row: the run re-deploys QA from each repo's
+# `release` tip and re-records qa_shas, behind the same gates as any prepare re-run.
 def sweep_detect_ruby(only_slugs)
   only = only_slugs.empty? ? "nil" : only_slugs.inspect
   "only = #{only}; " \
+  "r = #{rel_current}; " \
   "c = Release::Conductor.sweep_candidates#{hub_train? ? '' : "(train: #{TRAIN.inspect})"}; " \
   "tasks = c['reviewed'] + c['stragglers'] + (c['parked'] || []) + (c['other_train'] || []); " \
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
-  "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, " \
+  "refreeze = (only && r) ? Task.where(release_slug: r.slug, stage: 'assembled', slug: only).order(:position).to_a" \
+  ".reject { |t| tasks.include?(t) } : []; " \
+  "tasks += refreeze; " \
+  "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, refreeze: refreeze.include?(t), " \
+  "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, " \
   "pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
   "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
-  "r = #{rel_current}; " \
   "#{held_repos_ruby}" \
   "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen, held_repos: held }.to_json)"
 end
@@ -5221,9 +5251,9 @@ def qa_deploy_app!(group, smoke_started:)
     step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
     qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
   else
-    step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH)}")
-    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}",
-                  Release::QaDeployCommand::CONFIRM_FLAG, capture: false)
+    step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH, hub_root: HUB_ROOT)}")
+    _, qa_ok = sh(*Release::QaDeployCommand.argv(qa_app: qa_app, branch: RELEASE_BRANCH, hub_root: HUB_ROOT),
+                  capture: false)
   end
 
   # c2. wait for the dyno to actually BOOT before treating the deploy as done.
@@ -5407,10 +5437,21 @@ def prepare
   if task_slugs.any?
     missing = task_slugs - cands.map { |c| c["slug"] }
     if missing.any?
-      abort!("--task slug(s) not sweepable: #{missing.join(', ')} — not in the reviewed queue or the " \
-             "assembled stragglers (typo? not yet `reviewed`?). Nothing was merged or deployed; " \
-             "fix the slug (or review the task), then re-run `bin/release prepare`.")
+      abort!("--task slug(s) not sweepable: #{missing.join(', ')} — not in the reviewed queue, the " \
+             "assembled stragglers, or the assembled members of the active release (typo? not yet " \
+             "`reviewed`?). Nothing was merged or deployed; fix the slug (or review the task), then re-run " \
+             "`bin/release prepare`.")
     end
+  end
+
+  # 1c. RE-FREEZE: a named `assembled` member of the active release (see
+  #     sweep_detect_ruby). It lands nothing, so it is kept out of the pin, the
+  #     promote and the accepted-coverage guard below; the QA deploy and the qa_shas
+  #     record that follow read each repo's `release` tip, which is the point.
+  refreeze_slugs = cands.select { |c| c["refreeze"] }.map { |c| c["slug"] }
+  refreeze_slugs.each do |s|
+    say("  re-freeze #{s}: an assembled member of #{active ? active['slug'] : 'the active release'} — " \
+        "no promote; QA re-deploys each repo's `#{RELEASE_BRANCH}` tip and qa_shas re-records it")
   end
 
   # 2. IDEMPOTENT NO-OP: nothing to sweep and nothing in flight → report + stop
@@ -5496,7 +5537,7 @@ def prepare
     say("  ⚠ #{s}: `reviewed` but merged:\"\" — review never landed its feat PR on `#{ACCEPTED_BRANCH}`; " \
         "left `reviewed` (re-review to heal)")
   end
-  plan["record"].reject { |row| row["merged"] == ACCEPTED_MERGED }.each do |row|
+  plan["record"].reject { |row| row["merged"] == ACCEPTED_MERGED || refreeze_slugs.include?(row["slug"]) }.each do |row|
     step("skip promote for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
   end
 
@@ -5505,7 +5546,7 @@ def prepare
   #     judges `accepted`, so the guards, the promote, the record and the stale-tree
   #     gate all describe one tree. A merge onto `accepted` from here on waits for the
   #     next release instead of failing this one's stale-tree gate.
-  pin_swept_shas!(cands.select { |c| plan["sweep"].include?(c["slug"]) }
+  pin_swept_shas!(cands.select { |c| plan["sweep"].include?(c["slug"]) && !c["refreeze"] }
                        .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] })
 
   # 4. PROMOTE accepted → release (the accepted-ladder's SECOND rung). Review already
@@ -5559,7 +5600,7 @@ def prepare
   # a blocked one aborted above) — except a row naming a PARKED repo, which can
   # carry merged:"accepted" and would otherwise promote the parked repo's `accepted`
   # onto `release` while the plan held its task.
-  swept_cands   = cands.select { |c| plan["sweep"].include?(c["slug"]) }
+  swept_cands   = cands.select { |c| plan["sweep"].include?(c["slug"]) && !c["refreeze"] }
   promote_repos = swept_cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
                              .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
                              .map(&:to_s).reject(&:empty?).uniq
@@ -5662,7 +5703,9 @@ def prepare
   #    (plan["sweep"]) + the repo plan, in ONE `heroku run`. A `held` member is NOT
   #    in plan["sweep"], so it is never recorded onto the RC. Suppressed under
   #    --dry-run (the promotion previewed above; nothing recorded).
-  landed = plan["sweep"]
+  # A re-freeze row is already a member: no sweep! write, so a run that names only
+  # re-freeze rows takes the read-only repo_plan path below.
+  landed = plan["sweep"] - refreeze_slugs
   left_reviewed = held + plan["parked"].map { |entry| entry["slug"] } + plan["repo_held"].map { |entry| entry["slug"] } +
                   plan["other_train"].map { |entry| entry["slug"] }
   result = {}
@@ -6059,7 +6102,7 @@ def prepare
       # WITHOUT `--yes`, so an operator who copied it hit bin/qa-server's
       # external-write confirmation and got no deploy — measured twice on 2026-09-22.
       say("  app #{d['repo']} → #{RELEASE_BRANCH} — QA deploy FAILED, retry " \
-          "`#{Release::QaDeployCommand.for(qa_app: d['qa_app'], branch: RELEASE_BRANCH)}`")
+          "`#{Release::QaDeployCommand.for(qa_app: d['qa_app'], branch: RELEASE_BRANCH, hub_root: HUB_ROOT)}`")
     end
   end
   say("  #{left_reviewed.join(', ')} left `reviewed` — see the ⚠ line for each (no code on `#{ACCEPTED_BRANCH}`: re-review to heal, or `bin/task block` them).") if left_reviewed.any?
@@ -7091,6 +7134,9 @@ GEM_POLL_TIMEOUT  = Integer(ENV.fetch("RELEASE_GEM_POLL_TIMEOUT", "300"))
 # How long every surface must KEEP answering before a consumer lock may be pushed
 # (GemServedWait: one fresh read from this edge is not proof a runner's edge has it).
 GEM_SETTLE_S = Integer(ENV.fetch("RELEASE_GEM_SETTLE_S", GemServedWait::DEFAULT_SETTLE_S.to_s))
+# How many separate bundler-shaped /info reads one poll makes; every one must list the
+# version (GemServedWait::DEFAULT_INFO_READS, the runner script's AWAIT_READS).
+GEM_INFO_READS = [Integer(ENV.fetch("RELEASE_GEM_INFO_READS", GemServedWait::DEFAULT_INFO_READS.to_s)), 1].max
 # One curl's ceiling. Without it a stalled read never returns and the deadline never fires.
 GEM_CURL_MAX_TIME = Integer(ENV.fetch("RELEASE_GEM_CURL_MAX_TIME", "20"))
 
@@ -7126,11 +7172,9 @@ def gem_version_miss(gem_name, version)
 
   # --max-time on every read: a hung connection is a failed read the deadline can count.
   GemServedWait.first_miss([
-    [GemServedWait::SURFACE_INFO, lambda {
-      out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--max-time", GEM_CURL_MAX_TIME.to_s,
-                                    format(GEM_INDEX_URL, gem_name))
-      status.success? && gem_index_lists?(out, version)
-    }],
+    # /info as bundler reads it: GEM_INFO_READS separate connections with its gzip
+    # header, every one listing the version (GemServedWait.info_read_argv).
+    [GemServedWait::SURFACE_INFO, -> { GemServedWait.all_reads_list?(gem_info_reads(gem_name), version) }],
     # `/versions`: bundler reads it before any `/info`, so a stale copy there hides
     # the version even when `/info` is fresh. Its own miss names tail vs full read.
     [:versions, -> { (@gem_versions_miss = gem_versions_miss(gem_name, version)).nil? }],
@@ -7140,6 +7184,18 @@ def gem_version_miss(gem_name, version)
       served.success?
     }]
   ]).then { |miss| miss == :versions ? @gem_versions_miss : miss }
+end
+
+# One poll's /info reads: GEM_INFO_READS bodies, each from its own curl process (its own
+# connection), HTTP/1.1 with bundler's Accept-Encoding, decompressed for the match; nil
+# for a read that failed. --max-time bounds each read, as on the other probe curls.
+def gem_info_reads(gem_name)
+  url = format(GEM_INDEX_URL, gem_name)
+  Array.new(GEM_INFO_READS) do
+    out, status = Open3.capture2e("/usr/bin/curl", "-sf", "--http1.1", "--compressed", "--max-time",
+                                  GEM_CURL_MAX_TIME.to_s, "-H", GemServedWait::INFO_READ_HEADER, url)
+    status.success? ? out : nil
+  end
 end
 
 # `/versions` for one probe: nil when served, else the GemServedWait surface that missed.
@@ -7250,8 +7306,9 @@ def await_published_gems!(published_gems, resume = "bin/release prepare")
   pending = published_gems.reject { |gem_name, version| @gems_ready[[gem_name, version.to_s]] }
   return if pending.empty?
 
-  step("await: each published gem must be SERVED by the RubyGems CDN (compact index /info, /versions tail with a " \
-       "rationed full read on a miss, and the .gem; held #{GEM_SETTLE_S}s) and INSTALLED here before anything reads it")
+  step("await: each published gem must be SERVED by the RubyGems CDN (compact index /info read as bundler " \
+       "reads it, on #{GEM_INFO_READS} connections; /versions tail with a rationed full read on a miss; and the " \
+       ".gem; held #{GEM_SETTLE_S}s) and INSTALLED here before anything reads it")
   pending.each do |gem_name, version|
     # Wall time, so the curl calls and the installs count against the budget too.
     started = monotonic_s
@@ -9295,6 +9352,19 @@ end
 # never-touch-the-primary mechanics as ship's repin_consumers), pushed by ref
 # fast-forward-checked. Idempotent: a lock already at the published versions
 # commits nothing; a consumer whose Gemfile never declares the gems is skipped.
+# Name the consumer's CI jobs that will bundle this lock with no runner-side
+# propagation wait (Release::RunnerGemWait). The conductor's hold cannot see a
+# runner's CDN edge; only that wait can. Said, not refused: the lock is right, and a
+# red it causes is the gate's named infra re-run, now with its cause on the page.
+def warn_unguarded_runner_bundles(repo, workspace)
+  files = Dir.glob(File.join(workspace, ".github", "workflows", "*.{yml,yaml}")).sort
+  workflows = files.to_h { |path| [path, File.read(path)] }
+  line = Release::RunnerGemWait.warning(repo, Release::RunnerGemWait.unguarded_jobs(workflows))
+  say("  #{line}") if line
+rescue SystemCallError => e
+  say("  ⚠ #{repo}: could not read its CI workflows (#{e.message}); runner-wait coverage unknown")
+end
+
 def bump_consumer_locks_for_qa(app_groups, published_gems)
   return if published_gems.empty?
 
@@ -9352,6 +9422,7 @@ def bump_consumer_locks_for_qa(app_groups, published_gems)
         say("  #{repo}: Gemfile does not declare #{gem_names.join(', ')} — no lock bump")
         next
       end
+      warn_unguarded_runner_bundles(repo, workspace)
 
       # `expected` is what gets COMMITTED; `resolving` adds each candidate's exact
       # requirement for the resolve only, because Bundler takes a prerelease only
@@ -12642,7 +12713,7 @@ def restore_primaries(app_groups)
   step("restore primaries: return each app checkout to a clean `main` for the next session")
   Array(app_groups).each do |group|
     repo = group["repo"]
-    out, status = bounded_capture2e("bin/agent-worktree", "restore-primary", repo,
+    out, status = bounded_capture2e(hub_bin("agent-worktree"), "restore-primary", repo,
                                     deadline: command_deadline, deadline_env: COMMAND_DEADLINE_ENV)
     print(out)
     say("  ⚠ #{repo}: primary left as-is (uncommitted/unpushed work) — restore by hand") unless status.success?
@@ -12798,7 +12869,7 @@ end
 # Streams the tool's output and returns [output, ok?] so the caller can count
 # reclaimed worktrees for the summary.
 def reclaim_worktrees(apply:)
-  cmd = ["bin/agent-worktree", "cleanup", "--reclaim"]
+  cmd = [hub_bin("agent-worktree"), "cleanup", "--reclaim"]
   cmd << "--yes" if apply
   out, status = archive_capture2e(*cmd)
   print(out)
@@ -12881,7 +12952,7 @@ end
 # machine's disk — never the board. A fresh Mac's first archive sweeps almost
 # nothing, and that is correct, not an anomaly.
 def sweep_artifacts(apply:)
-  cmd = ["bin/clean-artifacts"]
+  cmd = [hub_bin("clean-artifacts")]
   cmd << "--dry-run" unless apply
   out, status = archive_capture2e(*cmd)
   print(out)
@@ -12905,11 +12976,11 @@ end
 # deletes on the hub REMOTE, as the agent GitHub App; what it refuses is in
 # bin/lib/branch_prune.rb.
 def prune_session_markers(apply:)
-  run_pruner(["bin/prune-session-markers", apply ? "--yes" : "--dry-run"]) { |out| MarkerPrune.parse_summary(out) }
+  run_pruner([hub_bin("prune-session-markers"), apply ? "--yes" : "--dry-run"]) { |out| MarkerPrune.parse_summary(out) }
 end
 
 def prune_branches(apply:)
-  cmd = ["bin/prune-branches", "--repo", repo_path("mcritchie-studio"), apply ? "--yes" : "--dry-run"]
+  cmd = [hub_bin("prune-branches"), "--repo", repo_path("mcritchie-studio"), apply ? "--yes" : "--dry-run"]
   run_pruner(cmd) { |out| BranchPrune.parse_summary(out) }
 end
 
@@ -12969,7 +13040,7 @@ end
 
 def sweep_docs(apply:)
   repo = repo_path("mcritchie-studio")
-  cmd = ["bin/archive-docs", "--repo=#{repo}"]
+  cmd = [hub_bin("archive-docs"), "--repo=#{repo}"]
   cmd << "--dry-run" unless apply
   # capture3, not capture2e: the failure report quotes STDERR specifically, and a
   # merged stream cannot say which lines were the complaint. Both are still printed,

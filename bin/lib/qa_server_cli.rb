@@ -40,7 +40,10 @@ module QaServerCli
   # bin/qa-server is not only run by hand. bin/release.rb#prepare shells it, in
   # the QA-deploy step it runs per app:
   #
-  #     _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/release", "--yes")
+  #     _, qa_ok = sh(*Release::QaDeployCommand.argv(qa_app: qa_app, branch: "release",
+  #                                                  hub_root: HUB_ROOT), capture: false)
+  #
+  # (argv[0] is the hub root's bin/qa-server, so the deploy runs from any cwd)
   #
   # and `sh` returns `system(...)`'s boolean — so a ZERO exit from this script is
   # read by the release sweep as "the QA deploy SUCCEEDED". `qa_ok` then gates the

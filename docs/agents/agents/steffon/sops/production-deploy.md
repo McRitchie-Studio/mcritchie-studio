@@ -448,7 +448,7 @@ A refused **`main`** push (fatal):
 | **NETWORK** (`Could not resolve host`, `getaddrinfo`, a timeout) | Restore the network, then re-run `bin/release ship` — it resumes. No token needs refreshing and `main` needs no reconciling. **Do NOT re-run `prepare`.** |
 | **MINT** (`could not mint the DEPLOYER token`) | Read the mint's error, printed just above (`deployer mint said:`; it carries `op`'s own last line as `op said:`), and act on what it names. Only when it says the vault could not be read on credentials: `source ~/.zprofile.admin`. Then re-run `bin/release ship` — it resumes. |
 | **AUTH** (`Invalid username or token`, `Authentication failed`, a 401/403) | `source ~/.zprofile.admin` and `export GH_APP_ITEM=github.mcritchie-admin` (BEFORE the push), then re-run `bin/release ship` — it resumes. The deployer is never cached, so there is no token to refresh by hand. **Do NOT re-run `prepare`**: the freeze is still good. |
-| **NON-FAST-FORWARD** | Reconcile `main`, re-run `bin/release prepare` to re-freeze, then re-run `bin/release ship`. |
+| **NON-FAST-FORWARD** | Reconcile `main`, re-freeze with `bin/release prepare --task <an assembled member of the release> --yes` (a plain `prepare` also sweeps every `reviewed` task), then re-run `bin/release ship`. |
 | **UNRECOGNISED** | Read git's output, printed just above the verdict, before doing either. |
 
 A refused **`accepted`** advance (non-fatal):

@@ -223,4 +223,33 @@ class GemServedWaitTest < Minitest::Test
     assert_includes remedy.call(GemServedWait::SURFACE_GEM), "gems/studio-engine-0.9.0.gem` exits 0"
     refute_includes remedy.call(GemServedWait::SURFACE_GEM), "/info/", "a .gem miss must not send the operator to /info"
   end
+
+  # ── [unit] /info is read as bundler reads it (task release-prepare-night-lessons) ──
+  # rel-20261110-208612: the conductor's one plain curl per poll saw studio-engine 0.143.0
+  # while voicebox's scan_ruby, bundling seconds after the lock push, was told it was
+  # "removed". Bundler reads the gzip copy, on several connections.
+
+  FRESH = "---\n0.142.0 |checksum:aa\n0.143.0 |checksum:bb\n"
+  STALE = "---\n0.142.0 |checksum:aa\n"
+
+  def test_an_info_read_sends_bundlers_accept_encoding
+    assert_equal "Accept-Encoding: gzip;q=1.0,deflate;q=0.6,identity;q=0.3", GemServedWait::INFO_READ_HEADER,
+                 "the header that picks the copy bundler reads (Gem::Net::HTTP's default)"
+  end
+
+  def test_info_is_served_only_when_every_read_lists_the_version
+    assert GemServedWait.all_reads_list?([FRESH] * 8, "0.143.0")
+    refute GemServedWait.all_reads_list?([FRESH] * 7 + [STALE], "0.143.0"), "one stale connection is a miss"
+    refute GemServedWait.all_reads_list?([FRESH, nil], "0.143.0"), "a failed read is unproven, so a miss"
+    refute GemServedWait.all_reads_list?([], "0.143.0"), "no reads prove nothing"
+  end
+
+  # The control: the old probe judged ONE body. Against the night's shape (one fresh
+  # answer, the rest stale) it said served; the new rule says miss.
+  def test_control_one_fresh_read_among_stale_ones_passed_the_old_probe
+    bodies = [FRESH] + [STALE] * 7
+
+    assert GemServedWait.info_lists?(bodies.first, "0.143.0"), "the one-read probe passed"
+    refute GemServedWait.all_reads_list?(bodies, "0.143.0"), "every-read probe holds the lock push"
+  end
 end

@@ -21,7 +21,7 @@ class ReleaseQaParallelTest < ReleaseCliHarness
         repo = Release::ParallelDeploy.current_repo.to_s
         return ["sha-" + (repo.empty? ? "solo" : repo), true] if a[0] == "git" && a.include?("rev-parse")
         return ["", true] if a[0] == "git"
-        if a[0] == "bin/qa-server"
+        if a[0].to_s.end_with?("bin/qa-server")
           say_event("TURF-DEPLOY")
           sleep 0.2
           return ["", true]

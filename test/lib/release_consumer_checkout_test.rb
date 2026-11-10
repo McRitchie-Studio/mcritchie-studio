@@ -99,13 +99,15 @@ class ReleaseConsumerCheckoutTest < Minitest::Test
   # ---- driving the real CLI ------------------------------------------------
 
   # Spawn the REAL bin/release.rb from INSIDE the fixture checkout (mirroring consumer-ci's
-  # `working-directory: ${{ matrix.consumer }}`, which makes the cwd-relative `bin/archive-docs`
-  # spawn resolve), with the projects root pinned at the fixture workspace. PROJECTS_DIR is
+  # `working-directory: ${{ matrix.consumer }}`), with hub_bin pointed at the fixture's bin/
+  # (its real archive-docs, stubbed reclaim and artifact sweeps) and the projects root
+  # pinned at the fixture workspace. PROJECTS_DIR is
   # bin/release's documented seam for a non-default layout, not a test-only backdoor. The fix
   # must choose the directory NAME, the only thing left varying here.
   # History: task resolve-hub-path-in-consumer.
   def run_archive(workspace, hub, argv: ["archive", "--yes", "--local"])
-    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{stubs}; archive)
+    script = %(ARGV.replace(#{argv.inspect}); load #{BIN.inspect}; #{stubs}; ) +
+             %(def hub_bin(name) = File.join(#{hub.inspect}, "bin", name); archive)
     env = SessionEnv.neutralized(
       "PROJECTS_DIR" => workspace,
       "MCR_PRIMARY_LOCK_DIR" => File.join(workspace, ".locks")
