@@ -51,6 +51,7 @@ class ReleaseHubBinPathsTest < ReleaseCliHarness
         ["", true]
       end
       def say_event(text) = puts(text)
+      def repo_path(_repo) = Dir.tmpdir
     RUBY
     group = { "repo" => "voicebox", "kind" => "app", "qa_app" => "voicebox", "members" => [{ "slug" => "t-v" }] }
     call = "Dir.chdir(#{Dir.tmpdir.inspect}) { begin; qa_deploy_app!(#{group.inspect}, smoke_started: -> {}); " \
