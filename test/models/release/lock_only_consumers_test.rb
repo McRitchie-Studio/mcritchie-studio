@@ -109,6 +109,15 @@ class Release::LockOnlyConsumersTest < ActiveSupport::TestCase
                               held_repos: [ { "repo" => "moms-app", "train" => "x", "slug" => "rel" } ])
   end
 
+  # Review note 5 (task lock-only-deploy-hardening): the hub deploys first and
+  # alone, outside any drop, so it never rides as a lock-only app.
+  test "[unit] candidates never name the hub" do
+    apps = %w[mcritchie-studio commercial-welding]
+
+    assert_equal %w[commercial-welding], M.candidates(engine_apps: apps, member_repos: [], hub: "mcritchie-studio")
+    assert_equal apps, M.candidates(engine_apps: apps, member_repos: []), "without a hub named, nothing changes"
+  end
+
   # --- record / recorded / extra_repos ---
 
   test "record unions into the release metadata and keeps every other key" do
@@ -175,6 +184,20 @@ class Release::LockOnlyConsumersTest < ActiveSupport::TestCase
     assert_equal "Lock bumps only (no card): commercial-welding", lines.first
     assert_includes lines.last, "Dropped (lock bumps only, not shipped by this release): rantly — production deploy failed"
     assert_equal [], M.notes_lines({})
+  end
+
+  # Review note 2: a deploy that passed, then a failed `main` push. The notes must
+  # not say "not shipped" for an app production runs.
+  test "[unit] notes_lines name a drop that production runs anyway" do
+    meta = M.drop({ M::LOCK_ONLY_KEY => %w[rantly] }, "rantly" => "production deploy failed: its `main` push failed")
+    meta["deployed_apps"] = { "rantly" => { "sha" => "abc1234def", "at" => "2026-11-09T00:00:00Z" },
+                              "turf-monster" => { "sha" => "t1", "at" => "x" } }
+
+    assert_equal({ "rantly" => "abc1234def" }, M.live_after_drop(meta))
+    line = M.notes_lines(meta).last
+    assert_includes line, "Dropped after its deploy (lock bumps only): rantly — production runs abc1234d"
+    refute_includes line, "not shipped by this release"
+    assert_equal({}, M.live_after_drop({}))
   end
 
   test "[unit] the seal note names the drops, or nothing" do

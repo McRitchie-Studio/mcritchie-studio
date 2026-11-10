@@ -146,7 +146,8 @@ class Release
     #           "rolled_back" (metadata, present once a rollback completed).
     # history:  releases shipped BEFORE it, newest first: "slug", "shipped_shas",
     #           "deployed_sha", "lock_only_dropped" ({repo => reason}).
-    # The target carries "lock_only_dropped" too.
+    # The target carries "lock_only_dropped" too, and "lock_only_live" ({repo =>
+    # sha}): the dropped apps production runs anyway (LockOnlyConsumers.live_after_drop).
     # later:    the slug of a release shipped AFTER it, or nil.
     # shipping: the slug of a release whose production deploy is in flight, or nil.
     def self.build(target:, history:, later: nil, shipping: nil, hub: HUB)
@@ -368,9 +369,18 @@ class Release
       # A lock-only app the release DROPPED (Release::LockOnlyConsumers) is not in
       # its repo plan, so it is not rolled back. Say so: its `main` did not move
       # with the release, and the release never claimed its production.
+      live = hash_of(@target["lock_only_live"])
       hash_of(@target["lock_only_dropped"]).each do |repo, reason|
-        @notes << "#{repo} was dropped from #{@release_slug} (#{reason}) — not rolled back: the release never " \
-                  "shipped it. `heroku releases` names what its production runs"
+        @notes << if live.key?(repo)
+                    # Its deploy passed and only its `main` push failed (task
+                    # lock-only-deploy-hardening): production runs the release tree.
+                    "#{repo} was dropped from #{@release_slug} (#{reason}) AFTER its deploy: production runs " \
+                      "#{short(live[repo])} although its `main` did not move. Not rolled back by this command; " \
+                      "`heroku releases` names the release before it, and `heroku rollback` returns to it by hand"
+                  else
+                    "#{repo} was dropped from #{@release_slug} (#{reason}) — not rolled back: the release never " \
+                      "shipped it. `heroku releases` names what its production runs"
+                  end
       end
       @refusals << "#{@release_slug} deployed no app this command can roll back" if @apps.empty? && @refusals.empty?
       @notes << "main is untouched: a rollback is a deploy, not a ref move. The release's code stays on main and " \

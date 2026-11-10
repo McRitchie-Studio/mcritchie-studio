@@ -3228,7 +3228,10 @@ end
 # tree, a production deploy or smoke that fails) therefore DROPS it from the
 # release with a warning, and the member apps carry on. Its production deploy runs
 # BEFORE its `main` moves (deploy_app), so a drop there leaves `main` behind and
-# the next sweep carries it again (task lock-only-drop-follow-ups). Without this, rantly's
+# the next sweep carries it again (task lock-only-drop-follow-ups). A Heroku push
+# whose smoke stays red is rolled back (lock_only_smoke_failed!), and a deploy that
+# passed before a failed `main` push is recorded live (lock_only_live; task
+# lock-only-deploy-hardening). Without this, rantly's
 # Eco dyno, which 503s in the last week of each month, would stop every late-month
 # engine release at its smoke, with only a hand edit of the release record out.
 #
@@ -11266,8 +11269,7 @@ def deploy_app_dispatch(group, frozen, adapter:, target:, handler:, static_targe
         failure = "smoke failed for #{repo} (#{smoke}/up != 200)"
         # A lock-only app: a booting dyno gets a short window, then the push is
         # rolled back to the release before it (review note 1). It never returns.
-        lock_only_smoke_failed!(group, heroku_app, before, smoke, failure) if lock_only
-        abort!(failure)
+        abort!(failure) unless lock_only && lock_only_smoke_failed!(group, heroku_app, before, smoke, failure)
       end
     end
   when :repo_script
@@ -11446,12 +11448,13 @@ def lock_only_release_phase!(group, heroku_app, before)
   end
 end
 
-# The smoke of a lock-only app stayed red after its push: give the dynos a boot
-# window, then roll the push back to `before`. Always aborts (the caller's
-# lock_only_attempt turns that into the drop, whose reason is this message).
+# The smoke of a lock-only app was red after its push: give the dynos a boot
+# window (true when /up answers 200 in it), else roll the push back to `before`
+# and abort (the caller's lock_only_attempt turns that into the drop, whose reason
+# is this message).
 def lock_only_smoke_failed!(group, heroku_app, before, smoke, failure)
   repo = group["repo"]
-  return if wait_for_boot(smoke, attempts: LOCK_ONLY_SMOKE_POLLS, delay: 5)
+  return true if wait_for_boot(smoke, attempts: LOCK_ONLY_SMOKE_POLLS, delay: 5)
 
   if heroku_app.empty? || before.to_i <= 0
     abort!("#{failure}; NOT rolled back: no Heroku release was read before the push — production may run the " \
@@ -13620,6 +13623,7 @@ def rollback_read_ruby(slug)
   "puts({release: {slug: r.slug, state: r.state, deployed_sha: r.deployed_sha, " \
   "shipped_shas: (r.metadata['shipped_shas'] || {}), rolled_back: r.metadata['rolled_back'], " \
   "lock_only_dropped: Release::LockOnlyConsumers.dropped(r.metadata || {}), " \
+  "lock_only_live: Release::LockOnlyConsumers.live_after_drop(r.metadata || {}), " \
   "repos: Release::Conductor.repo_plan(r)}, " \
   "history: earlier.map { |e| {slug: e.slug, deployed_sha: e.deployed_sha, shipped_shas: (e.metadata['shipped_shas'] || {}), " \
   "lock_only_dropped: Release::LockOnlyConsumers.dropped(e.metadata || {}), " \
