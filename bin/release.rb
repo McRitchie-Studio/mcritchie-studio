@@ -3799,17 +3799,29 @@ end
 # `pr_url`/`pr_urls` fill an unrecorded PR from the task branch. Each read is
 # guarded by respond_to? because the snippet runs on the DEPLOYED conductor, which
 # may predate the derived readers; there it reads the stamps exactly as before.
+#
+# THE RE-FREEZE (task release-prepare-night-lessons). A slug --task names that is an
+# `assembled` MEMBER of the active release rides along as a `refreeze: true` row. It is
+# no sweep candidate (it is already on the release), so before this it fell to 1b's
+# "not sweepable" refusal, and the only way to re-record qa_shas after a fix landed on
+# `release` was to name some unrelated still-`reviewed` task (rel-20261110-208612). The
+# CLI never promotes or re-pins for such a row: the run re-deploys QA from each repo's
+# `release` tip and re-records qa_shas, behind the same gates as any prepare re-run.
 def sweep_detect_ruby(only_slugs)
   only = only_slugs.empty? ? "nil" : only_slugs.inspect
   "only = #{only}; " \
+  "r = #{rel_current}; " \
   "c = Release::Conductor.sweep_candidates#{hub_train? ? '' : "(train: #{TRAIN.inspect})"}; " \
   "tasks = c['reviewed'] + c['stragglers'] + (c['parked'] || []) + (c['other_train'] || []); " \
   "tasks = tasks.select { |t| only.include?(t.slug) } if only; " \
-  "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, " \
+  "refreeze = (only && r) ? Task.where(release_slug: r.slug, stage: 'assembled', slug: only).order(:position).to_a" \
+  ".reject { |t| tasks.include?(t) } : []; " \
+  "tasks += refreeze; " \
+  "rows = tasks.map { |t| { slug: t.slug, stage: t.stage, refreeze: refreeze.include?(t), " \
+  "merged: (t.respond_to?(:merged_rung) ? t.merged_rung : t.merged).to_s, " \
   "pr_url: (t.respond_to?(:pr_url_or_derived) ? t.pr_url_or_derived : t.devops_url('pr')).to_s, repo: t.release_repo.to_s, kind: t.release_kind.to_s, " \
   "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
-  "r = #{rel_current}; " \
   "#{held_repos_ruby}" \
   "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen, held_repos: held }.to_json)"
 end
@@ -5422,10 +5434,21 @@ def prepare
   if task_slugs.any?
     missing = task_slugs - cands.map { |c| c["slug"] }
     if missing.any?
-      abort!("--task slug(s) not sweepable: #{missing.join(', ')} — not in the reviewed queue or the " \
-             "assembled stragglers (typo? not yet `reviewed`?). Nothing was merged or deployed; " \
-             "fix the slug (or review the task), then re-run `bin/release prepare`.")
+      abort!("--task slug(s) not sweepable: #{missing.join(', ')} — not in the reviewed queue, the " \
+             "assembled stragglers, or the assembled members of the active release (typo? not yet " \
+             "`reviewed`?). Nothing was merged or deployed; fix the slug (or review the task), then re-run " \
+             "`bin/release prepare`.")
     end
+  end
+
+  # 1c. RE-FREEZE: a named `assembled` member of the active release (see
+  #     sweep_detect_ruby). It lands nothing, so it is kept out of the pin, the
+  #     promote and the accepted-coverage guard below; the QA deploy and the qa_shas
+  #     record that follow read each repo's `release` tip, which is the point.
+  refreeze_slugs = cands.select { |c| c["refreeze"] }.map { |c| c["slug"] }
+  refreeze_slugs.each do |s|
+    say("  re-freeze #{s}: an assembled member of #{active ? active['slug'] : 'the active release'} — " \
+        "no promote; QA re-deploys each repo's `#{RELEASE_BRANCH}` tip and qa_shas re-records it")
   end
 
   # 2. IDEMPOTENT NO-OP: nothing to sweep and nothing in flight → report + stop
@@ -5511,7 +5534,7 @@ def prepare
     say("  ⚠ #{s}: `reviewed` but merged:\"\" — review never landed its feat PR on `#{ACCEPTED_BRANCH}`; " \
         "left `reviewed` (re-review to heal)")
   end
-  plan["record"].reject { |row| row["merged"] == ACCEPTED_MERGED }.each do |row|
+  plan["record"].reject { |row| row["merged"] == ACCEPTED_MERGED || refreeze_slugs.include?(row["slug"]) }.each do |row|
     step("skip promote for #{row['slug']} — already merged: #{row['merged']} (crash recovery); membership still records")
   end
 
@@ -5520,7 +5543,7 @@ def prepare
   #     judges `accepted`, so the guards, the promote, the record and the stale-tree
   #     gate all describe one tree. A merge onto `accepted` from here on waits for the
   #     next release instead of failing this one's stale-tree gate.
-  pin_swept_shas!(cands.select { |c| plan["sweep"].include?(c["slug"]) }
+  pin_swept_shas!(cands.select { |c| plan["sweep"].include?(c["slug"]) && !c["refreeze"] }
                        .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] })
 
   # 4. PROMOTE accepted → release (the accepted-ladder's SECOND rung). Review already
@@ -5574,7 +5597,7 @@ def prepare
   # a blocked one aborted above) — except a row naming a PARKED repo, which can
   # carry merged:"accepted" and would otherwise promote the parked repo's `accepted`
   # onto `release` while the plan held its task.
-  swept_cands   = cands.select { |c| plan["sweep"].include?(c["slug"]) }
+  swept_cands   = cands.select { |c| plan["sweep"].include?(c["slug"]) && !c["refreeze"] }
   promote_repos = swept_cands.select { |c| c["merged"].to_s == ACCEPTED_MERGED }
                              .flat_map { |c| (c["repos"].is_a?(Array) && !c["repos"].empty?) ? c["repos"] : [ c["repo"] ] }
                              .map(&:to_s).reject(&:empty?).uniq
@@ -5677,7 +5700,9 @@ def prepare
   #    (plan["sweep"]) + the repo plan, in ONE `heroku run`. A `held` member is NOT
   #    in plan["sweep"], so it is never recorded onto the RC. Suppressed under
   #    --dry-run (the promotion previewed above; nothing recorded).
-  landed = plan["sweep"]
+  # A re-freeze row is already a member: no sweep! write, so a run that names only
+  # re-freeze rows takes the read-only repo_plan path below.
+  landed = plan["sweep"] - refreeze_slugs
   left_reviewed = held + plan["parked"].map { |entry| entry["slug"] } + plan["repo_held"].map { |entry| entry["slug"] } +
                   plan["other_train"].map { |entry| entry["slug"] }
   result = {}
