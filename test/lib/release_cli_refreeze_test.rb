@@ -1,15 +1,10 @@
 # frozen_string_literal: true
 
-# [unit] Re-freeze an assembled release after a fix lands on `release` (task
-# release-prepare-night-lessons).
-#
-# rel-20261110-208612: an empty commit went onto voicebox `release` to clear a CDN red.
-# `release prepare --task system-tests-reset-window-size` refused it ("not sweepable":
-# the task was an `assembled` member, no sweep candidate), and a plain `release prepare`
-# swept every reviewed task and stopped on another repo's red `accepted`. qa_shas was
-# re-recorded only by naming an unrelated still-`reviewed` task. Now --task takes an
-# assembled member of the active release: no promote, no new pin, and the QA deploy and
-# qa_shas record read each repo's moved `release` tip.
+# [unit] Re-freeze an assembled release after a fix lands on `release`.
+# rel-20261110-208612: prepare --task refused an `assembled` member ("not sweepable").
+# Now --task takes an assembled member of the active release: no promote, no new pin,
+# and the QA deploy and qa_shas record read each repo's moved `release` tip.
+# History: task release-prepare-night-lessons.
 require_relative "release_cli_harness"
 
 class ReleaseCliRefreezeTest < ReleaseCliHarness

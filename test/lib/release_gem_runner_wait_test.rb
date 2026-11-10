@@ -1,15 +1,11 @@
 # frozen_string_literal: true
 
-# [unit] The lock-bump CI race of rel-20261110-208612 (task release-prepare-night-lessons).
-#
-# prepare published studio-engine 0.143.0, held the lock push until its own /info read
-# listed it, and bumped the consumer locks. voicebox's scan_ruby (run 42781359873 on
-# 8709655) bundled seconds later and bundler called 0.143.0 "removed"; lint and test in
-# the same run resolved it. Two gaps:
-#   1. the conductor read /info with one plain curl (the identity copy, one node), while
-#      bundler reads the gzip copy on several connections;
-#   2. voicebox's CI is the stock Rails workflow and runs no runner-side wait, and nothing
-#      said so.
+# [unit] The lock-bump CI race of rel-20261110-208612: voicebox scan_ruby (run 42781359873)
+# was told studio-engine 0.143.0 was "removed" seconds after the lock push. Two gaps:
+#   1. the conductor read /info with one plain curl; bundler reads the gzip copy on
+#      several connections;
+#   2. voicebox's stock Rails CI runs no runner-side wait, and nothing said so.
+# History: task release-prepare-night-lessons.
 require_relative "release_cli_harness"
 require_relative "../../app/models/release/runner_gem_wait"
 
