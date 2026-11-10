@@ -92,6 +92,13 @@ class GoogleConnect::GmailEditorTest < ActiveSupport::TestCase
     assert_empty gmail.writes
   end
 
+  test "[unit] a system label such as TRASH is refused by name, in a run and in a filter" do
+    gmail = GmailEditorFake.new(ids: ids(1), labels: [ { "id" => "TRASH", "name" => "TRASH", "type" => "system" } ])
+    assert_raises(GoogleConnect::GmailEditor::Error) { editor_with(gmail).change(action: "label", query: "in:inbox", label: "trash", apply: true) }
+    assert_raises(GoogleConnect::GmailEditor::Error) { editor_with(gmail).add_filter(query: "from:a@example.com", label: "TRASH", apply: true) }
+    assert_empty gmail.writes
+  end
+
   test "[unit] batches of 1000 and pages of 500 cover a large match" do
     gmail = GmailEditorFake.new(ids: ids(2_300))
     result = editor_with(gmail).change(action: "read", query: "is:unread", apply: true)

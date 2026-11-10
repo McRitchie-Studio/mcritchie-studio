@@ -131,9 +131,11 @@ module GoogleConnect
     end
 
     # [the label's id, whether this run created it]; nil id when none is named
-    # so and `create` is false. A name matches without regard to case.
+    # so and `create` is false. A name matches without regard to case. A system
+    # label (TRASH, INBOX, SPAM...) is refused: --label TRASH would trash mail.
     def label_id_for(name, create:)
       found = labels.find { _1["name"].casecmp?(name.to_s.strip) }
+      raise Error, "#{found['name']} is a Gmail system label; --label names your own labels only" if found && found["type"] != "user"
       return [ found["id"], false ] if found
       return [ nil, false ] unless create
 
