@@ -333,6 +333,11 @@ module OutboundSeams
     # no hold; test/lib/gem_served_wait_test.rb drives the window on a fake clock.
     ENV["RELEASE_GEM_SETTLE_S"] = "0"
 
+    # ONE /info READ PER POLL (task release-prepare-night-lessons). A live poll makes
+    # eight bundler-shaped reads; the tests that count index reads predate that and
+    # count one per poll. test/lib/release_gem_runner_wait_test.rb drives eight.
+    ENV["RELEASE_GEM_INFO_READS"] = "1"
+
     # THE PUBLISHED .gem DOWNLOAD. The ship downloads a gem's candidate and its
     # final from the RubyGems CDN to compare them. "none" answers "not served", so
     # an un-seamed test refuses instead of reaching the network; a test of the

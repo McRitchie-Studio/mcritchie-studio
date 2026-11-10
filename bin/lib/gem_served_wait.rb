@@ -98,14 +98,8 @@ module GemServedWait
   # counts as served only when every read lists the version. The runner script has
   # read this way since rel-20261109-900044; this brings the conductor level with it.
   BUNDLER_ACCEPT_ENCODING = "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"
+  INFO_READ_HEADER = "Accept-Encoding: #{BUNDLER_ACCEPT_ENCODING}".freeze
   DEFAULT_INFO_READS = 8
-
-  # PURE. One bundler-shaped read of +url+: its own curl process (so its own
-  # connection), HTTP/1.1, bundler's Accept-Encoding, decompressed for the match.
-  def info_read_argv(url, max_time:)
-    ["/usr/bin/curl", "-sf", "--http1.1", "--compressed", "--max-time", max_time.to_s,
-     "-H", "Accept-Encoding: #{BUNDLER_ACCEPT_ENCODING}", url]
-  end
 
   # PURE. Did EVERY read list +version+? +bodies+ holds one entry per read; nil is a
   # read that failed, and counts as a miss (unproven is not served). No reads is a miss.

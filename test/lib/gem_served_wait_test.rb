@@ -232,14 +232,9 @@ class GemServedWaitTest < Minitest::Test
   FRESH = "---\n0.142.0 |checksum:aa\n0.143.0 |checksum:bb\n"
   STALE = "---\n0.142.0 |checksum:aa\n"
 
-  def test_an_info_read_carries_bundlers_encoding_and_its_own_connection
-    argv = GemServedWait.info_read_argv("https://index.rubygems.org/info/studio-engine", max_time: 20)
-
-    assert_includes argv, "--compressed", "decompress the gzip body bundler is sent"
-    assert_includes argv, "--http1.1", "bundler's Gem::Net::HTTP speaks HTTP/1.1"
-    assert_includes argv, "Accept-Encoding: gzip;q=1.0,deflate;q=0.6,identity;q=0.3",
-                    "the header that picks the copy bundler reads"
-    assert_equal "https://index.rubygems.org/info/studio-engine", argv.last
+  def test_an_info_read_sends_bundlers_accept_encoding
+    assert_equal "Accept-Encoding: gzip;q=1.0,deflate;q=0.6,identity;q=0.3", GemServedWait::INFO_READ_HEADER,
+                 "the header that picks the copy bundler reads (Gem::Net::HTTP's default)"
   end
 
   def test_info_is_served_only_when_every_read_lists_the_version
