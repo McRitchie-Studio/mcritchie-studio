@@ -362,6 +362,20 @@ require_relative "lib/release_announce" # `bin/release announce`: smoke producti
 APP = "mcritchie-studio"
 HEROKU_REMOTE = "heroku"
 
+# THE HUB CHECKOUT this script runs from, and its bin/. Every hub tool bin/release
+# spawns is named through hub_bin, never as a bare "bin/<tool>": a bare path is
+# resolved against the CALLER's cwd, so a prepare run from /Users/alex/projects
+# failed all three QA deploys with ENOENT ("could not run bin/qa-server: No such
+# file or directory", rel-20261110-208612). A "bin/<tool>" that runs with chdir: a
+# repo's own checkout (bin/rails, bin/bundle) is that repo's binstub and stays
+# relative. The --local conductor's `rails runner` is the one hub tool that needs a
+# full Rails app, which the fixed-path tooling install is not, so it names the hub
+# CHECKOUT (repo_path(APP)) instead. test/lib/release_hub_bin_paths_test.rb holds
+# the class.
+HUB_ROOT = File.expand_path("..", __dir__).freeze
+
+def hub_bin(name) = File.join(HUB_ROOT, "bin", name)
+
 # The self-narration CLI this deploy lane opens+closes role activities through.
 # Same bin the session narrates with — which the capture hook drops from raw
 # actions, so only the resulting activity shows on the heartbeat.
@@ -1745,7 +1759,7 @@ def conductor(ruby, read_only: false)
   ruby = train_guarded(ruby)
   payload = conductor_payload(with_conductor_session(ruby))
   cmd = PROD ? ["heroku", "run", "-a", APP, "--no-tty", "rails", "runner", payload]
-             : ["bin/rails", "runner", payload]
+             : [File.join(repo_path(APP), "bin", "rails"), "runner", payload]
   if DRY && !read_only
     puts "  [dry-run] #{PROD ? 'heroku run ' : ''}rails runner: #{ruby}"
     return {}
@@ -5221,9 +5235,9 @@ def qa_deploy_app!(group, smoke_started:)
     step("qa deploy: gh workflow run qa-deploy.yml -f sha=#{short(tip)} — GitHub Actions QA deploy of the release tip")
     qa_ok = dispatch_and_watch("qa-deploy.yml", { "sha" => tip }, chdir: path)
   else
-    step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH)}")
-    _, qa_ok = sh("bin/qa-server", "deploy", qa_app, "origin/#{RELEASE_BRANCH}",
-                  Release::QaDeployCommand::CONFIRM_FLAG, capture: false)
+    step("qa deploy: #{Release::QaDeployCommand.for(qa_app: qa_app, branch: RELEASE_BRANCH, hub_root: HUB_ROOT)}")
+    _, qa_ok = sh(*Release::QaDeployCommand.argv(qa_app: qa_app, branch: RELEASE_BRANCH, hub_root: HUB_ROOT),
+                  capture: false)
   end
 
   # c2. wait for the dyno to actually BOOT before treating the deploy as done.
@@ -6059,7 +6073,7 @@ def prepare
       # WITHOUT `--yes`, so an operator who copied it hit bin/qa-server's
       # external-write confirmation and got no deploy — measured twice on 2026-09-22.
       say("  app #{d['repo']} → #{RELEASE_BRANCH} — QA deploy FAILED, retry " \
-          "`#{Release::QaDeployCommand.for(qa_app: d['qa_app'], branch: RELEASE_BRANCH)}`")
+          "`#{Release::QaDeployCommand.for(qa_app: d['qa_app'], branch: RELEASE_BRANCH, hub_root: HUB_ROOT)}`")
     end
   end
   say("  #{left_reviewed.join(', ')} left `reviewed` — see the ⚠ line for each (no code on `#{ACCEPTED_BRANCH}`: re-review to heal, or `bin/task block` them).") if left_reviewed.any?
@@ -12642,7 +12656,7 @@ def restore_primaries(app_groups)
   step("restore primaries: return each app checkout to a clean `main` for the next session")
   Array(app_groups).each do |group|
     repo = group["repo"]
-    out, status = bounded_capture2e("bin/agent-worktree", "restore-primary", repo,
+    out, status = bounded_capture2e(hub_bin("agent-worktree"), "restore-primary", repo,
                                     deadline: command_deadline, deadline_env: COMMAND_DEADLINE_ENV)
     print(out)
     say("  ⚠ #{repo}: primary left as-is (uncommitted/unpushed work) — restore by hand") unless status.success?
@@ -12798,7 +12812,7 @@ end
 # Streams the tool's output and returns [output, ok?] so the caller can count
 # reclaimed worktrees for the summary.
 def reclaim_worktrees(apply:)
-  cmd = ["bin/agent-worktree", "cleanup", "--reclaim"]
+  cmd = [hub_bin("agent-worktree"), "cleanup", "--reclaim"]
   cmd << "--yes" if apply
   out, status = archive_capture2e(*cmd)
   print(out)
@@ -12881,7 +12895,7 @@ end
 # machine's disk — never the board. A fresh Mac's first archive sweeps almost
 # nothing, and that is correct, not an anomaly.
 def sweep_artifacts(apply:)
-  cmd = ["bin/clean-artifacts"]
+  cmd = [hub_bin("clean-artifacts")]
   cmd << "--dry-run" unless apply
   out, status = archive_capture2e(*cmd)
   print(out)
@@ -12905,11 +12919,11 @@ end
 # deletes on the hub REMOTE, as the agent GitHub App; what it refuses is in
 # bin/lib/branch_prune.rb.
 def prune_session_markers(apply:)
-  run_pruner(["bin/prune-session-markers", apply ? "--yes" : "--dry-run"]) { |out| MarkerPrune.parse_summary(out) }
+  run_pruner([hub_bin("prune-session-markers"), apply ? "--yes" : "--dry-run"]) { |out| MarkerPrune.parse_summary(out) }
 end
 
 def prune_branches(apply:)
-  cmd = ["bin/prune-branches", "--repo", repo_path("mcritchie-studio"), apply ? "--yes" : "--dry-run"]
+  cmd = [hub_bin("prune-branches"), "--repo", repo_path("mcritchie-studio"), apply ? "--yes" : "--dry-run"]
   run_pruner(cmd) { |out| BranchPrune.parse_summary(out) }
 end
 
@@ -12969,7 +12983,7 @@ end
 
 def sweep_docs(apply:)
   repo = repo_path("mcritchie-studio")
-  cmd = ["bin/archive-docs", "--repo=#{repo}"]
+  cmd = [hub_bin("archive-docs"), "--repo=#{repo}"]
   cmd << "--dry-run" unless apply
   # capture3, not capture2e: the failure report quotes STDERR specifically, and a
   # merged stream cannot say which lines were the complaint. Both are still printed,

@@ -361,7 +361,7 @@ class ReleaseCliHarness < Minitest::Test
             $stdout.puts("LOCK-PUSH")
             return ["", true]
           end
-          $stdout.puts("QA-DEPLOY") if a[0] == "bin/qa-server"
+          $stdout.puts("QA-DEPLOY") if a[0].to_s.end_with?("bin/qa-server")
           return ["200", true] if a.join(" ").include?("curl")
           ["", true]
         end
@@ -622,7 +622,7 @@ class ReleaseCliHarness < Minitest::Test
             return ["ed4d16a Correct the public price claim\n", true]
           end
           return ["git@github.com:McRitchie-Studio/mcritchie-studio.git", true] if a[0] == "git" && a.include?("remote")
-          $stdout.puts("QA-DEPLOY") if a[0] == "bin/qa-server"
+          $stdout.puts("QA-DEPLOY") if a[0].to_s.end_with?("bin/qa-server")
           return ["200", true] if a.join(" ").include?("curl")
           ["", true]
         end
