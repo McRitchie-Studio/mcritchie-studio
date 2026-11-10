@@ -21,9 +21,9 @@ class IntegrationsPageTest < ApplicationSystemTestCase
   CONNECTION_CARDS = (GOOGLE_CARDS + %w[fathom egnyte microsoft_365 quickbooks]).freeze
   WIDTHS = [ 375, 768, 1280 ].freeze
 
-  # A headless window will not shrink below about 500px, so the width is set by
-  # device emulation: innerWidth is then the width under test, asserted below.
-  teardown { page.driver.browser.execute_cdp("Emulation.clearDeviceMetricsOverride") }
+  # A headless window will not shrink below 500px, so the width is set by device
+  # emulation and asserted below (ApplicationSystemTestCase#phone_viewport! and
+  # assert_viewport_width; the base class clears the override after each test).
 
   test "[e2e] /integrations loads light and dark at 375, 768 and 1280 with no horizontal scroll" do
     with_connect_env { with_fathom_env { with_egnyte_env { assert_no_sideways_scroll } } }
