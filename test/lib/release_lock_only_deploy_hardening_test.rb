@@ -2,15 +2,8 @@ require "minitest/autorun"
 require "open3"
 
 # Task lock-only-deploy-hardening (review notes 1-5 of lock-only-drop-follow-ups),
-# on the REAL bin/release deploy, drop, prune and finalize functions. Heroku (its
-# release list, the push, `heroku rollback`), the `/up` curl, `main` and the board
-# are stubbed.
-#   1  a lock-only app whose smoke stays red after its push is rolled back to the
-#      Heroku release before it, and the drop says so; a failed release phase is
-#      dropped with nothing to roll back.
-#   2  a deploy that passed, then a failed `main` push, is recorded as live.
-#   3  finalize does not record a lock-only app shipped while its `main` is behind.
-#   4  the pre-publish lock check's drops leave the lists before the gate.
+# on the REAL bin/release functions; Heroku, /up, `main` and the board are stubbed.
+# Notes: 1 rollback of a red smoke, 2 a live drop, 3 finalize, 4 prune, 5 hub.
 class ReleaseLockOnlyDeployHardeningTest < Minitest::Test
   BIN = File.expand_path("../../bin/release.rb", __dir__)
 
