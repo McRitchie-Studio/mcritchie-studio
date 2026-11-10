@@ -1,15 +1,15 @@
 # frozen_string_literal: true
 
 module MarketingKit
-  # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: the title in A1,
-  # the light logo under it beside a row of variables, then a table whose two-row
-  # head is split into three colour sections. Ruby decides every colour and
+  # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: margins on row 1
+  # and column A, the brand icon in A2, the title beside it with the variables,
+  # then a table whose two-row head is split into three colour sections. Ruby decides every colour and
   # word here; script/marketing_kit/office.py only lays the payload out as an
   # .xlsx, which Drive converts to a Google Sheet.
   #
   # The rules the layout keeps, because they are what make a sheet easy to work in:
   # - no merged cells anywhere, so columns and rows move freely;
-  # - the freeze sits under the table's lower head and right of the item column,
+  # - the freeze (C7) sits under the table's lower head and right of the item column,
   #   so the head and the row's item stay in view while you scroll;
   # - both head rows carry white text at WCAG AA or better (4.5:1).
   #
@@ -55,7 +55,7 @@ module MarketingKit
         font: @spec.fonts[:family],
         sheet_title: "Sheet",
         colours: { title: @spec.colour(:title), white: WHITE, ink: INK, grey: GREY, light: LIGHT, rule: RULE },
-        logo: @spec.logo_png(:horizontal, :light),
+        icon: @spec.logo_png(:icon, :light),
         title: "[Sheet Title]",
         sections: sections.each_with_index.map { |s, i| { label: "[Section #{%w[One Two Three][i]}]", top: s.top, low: s.low } },
         columns: COLUMNS,
@@ -67,32 +67,34 @@ module MarketingKit
       }
     end
 
-    # The example table. kind picks the number format and alignment; section is
-    # the head section (0-2) the column sits under. Column A is the row's item and
-    # stays frozen.
+    # The example table, drawn from column B (column A is the margin). key names a
+    # column in formulas; kind picks the number format and alignment; section is
+    # the head section (0-2) the column sits under. The first column is the row's
+    # item, which the freeze keeps in view.
     COLUMNS = [
-      { section: 0, head: "[Item]", width: 32, kind: "item" },
-      { section: 0, head: "[Category]", width: 16, kind: "text" },
-      { section: 0, head: "[Owner]", width: 16, kind: "text" },
-      { section: 1, head: "[Date]", width: 14, kind: "date" },
-      { section: 1, head: "[Amount]", width: 14, kind: "money" },
-      { section: 1, head: "[Status]", width: 13, kind: "status" },
-      { section: 2, head: "[Rate]", width: 10, kind: "percent" },
-      { section: 2, head: "[Amount × Rate]", width: 17, kind: "formula",
-        formula: '=IF(E{r}="","",E{r}*IF(G{r}="",{var:Default rate},G{r}))' },
-      { section: 2, head: "[Notes]", width: 40, kind: "text" }
+      { key: "item", section: 0, head: "[Item]", width: 32, kind: "item" },
+      { key: "category", section: 0, head: "[Category]", width: 16, kind: "text" },
+      { key: "owner", section: 0, head: "[Owner]", width: 16, kind: "text" },
+      { key: "date", section: 1, head: "[Date]", width: 14, kind: "date" },
+      { key: "amount", section: 1, head: "[Amount]", width: 14, kind: "money" },
+      { key: "status", section: 1, head: "[Status]", width: 13, kind: "status" },
+      { key: "rate", section: 2, head: "[Rate]", width: 10, kind: "percent" },
+      { key: "applied", section: 2, head: "[Amount × Rate]", width: 17, kind: "formula",
+        formula: '=IF({col:amount}{r}="","",{col:amount}{r}*IF({col:rate}{r}="",{var:Default rate},{col:rate}{r}))' },
+      { key: "notes", section: 2, head: "[Notes]", width: 40, kind: "text" }
     ].freeze
 
-    # Label above value, side by side from column B (the logo sits in A). A value may be a formula;
-    # {first}/{last} stand for the table's first and last data row in the drawer.
+    # Label (row 2) over value (row 3), side by side from column C, beside the
+    # title. In a value or a formula: {r} is the row, {first}/{last} the table's
+    # first and last data row, {col:key} a column's letter and {var:Label} that
+    # variable's cell, made absolute.
     VARIABLES = [
       { label: "Default rate", value: 0.05, kind: "percent" },
-      { label: "Total amount", value: "=SUM(E{first}:E{last})", kind: "money" }
+      { label: "Total amount", value: "=SUM({col:amount}{first}:{col:amount}{last})", kind: "money" }
     ].freeze
 
-    # The formula column (above) reads each row's amount × its rate, or the
-    # Default rate variable when the row leaves its rate blank. In a formula,
-    # {r} is the row and {var:Label} is that variable's cell, made absolute.
+    # The formula column reads each row's amount × its rate, or the Default rate
+    # variable when the row leaves its rate blank.
     ROWS = [
       ["[Example item one]", "[Category A]", "[Name]", "2026-01-05", 1250.0, "Active", 0.05, nil, "[A short note]"],
       ["[Example item two]", "[Category B]", "[Name]", "2026-01-12", 480.5, "Active", 0.02, nil, ""],
@@ -107,11 +109,11 @@ module MarketingKit
       "Make your own: File, then Make a copy. Replace every [bracketed] word; keep the layout.",
       "No merged cells. A section label sits in the first cell of its section; the other cells share its colour. " \
       "This keeps every column free to move, sort and filter.",
-      "The freeze holds the head rows and column A. Keep the row's item (its name) in column A, so you always see " \
-      "which row you are on.",
+      "Row 1 and column A are margins; A2 holds the brand icon. The freeze holds the head rows and columns A-B. " \
+      "Keep the row's item (its name) in column B, so you always see which row you are on.",
       "Add a column: insert it inside a section and copy the head cells' format from a neighbour. " \
       "Add a row: insert it inside the table, so totals and dropdowns cover it.",
-      "Variables sit beside the logo, label over value. Formulas point at them with absolute references ($B$3), " \
+      "Variables sit beside the title, label over value. Formulas point at them with absolute references ($C$3), " \
       "so a value changes in one place.",
       "Head colours come from the brand palette. Both head rows are dark enough for white text; " \
       "keep it that way if you recolour a section."

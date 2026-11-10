@@ -205,9 +205,14 @@ def tracker(d, out):
     print(f"wrote {out} ({len(d['sheets'])} sheets)")
 
 def sheet(d, out):
-    """The Sheet template. Never merges a cell; freezes under the lower head and right of the item column."""
+    """The Sheet template. Never merges a cell; freezes under the lower head and right of the item column.
+
+    Row 1 and column A are margins. A2 is a square holding the brand icon; the title
+    sits beside it in B2 and the variables run on from C2 (label) over C3 (value).
+    The table's head is rows 5-6 from column B, the data starts in row 7, and the
+    freeze sits at C7: margins, the item column, the variables and the head stay in view.
+    """
     import datetime, re
-    from PIL import Image
     from openpyxl import Workbook
     from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
     from openpyxl.drawing.image import Image as XImage
@@ -223,40 +228,48 @@ def sheet(d, out):
     FORMATS = {"date": "mmm d, yyyy", "money": '"$"#,##0.00', "percent": "0.0%"}
     RIGHT = {"money", "percent", "formula", "date"}
 
-    TITLE, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 7)
+    MARGIN, TITLE, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 7)  # the variable labels share the title row
     FIRST = HEAD_LOW + 1
     LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
+    X = 2  # the table's first column (B); A is the margin
     cols, n = d["columns"], len(d["columns"])
+    C = lambda i: X + i  # sheet column of table column i
 
+    # A2 is square: column A is as wide as row 2 is tall. Row heights are points
+    # (4/3 px); a column width in characters draws at about 7 px each plus 5.
+    square = 28
     wb = Workbook(); ws = wb.active; ws.title = d["sheet_title"]
     ws.sheet_view.showGridLines = False
-    for i, c in enumerate(cols): ws.column_dimensions[L(i + 1)].width = c["width"]
-    heights = {TITLE: 40, VAR_LABEL: 16, VAR_VALUE: 24, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
+    ws.column_dimensions["A"].width = round((square - 5) / 7, 2)
+    for i, c in enumerate(cols): ws.column_dimensions[L(C(i))].width = c["width"]
+    heights = {MARGIN: 10, TITLE: square * 3 / 4, VAR_VALUE: 18, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
-    # Column A, which the freeze keeps: the title in A1, the light logo under it across
-    # the two variable rows (anchored in row 2, centred in rows 2-3 together).
-    t = ws.cell(TITLE, 1, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
-    t.alignment = Alignment(vertical="center", indent=1)
-    im = Image.open(d["logo"]); lh = 20; lw = round(im.width * lh / im.height)
-    logo = XImage(d["logo"]); logo.width, logo.height = lw, lh
-    pad = ((heights[VAR_LABEL] + heights[VAR_VALUE]) * 4 // 3 - lh) // 2  # row heights are points; the anchor is pixels
-    logo.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(10), row=VAR_LABEL - 1, rowOff=pixels_to_EMU(pad)),
-                                ext=XDRPositiveSize2D(pixels_to_EMU(lw), pixels_to_EMU(lh)))
-    ws.add_image(logo)
+    # The icon fills A2, a few pixels in from each edge
+    pad, size = 3, square - 6
+    icon = XImage(d["icon"]); icon.width = icon.height = size
+    icon.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(pad), row=TITLE - 1, rowOff=pixels_to_EMU(pad)),
+                                ext=XDRPositiveSize2D(pixels_to_EMU(size), pixels_to_EMU(size)))
+    ws.add_image(icon)
 
-    # Variables: label over value, one per column from B (A holds the logo)
+    t = ws.cell(TITLE, X, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
+    t.alignment = Alignment(vertical="center")
+
+    # Variables: label (row 2) over value (row 3), one per column from C
     var_cell = {}
     for i, v in enumerate(d["variables"]):
-        lab = ws.cell(VAR_LABEL, i + 2, v["label"].upper()); lab.font = font(size=8, bold=True, color=col["grey"])
-        lab.alignment = Alignment(vertical="bottom", indent=1)
+        at = C(1 + i)
+        lab = ws.cell(TITLE, at, v["label"].upper()); lab.font = font(size=8, bold=True, color=col["grey"])
+        lab.alignment = Alignment(vertical="bottom")
         value = v["value"]
-        if isinstance(value, str): value = value.replace("{first}", str(FIRST)).replace("{last}", str(LAST))
-        cell = ws.cell(VAR_VALUE, i + 2, value)
+        if isinstance(value, str):
+            value = value.replace("{first}", str(FIRST)).replace("{last}", str(LAST))
+            value = re.sub(r"\{col:(\w+)\}", lambda m: L(C(next(j for j, c in enumerate(cols) if c["key"] == m.group(1)))), value)
+        cell = ws.cell(VAR_VALUE, at, value)
         cell.font = font(size=11, bold=True, color=col["ink"]); cell.fill = fill(col["light"])
-        cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
+        cell.alignment = Alignment(horizontal="left", vertical="center")
         if v["kind"] in FORMATS: cell.number_format = FORMATS[v["kind"]]
-        var_cell[v["label"]] = f"${L(i + 2)}${VAR_VALUE}"
+        var_cell[v["label"]] = f"${L(at)}${VAR_VALUE}"
 
     # The table head: three sections, darker on top, white text on both rows.
     # A section's label sits in its first cell; the rest share the fill, unmerged.
@@ -264,26 +277,28 @@ def sheet(d, out):
     for i, c in enumerate(cols):
         sec = d["sections"][c["section"]]
         first = i == 0 or cols[i - 1]["section"] != c["section"]
-        top = ws.cell(HEAD_TOP, i + 1, sec["label"] if first else None)
+        top = ws.cell(HEAD_TOP, C(i), sec["label"] if first else None)
         top.fill = fill(sec["top"]); top.font = font(size=10, bold=True, color=col["white"])
         top.alignment = Alignment(vertical="center", indent=1)
-        low = ws.cell(HEAD_LOW, i + 1, c["head"])
+        low = ws.cell(HEAD_LOW, C(i), c["head"])
         low.fill = fill(sec["low"]); low.font = font(size=9, bold=True, color=col["white"])
-        right = c["kind"] in RIGHT
-        low.alignment = Alignment(vertical="center", horizontal="right" if right else "left", indent=1)
+        low.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
         if first and i:
             top.border = Border(left=edge); low.border = Border(left=edge)
 
-    # Example rows
+    # Example rows. In a formula, {r} is the row, {col:key} a table column's letter
+    # and {var:Label} that variable's cell, made absolute.
     rule = Side(style="thin", color=col["rule"])
+    letter = {c["key"]: L(C(i)) for i, c in enumerate(cols)}
     for r, row in enumerate(d["rows"], start=FIRST):
         ws.row_dimensions[r].height = 20
         for i, v in enumerate(row):
             c = cols[i]
             if c["kind"] == "date" and v: v = datetime.date.fromisoformat(v)
             if c["kind"] == "formula":
-                v = re.sub(r"\{var:([^}]+)\}", lambda m: var_cell[m.group(1)], c["formula"]).replace("{r}", str(r))
-            cell = ws.cell(r, i + 1, v if v != "" else None)
+                v = re.sub(r"\{var:([^}]+)\}", lambda m: var_cell[m.group(1)], c["formula"])
+                v = re.sub(r"\{col:(\w+)\}", lambda m: letter[m.group(1)], v).replace("{r}", str(r))
+            cell = ws.cell(r, C(i), v if v != "" else None)
             cell.font = font(size=10, color=col["ink"], bold=c["kind"] == "item")
             cell.border = Border(bottom=rule)
             cell.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
@@ -293,9 +308,9 @@ def sheet(d, out):
     status = [i for i, c in enumerate(cols) if c["kind"] == "status"]
     if status:
         dv = DataValidation(type="list", formula1='"' + ",".join(d["statuses"]) + '"', allow_blank=True)
-        ws.add_data_validation(dv); dv.add(f"{L(status[0] + 1)}{FIRST}:{L(status[0] + 1)}{LAST}")
-    ws.auto_filter.ref = f"A{HEAD_LOW}:{L(n)}{FIRST + len(d['rows']) - 1}"
-    ws.freeze_panes = f"B{FIRST}"
+        ws.add_data_validation(dv); dv.add(f"{L(C(status[0]))}{FIRST}:{L(C(status[0]))}{LAST}")
+    ws.auto_filter.ref = f"{L(X)}{HEAD_LOW}:{L(C(n - 1))}{FIRST + len(d['rows']) - 1}"
+    ws.freeze_panes = f"{L(X + 1)}{FIRST}"
     ws.page_setup.orientation = "landscape"
     ws.sheet_properties.pageSetUpPr.fitToPage = True
     ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
@@ -309,6 +324,7 @@ def sheet(d, out):
         c.alignment = Alignment(wrap_text=True, vertical="top")
     wb.save(out)
     print(f"wrote {out} (freeze {ws.freeze_panes}, {n} columns, {len(d['rows'])} example rows)")
+
 
 if __name__ == "__main__":
     kind, payload, out = sys.argv[1:4]

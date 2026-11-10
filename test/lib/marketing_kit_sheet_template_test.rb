@@ -76,13 +76,13 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
     assert_match(/no swatch or key named "Mauve"/, err.message)
   end
 
-  test "the payload names the template, sets the title in the title colour and uses the light horizontal logo" do
+  test "the payload names the template, sets the title in the title colour and uses the light icon" do
     load_kit do |spec|
       t = T.new(spec)
       p = t.payload
       assert_equal "RF Template — Sheet", t.name
       assert_equal spec.colour(:title), p.dig(:colours, :title)
-      assert_equal spec.logo_png(:horizontal, :light), p[:logo]
+      assert_equal spec.logo_png(:icon, :light), p[:icon]
       assert_equal ["Default rate", "Total amount"], p[:variables].map { |v| v[:label] }
       assert_equal 3, p[:sections].size
       assert_equal [0, 1, 2], p[:columns].map { |c| c[:section] }.uniq, "every section has columns, in order"
@@ -91,6 +91,9 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
       formula = p[:columns].find { |c| c[:kind] == "formula" }[:formula]
       labels = p[:variables].map { |v| v[:label] }
       formula.scan(/\{var:([^}]+)\}/).flatten.each { |l| assert_includes labels, l }
+      keys = p[:columns].map { |c| c[:key] }
+      assert_equal keys.uniq, keys, "column keys are unique"
+      (formula + p[:variables].map { |v| v[:value].to_s }.join).scan(/\{col:(\w+)\}/).flatten.each { |k| assert_includes keys, k }
     end
   end
 end

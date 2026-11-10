@@ -73,7 +73,7 @@ module MarketingKit
           "12-slide branded deck. Duplicate the slides you need; right-click a photo, then Replace image")
       sheet = SheetTemplate.new(spec)
       add(o.write_sheet(File.join(out, "templates", "#{sheet.name}.xlsx")), sheet.name, Layout::TEMPLATES, "sheet", "Template",
-          "Branded spreadsheet: logo and title, variables, a three-section table head, frozen head and item column. File, then Make a copy")
+          "Branded spreadsheet: icon and title, variables, a three-section table head, frozen head and item column. File, then Make a copy")
     end
 
     def guidelines
