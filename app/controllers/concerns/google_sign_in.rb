@@ -42,7 +42,7 @@ module GoogleSignIn
                  "#{GoogleConnect::OAuthClient::ENV_NAMES.join(' and ')} are not set.".freeze
   ENCRYPTION_NOT_SET = "This server cannot store a connection: its encryption keys are not set " \
                        "(#{GoogleConnection::ENCRYPTION_ENV.join(', ')}). Nothing was asked of Google.".freeze
-  UNKNOWN_ABILITY = "Choose Google Calendar, Gmail or Google Drive to connect.".freeze
+  UNKNOWN_ABILITY = "Choose Google Calendar, Gmail, Google Drive or Gmail organize to connect.".freeze
   # The only places Connect and Disconnect come back to. Exact paths, no prefix match.
   ADMIN_RETURN_PATHS = %w[/integrations /admin/google].freeze
   OWN_RETURN_PATHS = %w[/integrations].freeze

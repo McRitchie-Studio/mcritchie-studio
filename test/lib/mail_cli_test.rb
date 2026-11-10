@@ -152,4 +152,47 @@ class MailCliTest < Minitest::Test
     assert_equal 2, run_cli("thread", [], runner: never).first
     assert_equal 2, run_cli("send", [], runner: never).first
   end
+
+  # --- organize verbs (/tasks/gmail-organize-ability) ---------------------
+
+  def test_organize_refuses_without_an_explicit_mailbox
+    code, _out, err = run_cli("organize", [ "archive", "in:inbox" ], {}, runner: ->(_) { flunk "nothing may run" })
+
+    assert_equal 2, code
+    assert_match(/need --mailbox/, err)
+  end
+
+  def test_organize_sends_the_whole_request_and_prints_a_dry_run
+    answer = { "result" => { "action" => "move", "query" => "from:shop@example.com", "label" => "Receipts",
+                             "matched" => 41, "changed" => 0, "applied" => false, "capped" => false } }
+    opts = { mailbox: "amcritchie@gmail.com", mailbox_given: true, label: "Receipts", by: "pokemon" }
+    request = MailCli.build_request("organize", [ "move", "from:shop@example.com" ], MailCli.default_options.merge(opts))
+    assert_equal({ "mailbox" => "amcritchie@gmail.com", "by" => "pokemon", "verb" => "organize", "action" => "move",
+                   "query" => "from:shop@example.com", "label" => "Receipts", "limit" => nil, "apply" => false }, request)
+
+    code, out, = run_cli("organize", [ "move", "from:shop@example.com" ], opts, runner: subprocess_runner(answer:))
+    assert_equal 0, code
+    assert_match(/Dry run: 41 match message\(s\) in amcritchie@gmail.com: move "Receipts"/, out)
+    assert_match(/add --apply/, out)
+  end
+
+  def test_an_applied_change_says_how_many_and_flags_the_limit
+    answer = { "result" => { "action" => "archive", "query" => "older_than:1y", "matched" => 500, "changed" => 500,
+                             "applied" => true, "capped" => true } }
+    code, out, = run_cli("organize", [ "archive", "older_than:1y" ], { mailbox: "a@example.com", mailbox_given: true, apply: true },
+                         runner: subprocess_runner(answer:))
+
+    assert_equal 0, code
+    assert_match(/Changed 500 of 500 message/, out)
+    assert_match(/stopped at the limit/, out)
+    refute_match(/add --apply/, out)
+  end
+
+  def test_filter_and_labels_build_their_requests
+    opts = MailCli.default_options.merge(mailbox: "a@example.com", mailbox_given: true, archive: true, mark_read: true)
+    filter = MailCli.build_request("filter", [ "from:news@example.com" ], opts)
+    assert_equal [ "filter", true, true ], filter.values_at("verb", "archive", "mark_read")
+    assert_equal "labels", MailCli.build_request("labels", [], opts)["verb"]
+    assert_raises(MailCli::Error) { MailCli.build_request("labels", [ "extra" ], opts) }
+  end
 end

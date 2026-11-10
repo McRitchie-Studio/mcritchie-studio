@@ -117,11 +117,12 @@ class IntegrationTest < ActiveSupport::TestCase
     assert_equal %w[draft_email knowledge_base], google.abilities.map(&:key)
     refute google.method_soon?("admin_grant")
 
-    { google_calendar: "read_calendar", gmail: "read_email", google_drive: "read_drive" }.each do |key, ability|
+    # Gmail also lists its opt-in Organize (/tasks/gmail-organize-ability).
+    { google_calendar: %w[read_calendar], gmail: %w[read_email organize_email], google_drive: %w[read_drive] }.each do |key, abilities|
       entry = Integration.find(key)
       assert entry.live?, key
       assert_equal %w[sign_in], entry.connects, key
-      assert_equal [ ability ], entry.abilities.map(&:key), key
+      assert_equal abilities, entry.abilities.map(&:key), key
       refute entry.abilities.first.soon?, "#{key}: live, the hub reads its own"
       refute entry.method_soon?("sign_in"), key
     end

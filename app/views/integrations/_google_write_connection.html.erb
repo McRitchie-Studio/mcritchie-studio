@@ -1,0 +1,18 @@
+<%# Signed in only: one opt-in WRITE ability (GoogleConnection::WRITE_ABILITIES; Gmail's Organize) as a second row under its card's read connection (integrations/_google_connection), /tasks/gmail-organize-ability. Connect asks Google for that ability's scopes alone (never with Connect Google), first through the same admin-trust modal as Gmail (modals/_gmail_admin), since Google treats both Gmail scopes as restricted. Connected: the account, Disconnect (which forgets only this ability; the read stays) and what it allows. No token renders. Locals: ability, connection (nil when none grants it), connectable, own. %>
+<% name = GoogleConnection::ABILITY_NAMES.fetch(ability) %>
+<% own = local_assigns.fetch(:own, false) %>
+<% href = own ? integrations_google_connect_path(ability:, return_to: integrations_path) : admin_google_connect_path(ability:, return_to: integrations_path) %>
+<div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-subtle pt-2" data-test="google-write-connection" data-ability="<%= ability %>" data-state="<%= connection ? 'connected' : 'none' %>">
+  <% if connection %>
+    <span class="min-w-0 text-body [overflow-wrap:anywhere]" data-test="google-write-account">Organize on for <span class="font-medium text-heading"><%= connection.email %></span></span>
+    <%= button_to "Turn off", (own ? integrations_google_disconnect_path(ability:, return_to: integrations_path) : admin_google_disconnect_path(ability:, return_to: integrations_path)), method: :delete,
+                  class: "btn btn-neutral btn-sm",
+                  form: { class: "inline-flex", data: { test: "google-write-disconnect", turbo_confirm: "Turn off #{name} for #{connection.email}? Gmail reading stays on." } } %>
+    <span class="block basis-full text-xs text-muted" data-test="google-write-allows">Agents may mark read or unread, label, archive, mark spam and add filters, on your request. Google's permission would allow sending; the hub never sends, never deletes.</span>
+  <% elsif connectable %>
+    <span class="min-w-0 text-muted">Let agents label, archive and file your mail.</span>
+    <button type="button" class="btn btn-neutral btn-sm" data-test="google-write-connect" data-opens="gmail-admin"
+            data-href="<%= href %>" data-client-id="<%= GoogleConnect::OAuthClient.client_id %>" data-aria-label="<%= GmailAdminModalHelper::TITLE %>"
+            @click="$store.modals.open('gmail-admin', { href: $el.dataset.href, clientId: $el.dataset.clientId, ariaLabel: $el.dataset.ariaLabel })">Connect <%= name %></button>
+  <% end %>
+</div>

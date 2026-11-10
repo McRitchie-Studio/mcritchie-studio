@@ -360,4 +360,38 @@ class GoogleConnectionTest < ActiveSupport::TestCase
     assert_equal [ "alex@mcritchie.studio" ], GoogleConnection.owned_by(alex).pluck(:email)
     assert_not_includes GoogleConnection.household.to_a, mine, "a viewer's row is still never the household's"
   end
+
+  # Gmail organize (/tasks/gmail-organize-ability): an opt-in write ability of two scopes.
+  ORGANIZE = GoogleConnection::WRITE_ABILITIES.fetch(:gmail_organize)
+
+  test "[unit] gmail_organize is a known ability, asked for by its own Connect and never by Connect Google" do
+    assert_equal :gmail_organize, GoogleConnection.ability("gmail_organize")
+    assert_equal [ :gmail_organize ], GoogleConnection.abilities_for("gmail_organize")
+    assert_not_includes GoogleConnection.abilities_for(GoogleConnection::ALL), :gmail_organize
+    assert_equal GoogleConnection::IDENTITY_SCOPES + ORGANIZE, GoogleConnect::OAuthClient.scopes_for([ :gmail_organize ])
+  end
+
+  test "[unit] gmail_organize counts as granted only when Google granted both its scopes" do
+    both = GoogleConnection.store!(grant(scope: "openid email #{ORGANIZE.join(' ')}"), email: "a@example.com", user: alex, abilities: [ :gmail_organize ])
+    assert both.can?(:gmail_organize)
+    assert_equal [ :gmail_organize ], GoogleConnection.granted_abilities({ "scope" => ORGANIZE.join(" ") }, [ :gmail_organize ])
+
+    assert_empty GoogleConnection.granted_abilities({ "scope" => ORGANIZE.first }, [ :gmail_organize ]), "filters unticked: not granted"
+    one = GoogleConnection.store!(grant(scope: "openid email #{GMAIL} #{ORGANIZE.first}"), email: "b@example.com", user: alex, abilities: %i[gmail gmail_organize])
+    assert_not one.can?(:gmail_organize)
+    assert one.can?(:gmail)
+  end
+
+  test "[unit] connecting Gmail read does not take an echoed organize grant, and turning organize off keeps the read" do
+    echoed = "openid email #{GMAIL} #{ORGANIZE.join(' ')}"
+    read_only = GoogleConnection.store!(grant(scope: echoed), email: "a@example.com", user: alex, abilities: [ :gmail ])
+    assert_equal [ :gmail ], read_only.abilities, "include_granted_scopes echoes organize; a Gmail read Connect must not take it"
+
+    both = GoogleConnection.store!(grant(scope: echoed), email: "a@example.com", user: alex, abilities: [ :gmail_organize ])
+    assert_equal %i[gmail gmail_organize], both.abilities
+
+    both.drop!(:gmail_organize)
+    assert_equal [ :gmail ], both.reload.abilities
+    assert_empty both.scopes & ORGANIZE
+  end
 end

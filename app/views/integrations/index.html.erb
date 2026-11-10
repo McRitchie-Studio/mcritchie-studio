@@ -103,7 +103,12 @@
             <div class="relative mt-auto pt-3">
               <div class="flex min-h-7 flex-wrap items-center gap-2 <%= 'pr-16' if details %>" data-test="entry-action">
                 <% if google_ability %>
-                  <div class="min-w-0 flex-1 text-xs"><%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable], own: @google[:own] %></div>
+                  <div class="min-w-0 flex-1 text-xs">
+                    <%= render "integrations/google_connection", ability: google_ability, connection: @google[google_ability], connectable: @google[:connectable], own: @google[:own] %>
+                    <% IntegrationsController::GOOGLE_WRITE_ABILITIES.fetch(entry.key, []).each do |write_ability| %>
+                      <%= render "integrations/google_write_connection", ability: write_ability, connection: @google[write_ability], connectable: @google[:connectable], own: @google[:own] %>
+                    <% end %>
+                  </div>
                 <% elsif fathom_here %>
                   <div class="min-w-0 flex-1 text-xs"><%= render "integrations/fathom_connection", connection: @fathom[:connection], connectable: @fathom[:connectable] %></div>
                 <% elsif msgraph_here %>

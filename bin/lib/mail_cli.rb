@@ -126,7 +126,14 @@ module MailCli
            bin/mail thread '<gmail query>' [--mailbox ADDR] [--save [DIR]]
                                                       print one thread; --save writes transcript and attachments
            bin/mail doctor                            the desk health check (MX + dropped ingests)
-    common: --app NAME (default #{DEFAULT_APP}) · --local (run bin/rails runner here, not heroku)
+           bin/mail organize ACTION '<gmail query>' --mailbox ADDR [--label NAME] [--limit N] [--apply]
+                                                      ACTION: #{%w[read unread archive inbox spam not_spam label unlabel move].join(' ')}
+                                                      dry run (a count) unless --apply; move = label + archive
+           bin/mail filter '<gmail query>' --mailbox ADDR [--label NAME] [--archive] [--mark-read] [--apply]
+                                                      a filter for future mail; dry unless --apply
+           bin/mail labels --mailbox ADDR             every label · bin/mail filters --mailbox ADDR  every filter
+    organize needs the mailbox's Gmail organize turned on at /integrations. It never sends or deletes.
+    common: --app NAME (default #{DEFAULT_APP}) · --local (run bin/rails runner here, not heroku) · --by NAME (the log's requester)
   TXT
 
   # The real transport: one heroku run (or a local rails runner), script on STDIN.
@@ -139,7 +146,8 @@ module MailCli
   end
 
   def default_options
-    { app: DEFAULT_APP, local: false, mailbox: DEFAULT_MAILBOX, since: "7d", save: nil }
+    { app: DEFAULT_APP, local: false, mailbox: DEFAULT_MAILBOX, mailbox_given: false, since: "7d", save: nil,
+      label: nil, limit: nil, apply: false, archive: false, mark_read: false, by: ENV["AGENT_SOUL"].to_s.strip.then { _1.empty? ? "bin/mail" : _1 } }
   end
 
   # Returns the exit code. bin/mail has already parsed the flags into `opts`
@@ -184,6 +192,20 @@ module MailCli
       raise Error, "doctor takes no arguments" unless args.empty?
 
       { "verb" => "doctor" }
+    when "organize"
+      raise Error, "organize takes ACTION and one Gmail query (quote it)" unless args.size == 2
+
+      organize_request(opts).merge("verb" => "organize", "action" => args[0], "query" => args[1], "label" => opts[:label],
+                                   "limit" => opts[:limit], "apply" => opts[:apply])
+    when "filter"
+      raise Error, "filter takes one Gmail query (quote it)" unless args.size == 1
+
+      organize_request(opts).merge("verb" => "filter", "query" => args[0], "label" => opts[:label], "archive" => opts[:archive],
+                                   "mark_read" => opts[:mark_read], "apply" => opts[:apply])
+    when "labels", "filters"
+      raise Error, "#{verb} takes no arguments" unless args.empty?
+
+      organize_request(opts).merge("verb" => verb)
     else
       raise Error, "unknown verb #{verb.inspect}"
     end
@@ -210,9 +232,43 @@ module MailCli
     when "doctor"
       out.puts render_doctor(answer)
       answer["ok"] ? 0 : 1
+    when "organize"
+      out.puts render_change(answer["result"], request["mailbox"])
+      0
+    when "filter"
+      out.puts render_filter(answer["filter"], request["mailbox"])
+      0
+    when "labels"
+      out.puts answer["labels"].to_a.sort_by { [ _1["type"].to_s, _1["name"].to_s.downcase ] }.map { "#{_1['type']}\t#{_1['name']}" }
+      0
+    when "filters"
+      out.puts JSON.pretty_generate(answer["filters"].to_a)
+      0
     else
       raise Error, "unhandled verb #{verb}"
     end
+  end
+
+  # The organize verbs act on a mailbox named on the command line, never the default.
+  def organize_request(opts)
+    raise Error, "the organize verbs need --mailbox ADDR (the default mailbox is never assumed)" unless opts[:mailbox_given]
+
+    { "mailbox" => opts[:mailbox], "by" => opts[:by] }
+  end
+
+  def render_change(result, mailbox)
+    verb = result["applied"] ? "Changed #{result['changed']} of #{result['matched']}" : "Dry run: #{result['matched']} match"
+    lines = [ "#{verb} message(s) in #{mailbox}: #{result['action']}#{" #{result['label'].inspect}" if result['label']} for #{result['query'].inspect}" ]
+    lines << "  (stopped at the limit; run again for the rest, or raise --limit)" if result["capped"]
+    lines << "  created label #{result['label'].inspect}" if result["created_label"]
+    lines << "  nothing changed: add --apply to make this change" unless result["applied"]
+    lines.join("\n")
+  end
+
+  def render_filter(filter, mailbox)
+    does = [ ("label #{filter['label'].inspect}" if filter["label"]), ("archive" if filter["archive"]), ("mark read" if filter["mark_read"]) ].compact.join(", ")
+    head = filter["applied"] ? "Filter #{filter['filter_id']} added in #{mailbox}" : "Dry run: would add a filter in #{mailbox}"
+    "#{head}: #{filter['query'].inspect} -> #{does}#{"\n  nothing changed: add --apply to add it" unless filter['applied']}"
   end
 
   def save(opts, label, files, out)
