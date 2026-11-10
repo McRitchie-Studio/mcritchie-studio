@@ -1,0 +1,12 @@
+2026-11-10T03:06:13.9361803Z E2E EXECUTED SET: RED
+2026-11-10T03:06:13.9370383Z   403 executed · 2 skipped (4 allowed) · 3 shard report(s) · contract: 614 executed (635 committed − 17 excluded − 4 allowed)
+2026-11-10T03:06:13.9371354Z 
+2026-11-10T03:06:13.9371878Z   ✗ the lane EXECUTED 403 spec(s); config/e2e_lane.yml pins it at 614 (211 FEWER than the contract).
+2026-11-10T03:06:13.9373523Z The green `playwright` check now covers a DIFFERENT SET than the one this repo signed off on, and the source may look completely innocent — this assertion is deliberately blind to HOW the set changed, because every previous version of this guard was defeated by a HOW it had not enumerated.
+2026-11-10T03:06:13.9376412Z If specs LEFT the lane, find out why before you touch this number. The known ways, none of which change the spec count in the source: a widened `--grep-invert` in .github/workflows/ci.yml (widening `@devnet` to `@devnet|wallet` would drop more), a `--only-changed` or `--last-failed` flag, a `--max-failures` early exit, a narrowed `testDir`/`testIgnore`, a dropped shard, or a runtime skip.
+2026-11-10T03:06:13.9378387Z If you legitimately ADDED specs: raise `total_specs` AND `executed` in config/e2e_lane.yml in the same commit, and confirm with `npx playwright test --list`.
+2026-11-10T03:06:13.9379013Z 
+2026-11-10T03:06:13.9380119Z   The `playwright` check is GREEN over a set that is not the set this repo agreed to run. Reconcile it deliberately — do not just move the number in config/e2e_lane.yml to match what happened, which is the self-declaration disease this whole lane exists to cure.
+2026-11-10T03:06:13.9410914Z ##[error]Process completed with exit code 1.
+2026-11-10T03:06:13.9555845Z Post job cleanup.
+2026-11-10T03:06:14.0000000Z Cleaning up orphan processes
