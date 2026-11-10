@@ -43,7 +43,8 @@ const LETTERED_DEMO = "/videos/test-artist-b-lettered-demo/alt_videos/1";
 
 // The stand-in bucket and the passed-through links endpoint for one page.
 // lapse(): time passes; every link signed so far stops opening.
-// hold() / release(): keep the next links answer back, then let it go.
+// hold() / release(): keep the next links answer back, then let it go. The
+// answer is the server's at the moment it was asked.
 const stage = async (page) => {
   const state = { round: 0, lapsed: new Set(), asked: 0, held: null, open: null, down: false };
   const roundOf = (url) => Number((url.match(/[?&]fresh=(\d+)/) || [])[1] || 0);
@@ -59,9 +60,13 @@ const stage = async (page) => {
   });
   await page.route("**/alt_videos/1/links", async (route) => {
     state.asked += 1;
+    // The server answers as the request stands when it is sent (signed in or
+    // not), so it is asked at once and only its answer is held: route.fetch()
+    // carries the context's cookies as they are when it runs, and a fetch made
+    // on release would answer for a session restored meanwhile.
+    const response = state.down ? null : await route.fetch();
     if (state.held) await state.held;
     if (state.down) return route.fulfill({ status: 503, contentType: "text/plain", body: "" });
-    const response = await route.fetch();
     if (!response.ok()) return route.fulfill({ response });
     const body = await response.json();
     state.round += 1;
@@ -385,17 +390,64 @@ test("a refresh the server refuses says the session ended, on the page and on th
   });
   expect(fit).toEqual({ pressable: true, under: 0, room: true, wide: true });
 
+  // Scrolled to the end, the lazy frame images there load at last, on lapsed
+  // links: they fail, and each failure asks again, still signed out. Those
+  // asks are settled before signing in, so none is in flight across it (the
+  // next test is the one that holds one there).
+  await expect.poll(() => page.evaluate(() => [...document.querySelectorAll("img[data-signed-key]")]
+    .every((img) => img.complete && img.naturalWidth === 0) && !window.signedLinks.inFlight)).toBe(true);
+  await expect(banner).toHaveAttribute("data-state", "signin");
+  const asked = bucket.state.asked;
+
   // Signed in again (in the other tab) and back on this one: the page asks
-  // again, the banner and its room go, and the player loads on the fresh link.
+  // again, the player loads on the fresh link, and the banner and its room go.
+  // The fresh link is waited on first: the banner also hides while a refresh
+  // is on its way, so hidden alone does not say the refresh worked.
   await page.context().addCookies(session);
   await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  await expect(solo.locator("[data-test='clip-player']")).toHaveAttribute("src", /&fresh=1/);
   await expect(banner).toBeHidden();
   await expect(spacer).toBeHidden();
-  await expect(solo.locator("[data-test='clip-player']")).toHaveAttribute("src", /&fresh=1/);
   await loaded(solo);
   await expect(expired).toBeHidden();
   await expect(failed).toBeHidden();
+  expect(bucket.state.asked).toBe(asked + 1);
+});
+
+test("a refresh asked before signing in again does not answer for the session that came back", async ({ page }) => {
+  const bucket = await stage(page);
+  await page.goto(LETTERED_DEMO);
+
+  const solo = page.locator("[data-test='alt-clip'][data-ordinal='1'] [data-test='clip-solo']");
+  const banner = page.locator("[data-test='links-status']");
+  await loaded(solo);
+
+  // Signed out, the player fails on its lapsed link and asks for fresh ones;
+  // that ask is still on its way (held) when the operator signs in again in
+  // another tab and comes back to this one. It was sent signed out, so the
+  // server refuses it. This is the order CI met: a lazy frame image's ask,
+  // sent before the sign-in, answered after the tab came back.
+  const session = await page.context().cookies();
+  await page.context().clearCookies();
+  await bucket.lapse();
+  bucket.hold();
+  await solo.locator("video").evaluate((v) => v.load());
+  await expect.poll(() => bucket.state.asked).toBe(1);
+
+  await page.context().addCookies(session);
+  await page.evaluate(() => document.dispatchEvent(new Event("visibilitychange")));
+  expect(bucket.state.asked).toBe(1);
+  bucket.release();
+
+  // The refusal answered for the session that had ended. The tab came back
+  // after it was asked, so the page asks once more, signed in, and the player
+  // gets the fresh link.
+  await expect(solo.locator("[data-test='clip-player']")).toHaveAttribute("src", /&fresh=1/);
+  await expect(banner).toBeHidden();
+  await loaded(solo);
+  await expect(solo.locator("[data-test='clip-link-expired']")).toBeHidden();
   expect(bucket.state.asked).toBe(2);
+  expect(bucket.state.round).toBe(1);
 });
 
 test("a refresh that goes unanswered says so, can be closed, and says so again the next time", async ({ page }) => {
