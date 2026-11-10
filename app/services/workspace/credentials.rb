@@ -372,11 +372,11 @@ module Workspace
                          "— a literal line break inside private_key is the usual cause"
       end
 
-      # THE SECRET CACHE FIRST (task secret-silos-phase-two). The field is a shared
-      # item (config/shared_secret_items.yml), so SecretCache.read_ref serves a fresh
-      # copy from <projects>/.secret-cache and reads 1Password only on a miss or an
-      # expiry, then stores it. Scratch Drive and Gmail scripts start a new process
-      # each run, and each used to spend one read.
+      # THROUGH SecretCache.read_ref, BUT NOT CACHED (tasks secret-silos-phase-two,
+      # google-keys-stay-uncached). config/shared_secret_items.yml does NOT name
+      # this field: the Google keys stay off disk until Alex McRitchie approves
+      # caching them, so read_ref reads 1Password every time and never stores the
+      # value. Adding the field there is that approval, not a refactor.
       #
       # Bounded on purpose, and by SIGKILL to op's whole process group
       # (OpMeter.popen over BoundedCommand, the bound under every bin/ 1Password

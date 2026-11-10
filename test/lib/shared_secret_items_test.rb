@@ -64,8 +64,12 @@ class SharedSecretItemsTest < Minitest::Test
       refute SecretCache.admin_entry?(meta, env), "#{name} is fed from an admin vault"
       assert_operator meta["lifetime_seconds"], :>, meta["refresh_window_seconds"]
     end
-    %w[discord.webhooks r2.mcritchie-agents-backup google.industries.agents gmail.studio.agents].each do |item|
+    %w[discord.webhooks r2.mcritchie-agents-backup].each do |item|
       assert(entries.values.any? { |m| m["item"] == item }, "#{item} is a shared item")
+    end
+    # The Google service-account keys stay off disk until Alex McRitchie approves.
+    %w[google.industries.agents gmail.studio.agents].each do |item|
+      refute(entries.values.any? { |m| m["item"] == item }, "#{item} must not be cached")
     end
   end
 

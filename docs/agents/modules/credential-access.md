@@ -70,8 +70,8 @@ untouched by any of this.
 | `AGENT_API_SECRET` | `mcritchie-studio/.env` | `bin/lib/agent_api.rb`, `bin/lib/task_board.rb` (env, then `.env`, then one metered read) | `bin/conductor-host-setup` prints the one-line fix (item `Agent API Secret`) |
 | `R2_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` (the dev pair) | `<app>/.env.development` | each app's storage config | `bin/ecosystem-build`, only when the file is missing or empty (item `r2.<app>`) |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (the dev OAuth client) | each app's `.env` | the Rails apps locally | `bin/dev-google-client` (item `google.studio.local`) |
-| `GMAIL_OAUTH_CREDENTIAL` | the app's `.env` | `Gmail::Credentials` (env first; else the secret cache, a shared item, then one metered read) | by hand from item `gmail.studio.agents` |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | the app's `.env` | `Workspace::Credentials` (env first; else the secret cache, a shared item, then one metered read) | by hand from item `google.industries.agents` |
+| `GMAIL_OAUTH_CREDENTIAL` | the app's `.env` | `Gmail::Credentials` (env first; else one metered read, never cached) | by hand from item `gmail.studio.agents` |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | the app's `.env` | `Workspace::Credentials` (env first; else one metered read, never cached) | by hand from item `google.industries.agents` |
 | `X_API_KEY`, `X_API_SECRET`, `X_ACCESS_TOKEN`, `X_ACCESS_TOKEN_SECRET` | the shell or `.env` | `bin/x-post` (env first; else one metered `item get`) | by hand from item `agent.turf.x` |
 
 Expiring or rotating credentials (GitHub App tokens, the harness key) are NOT
@@ -79,9 +79,10 @@ env-file keys: they live in the secret cache, rung 2. Heroku tokens are read at
 use, never kept in a profile ([`credentials.md`](credentials.md), Heroku tokens
 resolve at use time): the agents key from Steffon's soul set in the cache, the
 admin keys into the calling script's memory ([`secret-cache.md`](secret-cache.md),
-"A reader script reads its item from the owning soul"). The Discord webhooks, the
-R2 backup keys and the Google credentials are shared items in the cache
-([`secret-cache.md`](secret-cache.md), "Shared items").
+"A reader script reads its item from the owning soul"). The Discord webhooks and
+the R2 backup keys are shared items in the cache ([`secret-cache.md`](secret-cache.md),
+"Shared items"). The Google credentials are not: they stay off disk until Alex
+McRitchie approves caching them.
 
 ## The ratchet: fewer reads, only down
 

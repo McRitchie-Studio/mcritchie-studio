@@ -57,7 +57,9 @@ with `bin/op-reads`). A read the cache answers is logged too, with the action
 ### Shared items
 
 Some long-lived fields are read by every soul, not by one: the Discord webhooks,
-the R2 backup keys, and the Google service-account and Gmail credentials.
+the R2 backup keys. (The Google service-account and Gmail keys are NOT cached:
+the Workspace key carries domain-wide delegation, so it stays off disk until
+Alex McRitchie approves; an unlisted item is read from 1Password, never stored.)
 `config/shared_secret_items.yml` names them as `op-item` entries, each
 `<item>.<field>` (task `secret-silos-phase-two`, 2026-11-09). The data that chose
 them: in the 7 days to 2026-11-09, `workspace-credentials` spent 92 reads,
@@ -69,7 +71,7 @@ them: in the 7 days to 2026-11-09, `workspace-credentials` spent 92 reads,
 | Config | `config/shared_secret_items.yml`: `item`, `field`, `lane` (or `vault` for a vault no lane names, such as `industries-agents`), `lifetime`, `refresh_window` (default 1 h or a tenth of the lifetime). An admin vault is refused at load |
 | From the shell | `bin/secret studio-agents discord.webhooks release-notes-webhook`: a fresh copy is printed with no 1Password call (not even the `whoami`) |
 | From Ruby | `SecretCache.read_ref("op://<vault>/<item>/<field>", via:)`: the cached copy, else one bounded, metered `op read` (one attempt, `OP_CACHE=false`), stored when the config names it. `bin/agents-backup`, `bin/r2-backup --op`, `Workspace::Credentials` and `Gmail::Credentials` read through it. A ref the config does not name is read every time |
-| Lifetimes | the webhooks and R2 keys 7 days, the Google credentials 1 day |
+| Lifetimes | the webhooks and R2 keys 7 days |
 | Rotation | the copy is served until it expires, so a rotation drops it: `bin/secret forget --source discord.webhooks` drops every field of the item (the rotation step below) |
 | In a test | a run that pins no cache folder under the armed sandbox reads without the cache; the operator's folder is never reached |
 
