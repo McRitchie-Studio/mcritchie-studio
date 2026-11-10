@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
 module MarketingKit
-  # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: one row with the
-  # light logo and the title, a row of variables, then a table whose two-row head
-  # is split into three colour sections. Ruby decides every colour and
+  # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: the title in A1,
+  # the light logo under it beside a row of variables, then a table whose two-row
+  # head is split into three colour sections. Ruby decides every colour and
   # word here; script/marketing_kit/office.py only lays the payload out as an
   # .xlsx, which Drive converts to a Google Sheet.
   #
@@ -83,10 +83,9 @@ module MarketingKit
       { section: 2, head: "[Notes]", width: 40, kind: "text" }
     ].freeze
 
-    # Label above value, side by side from column A. A value may be a formula;
+    # Label above value, side by side from column B (the logo sits in A). A value may be a formula;
     # {first}/{last} stand for the table's first and last data row in the drawer.
     VARIABLES = [
-      { label: "As of", value: "=TODAY()", kind: "date" },
       { label: "Default rate", value: 0.05, kind: "percent" },
       { label: "Total amount", value: "=SUM(E{first}:E{last})", kind: "money" }
     ].freeze
@@ -112,7 +111,7 @@ module MarketingKit
       "which row you are on.",
       "Add a column: insert it inside a section and copy the head cells' format from a neighbour. " \
       "Add a row: insert it inside the table, so totals and dropdowns cover it.",
-      "Variables sit under the title, label over value. Formulas point at them with absolute references ($B$3), " \
+      "Variables sit beside the logo, label over value. Formulas point at them with absolute references ($B$3), " \
       "so a value changes in one place.",
       "Head colours come from the brand palette. Both head rows are dark enough for white text; " \
       "keep it that way if you recolour a section."

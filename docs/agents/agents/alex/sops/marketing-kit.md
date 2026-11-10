@@ -220,8 +220,8 @@ the sheet easy to work in, so keep them in every copy:
 
 | Part | What it is |
 |------|------------|
-| Row 1 | The horizontal light logo in A, and `[Sheet Title]` beside it in B, in the `title` colour |
-| Rows 2-3 | Variables: a label over each value, from column A. Formulas point at them with absolute references |
+| Row 1 | `[Sheet Title]` in A1, in the `title` colour |
+| Rows 2-3 | The horizontal light logo in A, and the variables beside it from B: a label over each value. Formulas point at them with absolute references |
 | Rows 5-6 | The table head in three colour sections: the darker top row names the section, the lower row names the columns |
 | Row 7 on | The data. Column A is the row's item (its name) |
 

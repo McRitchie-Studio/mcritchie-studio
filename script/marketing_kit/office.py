@@ -234,28 +234,29 @@ def sheet(d, out):
     heights = {TITLE: 40, VAR_LABEL: 16, VAR_VALUE: 24, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
-    # Title row: the light logo in A, centred in the row's height, and the title beside it in B
+    # Column A, which the freeze keeps: the title in A1, the light logo under it across
+    # the two variable rows (anchored in row 2, centred in rows 2-3 together).
+    t = ws.cell(TITLE, 1, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
+    t.alignment = Alignment(vertical="center", indent=1)
     im = Image.open(d["logo"]); lh = 20; lw = round(im.width * lh / im.height)
     logo = XImage(d["logo"]); logo.width, logo.height = lw, lh
-    pad = (heights[TITLE] * 4 // 3 - lh) // 2  # row height is in points; the anchor is in pixels
-    logo.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(10), row=0, rowOff=pixels_to_EMU(pad)),
+    pad = ((heights[VAR_LABEL] + heights[VAR_VALUE]) * 4 // 3 - lh) // 2  # row heights are points; the anchor is pixels
+    logo.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(10), row=VAR_LABEL - 1, rowOff=pixels_to_EMU(pad)),
                                 ext=XDRPositiveSize2D(pixels_to_EMU(lw), pixels_to_EMU(lh)))
     ws.add_image(logo)
 
-    t = ws.cell(TITLE, 2, d["title"]); t.font = font(size=16, bold=True, color=col["title"]); t.alignment = Alignment(vertical="center")
-
-    # Variables: label over value, one per column from A
+    # Variables: label over value, one per column from B (A holds the logo)
     var_cell = {}
     for i, v in enumerate(d["variables"]):
-        lab = ws.cell(VAR_LABEL, i + 1, v["label"].upper()); lab.font = font(size=8, bold=True, color=col["grey"])
+        lab = ws.cell(VAR_LABEL, i + 2, v["label"].upper()); lab.font = font(size=8, bold=True, color=col["grey"])
         lab.alignment = Alignment(vertical="bottom", indent=1)
         value = v["value"]
         if isinstance(value, str): value = value.replace("{first}", str(FIRST)).replace("{last}", str(LAST))
-        cell = ws.cell(VAR_VALUE, i + 1, value)
+        cell = ws.cell(VAR_VALUE, i + 2, value)
         cell.font = font(size=11, bold=True, color=col["ink"]); cell.fill = fill(col["light"])
         cell.alignment = Alignment(horizontal="left", vertical="center", indent=1)
         if v["kind"] in FORMATS: cell.number_format = FORMATS[v["kind"]]
-        var_cell[v["label"]] = f"${L(i + 1)}${VAR_VALUE}"
+        var_cell[v["label"]] = f"${L(i + 2)}${VAR_VALUE}"
 
     # The table head: three sections, darker on top, white text on both rows.
     # A section's label sits in its first cell; the rest share the fill, unmerged.

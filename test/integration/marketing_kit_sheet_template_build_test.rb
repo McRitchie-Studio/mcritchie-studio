@@ -7,7 +7,7 @@ require_relative "../support/marketing_kit_fixtures"
 # [integration] The Sheet template across its two boundaries: Build puts it in
 # 05 Templates as a Google Sheet, and office.py (Python, openpyxl) writes the
 # .xlsx Drive converts. The workbook is read back from its XML, the way Drive
-# reads it: logo and title on row 1, freeze under the head and right of column A, no merged cells, the
+# reads it: title in A1 and the logo under it, freeze under the head and right of column A, no merged cells, the
 # head fills the payload chose, the logo drawing, and the How to use tab.
 class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
   include MarketingKitFixtures
@@ -33,8 +33,11 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         MarketingKit::SheetTemplate.new(spec).sections.each do |s|
           [s.top, s.low].each { |hex| assert_match(/rgb="\h\h#{hex.delete('#')}"/, styles, "head fill #{hex}") }
         end
-        assert_includes sheet, '<c r="B1"', "the title sits beside the logo in row 1"
-        assert_match(%r{<c r="A2"[^>]*><is><t>AS OF</t>}, sheet, "no description row and no Prepared by: row 2 opens with As of")
+        assert_match(%r{<c r="A1"[^>]*><is><t>\[Sheet Title\]</t>}, sheet, "the title is in A1")
+        assert_match(%r{<c r="B2"[^>]*><is><t>DEFAULT RATE</t>}, sheet, "variables start in B; A2-A3 hold the logo")
+        assert_no_match(/<c r="A2"/, sheet)
+        drawing = xml.fetch("xl/drawings/drawing1.xml")
+        assert_match(%r{<from><col>0</col><colOff>\d+</colOff><row>1</row>}, drawing, "the logo is anchored in A2")
         assert(xml.keys.any? { |k| k.start_with?("xl/media/") }, "the logo is embedded")
         assert_includes xml.fetch("xl/workbook.xml"), 'name="How to use"'
       end
