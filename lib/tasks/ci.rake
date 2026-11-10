@@ -43,5 +43,20 @@ namespace :ci do
       flips.each { |f| puts "#{f[:workflow]} #{f[:sha][0, 8]} red #{f[:red][:run_id]}/#{f[:red][:attempt]} green #{f[:green][:run_id]}" }
       puts "ci:causes:sweep#{' (DRY RUN)' if dry_run}: #{flips.size} flip(s) in #{repo} over #{days}d#{dry_run ? '' : ', cards enqueued'}"
     end
+
+    # ONE-TIME BOARD HEAL for cause cards filed before ci-cause-card-dedupe-census: merges
+    # race twins of one cause (a base card and its `-2` holding the same red) and moves
+    # past native crashes filed as web-server-boot (and their census) onto native-abort.
+    # Thin wrapper; the logic and its tests live in Ci::CauseCleanup. Idempotent.
+    #
+    # OPERATOR-RUN, after it ships: DRY RUN BY DEFAULT. Read the plan, then apply.
+    #   bin/rails ci:causes:cleanup            list what would change, write nothing
+    #   APPLY=1 bin/rails ci:causes:cleanup    make the changes
+    desc "Merge duplicate CI cause cards and move past native crashes onto native-abort (dry run unless APPLY=1)"
+    task cleanup: :environment do
+      apply = ENV["APPLY"] == "1"
+      actions = Ci::CauseCleanup.call(apply: apply, io: $stdout)
+      puts "ci:causes:cleanup#{' (DRY RUN; APPLY=1 to write)' unless apply}: #{actions.size} change(s)"
+    end
   end
 end

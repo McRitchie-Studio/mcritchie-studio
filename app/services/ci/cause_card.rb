@@ -34,6 +34,51 @@ module Ci
       new(repo, cause.transform_keys(&:to_sym), occurrence.transform_keys(&:to_s)).file!
     end
 
+    # The per-cause lock every writer of a cause's cards holds (see #file!): the filer
+    # here, and Ci::CauseCleanup's repairs. Transaction-scoped; call inside one.
+    def self.serialize!(base)
+      conn = Task.connection
+      conn.execute("SELECT pg_advisory_xact_lock(hashtext(#{conn.quote("ci-cause-card:#{base}")}))")
+    end
+
+    # An unsaved card for a cause, in `stage`, holding `occurrences` (none for a card
+    # Ci::CauseCleanup is about to fill). The one place a cause card's shape is written.
+    def self.build(repo:, cause:, slug:, stage: "designed", occurrences: [])
+      cause = cause.transform_keys(&:to_sym)
+      new(repo, cause, occurrences.first.to_h).card(slug, stage: stage, occurrences: occurrences)
+    end
+
+    def card(slug, stage:, occurrences:)
+      klass = @cause[:klass].to_s
+      key = @cause[:key].to_s
+      first = occurrences.first.to_h
+      where = outside? ? "Outside every repo, first seen in #{@repo}" : @repo
+      seen = first["sha"] ? " Red at #{first['sha'].to_s[0, 8]} (#{first['run_url']}), green at the same SHA (#{first['green_run_url']})." : ""
+      Task.new(
+        slug: slug,
+        title: CiCauseDetector.title(klass, key),
+        stage: stage,
+        priority: 1,
+        description: "#{where}: #{@cause[:reason]}.#{seen}",
+        metadata: {
+          "devops" => {
+            "kind" => "bug",
+            "repositories" => [short_repo],
+            "risk_tags" => ["ci"],
+            "acceptance" => ["#{File.basename(key)}'s cause is named and fixed at its source",
+                             "the fix adds no retry and no fixed sleep",
+                             "it passes 20 consecutive runs at one SHA"],
+            "test_plan" => ["[unit] a regression test that fails on the cause, red before the fix"],
+            "agent_context" => "#{RULING}\n\nCause class (first read from the log, confirm it): #{klass}. " \
+                               "Key: #{key}.\nEvidence:\n#{Array(@cause[:evidence]).map { |l| "  #{l}" }.join("\n")}\n\n" \
+                               "Every occurrence is under metadata.ci_cause.occurrences. Filed by CiCauseCardJob."
+          },
+          "ci_cause" => { "class" => klass, "key" => key, "repo" => @repo, "repos" => [@repo], "outside" => outside?,
+                         "count" => occurrences.size, "occurrences" => occurrences }
+        }
+      )
+    end
+
     def initialize(repo, cause, occurrence)
       @repo = repo.to_s
       @cause = cause
@@ -78,10 +123,7 @@ module Ci
 
     # Held to the end of the outermost transaction; the key is the cause, not a row,
     # so it serializes the first create too.
-    def serialize!(base)
-      conn = Task.connection
-      conn.execute("SELECT pg_advisory_xact_lock(hashtext(#{conn.quote("ci-cause-card:#{base}")}))")
-    end
+    def serialize!(base) = self.class.serialize!(base)
 
     # Every card this cause has had: the base slug and its `-2`, `-3` reopenings.
     def cards(base)
@@ -131,33 +173,7 @@ module Ci
     def outside? = CiCauseDetector.outside?(@cause)
 
     def create!(slug)
-      klass = @cause[:klass].to_s
-      key = @cause[:key].to_s
-      where = outside? ? "Outside every repo, first seen in #{@repo}" : @repo
-      Task.create!(
-        slug: slug,
-        title: CiCauseDetector.title(klass, key),
-        stage: "designed",
-        priority: 1,
-        description: "#{where}: #{@cause[:reason]}. Red at #{@occurrence['sha'].to_s[0, 8]} " \
-                     "(#{@occurrence['run_url']}), green at the same SHA (#{@occurrence['green_run_url']}).",
-        metadata: {
-          "devops" => {
-            "kind" => "bug",
-            "repositories" => [short_repo],
-            "risk_tags" => ["ci"],
-            "acceptance" => ["#{File.basename(key)}'s cause is named and fixed at its source",
-                             "the fix adds no retry and no fixed sleep",
-                             "it passes 20 consecutive runs at one SHA"],
-            "test_plan" => ["[unit] a regression test that fails on the cause, red before the fix"],
-            "agent_context" => "#{RULING}\n\nCause class (first read from the log, confirm it): #{klass}. " \
-                               "Key: #{key}.\nEvidence:\n#{Array(@cause[:evidence]).map { |l| "  #{l}" }.join("\n")}\n\n" \
-                               "Every occurrence is under metadata.ci_cause.occurrences. Filed by CiCauseCardJob."
-          },
-          "ci_cause" => { "class" => klass, "key" => key, "repo" => @repo, "repos" => [@repo], "outside" => outside?,
-                         "count" => 1, "occurrences" => [@occurrence] }
-        }
-      )
+      card(slug, stage: "designed", occurrences: [@occurrence]).tap(&:save!)
     end
   end
 end
