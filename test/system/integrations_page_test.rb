@@ -190,6 +190,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         visit integrations_discord_path
         page.execute_script("localStorage.setItem('theme', '#{theme}')")
         visit integrations_discord_path
+        assert_viewport_width(width) if width < 500
 
         assert_equal theme == "dark", page.evaluate_script("document.documentElement.classList.contains('dark')"), "#{theme} at #{width}"
         assert_selector "[data-test='setup-step']", count: 7
@@ -260,6 +261,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         visit integrations_path
         page.execute_script("localStorage.setItem('theme', '#{theme}')")
         visit integrations_path
+        assert_viewport_width(width) if width < 500
 
         assert_selector "[data-test='google-connect-all'][data-state='none']"
         overflow = page.evaluate_script("document.documentElement.scrollWidth - document.documentElement.clientWidth")
@@ -334,8 +336,9 @@ class IntegrationsPageTest < ApplicationSystemTestCase
     with_connect_env do
       GoogleConnect::OAuthClient.sign_in_stand_in = GoogleConnectStandIn::SignIn.new
       [ 667, 568 ].each do |height| # an iPhone SE, and the shortest phone still sold
-        page.driver.browser.execute_cdp("Emulation.setDeviceMetricsOverride", width: 375, height:, deviceScaleFactor: 1, mobile: true)
+        phone_viewport!(375, height)
         visit integrations_path
+        assert_viewport_width(375)
         within(google_slot("gmail")) { click_on "Connect Gmail" }
         continue = find("[data-test='gmail-admin-continue']")
         # Measure the card at rest, after its entrance animation (a scaled card reports scaled rects).
