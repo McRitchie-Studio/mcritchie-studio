@@ -635,7 +635,10 @@ for it; a `--task` or `--expedite` sweep does not. Display only: it never blocks
 lock-only app whose own gate, re-pin, lock check, QA boot or deploy fails is dropped
 with a `⚠ DROPPED` line and the members go on; carry each `DROPPED` line into the
 report. Its `main` does not move, so the next full `prepare` carries it again, and
-`status` lists the drop under `Lock-only apps`. To drop one by hand, run
+`status` lists the drop under `Lock-only apps`. A Heroku push whose smoke stays red
+is rolled back to the release before it, and the `DROPPED` line says so; a line that
+says production runs the release tree (its deploy passed, its `main` push failed)
+needs no rollback, only the next sweep. To drop one by hand, run
 `bin/release drop-lock-only <repo> --reason "…"`.
 
 ## Related

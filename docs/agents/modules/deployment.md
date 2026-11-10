@@ -671,9 +671,18 @@ How a gem rides a release:
    `⚠ DROPPED` line, recorded on the release (`metadata.lock_only_dropped`), and
    the member apps carry on. A lock-only app deploys BEFORE its `main` moves, so
    a production-stage drop leaves `main` behind: the next sweep carries it again.
+   A `git_push_heroku` lock-only app waits for the Heroku release its push made
+   (a failed release phase keeps the old slug, which still answers `/up` 200, so
+   it drops with nothing to roll back). A smoke still red after a short boot
+   window runs `heroku rollback v<the release before>` and the drop says so. A
+   deploy that passed and then failed its `main` push is recorded as live
+   (`metadata.deployed_apps`) beside the drop. `bin/release finalize` drops a
+   lock-only app that is live with `main` behind, or not provably live, instead
+   of recording it shipped. The hub never rides as lock-only. Member apps keep
+   their own path: no automatic rollback.
    The release notes, the Slack summary, the seal summary and `bin/release status`
    name each drop; `shipped_shas` never records a dropped app, and `rollback`
-   names it and leaves it alone. `bin/release drop-lock-only <repo> [--reason "…"]`
+   names it (as live when its deploy landed) and leaves it alone. `bin/release drop-lock-only <repo> [--reason "…"]`
    drops one by hand; it reads the repo plan, so a member's repo is refused.
    `status` and the `--expedite` pre-check count a rung of lock bumps only as
    clean and list it under `Lock-only apps`. It is best-effort, like step 6.

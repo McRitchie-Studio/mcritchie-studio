@@ -3177,7 +3177,7 @@ def lock_only_consumer_repos(member_repos, held_repos: [])
   # A repo rides one train: the train a task naming only it would ride.
   train_repos = engine_apps.select { |repo| train_for_repos([repo]) == TRAIN.to_s }
   candidates = Release::LockOnlyConsumers.candidates(engine_apps: engine_apps, member_repos: member_repos,
-                                                     train_repos: train_repos, held_repos: held_repos)
+                                                     train_repos: train_repos, held_repos: held_repos, hub: APP)
   candidates.filter_map do |repo|
     path = repo_path(repo)
     next unless Dir.exist?(path)
@@ -3228,7 +3228,10 @@ end
 # tree, a production deploy or smoke that fails) therefore DROPS it from the
 # release with a warning, and the member apps carry on. Its production deploy runs
 # BEFORE its `main` moves (deploy_app), so a drop there leaves `main` behind and
-# the next sweep carries it again (task lock-only-drop-follow-ups). Without this, rantly's
+# the next sweep carries it again (task lock-only-drop-follow-ups). A Heroku push
+# whose smoke stays red is rolled back (lock_only_smoke_failed!), and a deploy that
+# passed before a failed `main` push is recorded live (lock_only_live; task
+# lock-only-deploy-hardening). Without this, rantly's
 # Eco dyno, which 503s in the last week of each month, would stop every late-month
 # engine release at its smoke, with only a hand edit of the release record out.
 #
@@ -3244,17 +3247,38 @@ def lock_only_group?(group) = group.is_a?(Hash) && group["lock_only"] == true
 def lock_only_drops = (@lock_only_drops ||= {})
 def lock_only_unrecorded = (@lock_only_unrecorded ||= {})
 
+# { repo => sha } for each lock-only app whose production deploy PASSED but whose
+# `main` push then failed (deploy_app), so production runs the release tree while
+# `main` stays behind. The drop records it in metadata["deployed_apps"]: that key
+# says what production runs, shipped_shas says where `main` moved (task
+# lock-only-deploy-hardening, review note 2). Threads write it; under the guard.
+def lock_only_live = (@lock_only_live ||= {})
+def lock_only_unrecorded_live = (@lock_only_unrecorded_live ||= {})
+
+def note_lock_only_live!(repo, sha)
+  LOCK_ONLY_DROP_GUARD.synchronize do
+    lock_only_live[repo.to_s] = sha.to_s
+    lock_only_unrecorded_live[repo.to_s] = sha.to_s
+  end
+end
+
 def drop_lock_only!(group, reason, main_moved: false, production: false)
   repo = group["repo"].to_s
-  LOCK_ONLY_DROP_GUARD.synchronize do
+  live_sha = LOCK_ONLY_DROP_GUARD.synchronize do
     lock_only_drops[repo] ||= reason
     lock_only_unrecorded[repo] ||= reason
+    lock_only_live[repo]
   end
   # A lock-only app deploys BEFORE its `main` moves (deploy_app), so a failed
   # production deploy leaves `main` where it was and the next sweep carries the app
   # again. `main_moved` is true only when its `main` push landed and something after
   # it failed: say so, since a dropped app is outside `bin/release rollback`'s plan.
-  tail = if main_moved
+  tail = if live_sha
+           "Its production deploy PASSED, so production runs #{short(live_sha)}, but its `main` did not move: " \
+             "its bumps wait on `#{ACCEPTED_BRANCH}` and the next sweep carries it again (a re-push of the same " \
+             "tree or a newer one). The release records it under deployed_apps; `#{RELEASE_SELF_CMD} rollback` " \
+             "names it and does not roll it back — `heroku rollback -a <its app>` by hand if it must go back."
+         elsif main_moved
            "Its `main` and `#{ACCEPTED_BRANCH}` may already be at the release tree, so no sweep carries it again " \
              "and `status` reads no lag. Nothing rolled it back, and `#{RELEASE_SELF_CMD} rollback` skips a " \
              "dropped app. Read `heroku releases -a <its app>`: a new release whose /up is down → `heroku " \
@@ -3288,18 +3312,26 @@ end
 # Record this process's new drops on the release, then take every dropped repo out
 # of each list given (the caller's own arrays, changed in place).
 def prune_lock_only!(rel_slug, *lists)
-  pending = LOCK_ONLY_DROP_GUARD.synchronize { lock_only_unrecorded.dup.tap { lock_only_unrecorded.clear } }
-  record_lock_only_drops!(rel_slug, pending) unless pending.empty?
+  pending, live = LOCK_ONLY_DROP_GUARD.synchronize do
+    [lock_only_unrecorded.dup.tap { lock_only_unrecorded.clear },
+     lock_only_unrecorded_live.dup.tap { lock_only_unrecorded_live.clear }]
+  end
+  record_lock_only_drops!(rel_slug, pending, live: live.slice(*pending.keys)) unless pending.empty?
   lists.each { |list| list.reject! { |group| lock_only_drops.key?(group["repo"].to_s) } }
 end
 
-def record_lock_only_drops!(rel_slug, drops)
+# `live` ({ repo => sha }): the dropped apps production runs anyway (lock_only_live),
+# written to deployed_apps in the same call, so the record never says "not shipped"
+# alone for an app whose deploy landed.
+def record_lock_only_drops!(rel_slug, drops, live: {})
   return if DRY
 
   target = rel_slug.to_s.empty? || rel_slug.to_s == "rel-pending" ? rel_current : "Release.find_by!(slug: #{rel_slug.to_s.inspect})"
-  step("record: lock-only drop #{drops.keys.join(', ')} on the release")
+  step("record: lock-only drop #{drops.keys.join(', ')} on the release" \
+       "#{live.empty? ? '' : " (live in production anyway: #{live.keys.join(', ')})"}")
+  deployed = live.empty? ? "" : "Release::Conductor.record_deployed_apps(release: r.reload, deployed: #{live.inspect}); "
   conductor("r = #{target}; r.update!(metadata: Release::LockOnlyConsumers.drop(r.metadata || {}, #{drops.inspect})); " \
-            "puts({ lock_only_dropped: #{drops.keys.inspect} }.to_json)")
+            "#{deployed}puts({ lock_only_dropped: #{drops.keys.inspect} }.to_json)")
 end
 
 # `bin/release drop-lock-only <repo> [--reason "…"]`: the operator's way to take a
@@ -5769,6 +5801,9 @@ def prepare
   # operator could have fixed for free. Then the burn record (a version this
   # release supersedes before it ships), then the publish.
   refuse_stray_locks_before_publish!(app_groups, gem_plan)
+  # Its drops leave the lists BEFORE the gate (review note 4), or the gate would
+  # wait on, or read red for, an app this release no longer carries.
+  prune_lock_only!(rel_slug, app_groups, repos)
   # THE GATE BEFORE THE PUSH (task ci-retry-killers): every swept app's own CI must be
   # green on its promoted tree before any version goes to RubyGems, so a red aborts
   # with nothing published and nothing burned. See pre_publish_gate.
@@ -11147,7 +11182,15 @@ def deploy_app(group, frozen)
   if lock_only_group?(group)
     step("lock-only #{repo}: deploy first; `main` moves only after the deploy passes")
     deploy_app_dispatch(group, frozen, adapter: adapter, target: target, handler: handler, static_target: static_target)
-    push_frozen_main(repo, frozen)
+    begin
+      push_frozen_main(repo, frozen)
+    rescue SystemExit => e
+      # The deploy PASSED, so production runs `frozen`; only `main` stayed behind.
+      # Say both (review note 2): the drop records the app as live, not "not shipped".
+      note_lock_only_live!(repo, frozen) if target && !DRY
+      abort!("its deploy passed and production runs #{short(frozen)}, but its `main` push failed: " \
+             "#{e.message.to_s.sub(/\A✗ /, '').lines.first.to_s.strip}")
+    end
     return
   end
 
@@ -11195,6 +11238,11 @@ def deploy_app_dispatch(group, frozen, adapter:, target:, handler:, static_targe
   when :git_push_heroku
     remote = adapter["remote"] || HEROKU_REMOTE
     branch = adapter["branch"] || "main"
+    # A LOCK-ONLY app reads its Heroku release list before the push, so it can wait
+    # on the release the push makes and roll back to the one before it
+    # (lock_only_heroku_baseline). A member app keeps its old path exactly.
+    lock_only = lock_only_group?(group) && !DRY
+    heroku_app, before = lock_only ? lock_only_heroku_baseline(adapter) : ["", 0]
     step("deploy: git -C #{repo} push #{remote} #{short(frozen)}:refs/heads/#{branch} (ref push — no checkout)")
     deploy_started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     _, ok = DRY ? [nil, true] : sh("git", "-C", path, "push", remote, "#{frozen}:refs/heads/#{branch}", capture: false)
@@ -11204,6 +11252,7 @@ def deploy_app_dispatch(group, frozen, adapter:, target:, handler:, static_targe
              ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - deploy_started) * 1000).round)
     abort!("Heroku deploy failed for #{repo}") unless ok || DRY
 
+    lock_only_release_phase!(group, heroku_app, before) if lock_only
     smoke = adapter["smoke_url"].to_s
     if smoke.empty?
       say("  (no smoke_url for #{repo} — smoke skipped)")
@@ -11216,7 +11265,12 @@ def deploy_app_dispatch(group, frozen, adapter:, target:, handler:, static_targe
         [out, out.strip == "200"]
       end
       say("  /up → #{code}") unless DRY
-      abort!("smoke failed for #{repo} (#{smoke}/up != 200)") if !DRY && code.strip != "200"
+      if !DRY && code.strip != "200"
+        failure = "smoke failed for #{repo} (#{smoke}/up != 200)"
+        # A lock-only app: a booting dyno gets a short window, then the push is
+        # rolled back to the release before it (review note 1). It never returns.
+        abort!(failure) unless lock_only && lock_only_smoke_failed!(group, heroku_app, before, smoke, failure)
+      end
     end
   when :repo_script
     command = adapter["command"].to_s
@@ -11322,6 +11376,108 @@ def deploy_app_dispatch(group, frozen, adapter:, target:, handler:, static_targe
     abort!("GitHub Actions prod deploy failed for #{repo} (#{workflow}) — check the run; fix + re-run `bin/release ship`") unless ok || DRY
   end
   @ship_live << "app #{repo} deployed to production"
+end
+
+# --- a lock-only app's Heroku push: release phase, smoke, rollback ------------
+# Task lock-only-deploy-hardening (review notes 1 and 6). A lock-only app rides for
+# nobody's card, and its `main` moves only after its deploy passes (deploy_app). A
+# drop used to leave a git_push_heroku app's FAILED push live: the push had made a
+# new Heroku release, the smoke said it was down, and nothing rolled it back. Now:
+#
+#   1. BEFORE the push, read the newest Heroku release version (the baseline).
+#   2. AFTER the push, wait for the release it made to settle. Heroku's release
+#      phase (`release: bin/rails db:migrate`) runs after the build is accepted;
+#      Heroku's docs say a failed one is "not deployed, leaving the current
+#      release unaffected" and do not say that `git push` exits non-zero. So a
+#      smoke right after the push can read 200 from the OLD slug (bin/qa-server
+#      reads `heroku releases` after its push for this reason). A failed release
+#      phase therefore drops the app with nothing to roll back; a release that
+#      never settles drops it with a warning and NO rollback (rolling back over a
+#      pending release is not safe).
+#   3. A smoke that stays red after a short boot window: `heroku rollback
+#      v<baseline>`, wait for that release, smoke again, record the gate SOP, and
+#      abort with what happened, so the drop reason says it.
+#
+# Member apps are untouched: their `main` moved first and they are not dropped.
+LOCK_ONLY_RELEASE_POLLS = Integer(ENV.fetch("RELEASE_LOCK_ONLY_RELEASE_POLLS", "60"))
+LOCK_ONLY_RELEASE_POLL_DELAY = Integer(ENV.fetch("RELEASE_LOCK_ONLY_RELEASE_POLL_DELAY", "5"))
+LOCK_ONLY_SMOKE_POLLS = 6
+
+# [heroku_app, newest version] read before the push; [app, 0] when the list is
+# unreadable, ["", 0] when the adapter names no Heroku app.
+def lock_only_heroku_baseline(adapter)
+  heroku_app = Release::ShipSequence.heroku_app_for(adapter)
+  return ["", 0] if heroku_app.empty?
+
+  # A rollback target must be what Heroku SERVES: the newest row only when it is
+  # current and succeeded. A failed or pending newest row gives 0 (no auto rollback).
+  newest = heroku_releases(heroku_app, limit: 5).select { |r| r.is_a?(Hash) }.max_by { |r| r["version"].to_i }
+  [heroku_app, newest && newest["current"] == true && newest["status"] == "succeeded" ? newest["version"].to_i : 0]
+end
+
+# :succeeded, :failed or :pending for the first Heroku release after `after`.
+def lock_only_await_release(heroku_app, after:)
+  verdict = :pending
+  LOCK_ONLY_RELEASE_POLLS.times do |i|
+    verdict = Release::RollbackPlan.release_phase_verdict(heroku_releases(heroku_app, limit: 5), after: after)
+    return verdict unless verdict == :pending
+
+    sleep(LOCK_ONLY_RELEASE_POLL_DELAY) unless i == LOCK_ONLY_RELEASE_POLLS - 1
+  end
+  verdict
+end
+
+def lock_only_release_phase!(group, heroku_app, before)
+  repo = group["repo"]
+  if heroku_app.empty? || before.to_i <= 0
+    say("  ⚠ #{repo}: no current, succeeded Heroku release read before the push — the release phase is not checked and a " \
+        "failed smoke cannot be rolled back automatically")
+    return
+  end
+
+  step("wait for the Heroku release after v#{before} on #{heroku_app} (lock-only #{repo})")
+  case lock_only_await_release(heroku_app, after: before)
+  when :succeeded
+    say("  release succeeded and is current")
+  when :failed
+    abort!("the Heroku release phase on #{heroku_app} FAILED after the push; Heroku keeps v#{before}, so " \
+           "production still runs the previous release and nothing needs a rollback " \
+           "(`heroku releases:output --app #{heroku_app}`)")
+  else
+    abort!("the Heroku release after v#{before} on #{heroku_app} did not settle within " \
+           "#{LOCK_ONLY_RELEASE_POLLS * LOCK_ONLY_RELEASE_POLL_DELAY}s; NOT rolled back (rolling back over a " \
+           "pending release is not safe) — read `heroku releases --app #{heroku_app}`, and `heroku rollback " \
+           "v#{before} --app #{heroku_app}` if it lands down")
+  end
+end
+
+# The smoke of a lock-only app was red after its push: give the dynos a boot
+# window (true when /up answers 200 in it), else roll the push back to `before`
+# and abort (the caller's lock_only_attempt turns that into the drop, whose reason
+# is this message).
+def lock_only_smoke_failed!(group, heroku_app, before, smoke, failure)
+  repo = group["repo"]
+  return true if wait_for_boot(smoke, attempts: LOCK_ONLY_SMOKE_POLLS, delay: 5)
+
+  if heroku_app.empty? || before.to_i <= 0
+    abort!("#{failure}; NOT rolled back: no current, succeeded Heroku release was read before the push — production may run the " \
+           "release tree; read `heroku releases` for #{repo} and `heroku rollback` by hand")
+  end
+
+  command = "heroku rollback v#{before} --app #{heroku_app}"
+  step("rollback (lock-only #{repo}, smoke red after the push): #{command}")
+  started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+  pushed = Release::RollbackPlan.newest_version(heroku_releases(heroku_app, limit: 5))
+  ok = sh("heroku", "rollback", "v#{before}", "--app", heroku_app).last
+  ok &&= lock_only_await_release(heroku_app, after: [pushed, before].max) == :succeeded
+  ok &&= wait_for_boot(smoke, attempts: 12, delay: 5)
+  gate_sop("rollback:#{repo}", command, ok, ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - started) * 1000).round)
+  if ok
+    abort!("#{failure}; rolled back automatically to v#{before} on #{heroku_app}, so production runs the " \
+           "previous release again")
+  end
+  abort!("#{failure}; the automatic `#{command}` FAILED or its /up stayed down — production may still run the " \
+         "release tree: read `heroku releases --app #{heroku_app}`")
 end
 
 # The suite-weight presence phase around one app's heavy deploy work. Inside the
@@ -12224,6 +12380,43 @@ ensure
   ReleasePresence.close!
 end
 
+# FINALIZE AND A LOCK-ONLY APP (task lock-only-deploy-hardening, review note 3). A
+# lock-only app deploys BEFORE its `main` moves (deploy_app). A ship killed between
+# the two leaves it LIVE with `main` behind, and the guard below counts it live (an
+# inline strategy's proof is the Heroku release, not `main`), so finalize recorded
+# it in shipped_shas: "main moved" when it had not, and no sweep would carry its
+# bumps again. Finalize moves no ref, so it drops such an app instead, recorded as
+# live (deployed_apps) — `bin/release ship` resumes the push, or the next sweep
+# carries it. A lock-only app finalize cannot prove live drops too: it rides for
+# nobody's card, so it never refuses the members' finalize. Changes the lists in place.
+def finalize_lock_only_drops!(rel_slug, app_groups, repos, verdicts, ship_sha)
+  app_groups.select { |g| lock_only_group?(g) }.each do |group|
+    repo = group["repo"]
+    sha = ship_sha[repo].to_s
+    live, gap = verdicts[repo]
+    if !live
+      drop_lock_only!(group, "finalize: not confirmed live at #{short(sha)} (#{gap})", production: true)
+    elsif !main_carries?(repo, sha)
+      note_lock_only_live!(repo, sha) unless DRY
+      drop_lock_only!(group, "finalize: live at #{short(sha)}, but its `main` did not move (the ship stopped " \
+                             "between its deploy and its `main` push)", production: true)
+    end
+  end
+  prune_lock_only!(rel_slug, app_groups, repos)
+end
+
+# Does origin's `main` for `repo` carry `sha` (at it, or past it)? A read; a SHA the
+# clone lacks is fetched first. false when it cannot tell.
+def main_carries?(repo, sha)
+  main = origin_main_sha(repo)
+  return false if main.empty? || sha.to_s.empty?
+  return true if main == sha
+
+  path = repo_path(repo)
+  git_capture("-C", path, "fetch", "--quiet", "origin", "main") unless git_capture("-C", path, "cat-file", "-e", "#{main}^{commit}").last
+  git_capture("-C", path, "merge-base", "--is-ancestor", sha, main).last
+end
+
 # --- finalize: record the steps a KILLED ship skipped ------------------------
 # `bin/release finalize <release>` (also `bin/release ship --finalize-only <release>`).
 #
@@ -12331,6 +12524,12 @@ def finalize(slug = nil)
     # (rel-20261029-00560a). A rollback, another Deploy, or an unknown release on
     # top still refuses.
     verdicts = app_groups.to_h { |g| [g["repo"], deploy_live_verdict(g, ship_sha[g["repo"]], post_ship: true)] }
+    # Only while something is left to record: a re-run on a finalized release must
+    # not write a drop onto it after its apps moved on.
+    if Release::ShipSequence.finalize_pending?(state: state, sealed: sealed, notes_completed: notes_completed,
+                                               members_all_shipped: members_all_shipped).any?
+      finalize_lock_only_drops!(rel_slug, app_groups, repos, verdicts, ship_sha)
+    end
     not_live = app_groups.reject { |g| verdicts[g["repo"]].first }
     if not_live.any?
       names = not_live.map { |g| "#{g['repo']} @ #{short(ship_sha[g['repo']])} — #{verdicts[g['repo']].last}" }
@@ -13427,6 +13626,7 @@ def rollback_read_ruby(slug)
   "puts({release: {slug: r.slug, state: r.state, deployed_sha: r.deployed_sha, " \
   "shipped_shas: (r.metadata['shipped_shas'] || {}), rolled_back: r.metadata['rolled_back'], " \
   "lock_only_dropped: Release::LockOnlyConsumers.dropped(r.metadata || {}), " \
+  "lock_only_live: Release::LockOnlyConsumers.live_after_drop(r.metadata || {}), " \
   "repos: Release::Conductor.repo_plan(r)}, " \
   "history: earlier.map { |e| {slug: e.slug, deployed_sha: e.deployed_sha, shipped_shas: (e.metadata['shipped_shas'] || {}), " \
   "lock_only_dropped: Release::LockOnlyConsumers.dropped(e.metadata || {}), " \

@@ -305,5 +305,21 @@ class Release
       assert(plan.lines.any? { |l| l.include?("rantly was dropped from rel-new (production deploy failed: smoke) — not rolled back") },
              plan.lines.join("\n"))
     end
+
+    # Task lock-only-deploy-hardening, review note 2: its deploy passed, then its
+    # `main` push failed, so production runs the release tree. The plan says so.
+    test "[unit] a dropped app that production runs is named as live, not as never shipped" do
+      target = { "slug" => "rel-new", "state" => "shipped", "deployed_sha" => "hub2222222",
+                 "shipped_shas" => { "mcritchie-studio" => "hub2222222" },
+                 "lock_only_dropped" => { "rantly" => "production deploy failed: its `main` push failed" },
+                 "lock_only_live" => { "rantly" => "rr33333333" },
+                 "repos" => [ { "repo" => "mcritchie-studio", "kind" => "app",
+                                "prod_deploy" => { "strategy" => "github_actions", "workflow" => "prod-deploy.yml" } } ] }
+      plan = RollbackPlan.build(target: target, history: [ { "slug" => "rel-old", "shipped_shas" => { "mcritchie-studio" => "hub1111111" } } ])
+
+      line = plan.lines.find { |l| l.include?("rantly was dropped") }
+      assert_includes line.to_s, "AFTER its deploy: production runs rr333333", plan.lines.join("\n")
+      refute_includes line.to_s, "never shipped it"
+    end
   end
 end
