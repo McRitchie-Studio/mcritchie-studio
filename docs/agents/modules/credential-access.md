@@ -79,9 +79,10 @@ env-file keys: they live in the secret cache, rung 2. Heroku tokens are read at
 use, never kept in a profile ([`credentials.md`](credentials.md), Heroku tokens
 resolve at use time): the agents key from Steffon's soul set in the cache, the
 admin keys into the calling script's memory ([`secret-cache.md`](secret-cache.md),
-"A reader script reads its item from the owning soul"). The Discord webhooks, the
-R2 backup keys and the Google credentials are shared items in the cache
-([`secret-cache.md`](secret-cache.md), "Shared items").
+"A reader script reads its item from the owning soul"). The Discord webhooks and
+the R2 backup keys are shared items in the cache ([`secret-cache.md`](secret-cache.md),
+"Shared items"). The Google credentials are not: they stay off disk until Alex
+McRitchie approves caching them.
 
 ## The ratchet: fewer reads, only down
 
