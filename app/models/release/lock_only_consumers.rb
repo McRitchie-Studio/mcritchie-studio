@@ -99,11 +99,17 @@ class Release
     # The repos to ask git about: the engine apps (Release::EngineConsumers.all)
     # that no swept member names, that ride this train, and that no other
     # train's active release holds. Order kept.
-    def candidates(engine_apps:, member_repos:, train_repos: nil, held_repos: [])
+    #
+    # THE HUB NEVER RIDES (task lock-only-deploy-hardening, review note 5). The
+    # ship deploys the hub first and alone, outside any drop (deploy_apps), and
+    # Release#ship! takes the release's deployed_sha from it, so a lock-only hub
+    # whose deploy failed would abort the ship, not drop. Its lock bumps wait on
+    # `accepted` for the next hub card, and the hub has one in most releases.
+    def candidates(engine_apps:, member_repos:, train_repos: nil, held_repos: [], hub: nil)
       named = Array(member_repos).map(&:to_s)
       held  = Array(held_repos).map { |h| h.is_a?(Hash) ? (h["repo"] || h[:repo]).to_s : h.to_s }
       Array(engine_apps).map(&:to_s).reject do |repo|
-        named.include?(repo) || held.include?(repo) ||
+        repo == hub.to_s || named.include?(repo) || held.include?(repo) ||
           (!train_repos.nil? && !Array(train_repos).map(&:to_s).include?(repo))
       end
     end
@@ -151,10 +157,32 @@ class Release
       lines = []
       carried = recorded(metadata)
       lines << "Lock bumps only (no card): #{carried.join(', ')}" if carried.any?
+      live = live_after_drop(metadata)
       dropped(metadata).each do |repo, reason|
-        lines << "⚠️ Dropped (lock bumps only, not shipped by this release): #{repo} — #{reason}"
+        lines << if live.key?(repo)
+                   "⚠️ Dropped after its deploy (lock bumps only): #{repo} — production runs " \
+                     "#{live[repo].to_s[0, 8]}, but its `main` did not move — #{reason}"
+                 else
+                   "⚠️ Dropped (lock bumps only, not shipped by this release): #{repo} — #{reason}"
+                 end
       end
       lines
+    end
+
+    # { repo => sha } for each DROPPED repo that production nevertheless runs at
+    # the release's tree: its deploy passed, then its `main` push failed, or a
+    # finalize found it live with `main` behind (task lock-only-deploy-hardening).
+    # The ship records it in metadata["deployed_apps"] beside the drop, because a
+    # record that said "not shipped" would hide what production runs.
+    def live_after_drop(metadata)
+      deployed = metadata.to_h["deployed_apps"]
+      return {} unless deployed.is_a?(Hash)
+
+      dropped(metadata).keys.each_with_object({}) do |repo, live|
+        row = deployed[repo]
+        sha = (row.is_a?(Hash) ? row["sha"] || row[:sha] : row).to_s
+        live[repo] = sha unless sha.empty?
+      end
     end
 
     # The short note the production smoke seal's summary carries, or nil. A seal
