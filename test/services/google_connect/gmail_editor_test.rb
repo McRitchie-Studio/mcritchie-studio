@@ -145,6 +145,17 @@ class GoogleConnect::GmailEditorTest < ActiveSupport::TestCase
     assert_match(/Insufficient Permission/, GmailChange.newest_first.first.error)
   end
 
+  test "[unit] a run Google stops part way logs the messages it did change" do
+    gmail = GmailEditorFake.new(ids: ids(1_500))
+    flaky = lambda do |method, url, token, body|
+      next [ 500, { error: { message: "Backend Error" } }.to_json ] if url.end_with?("batchModify") && gmail.modifies.any?
+
+      gmail.call(method, url, token, body)
+    end
+    assert_raises(GoogleConnect::OAuthClient::Error) { editor_with(flaky).change(action: "read", query: "is:unread", apply: true) }
+    assert_equal [ 1_500, 1_000, true ], GmailChange.newest_first.first.values_at(:matched_count, :changed_count, :applied)
+  end
+
   test "[unit] a filter is dry by default and sends the label, archive and mark-read actions on apply" do
     gmail = GmailEditorFake.new
     dry = editor_with(gmail).add_filter(query: "from:news@example.com", label: "Receipts", archive: true, mark_read: true)

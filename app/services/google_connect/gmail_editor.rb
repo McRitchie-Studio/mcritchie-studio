@@ -60,6 +60,7 @@ module GoogleConnect
     # Runs one action over the messages `query` matches. Dry unless apply.
     def change(action:, query:, label: nil, apply: false, limit: DEFAULT_LIMIT)
       action = action.to_s
+      @changed = 0
       plan = ACTIONS.fetch(action) { raise Error, "unknown action #{action.inspect}; one of #{ACTIONS.keys.join(', ')}" }
       raise Error, "a Gmail query is required (for example: from:news@example.com older_than:1y)" if query.to_s.strip.empty?
       raise Error, "#{action} needs --label" if needs_label?(plan) && label.to_s.strip.empty?
@@ -75,7 +76,8 @@ module GoogleConnect
       log!(action:, query:, label:, matched: ids.size, changed:, applied: apply)
       Result.new(action:, query:, label:, matched: ids.size, changed:, applied: apply, capped:, created_label: created)
     rescue OAuthClient::Error => e
-      log!(action:, query:, label:, matched: 0, changed: 0, applied: apply, error: e.message) if ACTIONS.key?(action)
+      # A run Google stops part way logs the batches it did change.
+      log!(action:, query:, label:, matched: ids.to_a.size, changed: @changed, applied: apply, error: e.message) if ACTIONS.key?(action)
       raise
     end
 
@@ -143,10 +145,11 @@ module GoogleConnect
     end
 
     def modify(ids, add:, remove:)
-      ids.each_slice(BATCH).sum do |slice|
+      ids.each_slice(BATCH) do |slice|
         post_json("#{MESSAGES_URL}/batchModify", { ids: slice, addLabelIds: add, removeLabelIds: remove })
-        slice.size
+        @changed += slice.size
       end
+      @changed
     end
 
     def log!(action:, query:, label:, matched:, changed:, applied:, error: nil)
