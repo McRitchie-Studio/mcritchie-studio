@@ -65,18 +65,23 @@ module CiCauseDetector
      "network", "a network call from the job failed"]
   ].freeze
 
+  # A native crash, not a slow boot (task ci-cause-card-dedupe-census, turf run
+  # 42745469708): glibc's malloc abort killed the test server with exit 134, and
+  # the old read filed it as "did not answer /up in time". Above web-server-boot,
+  # which the same log also matches. Exit 134 is SIGABRT, 139 SIGSEGV, and 142 is
+  # turf's native-abort-report shim ending an abort on its 30s SIGALRM; its banner
+  # names the signal whatever the exit code. Ruby's own crash report opens with the
+  # crashing frame's location, `pg/connection.rb:944: [BUG] Segmentation fault`
+  # (error.c), so the `file:line: ` prefix is optional, never required (task
+  # ci-cause-board-cleanup: the bare-`[BUG]` form never matched a real header). Never
+  # the shim's per-step "ld.so: object ... native-abort-report.so cannot be preloaded"
+  # line: the host docker CLI prints it on every green run. Ci::CauseCleanup re-reads
+  # past occurrences' evidence with this same pattern.
+  NATIVE_ABORT = /native-abort-report: SIG[A-Z]+|^(?:\[WebServer\] )?(?:\S+:\d+: )?\[BUG\] |\b(?:Aborted|Segmentation fault) \(core dumped\)|\bmalloc\w*\(\): |free\(\): invalid|double free or corruption|config\.webServer[^\n]*Exit code: (?:134|139|142)\b|##\[error\]Process completed with exit code (?:134|139)\b/
+  NATIVE_ABORT_REASON = "a native library crashed the process (SIGABRT or SIGSEGV), not a slow boot"
+
   HARNESS = [
-    # A native crash, not a slow boot (task ci-cause-card-dedupe-census, turf run
-    # 42745469708): glibc's malloc abort killed the test server with exit 134, and
-    # the old read filed it as "did not answer /up in time". Above web-server-boot,
-    # which the same log also matches. Exit 134 is SIGABRT, 139 SIGSEGV, and 142 is
-    # turf's native-abort-report shim ending an abort on its 30s SIGALRM; its banner
-    # names the signal whatever the exit code, and Ruby's own crash report opens
-    # "[BUG]". Never the shim's per-step
-    # "ld.so: object ... native-abort-report.so cannot be preloaded" line: the host
-    # docker CLI prints it on every green run.
-    [/native-abort-report: SIG[A-Z]+|^(?:\[WebServer\] )?\[BUG\] |\b(?:Aborted|Segmentation fault) \(core dumped\)|\bmalloc\w*\(\): |free\(\): invalid|double free or corruption|config\.webServer[^\n]*Exit code: (?:134|139|142)\b|##\[error\]Process completed with exit code (?:134|139)\b/,
-     "native-abort", "a native library crashed the process (SIGABRT or SIGSEGV), not a slow boot"],
+    [NATIVE_ABORT, "native-abort", NATIVE_ABORT_REASON],
     [/Timed out waiting \d+ms from config\.webServer|Process from config\.webServer (?:was not able to start|exited early)/i,
      "web-server-boot", "the test server did not answer /up in time"],
     [/Error: .*globalSetup|in global setup/i, "global-setup", "the browser lane's global setup failed"],
