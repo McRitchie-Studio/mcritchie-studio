@@ -14,7 +14,7 @@ module Ci
   #
   #   2. RE-KEY PAST NATIVE CRASHES. Before the native-abort key, a native crash under the
   #      test server was filed as web-server-boot (or as the census's own job). An
-  #      occurrence whose stored evidence matches the native-abort pattern moves to the
+  #      occurrence on a harness card whose stored evidence matches the native-abort pattern moves to the
   #      repo's native-abort card, and so does a census (executed-set) occurrence of the
   #      same run attempt, which follows it as attempt_causes would file it today. A card
   #      left with no occurrences is marked `moved_to` and archived.
@@ -100,7 +100,7 @@ module Ci
     # 2. Occurrences whose evidence is a native crash, on a card keyed otherwise.
     def rekey_native_crashes
       cards = cause_cards
-      native = cards.reject { |t| t.metadata.dig("ci_cause", "key") == NATIVE_ABORT_KEY }.flat_map do |card|
+      native = cards.select { |t| rekeyable?(t) }.flat_map do |card|
         occurrences(card).select { |o| native_crash?(o) }.map { |o| [card, o, nil] }
       end
       followers = native.flat_map do |crash_card, crash, _|
@@ -117,6 +117,14 @@ module Ci
         Action.new(kind: "rekey", from: card.slug, to: to || target, occurrence_ids: [occ["id"]],
                    note: follows && "follows #{follows}")
       end
+    end
+
+    # Only a HARNESS card, as the detector reads it: a native crash is a harness fault,
+    # and the detector reads the harness table only when no test is named. A test or
+    # product card whose excerpt prints crash words (a test that shells out) stays put.
+    def rekeyable?(card)
+      cause = card.metadata["ci_cause"]
+      cause["class"] == "harness" && cause["key"] != NATIVE_ABORT_KEY
     end
 
     def native_crash?(occ)

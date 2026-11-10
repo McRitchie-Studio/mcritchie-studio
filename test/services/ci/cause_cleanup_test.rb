@@ -11,8 +11,7 @@ class Ci::CauseCleanupTest < ActiveSupport::TestCase
   CRASH = {
     "id" => "42745469708/1/129596390504", "job" => "playwright (1)", "repo" => TURF,
     "sha" => "1d61bc9eaecb0ee0d0f6f41cb6cfa480754996d6", "seen_at" => "2026-11-10T03:18:52Z",
-    "evidence" => ["[WebServer]  (called from <main> at /__w/turf-monster/turf-monster/config/application.rb:7)",
-                   "[WebServer] malloc_consolidate(): unaligned fastbin chunk detected",
+    "evidence" => ["[WebServer] malloc_consolidate(): unaligned fastbin chunk detected",
                    "[WebServer] Aborted (core dumped)",
                    "Error: Process from config.webServer was not able to start. Exit code: 134"]
   }.freeze
@@ -91,6 +90,15 @@ class Ci::CauseCleanupTest < ActiveSupport::TestCase
 
     assert_equal "designed", Task.find_by!(slug: "ci-cause-turf-monster-native-abort").stage
     assert_equal "archived", open_card.reload.stage
+  end
+
+  test "[unit] only a harness card is re-keyed: a test card whose excerpt prints crash words stays" do
+    shell = { "id" => "42900000000/1/1", "job" => "ci / rails (1)", "repo" => TURF, "seen_at" => "2026-11-09T02:00:00Z",
+              "evidence" => ["Expected the child to exit 0, got: Segmentation fault (core dumped)"] }
+    card("ci-cause-turf-monster-shelloutjobtest", "ShellOutJobTest", [shell], klass: "test")
+
+    assert_empty Ci::CauseCleanup.call(apply: true)
+    assert_equal [shell["id"]], ids("ci-cause-turf-monster-shelloutjobtest")
   end
 
   test "[unit] the cleanup is idempotent: a second applied run finds nothing" do
