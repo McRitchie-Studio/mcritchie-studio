@@ -138,6 +138,12 @@ class MarketingKitSheetPublisherTest < ActiveSupport::TestCase
 
       publish(r, xlsx, drive, sheets, force: true)
       assert_equal [[:update, first]], drive.writes, "--force replaces once their edits are carried over"
+
+      drive.nodes.find { |n| n.id == first }.editor = nil
+      drive.writes.clear
+      err = assert_raises(MarketingKit::SheetPublisher::Edited) { publish(r, xlsx, drive, sheets) }
+      assert_match(/an unknown user/, err.message)
+      assert_empty drive.writes, "an editor Drive does not name is never assumed to be the account"
     end
   end
 

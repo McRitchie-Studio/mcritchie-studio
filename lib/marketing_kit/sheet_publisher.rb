@@ -94,8 +94,9 @@ module MarketingKit
 
     def replace_sheet(file, name)
       editor = last_editor(file.id)
-      if editor && editor != @recipe.drive[:subject].to_s.downcase && !@force
-        raise Edited, "#{name} was last edited by #{editor}; export it, carry their changes into the recipe, " \
+      # Fails closed: Drive can omit lastModifyingUser (a deleted or hidden editor).
+      if editor != @recipe.drive[:subject].to_s.downcase && !@force
+        raise Edited, "#{name} was last edited by #{editor || 'an unknown user'}; export it, carry their changes into the recipe, " \
                       "then publish again (or pass --force once you have)"
       end
 
