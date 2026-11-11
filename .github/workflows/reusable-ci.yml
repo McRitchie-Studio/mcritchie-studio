@@ -991,12 +991,13 @@ jobs:
       # container job does not grant to uid 1001, so Chrome dies at launch. Each app's
       # ApplicationSystemTestCase drives `:headless_chrome` with no binary of its own, and
       # Selenium Manager looks for Chrome first at /usr/bin/google-chrome. That path is this
-      # wrapper, which adds --no-sandbox, so no satellite's driver changes.
+      # wrapper, which adds --no-sandbox, so no satellite's driver changes. It appends
+      # Chrome's stderr to /tmp/chrome-stderr.log, which a failed run prints.
       - name: Run Chrome without its sandbox
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          printf '#!/bin/sh\nexec "%s" --no-sandbox "$@"\n' "$CHROME_BIN" | sudo tee /usr/bin/google-chrome >/dev/null
+          printf '#!/bin/sh\nexec "%s" --no-sandbox "$@" 2>>/tmp/chrome-stderr.log\n' "$CHROME_BIN" | sudo tee /usr/bin/google-chrome >/dev/null
           sudo chmod 0755 /usr/bin/google-chrome
           echo "google-chrome: $(command -v google-chrome) -> $(google-chrome --version)"
 
@@ -1056,6 +1057,12 @@ jobs:
           RAILS_ENV: test
           DATABASE_URL: postgres://postgres:postgres@postgres:5432
         run: ${{ inputs.system-command }}
+
+      # Chromedriver reports only "Chrome instance exited". The wrapper above keeps
+      # Chrome's own stderr, so a failed launch names its cause in the log.
+      - name: Show Chrome's own errors
+        if: failure()
+        run: tail -n 80 /tmp/chrome-stderr.log 2>/dev/null || echo "Chrome wrote nothing to stderr"
 
       - name: Keep screenshots from failed system tests
         uses: actions/upload-artifact@v4
