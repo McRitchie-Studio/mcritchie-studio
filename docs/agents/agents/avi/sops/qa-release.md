@@ -116,6 +116,22 @@ a risky app waiting a cycle), curate by APPLICATION:
 
 Keep the flag (the record) and the `--task`/`eject` controls in sync.
 
+**QA on merge (opt-in, task `release-sub-hour-pipeline`).** With
+`qa_on_merge.enabled: true` in `config/release_builder.yml` (or
+`RELEASE_QA_ON_MERGE=1`), `bin/pr-review` starts `bin/release qa-on-merge <slug>` in the
+background right after it merges a task into `accepted`. That runs `bin/release prepare
+--task <slug> --yes` when no release is active, so the task reaches QA with no batch
+wait; with a release active it does nothing and the task rides the next one. It stops at
+QA: production still takes Alex McRitchie's clearance (`bin/release cycle --clearance`).
+
+**Timings and the result.** `prepare` and `ship` print `⏱ step durations` and a
+`RELEASE_STEP_TIMINGS {…}` line as they end, and append it to
+`~/.release-results/steps.jsonl` (`RELEASE_RESULTS_DIR` overrides). `bin/release cycle`
+prints `✓ SHIPPED <release>` and ONE `RELEASE_RESULT {status, release, shipped, holds,
+stages, steps, seconds}` line as soon as prod verify is green, writes it to
+`~/.release-results/<release>.json`, and only then runs the archive. A failed archive
+warns and leaves the cycle green: re-run `bin/release archive`.
+
 ## Procedure
 
 **Direct-drive this act — do NOT delegate it to a subagent.** A MUTATING op
@@ -380,9 +396,10 @@ promote. Design: `/Users/alex/projects/.agents/epics/release-trains-design.md`.
 5. Run the pre-QA gate on `origin/release`. **GitHub CI's conclusion for that exact SHA
    IS the verdict**; nothing runs locally. It polls a pending run, passes only on green,
    and fails closed on everything else. It may **credit** an existing green for the same
-   commit: after a fast-forward promote `origin/release` IS the accepted head, so its
-   verdict carries over by SHA. After a batch PR it may credit the accepted head's
-   **identical tree** instead (named in the gate note). It records
+   commit, from any ref that earned it, and it re-asks on every held read, so a
+   duplicate `release` push run is never waited out. After a batch PR it may credit
+   an **identical tree** instead: the accepted head's or the merged PR head's
+   (named in the gate note). It records
    SHA + command + verdict as a `pre_qa_gate` SOP; G4 re-reads the frozen SHA itself. A
    self-gated gem in a gem-only release earns the same identical-tree credit. A red gate,
    and why you must **not** blank the registry's `qa_test_cmd`:

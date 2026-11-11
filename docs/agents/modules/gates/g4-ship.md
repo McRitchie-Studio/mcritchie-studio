@@ -129,7 +129,8 @@ the **same path G3 runs on the release tip** (`resolve_release_ci_verdict`,
    head's own run is green — or still in flight, in which case the gate waits on
    it inside the poll bound (`tree_identical_ci_outcome`).
 3. **Its own run** — otherwise the frozen SHA's own run is polled until it
-   settles, up to `RELEASE_CI_POLL_TIMEOUT` (default ~1200s, re-read every
+   settles, re-asking for credit 1 or 2 on each held read (`credit_on_poll`; an
+   identical tree on a PR head also counts), up to `RELEASE_CI_POLL_TIMEOUT` (default ~1200s, re-read every
    `RELEASE_CI_POLL_INTERVAL`, default 15s). Red and unreadable return at once.
 
 The gate classifies what it read (`Release::ShipSequence.ship_gate_kind`,

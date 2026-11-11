@@ -321,9 +321,10 @@ release push, so the poll would wait out a re-run of a tree that already earned 
 green. Two credit shapes, tried in order, both strictly fail-closed *into the
 poll* (a declined credit changes nothing — the table above is untouched):
 
-- **Same-SHA** — the promote fast-forwarded (`origin/release` ==
-  `origin/accepted`): the SHA's own completed greens must cover every pending
-  duplicate by check name (`ci_credit_verdict` → `CiStatus.credit_for_sha`).
+- **Same-SHA** — the SHA's own completed greens cover every pending duplicate by
+  check name (`ci_credit_verdict` → `CiStatus.credit_for_sha`). Since task
+  `release-sub-hour-pipeline` this needs no fast-forward: the same commit is the
+  same content, whichever ref (an `accepted` push, a PR) earned the green.
 - **Same-TREE** — the live batch-PR merge minted a **new** SHA whose tree equals
   the accepted head's (`tree_identical_promote`): the accepted head's own green
   vouches for the identical content (`tree_identical_ci_outcome`). It is
@@ -338,6 +339,16 @@ poll* (a declined credit changes nothing — the table above is untouched):
   which condition fired**. A consumer lock-bump commit riding `release` (a gem's
   release candidate publishes before QA and its consumers lock it) breaks tree
   identity by design — the post-bump SHA earns its own polled verdict.
+
+**The credit is re-checked on every held read** (task `release-sub-hour-pipeline`,
+`credit_on_poll`). On rel-20261110-0123f9 the gate reached 2a2430c while the
+`accepted` push run was still in flight, found nothing to credit, and then waited
+11 minutes for the duplicate `release` push run although the `accepted` run had
+concluded green four minutes in. Now each held poll read (at most once per
+`RELEASE_CI_CREDIT_INTERVAL`, default 60s) asks again for a same-SHA credit or a
+green on an **identical tree** from another ref: the accepted head, the swept pin,
+or the PR head a `--merge` joined (`identical_tree_candidates`). A red, pending or
+unreadable candidate credits nothing; the poll still owns every red.
 
 A credited pass records the source in `qa_gates[repo]["ci"]["credited"]` — for
 the tree credit, both full SHAs plus the shared tree — so the audit trail always
