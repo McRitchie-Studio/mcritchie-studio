@@ -9721,6 +9721,10 @@ def bump_producer_locks_for_accepted(published_gems)
   producers = RELEASE_REPOS.fetch("gems", {}).keys
   return if producers.empty?
 
+  # No lock push before RubyGems serves the version (task release-preflight-hardening).
+  # settle_producer_locks turns a wait that runs out into a warning.
+  await_published_gems!(published_gems, "bin/release ship") unless DRY
+
   step("bump PRODUCER locks for #{gem_names.join(', ')} on origin/#{ACCEPTED_BRANCH} — a gem repo is a " \
        "consumer too, and its PRs are based on `#{ACCEPTED_BRANCH}`, not `#{RELEASE_BRANCH}`")
 
@@ -10036,6 +10040,18 @@ def relock_cardless_consumers(app_groups, published_gems)
            "→ install any new engine migrations → commit + push origin #{ACCEPTED_BRANCH} " \
            "(idempotent; no-op when current)")
     end
+    return
+  end
+
+  # THE INDEX WAIT, HERE AS IN EVERY LOCK PUSH (task release-preflight-hardening): no
+  # lock bump is pushed before RubyGems serves the version (a memo hit when the ship
+  # already waited). Post-deploy, so a wait that runs out skips the re-lock with a
+  # warning instead of stopping a ship that has deployed.
+  begin
+    await_published_gems!(published_gems, "bin/release ship")
+  rescue SystemExit => e
+    say("  ⚠ cardless re-lock skipped — RubyGems does not serve #{published_gems.map { |g, v| "#{g} #{v}" }.join(', ')} " \
+        "yet (#{e.message.to_s.lines.first.to_s.strip[0, 200]}). The ship continues; re-lock those apps once it does.")
     return
   end
 
