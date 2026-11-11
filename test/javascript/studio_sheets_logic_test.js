@@ -1,5 +1,5 @@
 // [unit] The Studio Sheets add-on's pure logic (addons/studio-sheets/src/Logic.js):
-// header lookup, first of month, the ordinal date, row selection and filtering.
+// header lookup, the ordinal date, row selection and filtering.
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -22,12 +22,6 @@ test("a missing header is 0, and Used never matches Last Used", () => {
   assert.equal(logic.studioColumnIndex(["Card", "Last Used"], "Used"), 0);
   assert.equal(logic.studioColumnIndex([], "Used"), 0);
   assert.equal(logic.studioColumnIndex([null, 7, "used"], "Used"), 0);
-});
-
-test("the first of the month is midnight on day 1 of the same month", () => {
-  const first = logic.studioFirstOfMonth(new Date(2026, 10, 30, 23, 59));
-  assert.equal(first.getTime(), new Date(2026, 10, 1).getTime());
-  assert.equal(logic.studioFirstOfMonth(new Date(2027, 0, 1)).getTime(), new Date(2027, 0, 1).getTime());
 });
 
 test("ordinals follow English, teens included", () => {
@@ -86,6 +80,6 @@ test("ticked rows come only from the Used column on data rows", () => {
 });
 
 test("the mark-used toast names the count and the month", () => {
-  assert.equal(logic.studioMarkedUsedMessage(3, new Date(2026, 10, 1)), "3 card(s) marked used Nov 2026");
-  assert.equal(logic.studioMarkedUsedMessage(0, new Date(2027, 0, 1)), "0 card(s) marked used Jan 2027");
+  assert.equal(logic.studioMarkedUsedMessage(3, 2026, 11), "3 card(s) marked used Nov 2026");
+  assert.equal(logic.studioMarkedUsedMessage(0, 2027, 1), "0 card(s) marked used Jan 2027");
 });

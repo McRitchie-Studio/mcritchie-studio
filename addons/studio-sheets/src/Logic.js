@@ -27,11 +27,6 @@ function studioColumnIndex(headers, name) {
   return 0;
 }
 
-// Midnight on the 1st of the month that `now` falls in (local time).
-function studioFirstOfMonth(now) {
-  return new Date(now.getFullYear(), now.getMonth(), 1);
-}
-
 // 1 -> "1st", 2 -> "2nd", 11 -> "11th", 22 -> "22nd".
 function studioOrdinal(day) {
   var teen = day % 100;
@@ -122,8 +117,7 @@ function studioTickedRows(edit, usedColumn) {
   return rows;
 }
 
-// "3 card(s) marked used Nov 2026".
-function studioMarkedUsedMessage(count, firstOfMonth) {
-  return count + ' card(s) marked used ' + STUDIO_SHORT_MONTHS[firstOfMonth.getMonth()] +
-    ' ' + firstOfMonth.getFullYear();
+// "3 card(s) marked used Nov 2026", from a 1-based month.
+function studioMarkedUsedMessage(count, year, month) {
+  return count + ' card(s) marked used ' + STUDIO_SHORT_MONTHS[month - 1] + ' ' + year;
 }
