@@ -122,6 +122,25 @@ class CiFailureDigestTest < Minitest::Test
     assert_match(/ci \/ rails_executed_set — census job\(s\): they re-count the jobs above/, printed.last)
   end
 
+  # [unit] A log this parser does not recognise still shows its failing lines: the
+  # tail is printed instead of "open the job" (task release-preflight-hardening).
+  def test_an_unrecognised_failure_prints_the_tail_of_the_log
+    log = (1..40).map { |n| "2026-11-10T10:00:00.0000000Z step line #{n}" }.join("\n") +
+          "\n2026-11-10T10:00:01.0000000Z rspec ./spec/widget_spec.rb:12 # Widget renders\n"
+    digest = CiFailureDigest.extract(log)
+
+    assert_empty digest[:failures]
+    assert_equal CiFailureDigest::TAIL_LINES, digest[:tail].size
+    printed = CiFailureDigest.lines([{ job: "ci / js", failures: [], infra: nil }.merge(digest)]).join("\n")
+    assert_includes printed, "its last #{CiFailureDigest::TAIL_LINES} lines"
+    assert_includes printed, "spec/widget_spec.rb:12 # Widget renders"
+    refute_includes printed, "open the job"
+  end
+
+  def test_a_recognised_failure_keeps_no_tail
+    assert_empty CiFailureDigest.extract(MINITEST_FAILURE)[:tail]
+  end
+
   def test_nothing_failed_prints_nothing
     assert_empty CiFailureDigest.lines([])
   end
