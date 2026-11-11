@@ -997,7 +997,7 @@ jobs:
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          printf '#!/bin/sh\nexec "%s" --no-sandbox "$@" 2>>/tmp/chrome-stderr.log\n' "$CHROME_BIN" | sudo tee /usr/bin/google-chrome >/dev/null
+          printf '#!/bin/sh\nexec 2>>/tmp/chrome-stderr.log\necho "launch: $*" >&2\nexec "%s" --no-sandbox "$@"\n' "$CHROME_BIN" | sudo tee /usr/bin/google-chrome >/dev/null
           sudo chmod 0755 /usr/bin/google-chrome
           echo "google-chrome: $(command -v google-chrome) -> $(google-chrome --version)"
 
@@ -1062,7 +1062,9 @@ jobs:
       # Chrome's own stderr, so a failed launch names its cause in the log.
       - name: Show Chrome's own errors
         if: failure()
-        run: tail -n 80 /tmp/chrome-stderr.log 2>/dev/null || echo "Chrome wrote nothing to stderr"
+        run: |
+          tail -n 80 /tmp/chrome-stderr.log 2>/dev/null || echo "the wrapper never ran"
+          ls -la "$HOME/.cache/selenium" "$HOME/.cache/selenium"/* 2>&1 | head -40
 
       - name: Keep screenshots from failed system tests
         uses: actions/upload-artifact@v4
