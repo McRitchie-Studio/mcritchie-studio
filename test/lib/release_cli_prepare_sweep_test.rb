@@ -27,7 +27,9 @@ class ReleaseCliPrepareSweepTest < ReleaseCliHarness
 
     assert_includes out, "ABORTED", "a multi-repo task with one PR must not sweep"
     assert_includes out, "turf-monster", "the refusal names the repo with no PR url"
-    assert_includes out, "NOTHING was promoted", "fail-closed BEFORE the promote"
+    # The release preflight refuses it now, before the claim as well as the promote
+    # (task release-preflight-hardening).
+    assert_includes out, "NOTHING was claimed, promoted", "fail-closed BEFORE the promote"
     refute_includes out, "NO-ABORT"
     refute_includes out, "promote accepted → release", "nothing may be promoted"
     refute_includes out, "SWEEP-CALL", "nothing may be recorded"
@@ -72,7 +74,7 @@ class ReleaseCliPrepareSweepTest < ReleaseCliHarness
                   call: %{begin; prepare; puts("NO-ABORT"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
     assert_includes out, "ABORTED"
-    assert_includes out, "incomplete PR record"
+    assert_includes out, "has no PR for 2: mcritchie-studio, turf-monster", "the preflight names the gap"
     refute_includes out, "NO-ABORT"
   end
 

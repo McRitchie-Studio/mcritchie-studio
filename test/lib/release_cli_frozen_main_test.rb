@@ -718,7 +718,7 @@ class ReleaseCliFrozenMainTest < ReleaseCliHarness
     msg = eval_helper(%(push_failure_message("mcritchie-studio", "a" * 40, :diverged)))
 
     assert_includes msg, "NON-FAST-FORWARD"
-    assert_includes msg, "bin/release prepare"
+    assert_includes msg, "bin/release refreeze"
     assert_includes msg, "NOT forcing"
   end
 
