@@ -74,7 +74,8 @@ module GoogleConnect
       Outcome.new(ok: false, status:, error:)
     rescue Refused => e
       Outcome.new(ok: false, error: "refused: #{e.message}")
-    rescue *OAuthClient::NETWORK_ERRORS, Net::WriteTimeout, IOError => e
+    rescue *OAuthClient::NETWORK_ERRORS, Net::WriteTimeout, IOError,
+           Net::ProtocolError, Net::HTTPBadResponse, Net::HTTPHeaderSyntaxError => e # a server that answers junk
       Outcome.new(ok: false, error: "could not be reached: #{e.class}")
     end
 

@@ -121,6 +121,9 @@ class GoogleConnect::OneClickUnsubscribeTest < ActiveSupport::TestCase
     outcome = Subject.post("https://ex.com/u/1")
     assert_not outcome.ok
     assert_match(/could not be reached: Net::OpenTimeout/, outcome.error)
+
+    Subject.http = ->(*) { raise Net::HTTPBadResponse, "wrong status line" } # a junk answer must not abort the run
+    assert_match(/could not be reached: Net::HTTPBadResponse/, Subject.post("https://ex.com/u/1").error)
   end
 
   test "[unit] the network path uses short timeouts and https" do
