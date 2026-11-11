@@ -102,9 +102,14 @@ a risky app waiting a cycle), curate by APPLICATION:
   members name, so it allows the hold-back.
 - **Eject a member after the candidate formed** with `bin/release eject <task>
   --feedback "<reason>"`, then re-run `bin/release prepare --yes`.
+- **Preflight first.** `prepare` reads the queue and refuses, before any claim, pin or
+  promote, when a candidate names a repo with no PR, the GitHub App cannot read a
+  release repo, no desk slot is free, or the cwd is not the hub. `bin/release
+  preflight` runs the same checks alone; `bin/release cycle` also runs them as the
+  deployer App before its first act. Fix each line it prints, then re-run.
 - **Re-freeze after a fix lands on `release`** (an empty commit to clear a CDN red, a
-  revert): `bin/release prepare --task <an assembled member of the active release>
-  --yes`. The run prints `re-freeze <slug>`, promotes nothing, sweeps nothing new and
+  revert): `bin/release refreeze --yes`. It runs `prepare --task` over every
+  assembled member of the active release. The run prints `re-freeze <slug>`, promotes nothing, sweeps nothing new and
   keeps the recorded pin. It re-runs the pre-QA gate on each repo's `release` tip,
   re-deploys QA and re-records `qa_shas`. A plain `prepare` would sweep every
   `reviewed` task as well, and stop on any repo whose `accepted` is red.

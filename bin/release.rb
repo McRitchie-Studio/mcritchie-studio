@@ -7593,7 +7593,7 @@ def push_failure_message(repo, sha, cause)
   when :diverged
     "could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update as a " \
       "NON-FAST-FORWARD, which means origin/main has diverged from the frozen SHA (someone pushed to " \
-      "main). NOT forcing. Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run " \
+      "main). NOT forcing. Reconcile main, re-freeze with `bin/release refreeze`, then re-run " \
       "`bin/release ship`."
   else
     "could not push #{repo} origin/main to #{short(sha)} — git refused, and the reason is NOT one this " \

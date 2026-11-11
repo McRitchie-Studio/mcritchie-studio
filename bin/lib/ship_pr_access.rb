@@ -13,8 +13,12 @@
 # (MemberContainment.git_fallback_shas) now covers that read, but nothing said up
 # front that the identity was blind there. This says it, before the ship moves.
 #
-# A WARNING, NEVER A STOP. The fallback proves containment without the PR read, so
-# refusing a ship over it would trade a recoverable note for a blocked release.
+# AT THE SHIP, A WARNING, NEVER A STOP. The fallback proves containment without the PR
+# read, so refusing a ship that is already under way would trade a recoverable note
+# for a blocked release. BEFORE it, the same read REFUSES: Release::Preflight runs it
+# at the top of `bin/release prepare` (as the agent App) and `bin/release cycle` runs
+# `bin/release preflight` as the deployer App, before anything is written (task
+# release-preflight-hardening).
 # Granting the App access is Alex McRitchie's GitHub-settings click; the warning
 # names exactly what to grant, and no agent attempts it.
 #
