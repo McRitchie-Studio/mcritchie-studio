@@ -19,7 +19,7 @@ module MarketingKit
       @spec = spec
     end
 
-    def slides_name = "#{@spec.short} Template — Slides"
+    def slides_name = Layout.template_name(@spec.short, :slides)
 
     def slides_payload
       s = @spec.slides

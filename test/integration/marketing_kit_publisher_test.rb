@@ -45,9 +45,16 @@ class MarketingKitPublisherTest < ActiveSupport::TestCase
       Node.new(id: "id#{nodes.size}", name: name, mime_type: mime_type || content_type, parents: parents, body: body).tap { |n| nodes << n }
     end
 
-    def files_update(id, body: nil, content_type: nil)
+    def files_update(id, name: nil, body: nil, content_type: nil)
+      node = nodes.find { |n| n.id == id }
+      if name
+        @writes << [:rename, id]
+        node.name = name
+      end
+      return unless body
+
       @writes << [:update, id]
-      nodes.find { |n| n.id == id }.body = body
+      node.body = body
     end
 
     def files_copy(id, name:, parents:)
@@ -108,7 +115,8 @@ class MarketingKitPublisherTest < ActiveSupport::TestCase
       assert_equal "application/vnd.google-apps.document", start.mime_type
       assert_equal [root.id], start.parents
       assert_equal 2, drive.find("RF_photo_shop-floor.jpg").size, "the master and its top-level copy"
-      assert_equal [[:share, "owner@ridgeline.example"], [:share_domain, "ridgeline.example"], [:share_domain, "mcritchie.studio"]],
+      assert_equal [[:share, "owner@ridgeline.example"], [:share, "alex@mcritchie.studio"], [:share_domain, "ridgeline.example"],
+                    [:share_domain, "mcritchie.studio"]],
                    drive.writes.select { |w| w.first.start_with?("share") }
 
       drive.writes.clear
@@ -232,6 +240,34 @@ class MarketingKitPublisherTest < ActiveSupport::TestCase
       manifest = JSON.parse(File.read(File.join(out, "manifest.json")))
       assert_equal manifest.size + MarketingKit::Layout::FOLDERS.size + 1, result.counts[:create]
     end
+  end
+
+  test "a template under its old name is renamed in place, then kept" do
+    with_built_kit do |spec, out|
+      drive = FakeDrive.new
+      publish(spec, out, drive)
+      doc = drive.find("RF Doc Template").sole
+      doc.name = "RF Template — General" # as published before the naming ruling
+      drive.writes.clear
+
+      dry = publish(spec, out, drive, dry_run: true)
+      assert_equal "05 Templates/RF Template — General → RF Doc Template", dry.results.find { |r| r.action == :rename }&.path
+      assert_empty drive.writes, "a dry run renames nothing"
+
+      result = publish(spec, out, drive)
+      assert_equal [[:rename, doc.id]], drive.writes, "renamed in place: no new file, no copy, no upload"
+      assert_equal "RF Doc Template", doc.name
+      assert_equal :kept, result.results.find { |r| r.path == "05 Templates/RF Doc Template" }.action
+      assert_empty drive.find("RF Template — General")
+    end
+  end
+
+  test "the template name rule and its legacy form" do
+    assert_equal "MS Sheet Template", MarketingKit::Layout.template_name("MS", :sheet)
+    assert_equal "MI Doc Template", MarketingKit::Layout.template_name("MI", :doc)
+    assert_equal "CW Template — General", MarketingKit::Layout.legacy_template_name("CW Doc Template")
+    assert_equal "TM Template — Slides", MarketingKit::Layout.legacy_template_name("TM Slides Template")
+    assert_nil MarketingKit::Layout.legacy_template_name("00 Start Here")
   end
 
   test "two files of one name are reported, never guessed between" do

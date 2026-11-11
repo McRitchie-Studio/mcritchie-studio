@@ -29,10 +29,27 @@ knows one kit can find their way round any other:
 | 01 Brand | Brand Guide · Logos (SVG for print and web, PNG for Office and social) · Kit source (the spec and its doc fragments) |
 | 02 Photography | Every approved photo, named `<SHORT>_photo_<name>.jpg` |
 | 03 Messaging · 04 Sales Collateral | Docs the brand writes itself (`docs:` in the spec) |
-| 05 Templates | `<SHORT> Template — General`, `— Proposal`, `— Slides`, `— Sheet` |
+| 05 Templates | `<SHORT> Doc Template`, `<SHORT> Proposal Template`, `<SHORT> Slides Template`, `<SHORT> Sheet Template` |
 | 06 Archive | Superseded files: move, never delete |
 
 ## Rules that hold for every brand
+
+- **Everything is shared with two people.** The admin of the Workspace that owns
+  it (`alex@<domain>`) and alex@mcritchie.studio, by name, on every kit, template
+  and doc master. A kit publish adds both to the root whether or not the spec
+  lists them (`Spec#share_with`). For a doc master, share the folder you create,
+  or the file when the folder holds files the credential did not make (Drive
+  refuses a folder share that would touch them). Alex McRitchie's standing rule,
+  2026-11-10.
+- **Templates are named `<SHORT> <Kind> Template`.** Doc, Proposal, Slides or
+  Sheet: `MS Sheet Template`, `MI Doc Template`, `CW Proposal Template`. The
+  kind comes before "Template" so anyone in the organisation, person or agent,
+  reads what a file is from its name, in Drive and in the template gallery. The
+  short code stays because one Workspace's gallery can hold two brands (the
+  Studio Workspace holds MS and TM). A new kind of template takes the same
+  shape. Alex McRitchie's ruling, 2026-11-10; `Layout.template_name` holds it,
+  and a publish renames a template still under its old name
+  (`<SHORT> Template — General`) in place, so its links survive.
 
 - **A brand's spec never goes in a repo.** `mcritchie-studio` is public. The spec
   holds the owner's name, contact details and sometimes pre-close or unproven
@@ -214,7 +231,7 @@ What a publish does to what is already there:
 
 ## The Sheet template
 
-`<SHORT> Template — Sheet` is the kit's standard spreadsheet
+`<SHORT> Sheet Template` is the kit's standard spreadsheet
 (`lib/marketing_kit/sheet_template.rb`, drawn by `script/marketing_kit/office.py`).
 Copy it for any working sheet: a roster, a register, a tracker. Its rules make
 the sheet easy to work in, so keep them in every copy:
@@ -254,7 +271,7 @@ because a kit holds nothing confidential and a doc master may. Keep one master.
    with no kit uses the plain format of its own documents.
 2. Work out which entity signs or owns it, for the home. Use that entity's `team@`
    account as the owner.
-3. Start from the brand kit's `<SHORT> Template — General` in `05 Templates`. Find
+3. Start from the brand kit's `<SHORT> Doc Template` in `05 Templates`. Find
    it in Drive; a local search does not prove it is missing. Drop the template's
    parts that do not fit, such as a photo on a contract.
 4. Put the Google Doc in a folder named for what it holds, such as

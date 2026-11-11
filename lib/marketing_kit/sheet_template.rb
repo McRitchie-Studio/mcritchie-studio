@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module MarketingKit
-  # The kit's standard spreadsheet, `<SHORT> Template — Sheet`: margins on row 1
+  # The kit's standard spreadsheet, `<SHORT> Sheet Template`: margins on row 1
   # and column A, the brand icon in A2 with the title beside it on a row of its
   # own, a Last Updated line under the title beside the variables, then a table
   # whose two-row head is split into three colour sections. Ruby decides every colour and
@@ -40,7 +40,7 @@ module MarketingKit
       @spec = spec
     end
 
-    def name = "#{@spec.short} Template — Sheet"
+    def name = Layout.template_name(@spec.short, :sheet)
 
     # The three head sections: the spec's sheet.sections (swatch names or palette
     # keys), else primary, accent and the first other swatch that carries white text.

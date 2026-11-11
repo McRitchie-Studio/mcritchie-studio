@@ -23,10 +23,10 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
   # back before hashing. If a later change means to alter a render,
   # recompute these; this change must not.
   BEFORE = {
-    guidelines: "2892b3d7cc741ad7e815c05f43f28b2145e8f7b08baae4fa06bfda1ba12c1fb3",
+    guidelines: "bbedcc32ab3ab442dd77177b1fbb58ba1884b2530dbf1bc7c6847274a0547d0d",
     general: "f81b67db3f05d5a2392ec9f5d396cebea71b690691c133a6169a75235ee9b9ae",
     proposal: "a98d0b3e01162acb765a370d2ded11a1ef8556bef7fcb59f8f5566136665319f",
-    start_here: "719a2fcf94e794e08368e8019aac9d020790d0846c7b0cf8c2698d7b830864e2",
+    start_here: "b33fcbe8ec02b8913a0455eea29ca61fea5cb98bd983a77e50e3b2e25a396285",
     brand_guide: "52a96780cdc54b5644650d182fb2ef0a588158f29b399e2e8fdcdafa596d919b",
     slides: "4dd098e4b39323a0aa16f05459248ac807252d7de6f8d9daf564204d8f08e180"
   }.freeze

@@ -109,4 +109,15 @@ class MarketingKitSpecTest < ActiveSupport::TestCase
   test "refuses a path with no spec" do
     assert_raises(MarketingKit::Error) { MarketingKit::Spec.load("/nonexistent/kit.yml") }
   end
+
+  test "every kit is shared with its Workspace admin and alex@mcritchie.studio, once each" do
+    edit = ->(d) { d["drive"].merge!("subject" => "team@commercialwelding.llc", "share_with" => ["Alex@CommercialWelding.llc", "owner@ridgeline.example"]) }
+    load_kit(edit: edit) do |spec|
+      assert_equal %w[alex@commercialwelding.llc owner@ridgeline.example alex@mcritchie.studio], spec.share_with
+    end
+    load_kit(edit: ->(d) { d["drive"].delete("share_with") }) do |spec|
+      assert_equal %w[alex@mcritchie.studio], spec.share_with, "a Studio-owned kit: its admin is alex@mcritchie.studio"
+    end
+  end
+
 end

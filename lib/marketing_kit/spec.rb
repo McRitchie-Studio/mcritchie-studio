@@ -78,6 +78,17 @@ module MarketingKit
     def root_name = drive[:root_name] || "Brand Kit: #{name}"
     # Workspace domains the root is shared with as writers (drive.share_domains).
     def share_domains = Array(drive[:share_domains]).map { |d| d.to_s.downcase }
+
+    # The people a kit's root is shared with: drive.share_with, plus the two the
+    # standing rule names for everything we make (Alex McRitchie, 2026-11-10):
+    # the admin of the owning Workspace (alex@<drive.subject's domain>) and
+    # alex@mcritchie.studio.
+    ALWAYS_SHARE = "alex@mcritchie.studio"
+
+    def share_with
+      admin = "alex@#{drive[:subject].to_s.split('@').last}"
+      (Array(drive[:share_with]) + [admin, ALWAYS_SHARE]).map { |e| e.to_s.downcase }.uniq
+    end
     # The brand's key on /logos (config/logo_brands.yml), if it has one: a publish prints the command that records
     # the kit there (BrandMarketingKit, task marketing-kit-on-logos), owned by drive.subject.
     def logo_brand = data[:brand].presence&.to_s

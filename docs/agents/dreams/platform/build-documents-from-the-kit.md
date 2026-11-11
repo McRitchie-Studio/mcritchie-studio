@@ -1,6 +1,6 @@
 ---
 question: "Alex McRitchie asks me for a document. What do I build it from, and where do I deliver it?"
-answer: "Find the business it serves. Build from its kit's '<SHORT> Template — General' as a Google Doc in the signing entity's Workspace, and hand back the Drive link."
+answer: "Find the business it serves. Build from its kit's '<SHORT> Doc Template' (a spreadsheet: '<SHORT> Sheet Template') as a Google file in the signing entity's Workspace, and hand back the Drive link."
 why: "He edits and shares the master. A local .docx reached him as a link that opened on one Mac, after a session missed the kit in Drive."
 status: proposed
 source: "2026-11-03 · task documents-start-from-kit"

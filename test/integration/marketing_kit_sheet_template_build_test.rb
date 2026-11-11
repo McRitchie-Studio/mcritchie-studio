@@ -119,17 +119,17 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
   test "a build files the Sheet template in 05 Templates as a Google Sheet" do
     load_kit do |spec|
       office = Class.new do
-        def slides_name = "RF Template — Slides"
+        def slides_name = "RF Slides Template"
         %i[write_slides write_sheet].each { |m| define_method(m) { |path| File.write(path, "x") && path } }
         def write_tracker(_inventory, path) = File.write(path, "x") && path
       end.new
       MarketingKit::Office.stub(:new, office) do
         Dir.mktmpdir do |out|
           build = MarketingKit::Build.new(spec, out: out, pdf: false).run
-          entry = build.entries.find { |e| e.name == "RF Template — Sheet" }
+          entry = build.entries.find { |e| e.name == "RF Sheet Template" }
           assert entry, "the Sheet template is in the manifest"
           assert_equal [MarketingKit::Layout::TEMPLATES, "sheet", "Template"], [entry.folder, entry.kind, entry.type]
-          assert File.file?(File.join(out, "templates", "RF Template — Sheet.xlsx"))
+          assert File.file?(File.join(out, "templates", "RF Sheet Template.xlsx"))
           tracker_rows = build.entries.map(&:name)
           assert_includes tracker_rows, "Marketing Kit Tracker"
         end

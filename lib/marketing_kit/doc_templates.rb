@@ -27,8 +27,8 @@ module MarketingKit
       @spec = spec
     end
 
-    def general_name = "#{@spec.short} Template — General"
-    def proposal_name = "#{@spec.short} Template — Proposal"
+    def general_name = Layout.template_name(@spec.short, :doc)
+    def proposal_name = Layout.template_name(@spec.short, :proposal)
 
     def general
       g = @spec.general_template

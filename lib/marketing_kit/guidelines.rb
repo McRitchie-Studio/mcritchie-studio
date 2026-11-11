@@ -102,7 +102,7 @@ module MarketingKit
        ["All photos", Layout::PHOTOS],
        ["Company descriptions, services, proof points", Layout::MESSAGING],
        ["Capabilities and sales pieces", Layout::COLLATERAL],
-       ["Proposal, slideshow, spreadsheet and general templates", "#{Layout::TEMPLATES} (File › Make a copy)"],
+       ["Doc, Proposal, Slides and Sheet templates", "#{Layout::TEMPLATES} (File › Make a copy)"],
        ["Ideas and requests", "Marketing Kit Tracker › Backlog"]]
     end
 

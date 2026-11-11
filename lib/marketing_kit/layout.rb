@@ -26,10 +26,27 @@ module MarketingKit
       PHOTOS => "Approved photographs",
       MESSAGING => "Company descriptions, taglines, services, proof points, contact block",
       COLLATERAL => "Capabilities statements and other sales pieces",
-      TEMPLATES => "General document, proposal, slideshow and spreadsheet templates (File, then Make a copy)",
+      TEMPLATES => "Doc, Proposal, Slides and Sheet templates (File, then Make a copy)",
       ARCHIVE => "Superseded files. Move, never delete"
     }.freeze
 
     def self.top_level(path) = path.split("/").first
+
+    # Every kit template is named "<SHORT> <Kind> Template" (MS Sheet Template,
+    # MI Doc Template, CW Proposal Template), so anyone in the organisation,
+    # person or agent, reads what it is from the name alone. Alex McRitchie's
+    # naming ruling, 2026-11-10.
+    TEMPLATE_KINDS = { doc: "Doc", proposal: "Proposal", slides: "Slides", sheet: "Sheet" }.freeze
+
+    def self.template_name(short, kind) = "#{short} #{TEMPLATE_KINDS.fetch(kind)} Template"
+
+    # The name a template carried before that ruling ("MS Template — General"),
+    # which the publisher renames in place so links and gallery entries survive.
+    LEGACY_KIND = { "Doc" => "General", "Proposal" => "Proposal", "Slides" => "Slides", "Sheet" => "Sheet" }.freeze
+
+    def self.legacy_template_name(name)
+      m = name.match(/\A(\w+) (#{TEMPLATE_KINDS.values.join('|')}) Template\z/) or return nil
+      "#{m[1]} Template — #{LEGACY_KIND.fetch(m[2])}"
+    end
   end
 end

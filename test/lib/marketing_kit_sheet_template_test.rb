@@ -109,7 +109,7 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
     load_kit do |spec|
       t = T.new(spec)
       p = t.payload
-      assert_equal "RF Template — Sheet", t.name
+      assert_equal "RF Sheet Template", t.name
       assert_equal spec.colour(:primary), p.dig(:colours, :title), "the title is the brand's dark primary"
       assert_equal spec.colour(:title), p.dig(:colours, :headline)
       assert_equal spec.logo_png(:icon, :light), p[:icon]
