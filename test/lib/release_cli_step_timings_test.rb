@@ -16,7 +16,10 @@ class ReleaseCliStepTimingsTest < ReleaseCliHarness
 
     assert_match(/^⏱ step durations: sweep \d+s · ci gate \d+s$/, out)
     assert_match(/^RELEASE_STEP_TIMINGS \{"sweep":\d+,"ci_gate":\d+\}$/, out)
-    record = JSON.parse(out.lines.find { |l| l.start_with?("FILE ") }.delete_prefix("FILE "))
+    # The results dir is shared by every act in the run: read this act's own line.
+    lines = out.split("FILE ", 2).last.lines.map { |l| JSON.parse(l) rescue nil }.compact
+    record = lines.reverse.find { |r| r["release"] == "rel-t" }
+    refute_nil record, "no steps.jsonl line for rel-t: #{out}"
     assert_equal "rel-t", record["release"]
     assert_equal %w[sweep ci_gate], record["steps"].keys
   end

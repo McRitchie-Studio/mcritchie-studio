@@ -944,10 +944,10 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
          "(the sweep promotes accepted→release).#{zap_line}\n\n" \
          "Reports:\n#{reports.map { |r| "- #{report_summary(r)}" }.join("\n")}"
   handed_off = ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
+  start_qa_on_merge(slug) if ok
   # LAST, and advisory: the merge above is exactly where an upstream changelog misfile
   # is created, and it cannot be un-made by failing this verdict.
   report_upstream_changelog_misfile(task&.dig("devops", "pr_url"), merged_head: zap_head || reviewed_head)
-  start_qa_on_merge(slug) if ok
   handed_off
 end
 
