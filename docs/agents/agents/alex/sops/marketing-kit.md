@@ -128,7 +128,8 @@ you.
 The Sheet template's head colours come from the palette too: `primary`,
 `accent`, then the first other swatch that carries white text. A brand whose
 palette gives a poor third (two near-identical greys, say) names its three in
-`sheet.sections`, by swatch name or key. See [The Sheet template](#the-sheet-template).
+`sheet.sections`, by swatch name or key; `sheet.title` and `sheet.icon` set its
+title colour and icon. See [The Sheet template](#the-sheet-template).
 
 **6. Build and look.**
 
@@ -221,10 +222,10 @@ the sheet easy to work in, so keep them in every copy:
 | Part | What it is |
 |------|------------|
 | Row 1, column A | Thin margins |
-| A2 | The brand icon (`icon_light`), in a square cell |
-| Row 2 | `[Sheet Title]` in B2, in the `title` colour, alone on its row so a long title runs across |
+| A2 | The brand icon, in a square cell, at its own proportions and centred. `sheet.icon: dark` picks the colourful version where a brand has one (MS's violet chest); `light` by default |
+| Row 2 | `[Sheet Title]` in B2, in a dark brand colour (`primary`, or the swatch `sheet.title` names), centred in the row's height, alone on its row so a long title runs across |
 | Row 3 | `Last Updated: <date>` in B3, which the agent stamps at every build; the variable labels from D3 |
-| Row 4 | The variable values, under their labels. Formulas point at them with absolute references. The first is the headline (`emphasis: true`): it draws larger, in the `title` colour and whole dollars, as a card roster shows its total credit limit |
+| Row 4 | The variable values, under their labels. Formulas point at them with absolute references. The first is the headline (`emphasis: true`): it draws larger, in the brand's `title` colour and whole dollars, as a card roster shows its total credit limit |
 | Rows 6-7 | The table head from column B, in three colour sections: the darker top row names the section, the lower row names the columns |
 | Row 8 on | The data. Column B is the row's item (its name), and column C a narrow gutter that parts it from the columns that scroll. A column may carry `choices` (a dropdown) and its own `format` (`"$"#,##0` for whole dollars) |
 

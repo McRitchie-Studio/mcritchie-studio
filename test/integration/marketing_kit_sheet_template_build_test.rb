@@ -63,8 +63,29 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         path = office.send(:draw, "sheet", payload, File.join(out, "emphasis.xlsx"))
         xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
         assert_match(/<row r="4" ht="26"/, xml.fetch("xl/worksheets/sheet1.xml"))
-        title = spec.colour(:title).delete("#")
+        title = spec.colour(:title).delete("#") # the headline keeps the brand's title colour
         assert_match(%r{<font><name val="Montserrat"/><b val="1"/><color rgb="\h\h#{title}"/><sz val="16"/></font>}, xml.fetch("xl/styles.xml"))
+      end
+    end
+  end
+
+  test "a tall icon keeps its proportions and sits centred in A2" do
+    load_kit do |spec|
+      tall = File.join(Dir.mktmpdir, "tall.png")
+      MarketingKit::Office.run!(MarketingKit::Office.python, "-c",
+                                "from PIL import Image; Image.new('RGB', (100, 200), 'red').save('#{tall}')")
+      FileUtils.cp(tall, spec.logo_png(:icon, :light))
+      Dir.mktmpdir do |out|
+        path = MarketingKit::Office.new(spec).write_sheet(File.join(out, "tall.xlsx"))
+        xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
+        cx, cy = xml.fetch("xl/drawings/drawing1.xml").match(/<ext cx="(\d+)" cy="(\d+)"/).captures.map(&:to_i)
+        assert_in_delta 0.5, cx.to_f / cy, 0.02, "drawn at its own 1:2 shape, not squashed square"
+        col_off = xml.fetch("xl/drawings/drawing1.xml")[%r{<colOff>(\d+)</colOff>}, 1].to_i
+        assert_operator col_off, :>, 4 * 9525, "a narrow icon is centred across A2, not pinned to its left edge"
+        sheet = xml.fetch("xl/worksheets/sheet1.xml")
+        title_style = sheet[%r{<c r="B2" s="(\d+)"}, 1].to_i
+        xf = xml.fetch("xl/styles.xml").scan(%r{<xf [^>]*?(?:/>|>.*?</xf>)}m).drop(1)[title_style]
+        assert_includes xf, 'vertical="center"', "the title is centred in row 2"
       end
     end
   end

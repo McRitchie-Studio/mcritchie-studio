@@ -75,6 +75,22 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "sheet.title and sheet.icon pick the title colour and the colourful icon" do
+    load_kit(edit: ->(d) { d["sheet"] = { "title" => "Charcoal", "icon" => "dark" } }) do |spec|
+      t = T.new(spec)
+      assert_equal "#1B2124", t.title_colour
+      assert_equal spec.logo_png(:icon, :dark), t.icon
+      assert_equal "#1B2124", t.payload.dig(:colours, :title)
+    end
+  end
+
+  test "a bad sheet.icon fails when the spec loads" do
+    err = assert_raises(MarketingKit::Error) { load_kit(edit: ->(d) { d["sheet"] = { "icon" => "colour" } }) { flunk } }
+    assert_match(/sheet.icon is light or dark/, err.message)
+    err = assert_raises(MarketingKit::Error) { load_kit(edit: ->(d) { d["sheet"] = { "icon" => "dark" } }, skip: ["icon_dark"]) { flunk } }
+    assert_match(/needs logos\/png\/icon_dark.png/, err.message)
+  end
+
   test "a bad sheet.sections fails when the spec loads" do
     err = assert_raises(MarketingKit::Error) { load_kit(edit: ->(d) { d["sheet"] = { "sections" => %w[primary accent] } }) { flunk } }
     assert_match(/exactly three/, err.message)
@@ -87,7 +103,8 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
       t = T.new(spec)
       p = t.payload
       assert_equal "RF Template — Sheet", t.name
-      assert_equal spec.colour(:title), p.dig(:colours, :title)
+      assert_equal spec.colour(:primary), p.dig(:colours, :title), "the title is the brand's dark primary"
+      assert_equal spec.colour(:title), p.dig(:colours, :headline)
       assert_equal spec.logo_png(:icon, :light), p[:icon]
       assert_equal ["Total amount", "Default rate"], p[:variables].map { |v| v[:label] }
       assert_equal [true, nil], p[:variables].map { |v| v[:emphasis] }, "the first variable is the headline"

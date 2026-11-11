@@ -68,7 +68,8 @@ module MarketingKit
     def general_template = data[:general_template] || {}
     def proposal = data[:proposal] || {}
     def tracker = data[:tracker] || {}
-    # The Sheet template's options: sections (three swatch names or palette keys) picks its head colours.
+    # The Sheet template's options: sections (three swatch names or palette keys) picks its head colours,
+    # title (a swatch name or key) its title colour, and icon (light or dark) which icon it shows.
     def sheet = data[:sheet] || {}
     def start_here = data[:start_here] || {}
     def brand_guide = data[:brand_guide] || {}
@@ -173,10 +174,17 @@ module MarketingKit
 
     def validate_sheet!
       sections = sheet[:sections]
-      return if sections.nil?
-      raise Error, "#{label}: sheet.sections takes exactly three swatch names or palette keys" unless sections.is_a?(Array) && sections.size == 3
+      unless sections.nil? || (sections.is_a?(Array) && sections.size == 3)
+        raise Error, "#{label}: sheet.sections takes exactly three swatch names or palette keys"
+      end
+      if sheet[:icon] && !%w[light dark].include?(sheet[:icon].to_s)
+        raise Error, "#{label}: sheet.icon is light or dark, not #{sheet[:icon].inspect}"
+      end
 
-      SheetTemplate.new(self).sections
+      template = SheetTemplate.new(self)
+      template.sections
+      template.title_colour
+      raise Error, "#{label}: sheet.icon #{sheet[:icon]} needs #{template.icon.delete_prefix("#{root}/")}" unless File.file?(template.icon)
     end
 
     def validate_logos!

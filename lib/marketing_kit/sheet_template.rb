@@ -51,6 +51,15 @@ module MarketingKit
       end
     end
 
+    # The sheet's title is dark: the brand's primary unless sheet.title names a
+    # swatch. The headline number keeps the brand's title colour (MI: a Charcoal
+    # title over a Forge Orange total).
+    def title_colour = @spec.sheet[:title] ? swatch(@spec.sheet[:title])[:hex].upcase : @spec.colour(:primary)
+
+    # The icon in A2: sheet.icon picks the colourful version a brand has (MS's
+    # violet chest is its dark-ground icon); light, the plain mark, by default.
+    def icon = @spec.logo_png(:icon, (@spec.sheet[:icon] || "light").to_sym)
+
     # The day the sheet is built, in Denver, where the businesses are.
     def today = Time.current.in_time_zone("America/Denver").to_date
 
@@ -61,8 +70,8 @@ module MarketingKit
       {
         font: @spec.fonts[:family],
         sheet_title: "Sheet",
-        colours: { title: @spec.colour(:title), white: WHITE, ink: INK, grey: GREY, light: LIGHT, rule: RULE },
-        icon: @spec.logo_png(:icon, :light),
+        colours: { title: title_colour, headline: @spec.colour(:title), white: WHITE, ink: INK, grey: GREY, light: LIGHT, rule: RULE },
+        icon: icon,
         title: "[Sheet Title]",
         updated: self.class.stamp(today),
         sections: sections.each_with_index.map { |s, i| { label: "[Section #{%w[One Two Three][i]}]", top: s.top, low: s.low } },

@@ -124,6 +124,8 @@ tracker:
 # sheet:                               # the Sheet template (05 Templates); all optional
 #   sections: [primary, accent, Charcoal]   # its three head colours: swatch names or palette keys.
 #   Left out: primary, accent, then the first other swatch white text reads on.
+#   title: Charcoal                    # the title's colour: a dark swatch name or key (primary by default)
+#   icon: dark                         # light (the default) or dark: pick the colourful icon where the brand has one
 
 start_here:
   status: v1.

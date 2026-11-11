@@ -251,17 +251,23 @@ def sheet(d, out):
     heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_LABEL: 12, VAR_VALUE: 26 if emphasis else 20, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
-    # The icon fills A2, a few pixels in from each edge
-    pad, size = 4, square - 8
-    icon = XImage(d["icon"]); icon.width = icon.height = size
-    icon.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU(pad), row=TITLE - 1, rowOff=pixels_to_EMU(pad)),
-                                ext=XDRPositiveSize2D(pixels_to_EMU(size), pixels_to_EMU(size)))
+    # The icon fits inside A2, a few pixels in from each edge, at its own
+    # proportions (a tall or wide mark is never squashed), centred both ways.
+    from PIL import Image
+    box = square - 8
+    iw, ih = Image.open(d["icon"]).size
+    scale = box / max(iw, ih)
+    w, h = round(iw * scale), round(ih * scale)
+    icon = XImage(d["icon"]); icon.width, icon.height = w, h
+    icon.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU((square - w) // 2), row=TITLE - 1,
+                                                   rowOff=pixels_to_EMU((square - h) // 2)),
+                                ext=XDRPositiveSize2D(pixels_to_EMU(w), pixels_to_EMU(h)))
     ws.add_image(icon)
 
     # Row 2 is the title alone, so a long one runs on across the row. Under it in B3,
     # the date an agent last rebuilt the sheet.
     t = ws.cell(TITLE, X, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
-    t.alignment = Alignment(vertical="bottom")
+    t.alignment = Alignment(vertical="center")  # level with the icon's middle, whatever its shape
     u = ws.cell(VAR_LABEL, X, f"Last Updated: {d['updated']}"); u.font = font(size=9, color=col["grey"])
     u.alignment = Alignment(vertical="bottom")
 
@@ -273,7 +279,7 @@ def sheet(d, out):
     for i, v in enumerate(d["variables"]):
         at = C(1 + i)
         lab = ws.cell(VAR_LABEL, at, v["label"].upper())
-        lab.font = font(size=8, bold=True, color=col["title"] if v.get("emphasis") else col["grey"])
+        lab.font = font(size=8, bold=True, color=col["headline"] if v.get("emphasis") else col["grey"])
         lab.alignment = Alignment(vertical="bottom")
         value = v["value"]
         if isinstance(value, str):
@@ -281,7 +287,7 @@ def sheet(d, out):
             value = re.sub(r"\{col:(\w+)\}", lambda m: L(C(next(j for j, c in enumerate(cols) if c["key"] == m.group(1)))), value)
         cell = ws.cell(VAR_VALUE, at, value)
         big = v.get("emphasis")
-        cell.font = font(size=16 if big else 11, bold=True, color=col["title"] if big else col["ink"]); cell.fill = fill(col["light"])
+        cell.font = font(size=16 if big else 11, bold=True, color=col["headline"] if big else col["ink"]); cell.fill = fill(col["light"])
         cell.alignment = Alignment(horizontal="left", vertical="center")
         if fmt(v): cell.number_format = fmt(v)
         var_cell[v["label"]] = f"${L(at)}${VAR_VALUE}"
