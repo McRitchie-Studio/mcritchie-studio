@@ -37,14 +37,14 @@ class PriorGreenRunTest < Minitest::Test
   def decide(runs_body, env = ENV_PUSH) = PriorGreenRun.decide(env, runs_body)
 
   def test_a_completed_green_push_run_on_the_same_commit_skips_the_suite
-    skip, reason = decide(body(green_run))
-    assert skip
+    skips, reason = decide(body(green_run))
+    assert skips
     assert_includes reason, "run 800 (accepted) already concluded success on 2a2430c"
   end
 
   def test_a_push_to_main_is_credited_the_same_way
-    skip, = decide(body(green_run), ENV_PUSH.merge("GITHUB_REF" => "refs/heads/main"))
-    assert skip
+    skips, = decide(body(green_run), ENV_PUSH.merge("GITHUB_REF" => "refs/heads/main"))
+    assert skips
   end
 
   def test_only_pushes_to_main_and_release_may_skip
@@ -53,8 +53,8 @@ class PriorGreenRunTest < Minitest::Test
      { "GITHUB_EVENT_NAME" => "pull_request", "GITHUB_REF" => "refs/pull/1/merge" },
      { "GITHUB_EVENT_NAME" => "workflow_dispatch" },
      { "GITHUB_EVENT_NAME" => "" }].each do |over|
-      skip, reason = decide(body(green_run), ENV_PUSH.merge(over))
-      refute skip, "#{over.inspect} must run the suite"
+      skips, reason = decide(body(green_run), ENV_PUSH.merge(over))
+      refute skips, "#{over.inspect} must run the suite"
       assert_includes reason, "always runs the suite"
     end
   end
@@ -72,19 +72,19 @@ class PriorGreenRunTest < Minitest::Test
       "a cancelled run" => { conclusion: "cancelled" },
       "a skipped run" => { conclusion: "skipped" }
     }.each do |label, over|
-      skip, = decide(body(green_run(**over)))
-      refute skip, "#{label} must not be credited"
+      skips, = decide(body(green_run(**over)))
+      refute skips, "#{label} must not be credited"
     end
   end
 
   def test_unreadable_or_incomplete_input_runs_the_suite
     ["", "not json", "{}", '{"message":"Resource not accessible by integration"}', "[]"].each do |raw|
-      skip, = decide(raw)
-      refute skip, "#{raw.inspect} must run the suite"
+      skips, = decide(raw)
+      refute skips, "#{raw.inspect} must run the suite"
     end
     %w[GITHUB_SHA GITHUB_RUN_ID GITHUB_REPOSITORY GITHUB_WORKFLOW_REF].each do |key|
-      skip, = decide(body(green_run), ENV_PUSH.except(key))
-      refute skip, "no #{key} must run the suite"
+      skips, = decide(body(green_run), ENV_PUSH.except(key))
+      refute skips, "no #{key} must run the suite"
     end
   end
 

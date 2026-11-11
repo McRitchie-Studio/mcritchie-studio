@@ -89,11 +89,8 @@
 #
 # NOTE the DOUBLE RUN the trigger creates, so nobody "fixes" it into hole #5: a release
 # SHA gets its run from `push: release`, then `bin/release ship` fast-forwards main to
-# the byte-identical SHA and fires a SECOND run. Since task release-sub-hour-pipeline
-# that second run is cheap, not removed: reusable-ci.yml's `prior_green` job finds the
-# completed green PUSH run of the same workflow on the same SHA and every lane skips,
-# while the earlier run's checks stay on the SHA. The trigger stays; only the repeat
-# work goes (PRIOR_GREEN below pins the one clause that allows it).
+# the byte-identical SHA and fires a SECOND run. It stays, but cheap: the `prior_green`
+# job finds the earlier green push run on the SHA and the lanes skip (PRIOR_GREEN below).
 #
 # Two tiers (backend shape):
 #   [unit]        the trigger-extraction and skip-detection logic, over fixture YAML —
@@ -138,14 +135,11 @@ class CiWorkflowTriggersTest < Minitest::Test
   # EVERY JOB'S CONDITION, AS WRITTEN. A lane's only switch is its own lane input, and
   # an executed-set gate keeps `always()` beside it. A job absent from this map, or one
   # carrying any other condition, fails here by name.
-  #
-  # THE ONE ADDED CLAUSE: PRIOR_GREEN (task release-sub-hour-pipeline). Every lane also
-  # carries `needs.prior_green.outputs.skip != 'true'`, so a push to main or release whose
-  # exact commit already holds a completed green PUSH run of this workflow skips the
-  # suite instead of running it twice. That skip is safe only because the earlier run's
-  # checks stay on the same SHA, so the SHA-addressed fold still reads every lane's real
-  # result; test_integration_the_prior_green_job_is_pinned and prior_green_run_test.rb
-  # hold the rules that decide it.
+
+  # PRIOR_GREEN (task release-sub-hour-pipeline): every lane also carries this clause, so a
+  # main/release push whose commit already holds a green PUSH run skips the suite. The
+  # earlier run's checks stay on the SHA, so the SHA fold still reads every real result;
+  # test_integration_the_prior_green_job_is_pinned and prior_green_run_test.rb hold the rules.
   PRIOR_GREEN = "prior_green"
   PRIOR_GREEN_CLAUSE = "needs.prior_green.outputs.skip != 'true'"
   RAW_JOB_CONDITIONS = {

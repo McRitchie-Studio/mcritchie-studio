@@ -162,6 +162,9 @@ module OutboundSeams
       # and with the driver set bin/release cuts no worktree in turf-monster's checkout.
       "RELEASE_GAUNTLET_DRIVER" => stub("qa-contest-rehearsal"),
       "RELEASE_DEVNET_RPC_URL" => UNROUTABLE,
+      # bin/release's step timings and the cycle's RESULT summary record here, never in
+      # the operator's ~/.release-results (task release-sub-hour-pipeline).
+      "RELEASE_RESULTS_DIR" => File.join(File.dirname(log_path), "release-results"),
       "OUTBOUND_SEAM_LOG" => log_path,
       # THE HANDED-DOWN BOARD BEARER, unset. bin/submit mints one token and exports it
       # to every child as AGENT_API_TOKEN, and bin/fast-check is one of those children —
