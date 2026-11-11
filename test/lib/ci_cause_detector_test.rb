@@ -294,6 +294,36 @@ class CiCauseDetectorTest < Minitest::Test
     refute_match CiCauseDetector::NATIVE_ABORT, "the commit message mentions [BUG] in passing"
   end
 
+  # ── 2026-11-11: studio-engine Consumer CI run 42960720634, job 130327466271 (the
+  # turf-monster suite). turf's ci_native_abort_report_test failed: its control child
+  # exited 0, and the assertion message QUOTES the glibc text it expected. Replayed
+  # from the real job log, trimmed (test/fixtures/files/ci_cause_2026_11_11).
+  REPLAY_1111 = File.expand_path("../fixtures/files/ci_cause_2026_11_11", __dir__)
+
+  def test_a_test_that_quotes_a_heap_abort_message_is_a_test_cause_not_a_crash
+    log = File.read(File.join(REPLAY_1111, "studio-engine__turf-monster-suite.log"))
+    c = only(CiCauseDetector.causes(job_name: "turf_monster", log: log))
+    assert_equal %w[test CiNativeAbortReportTest], [c[:klass], c[:key]]
+    # Ci::CauseCleanup re-reads stored evidence with NATIVE_ABORT alone, so the
+    # evidence itself must not read as a crash either.
+    c[:evidence].each { |line| refute_match CiCauseDetector::NATIVE_ABORT, line }
+  end
+
+  def test_a_quoted_heap_abort_message_is_never_a_native_abort
+    ['Expected "" to include "malloc_consolidate(): unaligned fastbin chunk detected".',
+     %q(stderr="double free or corruption (out)"),
+     "assert_includes out, 'free(): invalid pointer'"].each do |line|
+      refute_match CiCauseDetector::NATIVE_ABORT, line
+      log = "#{line}\n##[error]Process completed with exit code 1.\n"
+      refute_equal "native-abort", only(CiCauseDetector.causes(job_name: "turf_monster", log: log))[:key], line
+    end
+    ["malloc_consolidate(): unaligned fastbin chunk detected",
+     "[WebServer] malloc(): unsorted double linked list corrupted",
+     "free(): invalid pointer", "double free or corruption (!prev)"].each do |line|
+      assert_match CiCauseDetector::NATIVE_ABORT, line
+    end
+  end
+
   def test_a_server_that_exits_1_or_times_out_stays_web_server_boot
     ["Error: Process from config.webServer was not able to start. Exit code: 1\n",
      "Error: Process from config.webServer was not able to start. Exit code: 1342\n",

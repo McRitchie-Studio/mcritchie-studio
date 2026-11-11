@@ -1,0 +1,21 @@
+2026-11-11T04:52:31.2526566Z log writing failed. "\xFF" from ASCII-8BIT to UTF-8
+2026-11-11T04:52:36.1466669Z ........................................  Created 8 users
+2026-11-11T04:52:50.0439854Z ........................................F
+2026-11-11T04:52:50.0442538Z 
+2026-11-11T04:52:50.0445064Z Failure:
+2026-11-11T04:52:50.0448403Z CiNativeAbortReportTest#test_an_arena_lock_held_abort_prints_the_ruby_backtrace_and_ends_within_the_alarm [test/lib/ci_native_abort_report_test.rb:161]:
+2026-11-11T04:52:50.0450251Z control: the real abort. child ended #<Process::Status: pid 9728 exit 0> (termsig=nil exit=0); stdout="" stderr="".
+2026-11-11T04:52:50.0451650Z Expected "" to include "malloc_consolidate(): unaligned fastbin chunk detected".
+2026-11-11T04:52:50.0452360Z 
+2026-11-11T04:52:50.0452965Z bin/rails test test/lib/ci_native_abort_report_test.rb:156
+2026-11-11T04:52:50.0453591Z 
+2026-11-11T04:52:54.3554759Z ........................................
+2026-11-11T04:52:54.3555346Z 
+2026-11-11T04:52:54.3555830Z Finished in 287.218390s, 29.5594 runs/s, 1245.2789 assertions/s.
+2026-11-11T04:52:54.3556568Z 8490 runs, 357667 assertions, 1 failures, 0 errors, 11 skips
+2026-11-11T04:52:54.3557452Z 
+2026-11-11T04:52:54.3568363Z You have skipped tests. Run with --verbose for details.
+2026-11-11T04:52:54.3569485Z Coverage report generated for Minitest, Worker 0, Worker 1, Worker 2, Worker 3 to /__w/studio-engine/studio-engine/turf_monster/coverage.
+2026-11-11T04:52:54.3570464Z Line Coverage: 72.57% (16854 / 23226)
+2026-11-11T04:52:54.3570986Z Branch Coverage: 77.22% (5680 / 7356)
+2026-11-11T04:52:54.4064070Z ##[error]Process completed with exit code 1.

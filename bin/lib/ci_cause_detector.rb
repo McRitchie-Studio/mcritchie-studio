@@ -77,7 +77,15 @@ module CiCauseDetector
   # the shim's per-step "ld.so: object ... native-abort-report.so cannot be preloaded"
   # line: the host docker CLI prints it on every green run. Ci::CauseCleanup re-reads
   # past occurrences' evidence with this same pattern.
-  NATIVE_ABORT = /native-abort-report: SIG[A-Z]+|^(?:\[WebServer\] )?(?:\S+:\d+: )?\[BUG\] |\b(?:Aborted|Segmentation fault) \(core dumped\)|\bmalloc\w*\(\): |free\(\): invalid|double free or corruption|config\.webServer[^\n]*Exit code: (?:134|139|142)\b|##\[error\]Process completed with exit code (?:134|139)\b/
+  #
+  # NEVER A QUOTED glibc MESSAGE (task devops-sub-hour-follow-ups, studio-engine
+  # Consumer CI run 42960720634): turf's ci_native_abort_report_test asserts on the
+  # glibc text itself, so its failure prints `Expected "" to include
+  # "malloc_consolidate(): unaligned fastbin chunk detected".` That line is a test's
+  # message, not a crash. glibc writes its abort message bare at the start of stderr,
+  # so the heap words count only when no quote mark stands right before them.
+  HEAP_ABORT = /(?<!["'])\b(?:malloc\w*\(\): |free\(\): invalid|double free or corruption)/
+  NATIVE_ABORT = /native-abort-report: SIG[A-Z]+|^(?:\[WebServer\] )?(?:\S+:\d+: )?\[BUG\] |\b(?:Aborted|Segmentation fault) \(core dumped\)|#{HEAP_ABORT.source}|config\.webServer[^\n]*Exit code: (?:134|139|142)\b|##\[error\]Process completed with exit code (?:134|139)\b/
   NATIVE_ABORT_REASON = "a native library crashed the process (SIGABRT or SIGSEGV), not a slow boot"
 
   HARNESS = [

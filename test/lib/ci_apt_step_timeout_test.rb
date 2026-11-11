@@ -294,6 +294,24 @@ class CiAptStepTimeoutTest < Minitest::Test
                  "so every run re-downloads every .deb from a mirror that stalls:\n  " + offenders.join("\n  ")
   end
 
+  # AN EMPTY LIST SKIPS APT (task devops-sub-hour-follow-ups). apt-retry refuses an
+  # empty list (below), so the reusable system lane must not call it with one: every
+  # step that feeds or runs the apt fetch skips on `system-packages: ""`, and an app
+  # that needs nothing past the runner image passes the empty list, not a dummy.
+  def test_the_reusable_system_lane_skips_apt_on_an_empty_package_list
+    path = File.join(ROOT, ".github/workflows/reusable-ci.yml")
+    steps = Array(YAML.load_file(path, aliases: true).dig("jobs", "system", "steps")).grep(Hash)
+    apt = steps.select do |s|
+      s["run"].to_s.include?("apt-retry") || s.dig("with", "path").to_s.include?("apt-archives") || s["id"] == "runner-image"
+    end
+    assert_equal 3, apt.size, "the runner-image read, the deb cache and the install"
+    apt.each do |step|
+      assert_equal "${{ inputs.system-packages != '' }}", step["if"], "#{step['name']} must skip on an empty list"
+    end
+    others = (steps - apt).select { |s| s["if"].to_s.include?("system-packages") }
+    assert_empty others.map { |s| s["name"] }, "only the apt steps read the empty list; Chrome and the suite still run"
+  end
+
   def test_it_refuses_to_run_with_no_packages
     result = run_script(mode: "healthy", packages: [])
 

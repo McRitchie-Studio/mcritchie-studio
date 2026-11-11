@@ -165,6 +165,10 @@ class AppProfileTest < Minitest::Test
     failed = contract(healthy_probe(files: { "ci.yml" => ci_yaml("push" => { "branches" => ["main"] }) })).first.reject(&:ok)
     assert_equal ["ci on release rungs"], failed.map(&:name)
     assert_match(/builds pushes to accepted, release/, failed.first.detail)
+    # The remedy names the rungs CI builds today (task ci-runs-reactive-and-once):
+    # release and accepted, never main, which takes a SHA CI already passed.
+    assert_includes failed.first.remedy, "push: branches: [ release, accepted ]"
+    refute_match(/branches: \[[^\]]*\bmain\b/, failed.first.remedy)
   end
 
   def test_branches_ignore_accepted_fails_the_contract

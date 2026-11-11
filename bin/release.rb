@@ -670,7 +670,8 @@ end
 
 # Prints the act's two timing lines and RECORDS them: one JSON line appended to
 # <release results dir>/steps.jsonl ({release, steps, at}), the same dir the cycle's
-# RESULT summary lands in, so a prepare or ship run on its own leaves its durations too.
+# RESULT summary lands in, so a prepare or ship run on its own leaves its durations too,
+# and one `step_timings` ReleaseEvent on the board (record_step_timings_event).
 def report_step_timings
   return if $step_clock_reported || !$step_clock&.any?
 
@@ -680,8 +681,31 @@ def report_step_timings
   puts($step_clock.machine_line)
   $stdout.flush
   record_step_timings($step_clock.seconds)
+  record_step_timings_event($step_clock.seconds, $step_clock.human_line)
 rescue StandardError
   nil
+end
+
+# THE BOARD COPY (task devops-sub-hour-follow-ups). steps.jsonl lives on the machine
+# that ran the act; the board is where /deployments and the next session look. So the
+# act's durations also land as ONE `step_timings` ReleaseEvent on its release
+# (status completed, source conductor): metadata {act, steps: {phase => seconds}}
+# and the human line as its message. It stamps no stage
+# (Release::EVENT_STAGE_STAMPS has no row for it). Best-effort, like the file:
+# record_release_event warns and continues on a board fault, so timing can never fail
+# an act. An act that never named its release (a prepare that found nothing to sweep)
+# records the file line only.
+STEP_TIMINGS_EVENT = "step_timings"
+
+def record_step_timings_event(seconds, human_line)
+  release = $step_clock_release.to_s
+  return if DRY || release.empty? || seconds.empty?
+
+  act = ($release_act || seconds.keys.first).to_s
+  at = Time.now.utc.iso8601
+  record_release_event(release, STEP_TIMINGS_EVENT, "completed",
+                       message: human_line, metadata: { "act" => act, "steps" => seconds },
+                       idempotency_key: "#{release}:#{STEP_TIMINGS_EVENT}:#{act}:#{at}")
 end
 
 def record_step_timings(seconds)
@@ -14604,6 +14628,8 @@ if __FILE__ == $PROGRAM_NAME
       nil
     end
   end
+  # The act's name rides on its step_timings ReleaseEvent (record_step_timings_event).
+  $release_act = ARGV.first
   case ARGV.shift
   when "init"    then init
   when "merge"   then merge

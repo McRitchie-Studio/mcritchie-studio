@@ -4,10 +4,6 @@ require "yaml"
 require "net/http"
 require "open3"
 require "uri"
-# The release sweep's own guard, reused so the contract can never pass a workflow
-# bin/release prepare refuses (Carl, review of contract-checks-ci-triggers). It does
-# no I/O and bin/release.rb already loads it standalone.
-require_relative "../../app/models/release/accepted_certification"
 require_relative "ci_suite_workflow"
 
 # AppContract — checks, live and read-only, that an app already meets the
@@ -128,6 +124,18 @@ module AppContract
   # consume the engine.
   def engine_version(lock) = lock.to_s[/^    studio-engine \(([0-9.]+)\)/, 1]
 
+  # The release sweep's own guard, Release::AcceptedCertification, reused so the
+  # contract can never pass a workflow bin/release prepare refuses (Carl, review of
+  # contract-checks-ci-triggers). It does no I/O. LOADED ON FIRST USE, not at require
+  # time: the file opens `class Release` with no superclass, so a require that runs
+  # before Rails boots (app_profile_test.rb loaded ahead of a model test) plants a
+  # bare Release and Zeitwerk never loads the model (bin/lib/release_cycle.rb,
+  # gauntlet_rules). Under Rails `defined?` autoloads the real one.
+  def certification
+    require_relative "../../app/models/release/accepted_certification" unless defined?(Release::AcceptedCertification)
+    Release::AcceptedCertification
+  end
+
   def run(slug:, heroku_app:, smoke_url:, root:, probe: Probe.new)
     checks = []
     origin, = probe.run("git", "-C", root, "remote", "get-url", "origin")
@@ -155,11 +163,11 @@ module AppContract
     ci_yaml = workflows[".github/workflows/ci.yml"]
     test_cmd = ci_test_cmd(ci_yaml, suite_yaml: suite_text(ci_yaml, root, probe))
     blind = %w[accepted release].reject do |rung|
-      Release::AcceptedCertification.certified?(workflows, Release::AcceptedCertification::DEFAULT_SUITE_WORKFLOW, rung)
+      certification.certified?(workflows, certification::DEFAULT_SUITE_WORKFLOW, rung)
     end
     checks << Check.new(name: "ci on release rungs", ok: blind.empty?,
                         detail: blind.empty? ? "workflow \"CI\" builds pushes to accepted and release" : "no workflow named \"CI\" builds pushes to #{blind.join(', ')}",
-                        remedy: "name the suite workflow `CI`, give it `push: branches: [ main, release, accepted ]` with no path filter or branches-ignore, and merge it to accepted")
+                        remedy: "name the suite workflow `CI`, give it `push: branches: [ release, accepted ]` with no path filter or branches-ignore, and merge it to accepted (no `main`: a ship fast-forwards main to the release SHA CI already passed)")
     checks << Check.new(name: "ci test job", ok: !test_cmd.nil?, detail: test_cmd || "no single bin/rails step in jobs.test, and no reusable-ci.yml call with a bin/rails system-command",
                         remedy: "give .github/workflows/ci.yml a `test` job with one `bin/rails ...` step, or call the hub's reusable-ci.yml with a `system-command`")
 

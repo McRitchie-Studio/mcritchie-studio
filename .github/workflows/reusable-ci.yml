@@ -73,7 +73,7 @@ on:
         default: bin/importmap-audit-ci
       # ---- the system lane ----
       system-packages:
-        description: The apt packages the system lane installs (the one lane still on the bare runner).
+        description: The apt packages the system lane installs (the one lane still on the bare runner); an empty list skips apt.
         type: string
         default: curl libvips postgresql-client imagemagick librsvg2-bin
       system-setup-command:
@@ -85,12 +85,15 @@ on:
         type: string
         default: bin/rails db:test:prepare test:system
 
-# The lanes read the tree, and the Postgres service image from the hub's own ghcr.io
-# packages (mirror-ci-images.yml), and nothing else. A called workflow can narrow the
-# caller's token, never widen it; a repo whose default token is `read` grants both.
-permissions:
-  contents: read
-  packages: read
+# NO WORKFLOW-LEVEL `permissions:` (task devops-sub-hour-follow-ups). A block here
+# would narrow EVERY job, prior_green included, to what it names, so a private
+# caller's `actions: read` grant could never reach prior_green's runs read. Instead
+# each lane job below narrows itself to `contents: read` + `packages: read` (the tree,
+# and the Postgres service image from the hub's own ghcr.io packages,
+# mirror-ci-images.yml), and prior_green alone inherits the caller's token as granted.
+# A called workflow can narrow the caller's token, never widen it; a repo whose
+# default token is `read` grants contents and packages.
+# test/lib/ci_service_images_test.rb pins the lane narrowing and the inheritance.
 
 jobs:
   # TEST EACH SHA ONCE (task release-sub-hour-pipeline). A push to `main` or `release`
@@ -107,10 +110,12 @@ jobs:
   prior_green:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    # NO `permissions:` here. A called workflow cannot widen the caller's token, and every
-    # caller's default is the restricted `read` (contents + packages): asking for
-    # `actions: read` fails the whole run at startup. So the runs read tries the run's
-    # token, then the anonymous API (public repos), and any refusal runs the suite.
+    # NO `permissions:` here, so the job INHERITS the caller's token. A called workflow
+    # cannot widen it, and a caller's default is the restricted `read` (contents +
+    # packages): asking for `actions: read` here would fail the whole run at startup
+    # for any caller that does not grant it. A PRIVATE caller grants `actions: read` on
+    # its `ci:` job, so the runs read below succeeds with the run's token; a public
+    # caller falls back to the anonymous API; any refusal runs the suite.
     outputs:
       skip: ${{ steps.prior.outputs.skip }}
     steps:
@@ -170,6 +175,9 @@ jobs:
     needs: prior_green
     if: ${{ needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04  # pinned, not the floating latest label: that moves to images Playwright cannot install chromium on (guard: test/lib/ci_runner_image_pin_test.rb)
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
 
     steps:
@@ -252,6 +260,9 @@ jobs:
     needs: prior_green
     if: ${{ inputs.javascript && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
     steps:
       - name: Checkout code
@@ -299,6 +310,9 @@ jobs:
     needs: prior_green
     if: ${{ inputs.island-animator && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
     # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
     # package step was the top red-then-green cause (refactor-review-2026-11-06,
@@ -368,6 +382,9 @@ jobs:
     needs: prior_green
     if: ${{ inputs.playwright && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
     # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
     # package step was the top red-then-green cause (refactor-review-2026-11-06,
@@ -598,6 +615,9 @@ jobs:
   # refuses every other condition.
   e2e_executed_set:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
     needs: [prior_green, playwright]
     if: ${{ always() && inputs.playwright && needs.prior_green.outputs.skip != 'true' }}
@@ -656,6 +676,9 @@ jobs:
     needs: prior_green
     if: ${{ inputs.rails-shards && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 5
     outputs:
       shards: ${{ steps.plan.outputs.shards }}
@@ -689,6 +712,9 @@ jobs:
     needs: [prior_green, rails_plan]
     if: ${{ inputs.rails-shards && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
     # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
     # package step was the top red-then-green cause (refactor-review-2026-11-06,
@@ -829,6 +855,9 @@ jobs:
   # suite, so it must not be breakable by a dependency problem in the thing it audits.
   rails_executed_set:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
     needs: [prior_green, rails]
     if: ${{ always() && inputs.rails-shards && needs.prior_green.outputs.skip != 'true' }}
@@ -869,6 +898,9 @@ jobs:
     needs: prior_green
     if: ${{ inputs.system && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 45
     # THE ONE LANE STILL ON THE BARE RUNNER, and so the one apt step left (task
     # deterministic-ci). In the lane image every app's Selenium system tests need Chrome's
@@ -923,10 +955,12 @@ jobs:
       # that stalls (2026-10-26). Keyed on the runner image + this package list; a
       # new image week restores the last entry and fetches only what changed.
       - name: Read runner image
+        if: ${{ inputs.system-packages != '' }}
         id: runner-image
         run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
 
       - name: Restore apt package cache
+        if: ${{ inputs.system-packages != '' }}
         uses: actions/cache@v4
         with:
           path: ~/apt-archives
@@ -935,7 +969,12 @@ jobs:
             apt-${{ steps.runner-image.outputs.id }}-
             apt-ubuntu24-
 
+      # AN EMPTY LIST INSTALLS NOTHING (task devops-sub-hour-follow-ups). apt-retry
+      # refuses an empty list, so these three steps skip on `system-packages: ""`: an
+      # app whose suite needs nothing past the runner image (voicebox, rolio) passes
+      # the empty list instead of naming a package the runner already ships.
       - name: Install packages
+        if: ${{ inputs.system-packages != '' }}
         # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
         # incident, the measured budgets, and why the loop lives in a script rather
         # than inline here (short version: the step stays one literal, readable

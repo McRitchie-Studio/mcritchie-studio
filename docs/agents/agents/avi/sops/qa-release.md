@@ -126,7 +126,9 @@ QA: production still takes Alex McRitchie's clearance (`bin/release cycle --clea
 
 **Timings and the result.** `prepare` and `ship` print `⏱ step durations` and a
 `RELEASE_STEP_TIMINGS {…}` line as they end, and append it to
-`~/.release-results/steps.jsonl` (`RELEASE_RESULTS_DIR` overrides). `bin/release cycle`
+`~/.release-results/steps.jsonl` (`RELEASE_RESULTS_DIR` overrides). The same seconds land
+on the board as one `step_timings` release event per act (`metadata: {act, steps}`; it
+stamps no stage). `bin/release cycle`
 prints `✓ SHIPPED <release>` and ONE `RELEASE_RESULT {status, release, shipped, holds,
 stages, steps, seconds}` line as soon as prod verify is green, writes it to
 `~/.release-results/<release>.json`, and only then runs the archive. A failed archive

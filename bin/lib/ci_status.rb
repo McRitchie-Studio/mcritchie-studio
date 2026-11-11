@@ -930,9 +930,58 @@ module CiStatus
       raw = gh_read("pr", "checks", pr, "--json", "name,state,bucket,completedAt")
       # combine, not parse: a bare :none here may be the THIRD STATE (no CI will ever
       # run), and only the view payload can tell the difference.
-      return combine(view, raw)
+      return hold_for_unfinished_runs(combine(view, raw), pr)
     end
     parse(raw)
+  end
+
+  # A GREEN ROLLUP IS NOT A FINISHED RUN (task devops-sub-hour-follow-ups). GitHub
+  # creates a job's check only when the job is queued: a job that `needs:` another
+  # (a census after its shards, a shard matrix built from a plan job's output, a
+  # late Playwright shard) has NO check until then. So for a moment every check that
+  # exists can read pass while the workflow run is still going, and a poll in that
+  # moment called the PR green. A green read therefore asks one more question: is
+  # every push or pull_request workflow run on the head SHA `completed`? A run still
+  # going holds the verdict at :pending, naming the runs. The read is extra only on
+  # a green, and a failed read keeps the green the rollup gave (never a new refusal
+  # from a token that cannot list runs).
+  GATING_RUN_EVENTS = %w[push pull_request].freeze
+
+  def self.hold_for_unfinished_runs(verdict, pr_url)
+    return verdict unless verdict[:state] == :green
+
+    sha = verdict[:head_oid].to_s
+    repo = repo_from_pr_url(pr_url)
+    return verdict if sha.empty? || repo.empty?
+
+    late_hold(verdict, unfinished_runs(gh_read("api", "repos/#{repo}/actions/runs?head_sha=#{sha}&per_page=100")))
+  end
+
+  # PURE. The `actions/runs?head_sha=` payload → the names of the push and
+  # pull_request runs not yet `completed`, or nil when the payload is not a runs list
+  # (a failed read: no answer, so no hold).
+  def self.unfinished_runs(raw)
+    data = begin
+      JSON.parse(raw.to_s)
+    rescue StandardError
+      nil
+    end
+    runs = data.is_a?(Hash) ? data["workflow_runs"] : nil
+    return nil unless runs.is_a?(Array)
+
+    runs.select { |run| GATING_RUN_EVENTS.include?(run["event"].to_s) && run["status"].to_s != "completed" }
+        .map { |run| run["name"].to_s.empty? ? "run #{run['id']}" : run["name"].to_s }.uniq
+  end
+
+  # PURE. A green verdict and the unfinished runs → the verdict to report.
+  def self.late_hold(verdict, running)
+    return verdict if running.nil? || running.empty?
+
+    verdict.except(:count, :completed_at).merge(
+      state: :pending, pending: running,
+      reason: "#{verdict[:count]} check(s) passed, but workflow run(s) #{running.join(', ')} are still going: " \
+              "a job that needs another registers its check only when it is queued"
+    )
   end
 
   # PURE. The `gh pr view --json state,mergeStateStatus` payload → an EARLY verdict

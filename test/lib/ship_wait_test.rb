@@ -139,6 +139,45 @@ class ShipWaitTest < Minitest::Test
     assert_equal "Killed: 9", ShipWait.last_report(log("building", "", "Killed: 9", ""))
   end
 
+  # bin/submit says `submit: …` since the rename; the waiter's own sentinel is never
+  # the report (task devops-sub-hour-follow-ups).
+  def test_last_report_reads_submits_own_prefix_and_never_the_sentinel
+    text = log("submit: 7/8 dor", "submit: bin/dor-check refused", "stage: building (not submitted)", SENTINEL_BAD)
+    assert_equal "submit: bin/dor-check refused", ShipWait.last_report(text)
+    assert_equal "Killed: 9", ShipWait.last_report(log("Killed: 9", SENTINEL_BAD))
+  end
+
+  # --- the failing-test tail (task devops-sub-hour-follow-ups) ----------------
+
+  def test_failure_tail_reads_the_fast_check_failures
+    text = log("== mapped-tests: bin/rails test test/lib/a_test.rb ==", "F.", "", "Failure:",
+               "ATest#test_it_adds [test/lib/a_test.rb:12]:", "Expected: 2", "  Actual: 3", "",
+               "bin/rails test test/lib/a_test.rb:10", "", "   mapped-tests: FAIL",
+               "submit: 2/8 pre-flight — RED", SENTINEL_BAD)
+    assert_equal ["  ✗ ATest#test_it_adds  [test/lib/a_test.rb:12]", "      Expected: 2", "      Actual: 3"],
+                 ShipWait.failure_tail(text)
+  end
+
+  def test_failure_tail_relays_submits_red_ci_digest
+    text = log("submit: 6/8 ci — CI settled on red after 300s (15 poll(s))",
+               "submit: what failed (from the failing jobs' logs — fix all of these before the next push):",
+               "submit:   ci / rails (2)  https://github.com/o/r/actions/runs/1/job/2",
+               "submit:     ✗ FooTest#test_bar  [test/foo_test.rb:9]",
+               "submit:         Expected true to be falsy.",
+               "submit: 7/8 dor — running bin/dor-check t", SENTINEL_BAD)
+    assert_equal ["  ci / rails (2)  https://github.com/o/r/actions/runs/1/job/2",
+                  "    ✗ FooTest#test_bar  [test/foo_test.rb:9]", "        Expected true to be falsy."],
+                 ShipWait.failure_tail(text)
+  end
+
+  def test_failure_tail_is_empty_when_no_test_failed_and_bounded_when_many_did
+    assert_empty ShipWait.failure_tail(log("submit: the DoR pre-check refused", SENTINEL_BAD))
+    many = (1..40).flat_map { |i| ["Failure:", "T#test_#{i} [test/t_test.rb:#{i}]:", "boom #{i}", ""] }
+    tail = ShipWait.failure_tail(log(*many))
+    refute_empty tail
+    assert_operator tail.size, :<=, ShipWait::TAIL_MAX_LINES, "forty failures never flood the summary"
+  end
+
   def test_state_paths_are_namespaced_by_slug
     assert_equal "/s/ship-abc.log", ShipWait.log_path("/s", "abc")
     assert_equal "/s/ship-abc.pid", ShipWait.pid_path("/s", "abc")
