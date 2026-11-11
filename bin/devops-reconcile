@@ -304,10 +304,13 @@ findings = SeamReconcile.scan(tasks, seam: seam, evidence: evidence)
 healed = []
 if options[:heal]
   findings.select { |f| f.disposition == :heal }.each do |f|
-    ok = sh("bin/task", "merged", f.slug, "accepted") &&
-         sh("bin/task", "move", f.slug, "reviewed")
+    # The sibling by its own path, never "bin/task": a bare path resolves against the
+    # caller's cwd (task release-preflight-hardening; test/lib/bin_cwd_independence_test.rb).
+    task_bin = File.join(__dir__, "task")
+    ok = sh(task_bin, "merged", f.slug, "accepted") &&
+         sh(task_bin, "move", f.slug, "reviewed")
     # Read back rather than trusting the write — the whole point of the module.
-    state = sh("bin/task", "field", f.slug, "merged")
+    state = sh(task_bin, "field", f.slug, "merged")
     healed << { slug: f.slug, ok: ok && state.to_s.strip == "accepted", read_back: state }
   end
 end

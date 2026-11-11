@@ -714,6 +714,11 @@ board tasks were carrying it: `ReviewerSelector::RISK_DOMAINS` matches EXACTLY,
 so a joined tag misses it and the gate fails open (464 tasks lost a domain
 reviewer light).
 
+On `update`, `--repo` REPLACES the whole repository list. To change one entry,
+use `--add-repo <repo>` or `--remove-repo <repo>`. `--remove-repo` also drops
+that repo's `--pr-url-for` entry, because the release plans every repo with a
+PR link. The two edit flags refuse to run beside `--repo`.
+
 The prose flags — `--accept`, `--test`, `--checks` — are repeatable too but are
 **not** guarded, because a comma is ordinary punctuation inside a criterion. That
 asymmetry is deliberate and per-flag: splitting prose would shred an acceptance
