@@ -61,6 +61,17 @@ class ReleaseCliGateCreditTest < ReleaseCliHarness
     end
   end
 
+  # [unit] RED STILL ABORTS: a red held on this SHA while its run is in progress is never
+  # credited away by an identical-tree green; the poll waits for the red to settle.
+  def test_a_red_held_on_the_sha_never_asks_for_a_credit
+    setup = %(ENV["RELEASE_CI_POLL_INTERVAL"] = "0"\n$probes = 0\n) +
+            %(def ci_verdict(_r, _s) = { state: :red, failing: ["test"] }\n) +
+            %(def ci_red_once!(_r, _s) = :pending\n)
+    call = %(c = poll_ci_verdict("r", "abc1234", budget: 0.2, credit: -> { $probes += 1; { state: :green, credited: "x" } }); ) +
+           %(print [c[:state], $probes].inspect)
+    assert_equal "[:red, 0]", run_cli(["--dry-run"], setup: setup, call: call).lines.last
+  end
+
   # [unit] identical_tree_candidates — the other refs whose tree IS this SHA's tree:
   # the accepted head and the PR head a merge joined (the second parent). A candidate
   # with another tree, the SHA itself, and every git fault are dropped.

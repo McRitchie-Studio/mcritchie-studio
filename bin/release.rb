@@ -4852,8 +4852,10 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
     # Only a green Hash carrying :credited counts; anything else keeps holding.
     # Throttled to one probe per ci_credit_interval (the first read always asks): each
     # probe costs a few GitHub reads per candidate, and a long hold must not spend the
-    # rate limit the other repos' gates share.
-    if credit && (last_credit_probe.nil? || monotonic_s - last_credit_probe >= ci_credit_interval)
+    # rate limit the other repos' gates share. A red already seen on THIS SHA (held, or
+    # spent on the infra re-run) is never credited away: only a pending/absent read asks.
+    if credit && !holding_red && !rerun && ci[:state] != :red &&
+       (last_credit_probe.nil? || monotonic_s - last_credit_probe >= ci_credit_interval)
       last_credit_probe = monotonic_s
       credited = credit.call
       return credited if ci_pass?(credited) && credited[:credited]
