@@ -208,9 +208,10 @@ def sheet(d, out):
     """The Sheet template. Never merges a cell; freezes under the lower head and right of the item column.
 
     Row 1 and column A are margins. A2 is a square holding the brand icon; the title
-    sits beside it in B2 and the variables run on from C2 (label) over C3 (value).
-    The table's head is rows 5-6 from column B, the data starts in row 7, and the
-    freeze sits at C7: margins, the item column, the variables and the head stay in view.
+    sits alone in B2 and Last Updated in B3. Variables are label (row 4) over value
+    (row 5): the headline in column B, the rest from D past a narrow gutter in C. The
+    table's head is rows 7-8 from column B, the data starts in row 9, and the freeze
+    sits at C9: margins, the item column, the headline and the head stay in view.
     """
     import datetime, re
     from openpyxl import Workbook
