@@ -328,7 +328,8 @@ def sheet(d, out):
             ws.cell(r, GUTTER).border = Border(bottom=rule)
             for i, v in enumerate(row):
                 c = cols[i]
-                if c["kind"] == "date" and v: v = datetime.date.fromisoformat(v)
+                # A date column may hold a marker instead (a roster's 💳 for "in use now"): only ISO dates convert.
+                if c["kind"] == "date" and isinstance(v, str) and re.fullmatch(r"\d{4}-\d{2}-\d{2}", v): v = datetime.date.fromisoformat(v)
                 if c["kind"] == "formula":
                     v = re.sub(r"\{var:([^}]+)\}", lambda m: var_cell[m.group(1)], c["formula"])
                     v = re.sub(r"\{col:(\w+)\}", lambda m: letter[m.group(1)], v).replace("{r}", str(r))

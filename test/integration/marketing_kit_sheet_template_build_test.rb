@@ -114,6 +114,20 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
     end
   end
 
+  test "a date column keeps a marker such as 💳 as text and converts ISO dates" do
+    load_kit do |spec|
+      FileUtils.cp(LOGO, spec.logo_png(:icon, :light))
+      Dir.mktmpdir do |out|
+        payload = MarketingKit::SheetTemplate.new(spec).payload
+        payload[:rows] = payload[:rows].each_with_index.map { |r, i| i.zero? ? r.dup.tap { |x| x[3] = "💳" } : r }
+        path = MarketingKit::Office.new(spec).send(:draw, "sheet", payload, File.join(out, "marker.xlsx"))
+        sheet = Zip::File.open(path) { |z| z.find_entry("xl/worksheets/sheet1.xml").get_input_stream.read.force_encoding("UTF-8") }
+        assert_match(%r{<c r="F9"[^>]*t="inlineStr"><is><t>(💳|&#128179;)</t>}, sheet, "the marker stays text")
+        assert_match(%r{<c r="F10"[^>]*t="n"><v>46034</v>}, sheet, "an ISO date still converts")
+      end
+    end
+  end
+
   test "a column's choices draw a dropdown and its own format wins over its kind's" do
     load_kit do |spec|
       FileUtils.cp(LOGO, spec.logo_png(:icon, :light))
