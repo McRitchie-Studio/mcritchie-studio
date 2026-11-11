@@ -13,7 +13,7 @@ require "tmpdir"
 require "fileutils"
 require_relative "../support/session_env"
 
-class TaskRepoEditFlagsTest < Minitest::Test
+class DevopsRepoEditFlagsTest < Minitest::Test
   BIN = File.expand_path("../../bin/task", __dir__)
 
   def sandbox_root = (@sandbox_root ||= Dir.mktmpdir("task-repo-edit"))
