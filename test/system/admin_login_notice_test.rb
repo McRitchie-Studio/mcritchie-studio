@@ -1,14 +1,10 @@
 require "application_system_test_case"
 
-# The admin login request, seen the way the operator sees it (task
-# devops-admin-login-requests): the navbar notice on a page that is not the board,
-# its click to /devops, the row's plain words, and the Approve tap granting so the
-# asking harness collects at once.
-#
-# The 2026-11-10 defect this guards: the operator's Approve on /devops/tasks ran in
-# the browser and the server recorded no decision, so the asking session polled
-# 409 pending until the launch code granted it. Forgery protection is ON here, as
-# in production (the test environment turns it off by default).
+# The admin login request as the operator sees it (task devops-admin-login-requests):
+# the navbar notice off the board, its click to /devops, the row's plain words, and
+# Approve granting so the asking harness collects at once. Forgery protection is ON,
+# as in production: on 2026-11-10 an Approve tap ran in the browser and the server
+# recorded no decision.
 class AdminLoginNoticeSystemTest < ApplicationSystemTestCase
   setup do
     @forgery_was = ActionController::Base.allow_forgery_protection
