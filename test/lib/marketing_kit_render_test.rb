@@ -111,7 +111,7 @@ class MarketingKitRenderTest < ActiveSupport::TestCase
                       "RF_logo_horizontal_dark.png", "RF_logo_icon_512.png", "RF_photo_shop-floor.jpg", "RF_photo_stair-install.jpg"],
                      by_folder[""]
         assert_equal ["Brand Guide"], by_folder["01 Brand"]
-        assert_equal ["RF Template — General", "RF Template — Proposal"], by_folder["05 Templates"]
+        assert_equal ["RF Doc Template", "RF Proposal Template"], by_folder["05 Templates"]
         assert_equal ["RF Kit Spec.yml", "messaging.html"], by_folder["01 Brand/Kit source"]
         assert_includes by_folder["01 Brand/Logos/SVG — print and web"], "RF_logo_horizontal_dark.svg"
         assert_equal 7, by_folder["01 Brand/Logos/PNG — Office and social"].size
