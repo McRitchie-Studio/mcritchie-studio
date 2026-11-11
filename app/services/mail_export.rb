@@ -9,8 +9,11 @@
 # mailbox only through a connection whose owner turned on Gmail organize at
 # /integrations (GoogleConnect::GmailEditor, /tasks/gmail-organize-ability):
 # dry unless the request says apply, and logged as GmailChange either way.
+# unsubscribe (/tasks/gmail-one-click-unsubscribe) rides the same connection:
+# it lists senders and their unsubscribe kind, and on apply sends the RFC 8058
+# one-click POST for one-click senders only. It never sends mail.
 module MailExport
-  ORGANIZE_VERBS = %w[organize filter labels filters].freeze
+  ORGANIZE_VERBS = %w[organize filter labels filters unsubscribe].freeze
 
   module_function
 
@@ -46,6 +49,10 @@ module MailExport
     when "filter"
       { "filter" => editor.add_filter(query: request["query"], label: request["label"], archive: request["archive"] == true,
                                       mark_read: request["mark_read"] == true, apply:) }
+    when "unsubscribe"
+      result = editor.unsubscribe(query: request["query"], apply:,
+                                  limit: Integer(request["limit"] || GoogleConnect::GmailEditor::UNSUBSCRIBE_LIMIT))
+      { "unsubscribe" => result.to_h.transform_keys(&:to_s).merge("senders" => result.senders.map { _1.except("uri") }) }
     when "labels" then { "labels" => editor.labels }
     when "filters" then { "filters" => editor.filters }
     end

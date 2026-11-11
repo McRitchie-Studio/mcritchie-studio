@@ -8,7 +8,7 @@
     <%= button_to "Turn off", (own ? integrations_google_disconnect_path(ability:, return_to: integrations_path) : admin_google_disconnect_path(ability:, return_to: integrations_path)), method: :delete,
                   class: "btn btn-neutral btn-sm",
                   form: { class: "inline-flex", data: { test: "google-write-disconnect", turbo_confirm: "Turn off #{name} for #{connection.email}? Gmail reading stays on." } } %>
-    <span class="block basis-full text-xs text-muted" data-test="google-write-allows">Agents may mark read or unread, label, archive, mark spam and add filters, on your request. Google's permission would allow sending; the hub never sends, never deletes.</span>
+    <span class="block basis-full text-xs text-muted" data-test="google-write-allows">Agents may mark read or unread, label, archive, mark spam, add filters and unsubscribe from one-click mailing lists, on your request. Google's permission would allow sending; the hub never sends, never deletes.</span>
   <% elsif connectable %>
     <span class="min-w-0 text-muted">Let agents label, archive and file your mail.</span>
     <button type="button" class="btn btn-neutral btn-sm" data-test="google-write-connect" data-opens="gmail-admin"

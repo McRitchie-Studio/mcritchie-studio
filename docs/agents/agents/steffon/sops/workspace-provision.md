@@ -372,7 +372,7 @@ never part of Connect Google; the person turns it on from the Gmail card's
 
 | Ability | Scopes | What uses it |
 |---------|--------|--------------|
-| `gmail_organize` | `gmail.modify` + `gmail.settings.basic` (both must be granted) | `GoogleConnect::GmailEditor` through `bin/mail organize\|filter\|labels\|filters --mailbox ADDR`: mark read or unread, archive, inbox, spam, not spam, label, unlabel, move, filters. Dry unless `--apply`; each run logs a `GmailChange` row. It never sends (Google's grant would allow it; `test/lib/no_gmail_send_test.rb` keeps the source from it), never trashes, never deletes. |
+| `gmail_organize` | `gmail.modify` + `gmail.settings.basic` (both must be granted) | `GoogleConnect::GmailEditor` through `bin/mail organize\|filter\|unsubscribe\|labels\|filters --mailbox ADDR`: mark read or unread, archive, inbox, spam, not spam, label, unlabel, move, filters, and one-click unsubscribe (RFC 8058 HTTPS POST to one-click senders only; web-page, email-only and none senders are reported, not touched). Dry unless `--apply`; each run logs a `GmailChange` row. It never sends (Google's grant would allow it; `test/lib/no_gmail_send_test.rb` keeps the source from it), never trashes, never deletes. |
 
 Every sign-in also asks for `openid` and `email`, with
 `include_granted_scopes=true`, so connecting one ability adds it to what the

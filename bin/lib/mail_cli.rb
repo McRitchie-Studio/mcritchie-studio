@@ -131,6 +131,9 @@ module MailCli
                                                       dry run (a count) unless --apply; move = label + archive
            bin/mail filter '<gmail query>' --mailbox ADDR [--label NAME] [--archive] [--mark-read] [--apply]
                                                       a filter for future mail; dry unless --apply
+           bin/mail unsubscribe '<gmail query>' --mailbox ADDR [--limit N] [--apply]
+                                                      each sender and how it unsubscribes (one-click, web-page,
+                                                      email-only, none); --apply unsubscribes one-click senders only
            bin/mail labels --mailbox ADDR             every label · bin/mail filters --mailbox ADDR  every filter
     organize needs the mailbox's Gmail organize turned on at /integrations. It never sends or deletes.
     common: --app NAME (default #{DEFAULT_APP}) · --local (run bin/rails runner here, not heroku) · --by NAME (the log's requester)
@@ -202,6 +205,10 @@ module MailCli
 
       organize_request(opts).merge("verb" => "filter", "query" => args[0], "label" => opts[:label], "archive" => opts[:archive],
                                    "mark_read" => opts[:mark_read], "apply" => opts[:apply])
+    when "unsubscribe"
+      raise Error, "unsubscribe takes one Gmail query (quote it)" unless args.size == 1
+
+      organize_request(opts).merge("verb" => "unsubscribe", "query" => args[0], "limit" => opts[:limit], "apply" => opts[:apply])
     when "labels", "filters"
       raise Error, "#{verb} takes no arguments" unless args.empty?
 
@@ -238,6 +245,9 @@ module MailCli
     when "filter"
       out.puts render_filter(answer["filter"], request["mailbox"])
       0
+    when "unsubscribe"
+      out.puts render_unsubscribe(answer["unsubscribe"], request["mailbox"])
+      0
     when "labels"
       out.puts answer["labels"].to_a.sort_by { [ _1["type"].to_s, _1["name"].to_s.downcase ] }.map { "#{_1['type']}\t#{_1['name']}" }
       0
@@ -262,6 +272,26 @@ module MailCli
     lines << "  (stopped at the limit; run again for the rest, or raise --limit)" if result["capped"]
     lines << "  created label #{result['label'].inspect}" if result["created_label"]
     lines << "  nothing changed: add --apply to make this change" unless result["applied"]
+    lines.join("\n")
+  end
+
+  # One row per sender: kind, address, name, message count, and once applied what happened.
+  def render_unsubscribe(result, mailbox)
+    senders = result["senders"].to_a
+    head = result["applied"] ? "Unsubscribe in #{mailbox}" : "Dry run: unsubscribe in #{mailbox}"
+    lines = [ "#{head} for #{result['query'].inspect}: #{result['matched']} message(s), #{senders.size} sender(s)" ]
+    lines << "  (stopped at the limit; raise --limit to read more)" if result["capped"]
+    senders.each do |s|
+      row = [ s["kind"].ljust(10), s["address"], s["name"].to_s.empty? ? "-" : s["name"], "#{s['count']} msg" ]
+      row << s["outcome"] if s["outcome"]
+      lines << "  #{row.join("\t")}"
+    end
+    if result["applied"]
+      done = senders.count { _1["outcome"] == "unsubscribed" }
+      lines << "  #{done} unsubscribed; for the rest, add a filter (bin/mail filter 'from:ADDR' --archive)"
+    else
+      lines << "  nothing changed: add --apply to unsubscribe the #{senders.count { _1['kind'] == 'one-click' }} one-click sender(s)"
+    end
     lines.join("\n")
   end
 
