@@ -230,10 +230,10 @@ deployment shape.
 | 📇 Rolio | Product · Active | 3300-3399 | Release-managed standalone, ladder `three-rung`; git push to Heroku `rolio-prod`; QA on `rolio-qa` |
 | 📊 Tax Studio | Archived | 3200-3299 | Heroku app `tax-studio` with no repo; ladder `planned` |
 
-Do not reuse `3200-4799`. To wake Rolio: scale its web dynos back to 1, restore
-`.github/dependabot.yml` (revert rolio commit `a79e818`; the file content is blob
-`f0527e6`), delete `test/dormancy_test.rb` (revert `d10b9ec`), and set its
-catalog status.
+Do not reuse `3200-4799`. To wake Rolio: scale its web dynos back to 1 and set
+its catalog status. Do not restore `.github/dependabot.yml`: no repo schedules
+version updates now ([`dependency-update.md`](dependency-update.md)), so rolio's
+`test/dormancy_test.rb` stays.
 
 ## Satellite status words
 

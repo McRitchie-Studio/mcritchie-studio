@@ -105,8 +105,17 @@ class Release::ReposTest < ActiveSupport::TestCase
   # needs no edit to this file (app-deploy-standard).
   test "app_repos lists the registry's app hash keys" do
     assert_equal (%w[mcritchie-studio turf-monster turf-vault mcritchie-industries rolio
-                     tax-studio chain-ops commercial-welding alex-build] + profile_repos).sort,
+                     tax-studio commercial-welding alex-build] + profile_repos).sort,
                  Release::Repos.app_repos.sort
+  end
+
+  # chain-ops left the app catalog on 2026-11-01 and kept a bare `ladder: blocked` row
+  # only to park chain-ops-mail-from-team, a card reviewed on a live desk. That card is
+  # archived, so the row went too (task ci-runs-reactive-and-once). A card naming the
+  # repo now reads as unknown and the sweep refuses it, which is right for a retired repo.
+  test "the retired chain-ops repo has no registry row" do
+    assert_not Release::Repos.app?("chain-ops")
+    assert_not_includes Release::Repos.config.fetch("apps").keys, "chain-ops"
   end
 
   test "app? matches the app hash keys" do
@@ -857,7 +866,6 @@ class Release::ReposTest < ActiveSupport::TestCase
     "10and5" => "git_push_heroku",
     "search-position" => "git_push_heroku",
     "tax-studio" => "repo_script",
-    "chain-ops" => nil,
     "moms-app" => "git_push_heroku",
     "commercial-welding" => "git_push_heroku",
     "alex-build" => "git_push_heroku",

@@ -257,10 +257,10 @@ gh pr list --limit 50 --json number,title,mergeable --jq '.[] | "#\(.number) \(.
 
 **Never merge a PR into `main`.** `release` and `main` sit at the same SHA and
 `bin/release ship` pushes `main` without force, so one PR merged into `main` aborts
-the next production ship. Each `.github/dependabot.yml` sets `target-branch:
-accepted` per `updates:` entry, but security updates and an unconfigured repo still
-target `main`. Retarget to the ladder's first rung with `gh pr edit <n> --base
-accepted`, never to `release`.
+the next production ship. No repo schedules Dependabot version updates any more
+([`dependency-update`](../../../modules/dependency-update.md)), but a security-update
+PR, where a repo turns those on, still targets `main`. Retarget to the ladder's first
+rung with `gh pr edit <n> --base accepted`, never to `release`.
 
 **The orphaned-fix trap.** A conflicting PR with no task is where fixes go to die.
 Diff each of its ideas against the current branch before closing it: it is
