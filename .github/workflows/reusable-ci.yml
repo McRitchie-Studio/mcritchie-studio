@@ -321,7 +321,7 @@ jobs:
       # Python 3.12 is the lane image's own python3 (Ubuntu 24.04), the version
       # tools/island-background-animator/pyproject.toml requires.
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.0.1
+        uses: astral-sh/setup-uv@v10.3.3
         with:
           enable-cache: true
           cache-dependency-glob: tools/island-background-animator/uv.lock
