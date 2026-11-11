@@ -3,11 +3,12 @@
 require "json"
 require "open3"
 require "digest"
+require "fileutils"
 
 module MarketingKit
-  # The two Office files: the 12-slide template (.pptx, which Drive converts to
-  # Google Slides) and the tracker workbook (.xlsx, converted to a Google
-  # Sheet). Ruby decides every word and colour here and writes a JSON payload;
+  # The Office files: the 12-slide template (.pptx, which Drive converts to
+  # Google Slides), the Sheet template and the tracker workbook (.xlsx,
+  # converted to Google Sheets). Ruby decides every word and colour here and writes a JSON payload;
   # script/marketing_kit/office.py only draws it (python-pptx and openpyxl,
   # which have no Ruby equivalent good enough for Drive's import).
   class Office
@@ -18,7 +19,7 @@ module MarketingKit
       @spec = spec
     end
 
-    def slides_name = "#{@spec.short} Template — Slides"
+    def slides_name = Layout.template_name(@spec.short, :slides)
 
     def slides_payload
       s = @spec.slides
@@ -65,21 +66,34 @@ module MarketingKit
     end
 
     def write_slides(path) = draw("slides", slides_payload, path)
+    def write_sheet(path) = draw("sheet", SheetTemplate.new(@spec).payload, path)
     def write_tracker(inventory, path) = draw("tracker", tracker_payload(inventory), path)
 
     # The venv lives outside the tree so a desk and the primary share it; it is
-    # rebuilt only when requirements.txt changes.
+    # rebuilt only when requirements.txt changes. Parallel test workers (CI) can
+    # reach here at once, so it is built under a file lock and counts as ready only
+    # when its marker exists: bin/python appears before pip has installed anything,
+    # and a worker that ran it then failed on `import openpyxl`.
     def self.python
       @python ||= begin
-        dir = File.join(Dir.home, ".cache", "marketing-kit", Digest::SHA256.file(REQUIREMENTS).hexdigest[0, 12])
-        bin = File.join(dir, "bin", "python")
-        unless File.executable?(bin)
-          run!("python3", "-m", "venv", dir)
-          run!(bin, "-m", "pip", "install", "--quiet", "-r", REQUIREMENTS)
+        dir = File.join(cache_root, Digest::SHA256.file(REQUIREMENTS).hexdigest[0, 12])
+        ready = File.join(dir, ".ready")
+        unless File.exist?(ready)
+          FileUtils.mkdir_p(cache_root)
+          File.open("#{dir}.lock", File::RDWR | File::CREAT, 0o644) do |lock|
+            lock.flock(File::LOCK_EX)
+            unless File.exist?(ready)
+              run!("python3", "-m", "venv", dir)
+              run!(File.join(dir, "bin", "python"), "-m", "pip", "install", "--quiet", "-r", REQUIREMENTS)
+              FileUtils.touch(ready)
+            end
+          end
         end
-        bin
+        File.join(dir, "bin", "python")
       end
     end
+
+    def self.cache_root = File.join(Dir.home, ".cache", "marketing-kit")
 
     def self.run!(*cmd)
       out, status = Open3.capture2e(*cmd)

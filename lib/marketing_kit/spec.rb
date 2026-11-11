@@ -68,12 +68,27 @@ module MarketingKit
     def general_template = data[:general_template] || {}
     def proposal = data[:proposal] || {}
     def tracker = data[:tracker] || {}
+    # The Sheet template's options: sections (three swatch names or palette keys) picks its head colours,
+    # title (a swatch name or key) its title colour, icon (light or dark) which icon it shows, and
+    # title_align (center or bottom) where the title sits beside it.
+    def sheet = data[:sheet] || {}
     def start_here = data[:start_here] || {}
     def brand_guide = data[:brand_guide] || {}
 
     def root_name = drive[:root_name] || "Brand Kit: #{name}"
     # Workspace domains the root is shared with as writers (drive.share_domains).
     def share_domains = Array(drive[:share_domains]).map { |d| d.to_s.downcase }
+
+    # The people a kit's root is shared with: drive.share_with, plus the two the
+    # standing rule names for everything we make (Alex McRitchie, 2026-11-10):
+    # the admin of the owning Workspace (alex@<drive.subject's domain>) and
+    # alex@mcritchie.studio.
+    ALWAYS_SHARE = "alex@mcritchie.studio"
+
+    def share_with
+      admin = "alex@#{drive[:subject].to_s.split('@').last}"
+      (Array(drive[:share_with]) + [admin, ALWAYS_SHARE]).map { |e| e.to_s.downcase }.uniq
+    end
     # The brand's key on /logos (config/logo_brands.yml), if it has one: a publish prints the command that records
     # the kit there (BrandMarketingKit, task marketing-kit-on-logos), owned by drive.subject.
     def logo_brand = data[:brand].presence&.to_s
@@ -139,6 +154,7 @@ module MarketingKit
       end
 
       validate_palette!
+      validate_sheet!
       validate_logos!
       validate_photos!
     end
@@ -166,6 +182,24 @@ module MarketingKit
 
       absent = REQUIRED_COLOURS - keys
       raise Error, "#{label}: palette needs #{absent.join(', ')} keys" if absent.any?
+    end
+
+    def validate_sheet!
+      sections = sheet[:sections]
+      unless sections.nil? || (sections.is_a?(Array) && sections.size == 3)
+        raise Error, "#{label}: sheet.sections takes exactly three swatch names or palette keys"
+      end
+      if sheet[:title_align] && !%w[center bottom].include?(sheet[:title_align].to_s)
+        raise Error, "#{label}: sheet.title_align is center or bottom, not #{sheet[:title_align].inspect}"
+      end
+      if sheet[:icon] && !%w[light dark].include?(sheet[:icon].to_s)
+        raise Error, "#{label}: sheet.icon is light or dark, not #{sheet[:icon].inspect}"
+      end
+
+      template = SheetTemplate.new(self)
+      template.sections
+      template.title_colour
+      raise Error, "#{label}: sheet.icon #{sheet[:icon]} needs #{template.icon.delete_prefix("#{root}/")}" unless File.file?(template.icon)
     end
 
     def validate_logos!

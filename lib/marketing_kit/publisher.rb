@@ -16,9 +16,12 @@ module MarketingKit
   #     Name it in `replace:` (or pass replace: :all) to overwrite it in place;
   #   - two files of one name in one folder are never guessed between: the entry
   #     is reported and skipped;
+  #   - a template under its old name ("<SHORT> Template — General") is renamed
+  #     in place to "<SHORT> Doc Template" (Layout.template_name);
   #   - a new Google file is a copy of its upload, so the template gallery
   #     takes it (see #upload);
-  #   - the root is shared with drive.share_with (people) and
+  #   - the root is shared with Spec#share_with (drive.share_with, the owning
+  #     Workspace's admin and alex@mcritchie.studio: people) and
   #     drive.share_domains (whole Workspace domains), once each.
   #
   # dry_run: true reads Drive and reports, writing nothing.
@@ -97,6 +100,7 @@ module MarketingKit
       parent = folder(entry[:folder])
       path = [entry[:folder].presence, entry[:name]].compact.join("/")
       hits = children(parent, entry[:name]).reject { |f| f.mime_type == FOLDER }
+      hits = rename_legacy(entry, parent, path) if hits.empty?
       return note(:ambiguous, path) if hits.size > 1
       return upload(entry, parent, path) if hits.empty?
 
@@ -108,6 +112,20 @@ module MarketingKit
       end
 
       replace(entry, existing, path)
+    end
+
+    # A template still under its pre-ruling name ("MS Template — General" for
+    # "MS Doc Template") is renamed in place, so its links and any template
+    # gallery entry keep working, and then treated as the existing file. Two
+    # files under the old name are left for a person to merge.
+    def rename_legacy(entry, parent, path)
+      legacy = Layout.legacy_template_name(entry[:name]) or return []
+      olds = children(parent, legacy).reject { |f| f.mime_type == FOLDER }
+      return [] unless olds.one?
+
+      note(:rename, "#{[entry[:folder].presence, legacy].compact.join('/')} → #{entry[:name]}", olds.first.id)
+      @drive.files_update(olds.first.id, name: entry[:name]) unless @dry_run
+      olds
     end
 
     def upload(entry, parent, path)
@@ -149,7 +167,7 @@ module MarketingKit
     # Shares the root with each person in drive.share_with and each Workspace
     # domain in drive.share_domains, skipping any already shared.
     def share
-      emails = Array(@spec.drive[:share_with])
+      emails = @spec.share_with
       domains = @spec.share_domains
       return if (emails.empty? && domains.empty?) || @root_id.nil?
 

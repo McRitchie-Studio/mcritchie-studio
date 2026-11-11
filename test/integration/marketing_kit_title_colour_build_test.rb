@@ -26,9 +26,9 @@ class MarketingKitTitleColourBuildTest < ActiveSupport::TestCase
         assert_includes guidelines, "h2 { font-weight:800; color:#{TITLE};"
         assert_includes guidelines, "background:#{PRIMARY}; }", "the page bar stays primary"
 
-        general = read.call("templates", "RF Template — General.html")
+        general = read.call("templates", "RF Doc Template.html")
         assert_includes general, "font-weight:700;color:#{TITLE};font-size:30pt"
-        proposal = read.call("templates", "RF Template — Proposal.html")
+        proposal = read.call("templates", "RF Proposal Template.html")
         assert_includes proposal, "font-weight:700;color:#{TITLE};font-size:40pt"
         assert_includes proposal, "background-color:#{PRIMARY};padding:12pt 18pt"
 

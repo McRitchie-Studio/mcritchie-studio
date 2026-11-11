@@ -7,7 +7,7 @@
 
 name: Ridgeline Fabrication            # in copy
 legal_name: Ridgeline Fabrication LLC  # contracts and formal documents (defaults to name)
-short: RF                              # file prefix: RF_logo_…, RF Template — Slides
+short: RF                              # file prefix: RF_logo_…, RF Doc Template, RF Sheet Template
 # brand: welding_v2                    # its /logos brand key, if it has one: a publish prints the command that
 #                                      # shows the kit on /logos (bin/rails logos:marketing_kit)
 tagline: Built to last.                # with its full stop; shown in capitals beside the logo
@@ -120,6 +120,13 @@ tracker:
     - [Website, ridgeline.example, Live, Jordan Example, ""]
   # backlog: [[item, why, priority, requested by, due, status], …]  (a starter list is used when empty)
   # claims: [[claim, where it appears, issue, action, status], …]   adds a Claims to Review tab
+
+# sheet:                               # the Sheet template (05 Templates); all optional
+#   sections: [primary, accent, Charcoal]   # its three head colours: swatch names or palette keys.
+#   Left out: primary, accent, then the first other swatch white text reads on.
+#   title: Charcoal                    # the title's colour: a dark swatch name or key (primary by default)
+#   icon: dark                         # light (the default) or dark: pick the colourful icon where the brand has one
+#   title_align: bottom                # center (the default) or bottom: the title on the icon's baseline
 
 start_here:
   status: v1.
