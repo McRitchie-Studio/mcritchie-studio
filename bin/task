@@ -2661,6 +2661,30 @@ def begin_step!(label, slug, *cmd, chdir: nil)
   die!("#{label} failed — fix what it printed above, then re-run: #{ClaimHolder::TASK_COMMAND} begin #{slug}   (it resumes).")
 end
 
+# bin/agent-worktree `new`'s status for a full Redis band (its NO_FREE_SLOT_EXIT).
+WORKTREE_NO_FREE_SLOT_EXIT = 75
+
+# begin 2/5: cut the desk. When the desk band is full (WORKTREE_NO_FREE_SLOT_EXIT),
+# reclaim every desk `bin/agent-worktree remove` would take — its task shipped or
+# archived, its claim not live, its git status clean — then retry ONCE (task
+# release-preflight-hardening: the 64-slot ceiling filled on 2026-11-10 with
+# shipped desks nobody had swept). Any other failure dies as before.
+def begin_worktree_step!(slug, worktree_bin, new_cmd)
+  warn!("begin 2/5 worktree — #{new_cmd.join(" ")}")
+  return if system(*new_cmd)
+
+  if $?.exitstatus == WORKTREE_NO_FREE_SLOT_EXIT
+    warn!("begin 2/5 worktree — the desk band is full; reclaiming shipped/archived desks that are clean and unclaimed")
+    reclaim = [worktree_bin, "cleanup", "--reclaim", "--yes"]
+    warn!("begin 2/5 reclaim — #{reclaim.join(" ")}")
+    system(*reclaim)
+    warn!("begin 2/5 worktree (retry) — #{new_cmd.join(" ")}")
+    return if system(*new_cmd)
+  end
+
+  die!("2/5 worktree failed — fix what it printed above, then re-run: #{ClaimHolder::TASK_COMMAND} begin #{slug}   (it resumes).")
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -3045,7 +3069,7 @@ when "begin"
   # below settles every other case from the recorded claim.
   new_cmd = [worktree_bin, "new", app, worktree_slug]
   new_cmd += ["--soul", builder] unless builder.empty?
-  begin_step!("2/5 worktree", slug, *new_cmd)
+  begin_worktree_step!(slug, worktree_bin, new_cmd)
   begin_step!("3/5 bind", slug, worktree_bin, "bind-task", app, worktree_slug, slug)
 
   # THE PREFLIGHT RUNS BEFORE THE CLAIM, AND AFTER IT BEGIN ONLY REPORTS (guard

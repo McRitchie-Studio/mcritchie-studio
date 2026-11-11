@@ -131,6 +131,9 @@ REDIS_BAND_STEP = Integer(ENV.fetch("AGENT_REDIS_STEP", "10"))
 # Physical `databases` target for `scale --provision`. 64 leaves ~55 band slots
 # above the DB-9 band start with plenty of headroom for primary apps on 0-8.
 DEFAULT_REDIS_PHYSICAL_TARGET = 64
+# `new` exits this when the Redis band has no free slot (EX_TEMPFAIL): bin/task
+# begin reads it, reclaims shipped/archived clean desks, and retries once.
+NO_FREE_SLOT_EXIT = 75
 
 ALIASES = {
   "studio" => "mcritchie-studio",
@@ -871,11 +874,14 @@ def allocate_redis_db
         next
       end
 
-      abort <<~MSG.strip
+      warn <<~MSG.strip
         no free Redis DB in band #{redis_db_min}-#{ceiling}; physical Redis ceiling reached (databases=#{physical}).
         Free a slot:   #{AGENT_WORKTREE_CMD} cleanup   (then remove merged worktrees)
         Raise ceiling: #{AGENT_WORKTREE_CMD} scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
       MSG
+      # A DISTINCT status, so `bin/task begin` can tell a full band (reclaim, then
+      # retry) from any other failure (task release-preflight-hardening).
+      exit NO_FREE_SLOT_EXIT
     end
   end
 end
