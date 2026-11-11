@@ -137,9 +137,27 @@ module Ci
 
     # The suite runs for this branch's newest built sha — newest run per workflow, so a
     # re-run supersedes rather than double-counts.
+    #
+    # A PRIVATE REPO'S `main` IS READ FROM ITS `release` RUN (task
+    # devops-sub-hour-follow-ups). Since ci-runs-reactive-and-once (2026-11-10) a private
+    # repo's CI no longer runs on a push to `main`: a ship fast-forwards `main` to the
+    # frozen release SHA whose green the ship gate already read. So `main` holds no suite
+    # run for the SHA it carries, and its newest suite run is an old one from before the
+    # change. When `main` has no suite run for the SHA the newest shipped release put
+    # there (metadata["shipped_shas"]), the rung reads that SHA's runs on `release`, the
+    # run that certified it. A repo whose CI still runs on `main` (the public ones) has a
+    # run for that SHA and reads its own, as before.
     def self.branch_runs(repo, branch)
       nwo = Ci::ReviewGate.nwo_for(repo)
       return [] if nwo.empty?
+
+      if branch.to_s == MAIN
+        shipped = shipped_main_sha(repo)
+        if shipped.present? && suite_runs(repo, nwo, MAIN, shipped).empty?
+          certified = suite_runs(repo, nwo, MAIN_CERTIFIED_BY, shipped)
+          return certified if certified.any?
+        end
+      end
 
       newest_sha = GithubWorkflowRun.for_repo(nwo)
                                     .where(head_branch: branch.to_s)
@@ -149,13 +167,30 @@ module Ci
                                     &.head_sha
       return [] if newest_sha.blank?
 
+      suite_runs(repo, nwo, branch, newest_sha)
+    end
+
+    MAIN = "main"
+    MAIN_CERTIFIED_BY = "release"
+
+    # The newest suite run per workflow on +branch+ at +sha+.
+    def self.suite_runs(repo, nwo, branch, sha)
       GithubWorkflowRun.for_repo(nwo)
-                       .where(head_branch: branch.to_s, head_sha: newest_sha)
+                       .where(head_branch: branch.to_s, head_sha: sha)
                        .order(Arel.sql("run_started_at DESC NULLS LAST"))
                        .to_a
                        .select { |run| suite_run?(repo, run) }
                        .group_by { |run| run.workflow_name.to_s }
                        .map { |_name, group| group.first }
+    end
+
+    # The SHA the newest shipped release fast-forwarded this repo's `main` to, or nil.
+    def self.shipped_main_sha(repo)
+      Release.where(state: "shipped")
+             .where("metadata -> 'shipped_shas' ->> ? IS NOT NULL", repo.to_s)
+             .order(Arel.sql("COALESCE(shipped_at, created_at) DESC"))
+             .first
+             &.metadata&.dig("shipped_shas", repo.to_s).presence
     end
 
     # Buckets, borrowed VERBATIM from CiStatus::CHECK_RUN_BUCKETS (bin/lib/ci_status.rb)

@@ -302,8 +302,13 @@ Canonical release steps are:
 
 ```text
 review_tests assemble_release deploy_qa qa_smoke ship_gate ship_authorized
-deploy_prod prod_smoke release_notes archive_tasks devnet_gauntlet
+deploy_prod prod_smoke release_notes archive_tasks devnet_gauntlet step_timings
 ```
+
+`step_timings` stamps no stage either: `bin/release prepare` and `ship` each post one,
+completed, at the end of the act. Its `metadata` is `{act, steps}`, the act's seconds per
+phase (sweep, ci_gate, qa_deploy, record; ship_gate, deploy, record, post_ship), and its
+message is the act's `⏱ step durations` line.
 
 `devnet_gauntlet` stamps no stage: it records a green Turf contest-rehearsal on QA
 (`bin/release prepare` posts it once Turf QA has booted, before the QA-green flip). `bin/release ship` requires it of a release carrying turf-monster or turf-vault

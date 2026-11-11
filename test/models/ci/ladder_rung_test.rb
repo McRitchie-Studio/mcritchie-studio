@@ -288,6 +288,52 @@ module Ci
                                 html_url: "https://x/#{id || 1}")
     end
 
+    # --- a private repo's `main` (task devops-sub-hour-follow-ups) -------------
+    # Since ci-runs-reactive-and-once a private repo's CI never runs on `main`: a ship
+    # fast-forwards it to the release SHA CI already passed on `release`.
+
+    def ship!(repo, sha)
+      release = Release.open!
+      release.update_columns(state: "shipped", shipped_at: Time.current, # rubocop:disable Rails/SkipsModelValidations
+                             metadata: release.metadata.merge("shipped_shas" => { repo => sha }))
+      release
+    end
+
+    test "a main with no run for its shipped sha reads that sha's release run" do
+      GithubWorkflowRun.delete_all
+      old = "01d0000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      shipped = "5b1p000aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "main", sha: old, workflow: "CI", conclusion: "failure", id: 11,
+             started: 3.days.ago)
+      wf_run(repo: "turf-monster", branch: "release", sha: shipped, workflow: "CI", id: 12, started: 1.hour.ago)
+      ship!("turf-monster", shipped)
+
+      rung = Ci::LadderRung.for(repo: "turf-monster", branch: "main")
+      assert_equal :green, rung.state, "main carries the shipped sha, and release's run certified it"
+      assert_equal shipped, rung.sha, "not the stale pre-change main run"
+      assert_equal "https://x/12", rung.run_url
+    end
+
+    test "a main with its own run for the shipped sha keeps reading main" do
+      GithubWorkflowRun.delete_all
+      sha = "pub1c00aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "release", sha: sha, workflow: "CI", id: 13)
+      wf_run(repo: "turf-monster", branch: "main", sha: sha, workflow: "CI", conclusion: "failure", id: 14)
+      ship!("turf-monster", sha)
+
+      assert_equal :red, Ci::LadderRung.for(repo: "turf-monster", branch: "main").state,
+                   "a repo whose CI runs on main is read from main"
+    end
+
+    test "with no shipped release main reads as it always did" do
+      GithubWorkflowRun.delete_all
+      sha = "n0sh1p0aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      wf_run(repo: "turf-monster", branch: "release", sha: sha, workflow: "CI", id: 15)
+
+      assert_equal :not_built, Ci::LadderRung.for(repo: "turf-monster", branch: "main").state
+      assert_nil Ci::LadderRung.shipped_main_sha("turf-monster")
+    end
+
     # MEASURED 2026-08-20: sha ddfad29 carried runs on release AND main AND accepted.
     # BranchGate is sha-scoped, so every rung folded the same runs and the three badges
     # could never disagree — they carried no independent information at all.

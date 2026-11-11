@@ -12,6 +12,7 @@ class ReleaseEvent < ApplicationRecord
     archive_tasks
     rollback
     devnet_gauntlet
+    step_timings
   ].freeze
   STATUSES = %w[started completed failed].freeze
 
