@@ -16,10 +16,11 @@ class CiLaneImageTest < Minitest::Test
   MIRROR = File.join(ROOT, ".github/workflows/mirror-ci-images.yml")
   DOCKERFILE = File.join(ROOT, ".github/ci-image/Dockerfile")
   LANE_IMAGE_EXPR = "${{ inputs.lane-image }}"
-  IMAGE_LANES = %w[island_animator playwright rails].freeze
-  # The one job still on the bare runner, and why: reusable-ci.yml's comment on it.
-  # Its apt step stays bounded and retried (test/lib/ci_apt_step_timeout_test.rb).
-  APT_EXCEPTIONS = { "reusable-ci.yml" => %w[system] }.freeze
+  IMAGE_LANES = %w[island_animator playwright rails system].freeze
+  # No job is excepted. `system` was the last bare-runner lane with an apt step; it moved
+  # into the image after the mirror went unresolvable on 2026-11-11 (task
+  # ci-system-lane-in-image). An entry here is a lane that can go red on a mirror.
+  APT_EXCEPTIONS = {}.freeze
 
   # What the lanes installed with apt before they moved into the image. Each must be
   # in the image, or the lane that needed it now fails at a missing binary.
@@ -54,6 +55,39 @@ class CiLaneImageTest < Minitest::Test
       end
     end
     assert_empty offenders, "these steps fetch from an apt mirror; put the package in .github/ci-image/Dockerfile instead"
+  end
+
+  # The guard the 2026-11-11 outage asked for: no job in reusable-ci.yml runs apt on the
+  # bare runner, and the file names no apt-get or apt-retry at all, so an apt step cannot
+  # come back in a form the step classifier misses (an `if:`-gated step, a composite).
+  def test_no_reusable_job_runs_apt_on_the_bare_runner
+    offenders = jobs(REUSABLE).reject { |_, job| job["container"] }.flat_map do |name, job|
+      Array(job["steps"]).select { |s| self.class.apt_fetch?(s["run"]) || s.dig("with", "install-dependencies") == true }
+                         .map { |s| "#{name}: #{s['name']}" }
+    end
+    assert_empty offenders, "these bare-runner steps fetch from an apt mirror; run the job in inputs.lane-image"
+    text = File.read(REUSABLE)
+    refute_match(/^\s*[^#\n]*\bapt-get\b/, text, "reusable-ci.yml runs apt-get")
+    refute_match(/^\s*[^#\n]*apt-retry/, text, "reusable-ci.yml calls apt-retry")
+  end
+
+  # Chrome in the container needs --no-sandbox, and no app passes it. The system lane
+  # wraps setup-chrome's binary in place, so a driver that finds Chrome on PATH
+  # (selenium-webdriver 4.46, mcritchie-industries) and one handed /usr/bin/google-chrome
+  # both reach the wrapper. Wrapping only /usr/bin/google-chrome failed 29 of 29 MI tests.
+  def test_the_system_lane_wraps_chrome_in_place_with_no_sandbox
+    step = jobs(REUSABLE).fetch("system").fetch("steps").find { |s| s["name"] == "Run Chrome without its sandbox" }
+    refute_nil step, "the system lane must wrap Chrome"
+    run = step["run"].to_s
+    assert_includes run, 'mv "$CHROME_BIN" "$CHROME_BIN.sandboxed"', "wrap setup-chrome's binary itself"
+    assert_includes run, "--no-sandbox"
+    assert_includes run, 'ln -sf "$CHROME_BIN" /usr/bin/google-chrome'
+  end
+
+  def test_no_ci_error_text_tells_anyone_to_rerun
+    texts = WORKFLOWS + Dir[File.join(ROOT, ".github/scripts/*")]
+    offenders = texts.select { |path| File.read(path).match?(/::error::[^\n]*re-?run (this|the) job/i) }
+    assert_empty offenders, "a red has a cause; error text names it instead of asking for a re-run"
   end
 
   def test_setup_chrome_installs_no_apt_dependencies

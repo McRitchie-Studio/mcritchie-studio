@@ -73,7 +73,7 @@ on:
         default: bin/importmap-audit-ci
       # ---- the system lane ----
       system-packages:
-        description: The apt packages the system lane installs (the one lane still on the bare runner); an empty list skips apt.
+        description: DEPRECATED and unused (task ci-system-lane-in-image, 2026-11-11). The system lane runs in the lane image, which carries every package, so it installs nothing. Accepted for one release so callers that pass it keep working; drop it from callers, then from here.
         type: string
         default: curl libvips postgresql-client imagemagick librsvg2-bin
       system-setup-command:
@@ -902,11 +902,21 @@ jobs:
       contents: read
       packages: read
     timeout-minutes: 45
-    # THE ONE LANE STILL ON THE BARE RUNNER, and so the one apt step left (task
-    # deterministic-ci). In the lane image every app's Selenium system tests need Chrome's
-    # --no-sandbox, and the hub's click-certification tests measured a 17px scroll the VM
-    # does not show; moving it waits on that cause and on each satellite's system-test
-    # driver. Named in test/lib/ci_lane_image_test.rb's APT_EXCEPTIONS.
+    # IN THE LANE IMAGE, NOT ON THE BARE RUNNER (task ci-system-lane-in-image). This was
+    # the last lane with an apt step. On 2026-11-11 the runner could not resolve the
+    # Ubuntu mirror for over an hour, and a new runner image missed the apt cache, so the
+    # commercial-welding and mcritchie-industries release CI went red here. The image
+    # carries every package, so the job runs no apt at all. Selenium's Chrome needs
+    # --no-sandbox in a container; the "Run Chrome without its sandbox" step below adds it
+    # for every app, so no satellite's driver changes. Guard: test/lib/ci_lane_image_test.rb.
+    container:
+      image: ${{ inputs.lane-image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
+      # As the rails lane: --init reaps killed children, Chrome needs a large /dev/shm,
+      # and uid 1001 owns the mounted workspace.
+      options: --init --shm-size=2g --user 1001
 
     services:
       postgres:
@@ -932,9 +942,6 @@ jobs:
         options: --health-cmd="pg_isready" --health-interval=10s --health-timeout=5s --health-retries=3
 
     steps:
-      # CHECKOUT FIRST — .github/scripts/apt-retry is a file in THIS repo, so the apt
-      # step below cannot run before the tree exists. Ordering, not preference.
-      #
       # `fetch-depth: 0` here is INHERITED, not required, and saying so beats leaving the
       # next reader to guess. The `rails` shards need full history because
       # test/lib/e2e_quarantine_ratchet_test.rb reads its baseline from `origin/release`
@@ -949,55 +956,6 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
-
-      # The .debs come from cache first; .github/scripts/apt-retry points apt at
-      # ~/apt-archives, so a warm run fetches only the package index from a mirror
-      # that stalls (2026-10-26). Keyed on the runner image + this package list; a
-      # new image week restores the last entry and fetches only what changed.
-      - name: Read runner image
-        if: ${{ inputs.system-packages != '' }}
-        id: runner-image
-        run: echo "id=${ImageOS}-${ImageVersion}" >> "$GITHUB_OUTPUT"
-
-      - name: Restore apt package cache
-        if: ${{ inputs.system-packages != '' }}
-        uses: actions/cache@v4
-        with:
-          path: ~/apt-archives
-          key: apt-${{ steps.runner-image.outputs.id }}-${{ inputs.system-packages }}
-          restore-keys: |
-            apt-${{ steps.runner-image.outputs.id }}-
-            apt-ubuntu24-
-
-      # AN EMPTY LIST INSTALLS NOTHING (task devops-sub-hour-follow-ups). apt-retry
-      # refuses an empty list, so these three steps skip on `system-packages: ""`: an
-      # app whose suite needs nothing past the runner image (voicebox, rolio) passes
-      # the empty list instead of naming a package the runner already ships.
-      - name: Install packages
-        if: ${{ inputs.system-packages != '' }}
-        # The fetch is BOUNDED and RETRIED — see .github/scripts/apt-retry for the
-        # incident, the measured budgets, and why the loop lives in a script rather
-        # than inline here (short version: the step stays one literal, readable
-        # invocation, and the budgets live in one tested place).
-        #
-        # This bound is the backstop, not the mechanism: the script's own escalating
-        # budgets total ~22 minutes, and 25 sits above that and well below the
-        # 45-minute job bound, so a step that blows through its retries still fails
-        # long before it can take the whole job down with it.
-        #
-        # `libjemalloc2` is deliberately absent from THIS list where the other jobs
-        # carry it: it is a production memory allocator, and nothing on the test path
-        # loads it. `curl`,
-        # `postgresql-client` and `libvips` all stay — measured, not assumed:
-        # test/commands/agent_worktree_test.rb mints a real per-run Postgres database
-        # and bin/agent-worktree shells `psql` to do it, and libvips is required
-        # outright by image_processing + Active Storage's boot-time
-        # Vips.block_untrusted call. `imagemagick` and `librsvg2-bin` are for
-        # test/lib/workspace_icon_render_test.rb, which draws real PNGs with
-        # bin/workspace-icon's argv and fails (not skips) without them: Ubuntu's
-        # ImageMagick 6 reads SVG only through rsvg-convert.
-        timeout-minutes: 25
-        run: .github/scripts/apt-retry ${{ inputs.system-packages }}
 
       # System-test lane browser. Install Chrome via Chrome for Testing, then let
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
@@ -1018,12 +976,36 @@ jobs:
       # 149.0.7827.155). Self-healing across Chrome bumps -- nothing to pin/maintain.
       # The eviction step below removes any chromedriver preinstalled on the runner
       # image that would otherwise shadow Selenium Manager's matched pick.
+      #
+      # install-dependencies: false — that option runs apt; the lane image already carries
+      # Chromium's libraries (`playwright install-deps chromium` in its Dockerfile).
       - name: Install Chrome (Chrome for Testing), no bundled chromedriver
+        id: chrome
         uses: browser-actions/setup-chrome@v2
         with:
           chrome-version: stable
           install-chromedriver: false
-          install-dependencies: true
+          install-dependencies: false
+
+      # NO SANDBOX IN A CONTAINER. Chrome's sandbox needs user namespaces, which a
+      # container job does not grant to uid 1001, so Chrome aborts at launch. Each app's
+      # ApplicationSystemTestCase drives `:headless_chrome` with no flag of its own, so
+      # this step wraps the binary IN PLACE: setup-chrome's `chrome` becomes a script that
+      # runs the real binary with --no-sandbox, and /usr/bin/google-chrome links to it.
+      # Every way a driver finds Chrome reaches the wrapper. Newer selenium-webdriver
+      # passes Selenium Manager's /usr/bin/google-chrome; 4.46 passes no binary, and
+      # chromedriver finds `chrome` on setup-chrome's PATH entry (mcritchie-industries,
+      # 2026-11-11). The wrapper appends Chrome's stderr and each launch's arguments to
+      # /tmp/chrome-stderr.log, which a failed run prints.
+      - name: Run Chrome without its sandbox
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+        run: |
+          sudo mv "$CHROME_BIN" "$CHROME_BIN.sandboxed"
+          printf '#!/bin/sh\nexec 2>>/tmp/chrome-stderr.log\necho "launch: $*" >&2\nexec "%s.sandboxed" --no-sandbox "$@"\n' "$CHROME_BIN" | sudo tee "$CHROME_BIN" >/dev/null
+          sudo chmod 0755 "$CHROME_BIN"
+          sudo ln -sf "$CHROME_BIN" /usr/bin/google-chrome
+          echo "google-chrome: $(command -v google-chrome) -> $(google-chrome --version)"
 
       - name: Evict any chromedriver on PATH so Selenium Manager fetches a matched one
         run: |
@@ -1073,19 +1055,27 @@ jobs:
         if: ${{ inputs.system-setup-command != '' }}
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432
         run: ${{ inputs.system-setup-command }}
 
       - name: Run system tests
         env:
           RAILS_ENV: test
-          DATABASE_URL: postgres://postgres:postgres@localhost:5432
+          DATABASE_URL: postgres://postgres:postgres@postgres:5432
         run: ${{ inputs.system-command }}
+
+      # Chromedriver reports only "Chrome instance exited". The wrapper above keeps
+      # Chrome's own stderr, so a failed launch names its cause in the log.
+      - name: Show Chrome's own errors
+        if: failure()
+        run: |
+          tail -n 80 /tmp/chrome-stderr.log 2>/dev/null || echo "the wrapper never ran"
+          ls -la "$HOME/.cache/selenium" "$HOME/.cache/selenium"/* 2>&1 | head -40
 
       - name: Keep screenshots from failed system tests
         uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: screenshots
-          path: ${{ github.workspace }}/tmp/screenshots
+          path: tmp/screenshots
           if-no-files-found: ignore

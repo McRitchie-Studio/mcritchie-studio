@@ -74,8 +74,8 @@ RubyGems await is the exception: an app without its own copy runs the hub's.
 | `postgres-image` | `ghcr.io/mcritchie-studio/postgres:17` | The app's production major, on the same mirror (`.github/workflows/mirror-ci-images.yml` copies `postgres:17`, `postgres:18` and `redis:8`; the packages are public, so any app's run token pulls them) |
 | `gem-audit-command` | empty | `bin/bundler-audit`, as one more static check |
 | `importmap-audit-command` | `bin/importmap-audit-ci` | `bin/importmap audit` |
-| `lane-image` | `ghcr.io/mcritchie-studio/ci-rails:24.04` | Rarely changed. The image the `island_animator`, `playwright` and `rails` lanes run inside, every package pre-installed (`.github/ci-image/Dockerfile`, built weekly by `mirror-ci-images.yml`). Those lanes run no apt |
-| `system-packages` | the hub's apt list | The app's apt list. The `system` lane is the one lane still on the bare runner, with a bounded, retried apt step |
+| `lane-image` | `ghcr.io/mcritchie-studio/ci-rails:24.04` | Rarely changed. The image the `island_animator`, `playwright`, `rails` and `system` lanes run inside, every package pre-installed (`.github/ci-image/Dockerfile`, built weekly by `mirror-ci-images.yml`). Those lanes run no apt |
+| `system-packages` | the hub's apt list | Deprecated and unused: the `system` lane runs in the lane image with no apt step (task ci-system-lane-in-image). Drop it from callers |
 | `system-setup-command` | empty | An asset build before the suite (`bin/rails tailwindcss:build`) |
 | `system-command` | `bin/rails db:test:prepare test:system` | The app's whole suite when it is one command |
 
@@ -983,9 +983,9 @@ nobody files it under "flaky". The system holds that line in five places:
   `lane-image` input above); the apt mirror stall was the top red-then-green cause.
   The container runs `--init --shm-size=2g --user 1001`, as close to the hosted VM as a
   container gets: a reaping PID 1, room for Chrome, and the runner's own user. The
-  `system` lane stays on the VM for now: in a container every app's Selenium driver
-  needs Chrome's `--no-sandbox`, and the hub's click-certification tests met a 17px
-  scroll the VM does not show. Guard: `test/lib/ci_lane_image_test.rb`.
+  `system` lane runs there too (task ci-system-lane-in-image): a step wraps
+  setup-chrome's binary in place with `--no-sandbox` and links `/usr/bin/google-chrome`
+  to it, so no app's Selenium driver changes. Guard: `test/lib/ci_lane_image_test.rb`.
 - **A cause card for every flip.** When a run goes green at a SHA where a run of the
   same workflow (or an earlier attempt of the same run, a re-run) went red,
   `GithubWorkflowRunIngestJob` enqueues `CiCauseCardJob`. It reads the red jobs' logs
