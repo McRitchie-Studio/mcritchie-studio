@@ -1,14 +1,11 @@
 # frozen_string_literal: true
 
 # [unit] submit waits for late-registering checks (task devops-sub-hour-follow-ups).
-#
 # GitHub creates a job's check only when the job is queued, so a job that `needs:`
-# another (a census after its shards, a shard matrix built from a plan job's output,
-# a late Playwright shard) has no check yet while the run is still going. A poll in
-# that window saw every existing check pass and called the PR green. CiStatus now
-# holds a green rollup at :pending while a push or pull_request run on the head SHA
-# is not `completed`. bin/submit's settle wait (bin/lib/ci_wait.rb) waits on :pending,
-# so it counts the late checks before it calls green.
+# another (a census, a planned shard matrix, a late Playwright shard) has no check
+# while its run still goes. CiStatus holds that green rollup at :pending until every
+# push or pull_request run on the head SHA is `completed`; bin/submit's settle wait
+# (bin/lib/ci_wait.rb) waits on :pending.
 require "minitest/autorun"
 require "json"
 require "tmpdir"
