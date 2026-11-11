@@ -10,7 +10,9 @@ module GoogleConnect
   # WHAT IT NEVER DOES: send mail, move to Trash, or delete. gmail.modify
   # would let it send; the source never does (test/lib/no_gmail_send_test.rb
   # scans for it). No action here names TRASH, and no method calls a delete,
-  # trash or send endpoint (gmail_editor_test pins both).
+  # trash or send endpoint (gmail_editor_test pins both). Unsubscribe never
+  # opens a mailto and never sends the Google token off Google: the one-click
+  # POST goes through OneClickUnsubscribe, which takes no token.
   #
   # DRY FIRST. Every run lists the messages the query matches and stops there
   # unless `apply: true`; then it changes them in batches of BATCH (Gmail's
