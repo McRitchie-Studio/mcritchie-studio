@@ -1,15 +1,9 @@
 # frozen_string_literal: true
 
 # [unit] Every bin script resolves its siblings independent of the caller's cwd.
-#
-# A spawn of a bare "bin/<tool>" resolves against the cwd, so the fixed-path tooling
-# (<projects>/.agents/bin) run from anywhere but the hub root fails with ENOENT, or
-# runs ANOTHER checkout's tool. bin/release did it with bin/qa-server (fixed in
-# release-prepare-night-lessons, held by release_hub_bin_paths_test.rb); bin/devops-reconcile
-# did it with bin/task. This guard holds the class over every Ruby script in bin/ and
-# bin/lib. A spawn may stay relative only when it runs with `chdir:` (a repo's own
-# binstub, run inside that repo) or in a script that pins its cwd with Dir.chdir first.
-# History: task release-preflight-hardening.
+# A bare "bin/<tool>" spawn resolves against the cwd, so the fixed-path tooling fails
+# from anywhere but the hub root. Relative is legal only with `chdir:`, or in a script
+# that pins its cwd with Dir.chdir first. History: task release-preflight-hardening.
 require "minitest/autorun"
 
 class BinCwdIndependenceTest < Minitest::Test
