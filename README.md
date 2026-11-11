@@ -161,6 +161,11 @@ scaled so Solid Queue can process durable mail/auth jobs. Required env vars:
 `RAILS_MASTER_KEY`, `RAILS_SERVE_STATIC_FILES=true`, `GOOGLE_CLIENT_ID`,
 `GOOGLE_CLIENT_SECRET`.
 
+The **Studio** Google Sheets add-on in `addons/studio-sheets/` does not ride this
+path. It deploys with clasp and a Workspace admin install:
+[its README](addons/studio-sheets/README.md) and the
+[sheets-addon SOP](docs/agents/agents/steffon/sops/sheets-addon.md).
+
 ## Architecture
 
 - Rails 8.1 with ERB views, Tailwind CSS, Alpine.js
