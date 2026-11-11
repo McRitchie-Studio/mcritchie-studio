@@ -224,14 +224,14 @@ the sheet easy to work in, so keep them in every copy:
 | Row 1, column A | Thin margins |
 | A2 | The brand icon, in a square cell, at its own proportions and centred. `sheet.icon: dark` picks the colourful version where a brand has one (MS's violet chest); `light` by default |
 | Row 2 | `[Sheet Title]` in B2, in a dark brand colour (`primary`, or the swatch `sheet.title` names), centred in the row's height, alone on its row so a long title runs across |
-| Row 3 | `Last Updated: <date>` in B3, which the agent stamps at every build; the variable labels from D3 |
-| Row 4 | The variable values, under their labels. Formulas point at them with absolute references. The first is the headline (`emphasis: true`): it draws larger, in the brand's `title` colour and whole dollars, as a card roster shows its total credit limit |
-| Rows 6-7 | The table head from column B, in three colour sections: the darker top row names the section, the lower row names the columns |
-| Row 8 on | The data. Column B is the row's item (its name), and column C a narrow gutter that parts it from the columns that scroll. A column may carry `choices` (a dropdown) and its own `format` (`"$"#,##0` for whole dollars) |
+| Row 3 | `Last Updated: <date>` in B3, which the agent stamps at every build |
+| Rows 4-5 | Variables, label over value. The first is the headline (`emphasis: true`): it sits in column B under the title, where the freeze keeps it in view, larger, in the brand's `title` colour and whole dollars, as a card roster shows its total credit limit. The rest run from D. Formulas point at them with absolute references |
+| Rows 7-8 | The table head from column B, in three colour sections: the darker top row names the section, the lower row names the columns |
+| Row 9 on | The data. Column B is the row's item (its name), and column C a narrow gutter that parts it from the columns that scroll. A column may carry `choices` (a dropdown) and its own `format` (`"$"#,##0` for whole dollars) |
 
 - **No merged cells.** A section's label sits in its first cell, and the other
   cells share its colour. Every column can move, sort and filter.
-- **The freeze is at C8.** The variables, the head rows and the item column stay in
+- **The freeze is at C9.** The variables, the head rows and the item column stay in
   view, so you always see which row and which column you are on.
 - **White text on both head rows, at 4.5:1 or better.** The lower row is the
   brand colour, darkened only as far as white text needs (a near-black colour

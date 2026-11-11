@@ -10,7 +10,7 @@ module MarketingKit
   #
   # The rules the layout keeps, because they are what make a sheet easy to work in:
   # - no merged cells anywhere, so columns and rows move freely;
-  # - the freeze (C8) sits under the table's lower head and right of the item column,
+  # - the freeze (C9) sits under the table's lower head and right of the item column,
   #   so the head and the row's item stay in view while you scroll;
   # - both head rows carry white text at WCAG AA or better (4.5:1).
   #
@@ -102,7 +102,8 @@ module MarketingKit
       { key: "notes", section: 2, head: "[Notes]", width: 40, kind: "text" }
     ].freeze
 
-    # Label (row 3) over value (row 4), side by side from column D (C is the gutter), under the
+    # Label (row 4) over value (row 5). The headline sits in column B, under the
+    # title and the Last Updated line; the others run from column D (C is the gutter), under the
     # title and beside the Last Updated line. A column or variable may carry its
     # own number format (format: '"$"#,##0' for whole dollars), and a column its
     # own dropdown (choices: [...]). A variable may carry emphasis: true, the sheet's headline number,
@@ -135,11 +136,11 @@ module MarketingKit
       "Make your own: File, then Make a copy. Replace every [bracketed] word; keep the layout.",
       "No merged cells. A section label sits in the first cell of its section; the other cells share its colour. " \
       "This keeps every column free to move, sort and filter.",
-      "Row 1 and column A are margins; A2 holds the brand icon and row 2 the title. The freeze holds rows 1-7 and columns A-B. " \
+      "Row 1 and column A are margins; A2 holds the brand icon and row 2 the title. The freeze holds rows 1-8 and columns A-B. " \
       "Keep the row's item (its name) in column B, so you always see which row you are on.",
       "Add a column: insert it inside a section and copy the head cells' format from a neighbour. " \
       "Add a row: insert it inside the table, so totals and dropdowns cover it.",
-      "Variables sit under the title, label over value. Formulas point at them with absolute references ($E$4), " \
+      "Variables sit under the title, label over value. Formulas point at them with absolute references ($D$5), " \
       "so a value changes in one place.",
       "Head colours come from the brand palette. Both head rows are dark enough for white text; " \
       "keep it that way if you recolour a section."

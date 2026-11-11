@@ -23,12 +23,12 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
         sheet = xml.fetch("xl/worksheets/sheet1.xml")
 
-        assert_match(/<pane [^>]*xSplit="2"[^>]*ySplit="7"[^>]*topLeftCell="C8"[^>]*state="frozen"/, sheet)
+        assert_match(/<pane [^>]*xSplit="2"[^>]*ySplit="8"[^>]*topLeftCell="C9"[^>]*state="frozen"/, sheet)
         assert_no_match(/<mergeCell/, sheet, "the template never merges a cell")
         assert_match(/showGridLines="0"/, sheet)
-        assert_match(/<autoFilter ref="B7:K11"/, sheet)
+        assert_match(/<autoFilter ref="B8:K12"/, sheet)
         assert_match(/<dataValidation [^>]*type="list"/, sheet)
-        assert_includes sheet, %(IF(I8="",$E$4,I8)), "the formula reads the Default rate variable"
+        assert_includes sheet, %(IF(I9="",$D$5,I9)), "the formula reads the Default rate variable"
 
         styles = xml.fetch("xl/styles.xml")
         MarketingKit::SheetTemplate.new(spec).sections.each do |s|
@@ -37,12 +37,13 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         assert_match(%r{<c r="B2"[^>]*><is><t>\[Sheet Title\]</t>}, sheet, "the title is in B2")
         assert_no_match(/<c r="[C-Z]2"/, sheet, "row 2 is the title alone, so it can run across the row")
         assert_match(%r{<c r="B3"[^>]*><is><t>Last Updated: \w{3} \d+(st|nd|rd|th), \d{4}</t>}, sheet, "the build stamps Last Updated under the title")
-        assert_match(%r{<c r="D3"[^>]*><is><t>TOTAL AMOUNT</t>}, sheet, "the headline variable leads from D3, past the gutter")
+        assert_match(%r{<c r="B4"[^>]*><is><t>TOTAL AMOUNT</t>}, sheet, "the headline sits under the title, in column B")
+        assert_match(%r{<c r="D4"[^>]*><is><t>DEFAULT RATE</t>}, sheet, "the other variables run from D, past the gutter")
         assert_match(%r{<col width="2.57"[^>]*min="3" max="3"/>}, sheet, "column C is a narrow gutter")
         assert_no_match(/<c r="C\d+"[^>]*><(is|f|v)>/, sheet, "the gutter holds no value")
-        assert_match(%r{<c r="D4"[^>]*><f>SUM\(G8:G998\)</f>}, sheet, "Total amount sums the Amount column")
-        assert_match(/<row r="4" ht="26"/, sheet, "the headline row is tall enough for it")
-        assert_match(%r{<c r="B8"[^>]*><is><t>\[Example item one\]</t>}, sheet, "the table starts in column B")
+        assert_match(%r{<c r="B5"[^>]*><f>SUM\(G9:G999\)</f>}, sheet, "Total amount sums the Amount column")
+        assert_match(/<row r="5" ht="26"/, sheet, "the headline row is tall enough for it")
+        assert_match(%r{<c r="B9"[^>]*><is><t>\[Example item one\]</t>}, sheet, "the table starts in column B")
         assert_no_match(/<c r="A\d+"/, sheet, "column A is a margin: no cell in it carries anything")
         assert_no_match(/<c r="[A-Z]+1"/, sheet, "row 1 is a margin")
         drawing = xml.fetch("xl/drawings/drawing1.xml")
@@ -62,7 +63,7 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         payload[:variables] = [payload[:variables].last.merge(emphasis: true), payload[:variables].first]
         path = office.send(:draw, "sheet", payload, File.join(out, "emphasis.xlsx"))
         xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
-        assert_match(/<row r="4" ht="26"/, xml.fetch("xl/worksheets/sheet1.xml"))
+        assert_match(/<row r="5" ht="26"/, xml.fetch("xl/worksheets/sheet1.xml"))
         title = spec.colour(:title).delete("#") # the headline keeps the brand's title colour
         assert_match(%r{<font><name val="Montserrat"/><b val="1"/><color rgb="\h\h#{title}"/><sz val="16"/></font>}, xml.fetch("xl/styles.xml"))
       end
@@ -105,8 +106,8 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         path = MarketingKit::Office.new(spec).send(:draw, "sheet", payload, File.join(out, "choices.xlsx"))
         xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
         sheet = xml.fetch("xl/worksheets/sheet1.xml")
-        assert_match(%r{<dataValidation sqref="D8:D998"[^>]*type="list"><formula1>"Alpha,Beta"</formula1>}, sheet)
-        assert_match(%r{<dataValidation sqref="H8:H998"[^>]*type="list"><formula1>"Active,Paused,Closed"</formula1>}, sheet, "Status keeps the sheet's statuses")
+        assert_match(%r{<dataValidation sqref="D9:D999"[^>]*type="list"><formula1>"Alpha,Beta"</formula1>}, sheet)
+        assert_match(%r{<dataValidation sqref="H9:H999"[^>]*type="list"><formula1>"Active,Paused,Closed"</formula1>}, sheet, "Status keeps the sheet's statuses")
         assert_includes xml.fetch("xl/styles.xml"), %(formatCode="&quot;$&quot;#,##0"/>)
       end
     end

@@ -228,7 +228,7 @@ def sheet(d, out):
     FORMATS = {"date": "mmm d, yyyy", "money": '"$"#,##0.00', "percent": "0.0%"}
     RIGHT = {"money", "percent", "formula", "date"}
 
-    MARGIN, TITLE, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 8)
+    MARGIN, TITLE, UPDATED, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 9)
     FIRST = HEAD_LOW + 1
     LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
     X = 2  # the table's first column (B); A is the margin
@@ -248,7 +248,8 @@ def sheet(d, out):
     ws.column_dimensions[L(GUTTER)].width = 2.57
     # A variable marked emphasis (the sheet's headline number) draws larger, so row 3 grows to hold it.
     emphasis = any(v.get("emphasis") for v in d["variables"])
-    heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_LABEL: 12, VAR_VALUE: 26 if emphasis else 20, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
+    heights = {MARGIN: 15, TITLE: square * 3 / 4, UPDATED: 12, VAR_LABEL: 12, VAR_VALUE: 26 if emphasis else 20, GAP: 12,
+               HEAD_TOP: 24, HEAD_LOW: 22}
     for r, h in heights.items(): ws.row_dimensions[r].height = h
 
     # The icon fits inside A2, a few pixels in from each edge, at its own
@@ -268,16 +269,22 @@ def sheet(d, out):
     # the date an agent last rebuilt the sheet.
     t = ws.cell(TITLE, X, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
     t.alignment = Alignment(vertical="center")  # level with the icon's middle, whatever its shape
-    u = ws.cell(VAR_LABEL, X, f"Last Updated: {d['updated']}"); u.font = font(size=9, color=col["grey"])
-    u.alignment = Alignment(vertical="bottom")
+    u = ws.cell(UPDATED, X, f"Last Updated: {d['updated']}"); u.font = font(size=9, color=col["grey"])
+    u.alignment = Alignment(vertical="top")
 
     def fmt(item):  # an item's own format wins over its kind's
         return item.get("format") or FORMATS.get(item["kind"])
 
-    # Variables: label (row 3) over value (row 4), one per column from C
+    # Variables: label (row 4) over value (row 5). The headline (emphasis) sits in
+    # column B, under the title, where the freeze keeps it in view; the rest run
+    # on from D, past the gutter.
     var_cell = {}
-    for i, v in enumerate(d["variables"]):
-        at = C(1 + i)
+    rest = 0
+    for v in d["variables"]:
+        if v.get("emphasis"):
+            at = X
+        else:
+            at = C(1 + rest); rest += 1
         lab = ws.cell(VAR_LABEL, at, v["label"].upper())
         lab.font = font(size=8, bold=True, color=col["headline"] if v.get("emphasis") else col["grey"])
         lab.alignment = Alignment(vertical="bottom")
