@@ -1307,7 +1307,7 @@ def preflight_capacity!(app, task)
     # that cannot grow either is actually full.
     return if load_current_capacity < physical_band_capacity(physical)
 
-    abort <<~MSG.strip
+    warn <<~MSG.strip
       no free Redis DB in band #{redis_db_min}-#{ceiling}; physical Redis ceiling reached (databases=#{physical}).
 
       Refusing BEFORE creating anything: a desk cut now would be rolled back seconds later,
@@ -1316,6 +1316,7 @@ def preflight_capacity!(app, task)
       Free a slot:   #{AGENT_WORKTREE_CMD} cleanup   (then remove merged worktrees)
       Raise ceiling: #{AGENT_WORKTREE_CMD} scale --provision   (raises Redis databases to #{redis_physical_target}, restarts Redis once)
     MSG
+    exit NO_FREE_SLOT_EXIT # the band is full: bin/task begin reclaims, then retries
   end
 end
 
