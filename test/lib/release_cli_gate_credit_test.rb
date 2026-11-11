@@ -81,12 +81,17 @@ class ReleaseCliGateCreditTest < ReleaseCliHarness
           %(  last = a.last.to_s\n) +
           %(  return ["acc0", true] if last == "origin/accepted"\n) +
           %(  return ["prhead", true] if last == "rel^2"\n) +
+          %(  return ["", ENV["STALE_BASE"].nil?] if a.include?("--is-ancestor")\n) +
           %(  return ["", false] if last.end_with?("^2")\n) +
           %(  return ["other-tree", true] if last == "acc0^{tree}"\n) +
           %(  return ["T1", true] if last.end_with?("^{tree}")\n) +
           %(  ["", false]\nend\n)
     out = run_cli(["--dry-run"], setup: git, call: %(print identical_tree_candidates("/x", "rel", repo: "r").inspect))
     assert_equal %([["prhead", "T1"]]), out, "the PR head shares the tree; the accepted head does not"
+
+    out = run_cli(["--dry-run"], setup: %(ENV["STALE_BASE"] = "1"\n) + git,
+                  call: %(print identical_tree_candidates("/x", "rel", repo: "r").inspect))
+    assert_equal "[]", out, "a PR head whose base was not in it tested another tree: no candidate"
 
     failed = %(def swept_pin(_r) = ""\ndef sh(*a, **_k) = ["", false]\n)
     out = run_cli(["--dry-run"], setup: failed, call: %(print identical_tree_candidates("/x", "rel").inspect))

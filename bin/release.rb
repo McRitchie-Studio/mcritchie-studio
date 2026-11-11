@@ -5145,7 +5145,11 @@ def identical_tree_candidates(path, sha, repo: nil)
   heads = [accepted, (repo ? swept_pin(repo).to_s : "")]
   [sha.to_s, accepted].reject(&:empty?).each do |merge|
     parent, p_ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "#{merge}^2", capture: true)
-    heads << parent.to_s.strip if p_ok
+    # The PR head's green tested refs/pull/N/merge (head + base AT CI TIME): it is this tree
+    # only when the base it merged into was already in the head (a reverted base commit can
+    # leave the trees equal while the tested merge ref carried it).
+    _anc, anc_ok = sh("git", "-C", path, "merge-base", "--is-ancestor", "#{merge}^1", parent.to_s.strip, capture: true) if p_ok
+    heads << parent.to_s.strip if p_ok && anc_ok
   end
   heads.reject(&:empty?).uniq.filter_map do |candidate|
     next if candidate == sha.to_s
