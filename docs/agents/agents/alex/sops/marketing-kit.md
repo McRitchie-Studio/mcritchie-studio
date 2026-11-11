@@ -244,7 +244,7 @@ the sheet easy to work in, so keep them in every copy:
 | Row 3 | `Last Updated: <date>` in B3, at 6 pt, which the agent stamps at every build |
 | Rows 4-5 | Variables, label over value. The first is the headline (`emphasis: true`): it sits in column B under the title, where the freeze keeps it in view, larger, in the brand's `title` colour and whole dollars, as a card roster shows its total credit limit. The rest run from D. Formulas point at them with absolute references |
 | Rows 7-8 | The table head from column B, in three colour sections: the darker top row names the section, the lower row names the columns |
-| Row 9 on | The data. Column B is the row's item (its name), and column C a narrow gutter that parts it from the columns that scroll. A column may carry `choices` (a dropdown) and its own `format` (`"$"#,##0` for whole dollars) |
+| Row 9 on | The data. Column B is the row's item (its name), and column C a narrow gutter that parts it from the columns that scroll. A column may carry `choices` (a dropdown) and its own `format` (`"$"#,##0` for whole dollars). An `archive` column (an Archived dropdown) greys its row and drops it from every total: archive a row, never delete it |
 
 - **No merged cells.** A section's label sits in its first cell, and the other
   cells share its colour. Every column can move, sort and filter.
@@ -255,6 +255,11 @@ the sheet easy to work in, so keep them in every copy:
   lightens a step instead, so the two rows still differ). The top row is that
   colour 30% of the way to black.
 - **A How to use tab** carries these rules for whoever copies it.
+- **A workbook may hold several table tabs** (a payload's `tabs`), each drawn the
+  same way, such as an Overview that consolidates other sheets and a roster.
+  Pull another sheet's numbers live with `IMPORTRANGE`; Drive keeps it, and
+  `FILTER`, through the import (checked 2026-11-10). The first viewer clicks
+  Allow access once per source.
 
 Drive keeps the freeze, the hidden gridlines, the logo, the filter, the
 dropdown and the formulas when it converts the `.xlsx` (checked 2026-11-10).

@@ -26,9 +26,9 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         assert_match(/<pane [^>]*xSplit="2"[^>]*ySplit="8"[^>]*topLeftCell="C9"[^>]*state="frozen"/, sheet)
         assert_no_match(/<mergeCell/, sheet, "the template never merges a cell")
         assert_match(/showGridLines="0"/, sheet)
-        assert_match(/<autoFilter ref="B8:K12"/, sheet)
+        assert_match(/<autoFilter ref="B8:L12"/, sheet)
         assert_match(/<dataValidation [^>]*type="list"/, sheet)
-        assert_includes sheet, %(IF(I9="",$D$5,I9)), "the formula reads the Default rate variable"
+        assert_includes sheet, %(IF(J9="",$D$5,J9)), "the formula reads the Default rate variable"
 
         styles = xml.fetch("xl/styles.xml")
         MarketingKit::SheetTemplate.new(spec).sections.each do |s|
@@ -44,7 +44,9 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         assert_match(%r{<c r="D4"[^>]*><is><t>DEFAULT RATE</t>}, sheet, "the other variables run from D, past the gutter")
         assert_match(%r{<col width="2.57"[^>]*min="3" max="3"/>}, sheet, "column C is a narrow gutter")
         assert_no_match(/<c r="C\d+"[^>]*><(is|f|v)>/, sheet, "the gutter holds no value")
-        assert_match(%r{<c r="B5"[^>]*><f>SUM\(G9:G999\)</f>}, sheet, "Total amount sums the Amount column")
+        assert_match(%r{<c r="B5"[^>]*><f>SUMIFS\(G9:G999,I9:I999,"&lt;&gt;Archived"\)</f>}, sheet, "Total amount sums the Amount column, skipping archived rows")
+        assert_match(%r{<dataValidation sqref="I9:I999"[^>]*type="list"><formula1>"Archived"</formula1>}, sheet, "the Archived column is a dropdown")
+        assert_match(%r{<conditionalFormatting sqref="B9:L999"><cfRule [^>]*type="expression"[^>]*><formula>\$I9="Archived"</formula>}, sheet, "an archived row greys out across the table")
         assert_match(/<row r="5" ht="26"/, sheet, "the headline row is tall enough for it")
         assert_match(%r{<c r="B9"[^>]*><is><t>\[Example item one\]</t>}, sheet, "the table starts in column B")
         assert_no_match(/<c r="A\d+"/, sheet, "column A is a margin: no cell in it carries anything")
@@ -90,6 +92,24 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         title_style = sheet[%r{<c r="B2" s="(\d+)"}, 1].to_i
         xf = xml.fetch("xl/styles.xml").scan(%r{<xf [^>]*?(?:/>|>.*?</xf>)}m).drop(1)[title_style]
         assert_includes xf, 'vertical="center"', "the title is centred in row 2"
+      end
+    end
+  end
+
+  test "a payload with tabs draws each as a branded, frozen table tab, then How to use" do
+    load_kit do |spec|
+      FileUtils.cp(LOGO, spec.logo_png(:icon, :light))
+      Dir.mktmpdir do |out|
+        payload = MarketingKit::SheetTemplate.new(spec).payload
+        payload[:tabs] = [{ sheet_title: "Overview", title: "Overview" }, { sheet_title: "Cards", title: "Cards" }]
+        path = MarketingKit::Office.new(spec).send(:draw, "sheet", payload, File.join(out, "tabs.xlsx"))
+        xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
+        assert_equal %w[Overview Cards How\ to\ use].map { |t| t.delete("\\") }, xml.fetch("xl/workbook.xml").scan(/<sheet [^>]*name="([^"]+)"/).flatten
+        %w[sheet1 sheet2].each do |s|
+          assert_match(/topLeftCell="C9"[^>]*state="frozen"/, xml.fetch("xl/worksheets/#{s}.xml"), "#{s} is frozen like the template")
+        end
+        assert_match(%r{<c r="B2"[^>]*><is><t>Cards</t>}, xml.fetch("xl/worksheets/sheet2.xml"))
+        assert_equal 2, xml.keys.count { |k| k.start_with?("xl/drawings/drawing") && k.end_with?(".xml") }, "each tab carries the icon"
       end
     end
   end

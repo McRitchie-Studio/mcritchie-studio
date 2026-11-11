@@ -221,132 +221,156 @@ def sheet(d, out):
     from openpyxl.utils import get_column_letter as L
     from openpyxl.utils.units import pixels_to_EMU
     from openpyxl.worksheet.datavalidation import DataValidation
+    from openpyxl.formatting.rule import FormulaRule
+
+    def draw_tab(ws, d):
+        """One table tab: margins, icon, title, Last Updated, variables, the three-section head, the rows."""
+        col = {k: v.lstrip("#") for k, v in d["colours"].items()}
+        font = lambda **k: Font(name=d["font"], **k)
+        fill = lambda h: PatternFill("solid", fgColor=h.lstrip("#"))
+        FORMATS = {"date": "mmm d, yyyy", "money": '"$"#,##0.00', "percent": "0.0%"}
+        RIGHT = {"money", "percent", "formula", "date"}
+
+        MARGIN, TITLE, UPDATED, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 9)
+        FIRST = HEAD_LOW + 1
+        LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
+        X = 2  # the table's first column (B); A is the margin
+        cols, n = d["columns"], len(d["columns"])
+        # A narrow gutter (C) parts the frozen item column from the rest, so the
+        # columns that scroll never butt against it. Table column i sits at C(i).
+        GUTTER = X + 1
+        C = lambda i: X + i + (1 if i > 0 else 0)
+
+        # A2 is square: column A is as wide as row 2 is tall. Row heights are points
+        # (4/3 px); a column width in characters draws at about 7 px each plus 5.
+        square = 34
+        ws.title = d["sheet_title"]
+        ws.sheet_view.showGridLines = False
+        ws.column_dimensions["A"].width = round((square - 5) / 7, 2)
+        for i, c in enumerate(cols): ws.column_dimensions[L(C(i))].width = c["width"]
+        ws.column_dimensions[L(GUTTER)].width = 2.57
+        # A variable marked emphasis (the sheet's headline number) draws larger, so row 3 grows to hold it.
+        emphasis = any(v.get("emphasis") for v in d["variables"])
+        heights = {MARGIN: 15, TITLE: square * 3 / 4, UPDATED: 12, VAR_LABEL: 12, VAR_VALUE: 26 if emphasis else 20, GAP: 12,
+                   HEAD_TOP: 24, HEAD_LOW: 22}
+        for r, h in heights.items(): ws.row_dimensions[r].height = h
+
+        # The icon fits inside A2, a few pixels in from each edge, at its own
+        # proportions (a tall or wide mark is never squashed), centred both ways.
+        from PIL import Image
+        box = square - 8
+        iw, ih = Image.open(d["icon"]).size
+        scale = box / max(iw, ih)
+        w, h = round(iw * scale), round(ih * scale)
+        icon = XImage(d["icon"]); icon.width, icon.height = w, h
+        icon.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU((square - w) // 2), row=TITLE - 1,
+                                                       rowOff=pixels_to_EMU((square - h) // 2)),
+                                    ext=XDRPositiveSize2D(pixels_to_EMU(w), pixels_to_EMU(h)))
+        ws.add_image(icon)
+
+        # Row 2 is the title alone, so a long one runs on across the row. Under it in B3,
+        # the date an agent last rebuilt the sheet.
+        t = ws.cell(TITLE, X, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
+        t.alignment = Alignment(vertical=d.get("title_align", "center"))  # centre: level with the icon's middle
+        u = ws.cell(UPDATED, X, f"Last Updated: {d['updated']}"); u.font = font(size=6, color=col["grey"])  # small, so it never crowds the headline
+        u.alignment = Alignment(vertical="top")
+
+        def fmt(item):  # an item's own format wins over its kind's
+            return item.get("format") or FORMATS.get(item["kind"])
+
+        # Variables: label (row 4) over value (row 5). The headline (emphasis) sits in
+        # column B, under the title, where the freeze keeps it in view; the rest run
+        # on from D, past the gutter.
+        var_cell = {}
+        rest = 0
+        for v in d["variables"]:
+            if v.get("emphasis"):
+                at = X
+            else:
+                at = C(1 + rest); rest += 1
+            lab = ws.cell(VAR_LABEL, at, v["label"].upper())
+            lab.font = font(size=8, bold=True, color=col["headline"] if v.get("emphasis") else col["grey"])
+            lab.alignment = Alignment(vertical="bottom")
+            value = v["value"]
+            if isinstance(value, str):
+                value = value.replace("{first}", str(FIRST)).replace("{last}", str(LAST))
+                value = re.sub(r"\{col:(\w+)\}", lambda m: L(C(next(j for j, c in enumerate(cols) if c["key"] == m.group(1)))), value)
+            cell = ws.cell(VAR_VALUE, at, value)
+            big = v.get("emphasis")
+            cell.font = font(size=16 if big else 11, bold=True, color=col["headline"] if big else col["ink"]); cell.fill = fill(col["light"])
+            cell.alignment = Alignment(horizontal="left", vertical="center")
+            if fmt(v): cell.number_format = fmt(v)
+            var_cell[v["label"]] = f"${L(at)}${VAR_VALUE}"
+
+        # The table head: three sections, darker on top, white text on both rows.
+        # A section's label sits in its first cell; the rest share the fill, unmerged.
+        edge = Side(style="medium", color=col["white"])
+        for i, c in enumerate(cols):
+            sec = d["sections"][c["section"]]
+            first = i == 0 or cols[i - 1]["section"] != c["section"]
+            top = ws.cell(HEAD_TOP, C(i), sec["label"] if first else None)
+            top.fill = fill(sec["top"]); top.font = font(size=10, bold=True, color=col["white"])
+            top.alignment = Alignment(vertical="center", indent=1)
+            low = ws.cell(HEAD_LOW, C(i), c["head"])
+            low.fill = fill(sec["low"]); low.font = font(size=9, bold=True, color=col["white"])
+            low.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
+            if first and i:
+                top.border = Border(left=edge); low.border = Border(left=edge)
+        item_sec = d["sections"][cols[0]["section"]]  # the gutter wears the item column's section
+        ws.cell(HEAD_TOP, GUTTER).fill = fill(item_sec["top"]); ws.cell(HEAD_LOW, GUTTER).fill = fill(item_sec["low"])
+
+        # Example rows. In a formula, {r} is the row, {col:key} a table column's letter
+        # and {var:Label} that variable's cell, made absolute.
+        rule = Side(style="thin", color=col["rule"])
+        letter = {c["key"]: L(C(i)) for i, c in enumerate(cols)}
+        for r, row in enumerate(d["rows"], start=FIRST):
+            ws.row_dimensions[r].height = 20
+            ws.cell(r, GUTTER).border = Border(bottom=rule)
+            for i, v in enumerate(row):
+                c = cols[i]
+                if c["kind"] == "date" and v: v = datetime.date.fromisoformat(v)
+                if c["kind"] == "formula":
+                    v = re.sub(r"\{var:([^}]+)\}", lambda m: var_cell[m.group(1)], c["formula"])
+                    v = re.sub(r"\{col:(\w+)\}", lambda m: letter[m.group(1)], v).replace("{r}", str(r))
+                cell = ws.cell(r, C(i), v if v != "" else None)
+                cell.font = font(size=10, color=col["ink"], bold=c["kind"] == "item")
+                cell.border = Border(bottom=rule)
+                cell.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
+                if c["kind"] == "formula": cell.number_format = c.get("format") or FORMATS["money"]
+                elif fmt(c): cell.number_format = fmt(c)
+
+        # A dropdown on every column that has choices; a status column without its own uses the sheet's statuses.
+        for i, c in enumerate(cols):
+            choices = c.get("choices") or (d["statuses"] if c["kind"] == "status" else [d["archived"]] if c["kind"] == "archive" else None)
+            if not choices: continue
+            dv = DataValidation(type="list", formula1='"' + ",".join(choices) + '"', allow_blank=True)
+            ws.add_data_validation(dv); dv.add(f"{L(C(i))}{FIRST}:{L(C(i))}{LAST}")
+        # An archived row greys out across the table; the totals skip it (SUMIFS on the archive column).
+        archive = [i for i, c in enumerate(cols) if c["kind"] == "archive"]
+        if archive:
+            mark = f'${L(C(archive[0]))}{FIRST}="{d["archived"]}"'
+            ws.conditional_formatting.add(f"{L(X)}{FIRST}:{L(C(n - 1))}{LAST}",
+                                          FormulaRule(formula=[mark], font=Font(color=col["grey"], italic=True),
+                                                      fill=PatternFill("solid", fgColor=col["light"], bgColor=col["light"])))
+        ws.auto_filter.ref = f"{L(X)}{HEAD_LOW}:{L(C(n - 1))}{FIRST + len(d['rows']) - 1}"
+        ws.freeze_panes = f"{L(X + 1)}{FIRST}"
+        ws.page_setup.orientation = "landscape"
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+
+        return ws, n
 
     col = {k: v.lstrip("#") for k, v in d["colours"].items()}
     font = lambda **k: Font(name=d["font"], **k)
-    fill = lambda h: PatternFill("solid", fgColor=h.lstrip("#"))
-    FORMATS = {"date": "mmm d, yyyy", "money": '"$"#,##0.00', "percent": "0.0%"}
-    RIGHT = {"money", "percent", "formula", "date"}
 
-    MARGIN, TITLE, UPDATED, VAR_LABEL, VAR_VALUE, GAP, HEAD_TOP, HEAD_LOW = range(1, 9)
-    FIRST = HEAD_LOW + 1
-    LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
-    X = 2  # the table's first column (B); A is the margin
-    cols, n = d["columns"], len(d["columns"])
-    # A narrow gutter (C) parts the frozen item column from the rest, so the
-    # columns that scroll never butt against it. Table column i sits at C(i).
-    GUTTER = X + 1
-    C = lambda i: X + i + (1 if i > 0 else 0)
-
-    # A2 is square: column A is as wide as row 2 is tall. Row heights are points
-    # (4/3 px); a column width in characters draws at about 7 px each plus 5.
-    square = 34
-    wb = Workbook(); ws = wb.active; ws.title = d["sheet_title"]
-    ws.sheet_view.showGridLines = False
-    ws.column_dimensions["A"].width = round((square - 5) / 7, 2)
-    for i, c in enumerate(cols): ws.column_dimensions[L(C(i))].width = c["width"]
-    ws.column_dimensions[L(GUTTER)].width = 2.57
-    # A variable marked emphasis (the sheet's headline number) draws larger, so row 3 grows to hold it.
-    emphasis = any(v.get("emphasis") for v in d["variables"])
-    heights = {MARGIN: 15, TITLE: square * 3 / 4, UPDATED: 12, VAR_LABEL: 12, VAR_VALUE: 26 if emphasis else 20, GAP: 12,
-               HEAD_TOP: 24, HEAD_LOW: 22}
-    for r, h in heights.items(): ws.row_dimensions[r].height = h
-
-    # The icon fits inside A2, a few pixels in from each edge, at its own
-    # proportions (a tall or wide mark is never squashed), centred both ways.
-    from PIL import Image
-    box = square - 8
-    iw, ih = Image.open(d["icon"]).size
-    scale = box / max(iw, ih)
-    w, h = round(iw * scale), round(ih * scale)
-    icon = XImage(d["icon"]); icon.width, icon.height = w, h
-    icon.anchor = OneCellAnchor(_from=AnchorMarker(col=0, colOff=pixels_to_EMU((square - w) // 2), row=TITLE - 1,
-                                                   rowOff=pixels_to_EMU((square - h) // 2)),
-                                ext=XDRPositiveSize2D(pixels_to_EMU(w), pixels_to_EMU(h)))
-    ws.add_image(icon)
-
-    # Row 2 is the title alone, so a long one runs on across the row. Under it in B3,
-    # the date an agent last rebuilt the sheet.
-    t = ws.cell(TITLE, X, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
-    t.alignment = Alignment(vertical=d.get("title_align", "center"))  # centre: level with the icon's middle
-    u = ws.cell(UPDATED, X, f"Last Updated: {d['updated']}"); u.font = font(size=6, color=col["grey"])  # small, so it never crowds the headline
-    u.alignment = Alignment(vertical="top")
-
-    def fmt(item):  # an item's own format wins over its kind's
-        return item.get("format") or FORMATS.get(item["kind"])
-
-    # Variables: label (row 4) over value (row 5). The headline (emphasis) sits in
-    # column B, under the title, where the freeze keeps it in view; the rest run
-    # on from D, past the gutter.
-    var_cell = {}
-    rest = 0
-    for v in d["variables"]:
-        if v.get("emphasis"):
-            at = X
-        else:
-            at = C(1 + rest); rest += 1
-        lab = ws.cell(VAR_LABEL, at, v["label"].upper())
-        lab.font = font(size=8, bold=True, color=col["headline"] if v.get("emphasis") else col["grey"])
-        lab.alignment = Alignment(vertical="bottom")
-        value = v["value"]
-        if isinstance(value, str):
-            value = value.replace("{first}", str(FIRST)).replace("{last}", str(LAST))
-            value = re.sub(r"\{col:(\w+)\}", lambda m: L(C(next(j for j, c in enumerate(cols) if c["key"] == m.group(1)))), value)
-        cell = ws.cell(VAR_VALUE, at, value)
-        big = v.get("emphasis")
-        cell.font = font(size=16 if big else 11, bold=True, color=col["headline"] if big else col["ink"]); cell.fill = fill(col["light"])
-        cell.alignment = Alignment(horizontal="left", vertical="center")
-        if fmt(v): cell.number_format = fmt(v)
-        var_cell[v["label"]] = f"${L(at)}${VAR_VALUE}"
-
-    # The table head: three sections, darker on top, white text on both rows.
-    # A section's label sits in its first cell; the rest share the fill, unmerged.
-    edge = Side(style="medium", color=col["white"])
-    for i, c in enumerate(cols):
-        sec = d["sections"][c["section"]]
-        first = i == 0 or cols[i - 1]["section"] != c["section"]
-        top = ws.cell(HEAD_TOP, C(i), sec["label"] if first else None)
-        top.fill = fill(sec["top"]); top.font = font(size=10, bold=True, color=col["white"])
-        top.alignment = Alignment(vertical="center", indent=1)
-        low = ws.cell(HEAD_LOW, C(i), c["head"])
-        low.fill = fill(sec["low"]); low.font = font(size=9, bold=True, color=col["white"])
-        low.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
-        if first and i:
-            top.border = Border(left=edge); low.border = Border(left=edge)
-    item_sec = d["sections"][cols[0]["section"]]  # the gutter wears the item column's section
-    ws.cell(HEAD_TOP, GUTTER).fill = fill(item_sec["top"]); ws.cell(HEAD_LOW, GUTTER).fill = fill(item_sec["low"])
-
-    # Example rows. In a formula, {r} is the row, {col:key} a table column's letter
-    # and {var:Label} that variable's cell, made absolute.
-    rule = Side(style="thin", color=col["rule"])
-    letter = {c["key"]: L(C(i)) for i, c in enumerate(cols)}
-    for r, row in enumerate(d["rows"], start=FIRST):
-        ws.row_dimensions[r].height = 20
-        ws.cell(r, GUTTER).border = Border(bottom=rule)
-        for i, v in enumerate(row):
-            c = cols[i]
-            if c["kind"] == "date" and v: v = datetime.date.fromisoformat(v)
-            if c["kind"] == "formula":
-                v = re.sub(r"\{var:([^}]+)\}", lambda m: var_cell[m.group(1)], c["formula"])
-                v = re.sub(r"\{col:(\w+)\}", lambda m: letter[m.group(1)], v).replace("{r}", str(r))
-            cell = ws.cell(r, C(i), v if v != "" else None)
-            cell.font = font(size=10, color=col["ink"], bold=c["kind"] == "item")
-            cell.border = Border(bottom=rule)
-            cell.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
-            if c["kind"] == "formula": cell.number_format = c.get("format") or FORMATS["money"]
-            elif fmt(c): cell.number_format = fmt(c)
-
-    # A dropdown on every column that has choices; a status column without its own uses the sheet's statuses.
-    for i, c in enumerate(cols):
-        choices = c.get("choices") or (d["statuses"] if c["kind"] == "status" else None)
-        if not choices: continue
-        dv = DataValidation(type="list", formula1='"' + ",".join(choices) + '"', allow_blank=True)
-        ws.add_data_validation(dv); dv.add(f"{L(C(i))}{FIRST}:{L(C(i))}{LAST}")
-    ws.auto_filter.ref = f"{L(X)}{HEAD_LOW}:{L(C(n - 1))}{FIRST + len(d['rows']) - 1}"
-    ws.freeze_panes = f"{L(X + 1)}{FIRST}"
-    ws.page_setup.orientation = "landscape"
-    ws.sheet_properties.pageSetUpPr.fitToPage = True
-    ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = 1, 0
+    # A payload may carry tabs: several table tabs drawn the same way (an Overview
+    # and a Cards roster, say), each with its own title, variables, head and rows
+    # over the shared brand. Without tabs it is the one table tab.
+    wb = Workbook()
+    drawn = []
+    for i, tab in enumerate(d.get("tabs") or [{}]):
+        drawn.append(draw_tab(wb.active if i == 0 else wb.create_sheet(), {**d, **tab}))
+    ws, n = drawn[0]
 
     notes = wb.create_sheet(d["notes_title"])
     notes.sheet_view.showGridLines = False
@@ -356,7 +380,7 @@ def sheet(d, out):
         c.font = font(size=14 if r == 1 else 10, bold=r == 1, color=col["ink"])
         c.alignment = Alignment(wrap_text=True, vertical="top")
     wb.save(out)
-    print(f"wrote {out} (freeze {ws.freeze_panes}, {n} columns, {len(d['rows'])} example rows)")
+    print(f"wrote {out} ({len(drawn)} table tab(s), freeze {ws.freeze_panes}, {n} columns)")
 
 
 if __name__ == "__main__":

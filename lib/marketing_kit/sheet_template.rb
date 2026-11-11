@@ -85,6 +85,7 @@ module MarketingKit
         variables: VARIABLES,
         rows: ROWS,
         statuses: STATUSES,
+        archived: ARCHIVED,
         notes_title: "How to use",
         notes: NOTES
       }
@@ -102,6 +103,7 @@ module MarketingKit
       { key: "date", section: 1, head: "[Date]", width: 14, kind: "date" },
       { key: "amount", section: 1, head: "[Amount]", width: 14, kind: "money" },
       { key: "status", section: 1, head: "[Status]", width: 13, kind: "status" },
+      { key: "archived", section: 1, head: "[Archived]", width: 12, kind: "archive" },
       { key: "rate", section: 2, head: "[Rate]", width: 10, kind: "percent" },
       { key: "applied", section: 2, head: "[Amount × Rate]", width: 17, kind: "formula",
         formula: '=IF({col:amount}{r}="","",{col:amount}{r}*IF({col:rate}{r}="",{var:Default rate},{col:rate}{r}))' },
@@ -121,7 +123,8 @@ module MarketingKit
     # title colour, in whole dollars, as McRitchie Industries Cards shows its
     # total credit limit.
     VARIABLES = [
-      { label: "Total amount", value: "=SUM({col:amount}{first}:{col:amount}{last})", kind: "money", format: '"$"#,##0',
+      { label: "Total amount", value: '=SUMIFS({col:amount}{first}:{col:amount}{last},{col:archived}{first}:{col:archived}{last},"<>Archived")',
+        kind: "money", format: '"$"#,##0',
         emphasis: true },
       { label: "Default rate", value: 0.05, kind: "percent" }
     ].freeze
@@ -129,13 +132,18 @@ module MarketingKit
     # The formula column reads each row's amount × its rate, or the Default rate
     # variable when the row leaves its rate blank.
     ROWS = [
-      ["[Example item one]", "[Category A]", "[Name]", "2026-01-05", 1250.0, "Active", 0.05, nil, "[A short note]"],
-      ["[Example item two]", "[Category B]", "[Name]", "2026-01-12", 480.5, "Active", 0.02, nil, ""],
-      ["[Example item three]", "[Category A]", "[Name]", "2026-01-19", 3200.0, "Paused", nil, nil, "[A blank rate uses the Default rate]"],
-      ["[Example item four]", "[Category C]", "[Name]", "2026-01-26", 75.25, "Closed", 0.1, nil, ""]
+      ["[Example item one]", "[Category A]", "[Name]", "2026-01-05", 1250.0, "Active", "", 0.05, nil, "[A short note]"],
+      ["[Example item two]", "[Category B]", "[Name]", "2026-01-12", 480.5, "Active", "", 0.02, nil, ""],
+      ["[Example item three]", "[Category A]", "[Name]", "2026-01-19", 3200.0, "Paused", "", nil, nil, "[A blank rate uses the Default rate]"],
+      ["[Example item four]", "[Category C]", "[Name]", "2026-01-26", 75.25, "Closed", "Archived", 0.1, nil, "[Archived: greyed out, left out of the totals]"]
     ].freeze
 
     STATUSES = %w[Active Paused Closed].freeze
+
+    # The one value an archive column takes. An archived row stays in the sheet,
+    # greyed out, and every total skips it ("<>Archived"): the way to retire a
+    # row without deleting its history.
+    ARCHIVED = "Archived"
 
     NOTES = [
       "How to use this template",
@@ -148,6 +156,8 @@ module MarketingKit
       "Add a row: insert it inside the table, so totals and dropdowns cover it.",
       "Variables sit under the title, label over value. Formulas point at them with absolute references ($D$5), " \
       "so a value changes in one place.",
+      "Archive a row instead of deleting it: pick Archived in its Archived column. It greys out and the totals " \
+      "skip it.",
       "Head colours come from the brand palette. Both head rows are dark enough for white text; " \
       "keep it that way if you recolour a section."
     ].freeze
