@@ -1,0 +1,51 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+# bin/sheet — build one branded Google Sheet from a recipe, and put it in Drive.
+#
+#   bin/sheet build RECIPE [--out DIR]       draw the recipe into DIR/<name>.xlsx (default: beside the recipe)
+#   bin/sheet publish RECIPE [--out DIR]     build, then create or update it in the recipe's drive.folder
+#       --dry-run                            read Drive and report; write nothing
+#       --force                              replace even though a person edited it last (only after
+#                                            you have read their edits and carried them into the recipe)
+#
+# A recipe names its brand (a marketing-kit spec), its tables and its Drive home; see
+# lib/marketing_kit/sheet_recipe.rb. Recipes holding private rows live in Drive, never in this repo.
+# Procedure: docs/agents/agents/pokemon/sops/build-a-sheet.md
+require "optparse"
+
+options = {}
+parser = OptionParser.new do |opts|
+  opts.banner = "usage: bin/sheet build RECIPE [--out DIR] | publish RECIPE [--out DIR] [--dry-run] [--force]"
+  opts.on("--out DIR", "where to write the .xlsx") { |d| options[:out] = d }
+  opts.on("--dry-run", "publish: report only") { options[:dry_run] = true }
+  opts.on("--force", "publish: replace a sheet a person edited last") { options[:force] = true }
+  opts.on("-h", "--help", "print this help") do
+    puts opts
+    exit 0
+  end
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  abort "bin/sheet: #{e.message}\n#{parser.banner}"
+end
+command, target = ARGV.shift(2)
+abort "bin/sheet: unexpected argument #{ARGV.first}\n#{parser.banner}" if ARGV.any?
+abort parser.banner unless %w[build publish].include?(command) && target
+
+require_relative "../config/environment"
+begin
+  recipe = MarketingKit::SheetRecipe.load(target)
+  out = File.expand_path(options[:out] || File.dirname(File.expand_path(target)))
+  FileUtils.mkdir_p(out)
+  xlsx = File.join(out, "#{recipe.name}.xlsx")
+  MarketingKit::Office.new(recipe.spec).write_sheet_payload(recipe.payload, xlsx)
+  puts "built #{xlsx}"
+  exit if command == "build"
+
+  pub = MarketingKit::SheetPublisher.new(recipe, xlsx: xlsx, dry_run: options[:dry_run], force: options[:force]).run
+  pub.results.each { |r| puts format("%-10s %s", r.action, r.detail) }
+  puts "sheet: #{pub.url}" if pub.url
+rescue MarketingKit::Error => e
+  abort "bin/sheet: #{e.message}"
+end

@@ -255,6 +255,11 @@ the sheet easy to work in, so keep them in every copy:
   lightens a step instead, so the two rows still differ). The top row is that
   colour 30% of the way to black.
 - **A How to use tab** carries these rules for whoever copies it.
+- **A working sheet built from the template is a recipe.** `bin/sheet` draws a
+  recipe in any kit's brand and publishes it to the company's Records folder;
+  the [build-a-sheet SOP](../../pokemon/sops/build-a-sheet.md) has the format,
+  including the `stamp` (tick-box) and `age_bands` (row colours by a date's age)
+  column kinds.
 - **A workbook may hold several table tabs** (a payload's `tabs`), each drawn the
   same way, such as an Overview that consolidates other sheets and a roster.
   Pull another sheet's numbers live with `IMPORTRANGE`; Drive keeps it, and

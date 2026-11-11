@@ -1,102 +1,71 @@
-# Card Hub Refresh: total credit across every card roster, through the Drive API
-<!-- registry: refresh McRitchie Studio Cards: snapshot the MI and personal card rosters through the Drive API and rebuild the hub -->
+# Card Hub Refresh: keep the credit card hub and its sources right
+<!-- registry: check or change McRitchie Studio Cards, the live total-credit hub over the MS, MI and personal card rosters -->
 
 ## Status: Active
 
 Alex McRitchie asked for it on 2026-11-10: one credit card hub that totals the
-credit across McRitchie Studio, McRitchie Industries and his personal roster, kept
-current by an agent through the API. The hub is **McRitchie Studio Cards**, a
-Google Sheet in `team@mcritchie.studio`'s `McRitchie Studio Records` folder, built
-from the MS Sheet Template (the [marketing-kit SOP](../../alex/sops/marketing-kit.md#the-sheet-template)).
+credit across McRitchie Studio, McRitchie Industries and his personal roster. The
+hub is **McRitchie Studio Cards**, a Google Sheet in `team@mcritchie.studio`'s
+`McRitchie Studio Records` folder. It is **live**: its numbers update by
+themselves as the source rosters change. This SOP is for reading it back, and for
+the changes that do need an agent: a new source, a moved source, or a new layout.
 
-It is Mack's, the CFO. Any agent may run it when Alex McRitchie asks to refresh
-the cards or the total credit.
+It is Mack's, the CFO. Any agent may run it when Alex McRitchie asks about the
+cards or the total credit.
 
 ## What the hub holds
 
 | Tab | What it shows | Where the numbers come from |
 |-----|---------------|-----------------------------|
-| Overview | Total Credit (the headline), open cards, one row per source | McRitchie Studio: live formulas on its own Cards tab. McRitchie Industries and Personal: a **snapshot** this SOP takes |
+| Overview | Total Credit (the headline), open cards, one row per source | McRitchie Studio: its own Cards tab. McRitchie Industries: **McRitchie Industries Cards** (MI Workspace, `McRitchie Industries Records`). Personal: **Personal Credit Card Roster** (`McRitchie Studio Records`) |
 | Cards | The McRitchie Studio card roster | Typed into the sheet |
 
-Why a snapshot and not `IMPORTRANGE`: a sheet that pulls from another sheet needs
-a person to click **Allow access** once per source, and no API can click it. The
-Drive credential can read every source, so the agent reads them and writes the
-numbers in. The Overview's **Last Updated** line says when.
+The MI and Personal rows are `IMPORTRANGE` formulas that find their columns by
+the header names in row 8 (`Card` or `Company`, `Credit Limit` or `Limit`,
+`Archived`, `Last Four`), so moving a column in a source never breaks them. The
+first viewer clicks **Allow access** once per source; until then the row reads
+`#REF!`.
 
 ## Rules
 
 - **Last four digits only.** Never a full card number, CVV, PIN or login.
-- **The source never goes in a repo.** The builders hold card rows; this repo is
-  public. They live in `McRitchie Studio Records/Card Hub source` in Drive. Change
-  them there (download, edit, upload over the old copy), never in git.
-- **Open cards only.** A card marked **Archived** (the Archived column), or ❌ in
-  the personal roster, is left out of every total. A card counts under one source
-  only: a Studio card listed in both rosters sits on the Cards tab, so the snapshot
-  leaves it out of Personal.
-- **Never overwrite Alex McRitchie's edits.** Replace the hub only when its last
-  editor is `Team McRitchie`, or after you have read his changes and carried them
-  into the builder.
+- **Recipes never go in a repo.** The hub and McRitchie Industries Cards are
+  built from recipes (the [build-a-sheet SOP](../../pokemon/sops/build-a-sheet.md))
+  stored in `McRitchie Studio Records/Card Hub source/ms` and `/mi`. Change them
+  there, never in git.
+- **Open cards only.** A card marked **Archived** is left out of every total. A
+  card counts under one source only: a Studio card listed in both rosters sits on
+  the Cards tab, so the Personal row leaves it out by its last four.
+- **The Personal Credit Card Roster is Alex McRitchie's hand-kept master.** He
+  restructured it and bound a script to it; never republish it from a recipe.
 - **Total Credit is credit limit on open cards**, not credit available. It becomes
   available credit once balances are tracked (a Plaid connection, not built yet).
 
 ## Procedure
 
-Work in your scratchpad, in a folder named for the run (`card-hub-<date>`), from a
-checkout whose development database holds the Drive credential (the hub primary).
+**Read it back** (the common case). Export the hub with cached values
+(`files_export` as `team@mcritchie.studio`, then `openpyxl` with `data_only=True`)
+and report the Overview: Total Credit, open cards, and each source row. A row
+reading `#REF!` means a source needs **Allow access** (ask Alex McRitchie to click
+it) or has been moved or unshared.
 
-**1. Fetch the source.** Download everything in `McRitchie Studio Records/Card Hub
-source` (as `team@mcritchie.studio`) into the working folder: `ms_cards_payload.rb`,
-`snapshot.py`, `pull_kit.rb` and `mi_cards_payload.rb` (the McRitchie Industries
-Cards builder, for when that sheet's layout changes).
+**Change the hub or McRitchie Industries Cards** (a new source, a new column, a
+card moving between companies):
 
-**2. Pull the MS kit** for its spec and logos:
-
-```bash
-bin/rails runner <work>/pull_kit.rb team@mcritchie.studio <MS kit root id> MS <work>/ms-kit
-```
-
-Find the kit root by name (`Brand Kit: McRitchie Studio`) with `files_list`.
-
-**3. Export the two sources** as `.xlsx` into the working folder, with
-`Workspace::DriveClient#files_export`:
-
-| Save as | Sheet | Read as |
-|---------|-------|---------|
-| `src-mi.xlsx` | McRitchie Industries Cards (`McRitchie Industries Records`) | `team@mcritchie.industries` |
-| `src-personal.xlsx` | 💳 Credit Card Roster (Alex McRitchie's own; shared with the Studio) | `team@mcritchie.studio` |
-
-**4. Snapshot:**
-
-```bash
-~/.cache/marketing-kit/<hash>/bin/python -I <work>/snapshot.py <work>
-```
-
-It prints and writes `snapshot.json`: open cards and total limit for MI and
-Personal, with how many ❌ cards it left out. Read it. A sudden jump or drop is a
-question for Alex McRitchie, not a number to publish.
-
-**5. Build** the hub beside the snapshot:
-
-```bash
-bin/rails runner <work>/ms_cards_payload.rb <work>/ms-kit/kit.yml <work>
-```
-
-The build stamps Last Updated with today's date (Denver).
-
-**6. Replace in place**, after the guard: read the hub's `lastModifyingUser`. If it
-is Alex McRitchie, export the hub, diff it against your build, and carry his
-changes into `ms_cards_payload.rb` (then store it back, step 1) before you go on.
-Then `files_update` the hub with the new `.xlsx`. The link stays the same.
-
-**7. Read back and report.** Export the hub with cached values (`openpyxl`
-`data_only=True`) and check the Overview: Total Credit, open cards, and one row per
-source. Hand Alex McRitchie the link and the three rows, and say what changed
-since the last refresh.
+1. Download the recipe folder (`Card Hub source/ms` or `/mi`) and the brand kit
+   it names (`pull_kit.rb` in `Card Hub source`) into your scratchpad, keeping
+   the recipe's relative `kit:` path.
+2. Read the live sheet first: if Alex McRitchie edited it, carry his edits into
+   the recipe and its rows file.
+3. Edit the recipe, then `bin/sheet publish <recipe> --dry-run` and
+   `bin/sheet publish <recipe>`. The publisher refuses a sheet a person edited
+   last; `--force` only after step 2.
+4. Read it back, store the changed recipe files over the old ones in Drive, and
+   tell Alex McRitchie what changed. A new `IMPORTRANGE` source needs his Allow
+   access click.
 
 ## Done when
 
-- The Overview's Last Updated reads today, and every source row has numbers (no
-  `#REF!`).
-- The totals read back from Drive match `snapshot.json` plus the Cards tab.
-- Any builder you changed is stored back in `Card Hub source`.
+- The Overview reads numbers on every source row (no `#REF!`), and the totals
+  match the sources read back.
+- Any recipe you changed is stored back in `Card Hub source`.
