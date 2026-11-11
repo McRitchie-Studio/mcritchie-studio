@@ -195,6 +195,7 @@ require "yaml"
 require "tmpdir"
 require "shellwords"
 require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
+require_relative "lib/release_step_timings"
 
 # Pure release DECISION logic (adapter dispatch, hub-first ordering, gem
 # publish/repin) lives in the unit-tested Release::ShipSequence +
@@ -648,6 +649,32 @@ def say(msg) = puts(msg)
 def step(msg)
   puts("→ #{msg}")
   agent_action(msg) if $role_span_open
+end
+
+# THE ACT'S STEP CLOCK (bin/lib/release_step_timings.rb, task release-sub-hour-pipeline).
+# time_step opens a phase; the first call also arranges the at_exit report, so an act
+# that aborts mid-phase still prints what it spent where. A dry run times nothing.
+def step_clock = ($step_clock ||= ReleaseStepTimings::Clock.new)
+
+def time_step(name)
+  return if DRY
+
+  unless $step_clock_reporting
+    $step_clock_reporting = true
+    at_exit { report_step_timings }
+  end
+  step_clock.mark(name)
+end
+
+def report_step_timings
+  return unless $step_clock&.any?
+
+  $step_clock.close
+  puts($step_clock.human_line)
+  puts($step_clock.machine_line)
+  $stdout.flush
+rescue StandardError
+  nil
 end
 
 # Loud banner printed at the top of prepare/ship when --local opted out of the
@@ -5624,6 +5651,7 @@ def prepare
   open_role_span("avi", "sweep → deploy RC to QA")
   avi_span = true
 
+  time_step("sweep")
   # 1. DETECT (a read — runs even in --dry-run): the reviewed queue + assembled
   #    stragglers with their PR/merged state, the review-gate screen, and the
   #    current release. `--task` narrows the sweep (operator curation).
@@ -6075,6 +6103,7 @@ def prepare
   #     gem repo's own lock.
   assert_no_lock_drift!(app_groups, published_gems, producers: false)
 
+  time_step("ci_gate")
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
   #    still `reviewed`; the rest of the RC rides on the re-run.
@@ -6110,6 +6139,7 @@ def prepare
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
 
+  time_step("qa_deploy")
   # 6. Per-app: deploy origin/release to that app's QA. The branch is populated
   #    by PR merges, so there's NO branch-cut/member-merge here — and no
   #    merge-forward either: that moved to step 4c, above the gate, so this loop
@@ -6208,6 +6238,7 @@ def prepare
     conductor("Release::Conductor.record_qa_shas(release: #{rel_current}, shas: #{qa_shas.inspect}); puts({qa_shas: true}.to_json)")
   end
 
+  time_step("record")
   # 8. QA-GREEN FLIP — the flip lands only AFTER every QA app booted
   #    (wait_for_boot returned 200) AND every post-deploy hook ran green:
   #    Release::Conductor.qa_green! flips the swept members `reviewed →
@@ -11226,6 +11257,7 @@ end
 # — not a ref, not a checkout, not a lock — is touched before ship authority. A red
 # gate or a declined confirm leaves the entire machine exactly as it found it.
 def run_ship_gate(app_groups, ship_sha)
+  time_step("ship_gate")
   say("")
   step("Steffon ship gate: GitHub CI's settled verdict for each app's FROZEN ship SHA " \
        "(read, not run — before ship authority; nothing is mutated yet)")
@@ -12570,6 +12602,7 @@ def ship
   )
   record_release_event(rel_slug, "deploy_prod", "started", actor: by)
 
+  time_step("deploy")
   # 3. Gems FIRST (producer-first): publish each FINAL version. prepare published
   #    only a candidate, so this is the first and only push of x.y.z: built from the
   #    frozen SHA, compared with the candidate QA ran, pushed, tagged, then checked
@@ -12633,6 +12666,7 @@ def ship
   record_gate_close(rel_slug, "g4_ship", true, metadata: seal_status ? { "seal" => seal_status } : {})
   g4_gate = :closed
 
+  time_step("record")
   # 6. Record LAST — only after EVERY repo deployed. Stamp the hub's shipped SHA,
   #    promote the release card to Last Release immediately, then flip member
   #    tasks to `shipped` one second apart so live viewers see the deployment land
@@ -12674,6 +12708,7 @@ def ship
   say(Release::Cli.release_notes_line(shipped, rel_slug)) unless DRY
   say(announce_hint(rel_slug)) unless DRY
 
+  time_step("post_ship")
   # 7. Restore each app's PRIMARY checkout to a clean `main`, now fast-forwarded to
   #    what shipped — the COMPLEMENT of ship_preflight's ADVISORY. The ship itself
   #    never touches these trees any more, so this is pure courtesy for the next
@@ -14360,6 +14395,20 @@ class ReleaseCycleDeps
     run_step("ship", argv).first
   end
 
+  # The cycle's ONE result summary (ReleaseCycle.result_summary), kept where the next
+  # session can read it: <results dir>/<release>.json, and one line appended to
+  # results.jsonl. The dir is RELEASE_RESULTS_DIR, else ~/.release-results.
+  # Best-effort: a write that fails warns and the release stands.
+  def record_result(summary)
+    dir = release_results_dir
+    FileUtils.mkdir_p(dir)
+    name = summary["release"].to_s.empty? ? "no-release-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}" : summary["release"]
+    File.write(File.join(dir, "#{name.gsub(/[^A-Za-z0-9._-]/, '_')}.json"), "#{JSON.pretty_generate(summary)}\n")
+    File.open(File.join(dir, "results.jsonl"), "a") { |f| f.puts(JSON.generate(summary.merge("at" => Time.now.utc.iso8601))) }
+  rescue StandardError => e
+    warn("  ⚠ release result not written (#{e.class}: #{e.message})")
+  end
+
   private
 
   # Runs the block with the agent lane's env (ReleaseCycle.step_env, as prepare
@@ -14424,6 +14473,11 @@ class ReleaseCycleDeps
   ensure
     reader&.close unless reader&.closed?
   end
+end
+
+def release_results_dir
+  explicit = ENV["RELEASE_RESULTS_DIR"].to_s.strip
+  explicit.empty? ? File.join(Dir.home, ".release-results") : explicit
 end
 
 # `caffeinate -is -w <this pid>`: the Mac stays awake exactly as long as the cycle

@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "time"
 require "stringio"
 
@@ -103,6 +104,56 @@ module ReleaseCycle
   end
 
   def gauntlet_refusal?(output) = GAUNTLET_REFUSAL.match?(output.to_s)
+
+  # --- step timings and the result summary (task release-sub-hour-pipeline) -----
+  #
+  # Each `bin/release` act prints one STEP_TIMINGS line as it ends (Release step
+  # timings: `RELEASE_STEP_TIMINGS {"sweep":184,"ci_gate":660,…}`, seconds). The cycle
+  # reads those lines from each act's output, adds its own stage seconds, and prints
+  # ONE machine-readable RESULT line per release (and hands it to the deps to record).
+  STEP_TIMINGS_TAG = "RELEASE_STEP_TIMINGS"
+  RESULT_TAG = "RELEASE_RESULT"
+
+  # Every STEP_TIMINGS line in +output+, merged ({ step => seconds }); later wins.
+  # A malformed line is ignored: timings are a report, never a reason to stop.
+  def step_timings_from(output)
+    output.to_s.lines.each_with_object({}) do |line, found|
+      next unless line.start_with?("#{STEP_TIMINGS_TAG} ")
+
+      parsed = begin
+        JSON.parse(line.delete_prefix("#{STEP_TIMINGS_TAG} "))
+      rescue JSON::ParserError
+        nil
+      end
+      next unless parsed.is_a?(Hash)
+
+      parsed.each { |step, seconds| found[step.to_s] = seconds.to_i if seconds.is_a?(Numeric) }
+    end
+  end
+
+  # PURE. The one result summary for a release:
+  #   status    "shipped" | "stopped" | "nothing" (prepare found nothing to release)
+  #   release   the slug, when one is known
+  #   shipped   { repo => sha } production runs, from prod verify's SHA read
+  #   holds     what stopped or is still owed: [{ "stage", "exit" }] or [{ "repo", "reason" }]
+  #   stages    { stage => seconds } the cycle measured
+  #   steps     { step => seconds } the acts reported (sweep, ci_gate, qa_deploy, …)
+  #   seconds   the whole cycle so far
+  def result_summary(status:, release:, verdicts: nil, holds: [], stages: {}, steps: {}, seconds: 0)
+    shipped = Array(verdicts).select { |v| v.is_a?(Hash) && v["ok"] }.to_h { |v| [v["repo"].to_s, v["sha"].to_s] }
+    not_live = Array(verdicts).select { |v| v.is_a?(Hash) && !v["ok"] }
+                              .map { |v| { "repo" => v["repo"].to_s, "reason" => v["reason"].to_s } }
+    { "status" => status.to_s, "release" => release.to_s.empty? ? nil : release.to_s, "shipped" => shipped,
+      "holds" => Array(holds) + not_live, "stages" => stages.to_h, "steps" => steps.to_h, "seconds" => seconds.to_i }
+  end
+
+  # The one-line timing report a human reads beside the RESULT line.
+  def timings_line(stages, steps)
+    parts = stages.map { |stage, secs| "#{LABELS.fetch(stage, stage)} #{duration(secs)}" }
+    inner = steps.map { |step, secs| "#{step.tr('_', ' ')} #{duration(secs)}" }
+    line = "⏱ #{parts.join(' · ')}"
+    inner.empty? ? line : "#{line} (inside: #{inner.join(' · ')})"
+  end
 
   # Why the active release owes a devnet gauntlet, in words, or nil when it owes none.
   # +current+ is the snapshot's release: its repos, the newest terminal gauntlet
@@ -315,23 +366,31 @@ module ReleaseCycle
       say("Release cycle: #{describe(snapshot)} → starting at #{LABELS[stage]}" \
           "#{ReleaseCycle.eta_clause(snapshot)}")
 
+      @slug = snapshot.dig("current", "slug") || snapshot.dig("last_shipped", "slug")
       STAGES.drop(STAGES.index(stage)).each_with_index do |name, i|
         number = STAGES.index(name) + 1
         say("▸ #{number}/#{STAGES.size} #{LABELS[name]} · #{ReleaseCycle.stamp(@deps.now)}" \
             "#{ReleaseCycle.eta_clause(snapshot)}")
         began = @deps.now
         status, snapshot = send("stage_#{name}", snapshot, fresh: i.zero?)
-        elapsed = ReleaseCycle.duration(@deps.now - began)
+        stage_seconds[name] = (@deps.now - began).to_i
+        elapsed = ReleaseCycle.duration(stage_seconds[name])
         if status == :done
           say("✓ #{LABELS[name]} · #{elapsed} · #{@done_reason}")
+          report_result("nothing")
           return finish(OK)
         end
         unless status.zero?
           say("✗ #{LABELS[name]} · #{elapsed} · stopped (exit #{status}). Fix what it names, then re-run " \
               "`bin/release cycle`: it resumes from the board.")
+          report_result("stopped", holds: [{ "stage" => name, "exit" => status }])
           return finish(status)
         end
         say("✓ #{LABELS[name]} · #{elapsed} (cycle #{ReleaseCycle.duration(@deps.now - @started)})")
+        # SHIPPED IS REPORTED BEFORE THE CLEANUP (task release-sub-hour-pipeline): a green
+        # prod verify is the release's outcome, so the cycle says so and records the
+        # result before the archive (8m32s on rel-20261110-0123f9) starts.
+        report_result("shipped") if name == "prod_verify"
       end
       finish(OK)
     end
@@ -430,7 +489,21 @@ module ReleaseCycle
           "Re-run: bin/release announce #{slug} --post")
     end
 
-    def stage_archive(snapshot, fresh:) = [run_step("archive", archive_argv), snapshot]
+    # THE CLEANUP, after "shipped" is reported (task release-sub-hour-pipeline): the
+    # archive (task archive, desk reclaim, branch prune, artifact sweep) runs once
+    # prod verify has printed SHIPPED and the RESULT line, so the release's outcome is
+    # on record before the ~8-minute cleanup starts. It stays in the foreground on
+    # purpose: a background archive would let the next cycle start a second one beside
+    # it. Its outcome never changes the release's: a failed archive is a warning with
+    # its re-run, and the cycle exits 0.
+    def stage_archive(snapshot, fresh:)
+      status = run_step("archive", archive_argv)
+      unless status.zero?
+        say("  ⚠ archive exited #{status}; the release stands as shipped. Re-run `bin/release archive` " \
+            "(idempotent) to finish the cleanup.")
+      end
+      [OK, snapshot]
+    end
 
     # --- plumbing -------------------------------------------------------------
 
@@ -441,6 +514,7 @@ module ReleaseCycle
       retried = false
       loop do
         status, output = @deps.run_step(name, argv)
+        step_seconds.merge!(ReleaseCycle.step_timings_from(output))
         return [status, output] if status.zero?
 
         cause = ReleaseCycle.retryable_cause(output)
@@ -564,6 +638,24 @@ module ReleaseCycle
       return sentence unless sentence.empty?
 
       "#{holder['role']} claim on #{holder['release_slug']} is held by session …#{holder['session'].to_s[-4..]}"
+    end
+
+    def stage_seconds = (@stage_seconds ||= {})
+    def step_seconds = (@step_seconds ||= {})
+
+    # The timing line and the ONE machine-readable RESULT line for this release, also
+    # handed to deps.record_result (best-effort) so the record outlives the terminal.
+    def report_result(status, holds: [])
+      slug = @shipped_slug || @slug
+      summary = ReleaseCycle.result_summary(status: status, release: slug, verdicts: @sha_verdicts, holds: holds,
+                                            stages: stage_seconds, steps: step_seconds,
+                                            seconds: @started ? @deps.now - @started : 0)
+      say("✓ SHIPPED #{slug} — live in production, cycle #{ReleaseCycle.duration(summary['seconds'])}") if status == "shipped"
+      say(ReleaseCycle.timings_line(stage_seconds, step_seconds)) if stage_seconds.any?
+      say("#{RESULT_TAG} #{JSON.generate(summary)}")
+      @deps.record_result(summary) if @deps.respond_to?(:record_result)
+    rescue StandardError => e
+      say("  ⚠ result summary not recorded (#{e.class}: #{e.message})")
     end
 
     def finish(status)
