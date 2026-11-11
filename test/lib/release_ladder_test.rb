@@ -50,8 +50,9 @@ class ReleaseLadderTest < ActiveSupport::TestCase
   end
 
   # `blocked` is deliberately NOT a synonym for `dormant`: dormant is a decision
-  # (rolio is parked), blocked is unfinished work (chain-ops sits on a personal
-  # account the automation cannot push to). Collapsing them would file the second
+  # (a repo is parked), blocked is unfinished work (chain-ops sat on a personal
+  # account the automation could not push to, until its row went on 2026-11-10).
+  # Collapsing them would file the second
   # under the first and lose it.
   test "blocked is excluded from the sweep and distinct from dormant" do
     refute_includes Release::Ladder.sweepable(CONFIG), "stuck"

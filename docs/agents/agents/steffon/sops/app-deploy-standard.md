@@ -107,7 +107,12 @@ ones:
 - **branches**: `git -C /Users/alex/projects/$SLUG push origin main:refs/heads/accepted main:refs/heads/release`
 - **.worktrees ignored**: add `.worktrees/` to the app's `.gitignore`.
 - **ci on release rungs**: set `push: branches: [ main, release, accepted ]` in
-  the `CI` workflow, with no `paths`, `paths-ignore` or `branches-ignore`.
+  the `CI` workflow, with no `paths`, `paths-ignore` or `branches-ignore`. A
+  **private** repo drops `main` (`[ release, accepted ]`): its Actions minutes are
+  billed, and `bin/release ship` moves `main` only by a fast-forward ref push of a
+  release SHA whose green CI the ship gate already read (task
+  `ci-runs-reactive-and-once`). Add no `.github/dependabot.yml`; dependency bumps run
+  the `dependency-update` SOP.
 - **smoke /up**: route `get "up" => "rails/health#show"`.
 - **hub badge glyph** (checked in the hub, not the app): add
   `"<slug>" => "<emoji>"` to `APP_EMOJIS` in `app/helpers/application_helper.rb`

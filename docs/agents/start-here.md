@@ -172,6 +172,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | `contact-capture` (offer Alex McRitchie a create or update of an Apple Contacts card from a forwarded email's signature) | `mcritchie-studio/docs/agents/modules/contact-capture.md` |
 | `credential-access` (read order, rotation, names-never-values, the vault permission map) | `mcritchie-studio/docs/agents/modules/credential-access.md` |
 | `credential-issues` (log it privately, triage rotate-now vs weekly) | `mcritchie-studio/docs/agents/modules/credential-issues.md` |
+| `dependency-update` (reactive gem and action bumps: advisory, bundler-audit red, builder need, drift at release) | `mcritchie-studio/docs/agents/modules/dependency-update.md` |
 | `dream` (the bank of good answers, in a platform sequence, one per soul and step moment cards; capture and sign-off) | `mcritchie-studio/docs/agents/modules/dream.md` |
 | `form-fill` (complete an application from records, ask only what they cannot answer) | `mcritchie-studio/docs/agents/modules/form-fill.md` |
 | `gmail-capture` (read-only mailbox pull into the desk queue) | `mcritchie-studio/docs/agents/modules/gmail-capture.md` |

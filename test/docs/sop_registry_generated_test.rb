@@ -37,6 +37,18 @@ class SopRegistryGeneratedTest < ActiveSupport::TestCase
                     "| Mason `clean-up` SOP (board → 0 + infra sweep) | `mcritchie-studio/docs/agents/agents/mason/sops/clean-up.md` |"
   end
 
+  # Dependency work is reactive, not scheduled (task ci-runs-reactive-and-once): no repo
+  # carries a scheduled dependabot.yml, so the SOP is the one way a bump starts, and an
+  # agent told "dependency-update" must reach it by name.
+  test "[unit] dependency-update resolves to the shared module" do
+    row = SopRegistry.resolve(SopRegistry.entries(ROOT), "dependency-update")
+
+    refute_nil row, "`dependency-update` is not in the SOP registry"
+    assert_equal "Shared", row.owner
+    assert_equal "docs/agents/modules/dependency-update.md", row.path
+    assert_includes Rails.root.join(SopRegistry::START_HERE_PATH).read, "`dependency-update`"
+  end
+
   # LOAD-BEARING. The boot docs no longer carry the table: an agent resolves a name
   # Alex McRitchie says only through bin/sop. So every registered name must resolve to
   # its own entry, and to a file that exists.

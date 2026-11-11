@@ -1,5 +1,13 @@
 # Dependency Decisions — the Dependabot backlog, with a verdict per cause
 
+> **Superseded for new work, 2026-11-10.** Scheduled Dependabot version updates
+> are off in every repo (task `ci-runs-reactive-and-once`, Alex McRitchie's ruling
+> that dependency work is reactive). A bump now starts from the
+> [`dependency-update`](../modules/dependency-update.md) SOP. This record stays as
+> the history of the old backlog, and CONFIG-1 below is still open: on 2026-11-10
+> Dependabot alerts were on for the public repos and off for the private ones, and
+> security-update PRs were off everywhere.
+
 **Measured: 2026-09-10 05:00–06:00Z** by Steffon, read-only. No PR in this record
 was merged, closed, rebased, re-run, or commented on to produce it.
 

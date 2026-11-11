@@ -299,9 +299,7 @@ class ApplicationHelperTest < ActionView::TestCase
   # Assert the property (every repo the conductor can release has an identity),
   # not just the slugs that happen to be mapped today.
   test "every release-registry repo has a glyph, so no lane draws a blank badge" do
-    # chain-ops is out of the catalog and parked, so it can never reach a lane:
-    # retired_repo_card_hold_test.rb.
-    repos = Release::Repos.gem_repos + Release::Repos.app_repos - %w[chain-ops]
+    repos = Release::Repos.gem_repos + Release::Repos.app_repos
     unmapped = repos.reject { |repo| app_emoji(repo) }
 
     assert_empty unmapped, "release-registry repos with no APP_EMOJIS glyph: #{unmapped.join(', ')}"

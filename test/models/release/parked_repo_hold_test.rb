@@ -10,7 +10,7 @@ require_relative "../../support/outbound_seams"
 # THE PARKED-REPO HOLD, record side (sweep-ignores-parked-repos).
 #
 # The conductor sweeps THREE-RUNG repos only (Release::Ladder.sweepable). A repo the
-# registry parks — rolio `dormant`, tax-studio `planned`, chain-ops `blocked` — has
+# registry parks — `dormant`, `planned` or `blocked` (tax-studio is `planned`) — has
 # no business being promoted or deployed by a sweep. But sweep_candidates took every
 # `reviewed` task with no repo filter, and repo_plan never consulted the ladder, so a
 # reviewed task naming a parked repo would have ridden straight onto the candidate.
