@@ -150,6 +150,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | Steffon `production-deploy` SOP | `mcritchie-studio/docs/agents/agents/steffon/sops/production-deploy.md` |
 | Steffon `program-upgrade` SOP (on-chain program upgrade, devnet then mainnet, through Squads) | `mcritchie-studio/docs/agents/agents/steffon/sops/program-upgrade.md` |
 | Steffon `r2-backup` SOP (backup bucket, nightly run, garbage collection, restore) | `mcritchie-studio/docs/agents/agents/steffon/sops/r2-backup.md` |
+| Steffon `sheets-addon` SOP (change, test and redeploy the Studio Google Sheets editor add-on (addons/studio-sheets)) | `mcritchie-studio/docs/agents/agents/steffon/sops/sheets-addon.md` |
 | Steffon `squad-vault-ops` SOP (mainnet Squad vault transfers and upgrades: agents queue and double-sign, Alex McRitchie approves) | `mcritchie-studio/docs/agents/agents/steffon/sops/squad-vault-ops.md` |
 | Steffon `website-launch` SOP (hosted site: Squarespace or our app) | `mcritchie-studio/docs/agents/agents/steffon/sops/website-launch.md` |
 | Steffon `workspace-icon` SOP (badged software icons per client, /credentials matrix, 1Password vault icons) | `mcritchie-studio/docs/agents/agents/steffon/sops/workspace-icon.md` |
