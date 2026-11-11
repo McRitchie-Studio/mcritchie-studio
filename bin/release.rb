@@ -363,6 +363,7 @@ require_relative "lib/cli_arg_guard"
 # suite. Slice 4 of docs/agents/system/agent-presence.md.
 require_relative "lib/release_presence"
 require_relative "lib/release_cycle" # `bin/release cycle`: the whole release, resumable
+require_relative "lib/qa_on_merge" # `bin/release qa-on-merge`: a reviewed merge starts a QA release
 require_relative "lib/release_announce" # `bin/release announce`: smoke production, then post the release on Slack
 
 APP = "mcritchie-studio"
@@ -14509,6 +14510,39 @@ def cycle
                            assume_yes: ASSUME_YES, wait_for_1password: WAIT_FOR_1PASSWORD, extra_args: extra).run
 end
 
+# `bin/release qa-on-merge <slug>` (bin/lib/qa_on_merge.rb): started by bin/pr-review
+# in the background right after a reviewed merge into `accepted`. When the trigger is
+# on and no release is active, it runs `bin/release prepare --task <slug> --yes` as a
+# child with the agent lane's credentials (ReleaseCycleDeps#run_step, as the cycle
+# runs prepare), so the task reaches QA without waiting for a batch. It never ships.
+# Exits 0 on a skip; otherwise prepare's own exit status.
+def qa_on_merge(slug)
+  enabled = QaOnMerge.enabled?
+  active = enabled && !DRY ? active_release_slug : nil
+  verdict, detail = QaOnMerge.decide(slug: slug, enabled: enabled, active: active)
+  if verdict == :skip
+    say("qa-on-merge: not starting a QA release — #{detail}")
+    return 0
+  end
+
+  argv = detail + (hub_train? ? [] : ["--train", TRAIN.to_s]) + (PROD ? [] : ["--local"])
+  say("qa-on-merge: no release is active — starting a QA release for #{slug}: bin/release #{argv.join(' ')} " \
+      "(it stops at QA; production still takes Alex McRitchie's clearance)")
+  return 0 if DRY
+
+  status, = ReleaseCycleDeps.new.run_step("prepare", argv)
+  status
+end
+
+# The active release's slug, "" when none, nil when the board cannot be read (an
+# unread board is not a free lane: qa-on-merge then skips).
+def active_release_slug
+  read = conductor("r = #{rel_current}; puts({ slug: r&.slug }.to_json)", read_only: true)
+  read.is_a?(Hash) ? read["slug"].to_s : "unknown (the board could not be read)"
+rescue SystemExit, StandardError
+  "unknown (the board could not be read)"
+end
+
 # prepare's outcome as the process exit status: a NOT-green QA exits
 # Release::Cli::PREPARE_QA_NOT_GREEN_EXIT, anything else returns normally (exit 0).
 # Outside prepare on purpose: an exit inside it would land in prepare's own
@@ -14566,6 +14600,7 @@ if __FILE__ == $PROGRAM_NAME
   when "announce" then announce
   when "drop-lock-only" then drop_lock_only
   when "cycle"    then exit(cycle)
+  when "qa-on-merge" then exit(qa_on_merge(Release::Cli.positional_slugs(ARGV).first))
   else
     # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand
     # help and this fall-through print the SAME text from one place.

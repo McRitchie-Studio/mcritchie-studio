@@ -26,18 +26,21 @@ module ReleaseStepTimings
     end
 
     # Close the open phase (if any) and open +name+.
+    # One clock read: the instant the old phase ends is the instant the new one opens.
     def mark(name)
-      close
+      at = @now.call
+      close(at)
       @open = name.to_s
-      @opened_at = @now.call
+      @opened_at = at
       self
     end
 
     # Close the open phase. Idempotent.
-    def close
+    def close(at = nil)
       return self unless @open
 
-      @seconds[@open] = @seconds.fetch(@open, 0) + (@now.call - @opened_at)
+      at ||= @now.call
+      @seconds[@open] = @seconds.fetch(@open, 0) + (at - @opened_at)
       @open = nil
       self
     end
