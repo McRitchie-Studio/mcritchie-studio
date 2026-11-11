@@ -320,6 +320,18 @@ class DeskBringupAtomicityTest < ActiveSupport::TestCase
     end
   end
 
+  test "a full band refuses with the slot-full status bin/task begin reclaims on" do
+    script.define_singleton_method(:stack_env_path) { |_a, _t| "/nonexistent/stack.env" }
+    script.define_singleton_method(:with_worktree_lock) { |&b| b.call }
+    { redis_physical_count: 16, redis_db_min: 9, load_current_capacity: 7,
+      allocated_redis_dbs: (9..15).to_a, physical_band_capacity: 7 }.each do |name, value|
+      script.define_singleton_method(name) { |*_| value }
+    end
+
+    error = assert_raises(SystemExit) { capture_io { script.preflight_capacity!({ "slug" => "repo" }, "new-desk") } }
+    assert_equal 75, error.status, "exit 1 here hides the full band from begin's reclaim-and-retry"
+  end
+
   # --- the redis band ----------------------------------------------------------------
 
   test "a bringup that grew the redis band unwinds the growth" do

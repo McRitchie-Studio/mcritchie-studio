@@ -22,6 +22,8 @@ module CiFailureDigest
   MAX_JOBS = 6
   MAX_FAILURES_PER_JOB = 6
   MAX_EXCERPT_LINES = 4
+  # The log lines kept when no failure is recognised, so the reader still sees it.
+  TAIL_LINES = 25
 
   # GitHub prefixes every log line with an ISO timestamp, and Playwright colours its
   # output; both are noise in a terminal excerpt.
@@ -62,7 +64,12 @@ module CiFailureDigest
     lines = clean(log)
     failures = minitest_failures(lines) + playwright_failures(lines)
     infra = INFRA.find { |pattern, _| lines.any? { |l| l.match?(pattern) } }&.last
-    { failures: failures.uniq { |f| f[:name] }.first(MAX_FAILURES_PER_JOB), infra: infra }
+    found = failures.uniq { |f| f[:name] }.first(MAX_FAILURES_PER_JOB)
+    # NOTHING RECOGNISED IS NOT NOTHING TO SHOW (task release-preflight-hardening): a
+    # runner this parser does not know printed "open the job" and nothing else, so the
+    # failing test stayed hidden behind a click. Keep the log's tail instead.
+    tail = found.empty? && infra.nil? ? lines.reject { |l| l.strip.empty? }.last(TAIL_LINES) : []
+    { failures: found, infra: infra, tail: tail }
   end
 
   # Failure:
@@ -129,7 +136,15 @@ module CiFailureDigest
       out << "  #{j[:job]}#{j[:url] ? "  #{j[:url]}" : ""}"
       out << "    ⚠ setup, not a test: #{j[:infra]} — re-run the job; nothing in the diff to fix" if j[:infra] && j[:failures].empty?
       out << "    (log unreadable: #{j[:unread]})" if j[:unread]
-      out << "    (no test failure recognised in the log — open the job)" if !j[:unread] && !j[:infra] && j[:failures].empty?
+      if !j[:unread] && !j[:infra] && j[:failures].empty?
+        tail = Array(j[:tail])
+        if tail.empty?
+          out << "    (no test failure recognised in the log — open the job)"
+        else
+          out << "    (no test failure recognised in the log — its last #{tail.size} lines:)"
+          tail.each { |line| out << "      | #{line.rstrip[0, 200]}" }
+        end
+      end
       j[:failures].each do |f|
         out << "    ✗ #{f[:name]}#{f[:location] && !f[:name].include?(f[:location]) ? "  [#{f[:location]}]" : ""}"
         f[:excerpt].each { |e| out << "        #{e[0, 180]}" }

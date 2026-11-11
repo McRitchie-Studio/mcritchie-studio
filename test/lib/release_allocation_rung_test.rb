@@ -26,7 +26,10 @@ class ReleaseAllocationRungTest < ActiveSupport::TestCase
   end
 
   test "the version commit is pushed to accepted, never to release" do
-    write = body("commit_gem_version!")
+    # The push moved into land_version_commit! (task release-preflight-hardening: a
+    # moved `accepted` gets the version commit merged in), which commit_gem_version! calls.
+    assert_includes body("commit_gem_version!"), "land_version_commit!("
+    write = body("commit_gem_version!") + body("land_version_commit!")
 
     assert_includes write, 'push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}"',
                     "phase 0b must write the version, its lock and the rolled changelog onto `accepted`"
@@ -62,7 +65,8 @@ class ReleaseAllocationRungTest < ActiveSupport::TestCase
   # The direction itself. A push of `release` onto `accepted` anywhere in phase 0
   # would be the rejected alternative (carrying a commit back DOWN the ladder).
   test "phase 0 never carries release back onto accepted" do
-    phase = code_only(body("allocate_gem_versions!") + body("commit_gem_version!") + body("gem_allocation_plan"))
+    phase = code_only(body("allocate_gem_versions!") + body("commit_gem_version!") + body("land_version_commit!") +
+                      body("gem_allocation_plan"))
 
     # Pinning ONE literal refspec is how this guard goes blind. The identical
     # defect spelled with gem_allocation_plan's own `release_tip` variable — or

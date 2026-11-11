@@ -350,6 +350,11 @@ module OutboundSeams
     # of the warning names the unreadable repos, comma-separated.
     ENV["RELEASE_PR_UNREADABLE"] = ""
 
+    # THE RELEASE PREFLIGHT'S DESK-SLOT READ (Release::Preflight): set, it answers
+    # instead of `bin/agent-worktree scale status`, which reads the machine's real
+    # Redis band. "9" is a band with room; a test of the refusal sets "0".
+    ENV["RELEASE_FREE_DESK_SLOTS"] = "9"
+
     # THE DEVNET GAUNTLET, process-wide as well as in `env`: a child of a harness
     # that never adopted OutboundSeams still runs the sealed driver and an
     # unroutable devnet RPC, never turf-monster's real rehearsal.

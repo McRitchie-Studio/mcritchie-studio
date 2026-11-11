@@ -68,8 +68,8 @@ class DevopsReconcileCliTest < Minitest::Test
 
   # --- external shims ---------------------------------------------------------
 
-  # A cwd containing bin/ shims (the CLI calls `bin/review-autopilot` and
-  # `bin/task` by RELATIVE path) plus a PATH dir holding `gh`.
+  # A dir containing bin/ shims (the CLI reaches `bin/review-autopilot` and
+  # `bin/task` through their DEVOPS_RECONCILE_*_BIN seams) plus a PATH dir holding `gh`.
   # gh_by_pr: { "926" => json, ... } — the shim answers per PR number, which is
   # what a multi-repo task needs. gh_json stays the single-PR shorthand.
   # autopilot_exit stands in for a registry read that FAILED — bin/review-autopilot
@@ -128,7 +128,8 @@ class DevopsReconcileCliTest < Minitest::Test
       "TASK_API_BASE" => "http://127.0.0.1:#{port}",
       "AGENT_API_SECRET" => "test-secret",
       "PATH" => "#{root}:#{ENV["PATH"]}",
-      "DEVOPS_RECONCILE_AUTOPILOT_BIN" => File.join(root, "bin", "review-autopilot")
+      "DEVOPS_RECONCILE_AUTOPILOT_BIN" => File.join(root, "bin", "review-autopilot"),
+      "DEVOPS_RECONCILE_TASK_BIN" => File.join(root, "bin", "task")
     }
     Open3.capture3(env, RbConfig.ruby, BIN, *args, chdir: root)
   end
@@ -439,6 +440,32 @@ class DevopsReconcileCliTest < Minitest::Test
 
           assert_equal 0, status.exitstatus, err
           refute_includes JSON.parse(out).fetch("unread"), "armed-action registry", err
+        end
+      end
+    end
+  end
+
+  # [unit] The heal reaches bin/task through its seam from ANY cwd, never a relative
+  # "bin/task" (task release-preflight-hardening). Run from an empty cwd: the old
+  # relative spawn found nothing there and every heal read back nil.
+  def test_the_heal_reaches_bin_task_from_any_cwd
+    tasks = { "submitted" => [task(slug: "lost-stamp", stage: "submitted")], "building" => [] }
+    with_shims(gh_json: GH_MERGED) do |root, calls|
+      with_board(tasks) do |port|
+        Dir.mktmpdir("reconcile-elsewhere") do |elsewhere|
+          env = {
+            "TASK_API_BASE" => "http://127.0.0.1:#{port}",
+            "AGENT_API_SECRET" => "test-secret",
+            "PATH" => "#{root}:#{ENV["PATH"]}",
+            "DEVOPS_RECONCILE_AUTOPILOT_BIN" => File.join(root, "bin", "review-autopilot"),
+            "DEVOPS_RECONCILE_TASK_BIN" => File.join(root, "bin", "task")
+          }
+          out, err, status = Open3.capture3(env, RbConfig.ruby, BIN, "--seam", "pr-review", "--heal", "--json",
+                                            chdir: elsewhere)
+
+          assert_equal 0, status.exitstatus, err
+          assert JSON.parse(out)["healed"].first["ok"], out
+          assert_match(/task merged lost-stamp accepted/, File.read(calls))
         end
       end
     end

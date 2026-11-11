@@ -192,7 +192,7 @@ class ReleaseGemAllocationTest < Minitest::Test
   # Drive the real `allocate_gem_versions!` in a subprocess that has `load`ed
   # bin/release.rb (its dispatch is guarded on __FILE__ == $PROGRAM_NAME, so
   # loading defines the helpers without running a command).
-  def allocate(root, members:, live: ["0.4.0"], stub: :real)
+  def allocate(root, members:, live: ["0.4.0"], stub: :real, setup: "")
     stub_bin = install_bundle_stub(root, mode: stub)
     script = <<~RUBY
       ENV["PROJECTS_DIR"] = #{root.inspect}
@@ -203,7 +203,9 @@ class ReleaseGemAllocationTest < Minitest::Test
       def promote_accepted_to_release!(repos, label: nil)
         $stdout.puts("PROMOTE " + Array(repos).join(","))
       end
+      #{setup}
       allocate_gem_versions!([{ "repo" => "studio-engine", "members" => #{members.inspect} }])
+      $stdout.puts("PIN " + swept_pin("studio-engine"))
     RUBY
     out, status = Open3.capture2e(child_env(root, stub_bin), RbConfig.ruby, "-W0", "-e", script)
     [out, status.success?]
@@ -283,6 +285,40 @@ class ReleaseGemAllocationTest < Minitest::Test
       assert_equal release_before, git(origin, "rev-parse", "release").strip,
                    "allocation writes ONE rung: `release` must move only through the promote"
       assert_includes pushed(origin, "lib/studio/version.rb", "release"), %(VERSION = "0.4.0")
+    end
+  end
+
+  # THE GEM PIN HOLDS (task release-preflight-hardening). 2026-11-10: studio-engine's
+  # allocation advanced the pin from the swept 84b48b0 to a later `accepted` head and
+  # carried an unplanned task into the release. Now the version commit is built ON
+  # THE PIN and merged into the moved head; the promote carries the pin + version only.
+  def test_a_merge_after_the_sweep_waits_for_the_next_release
+    with_root do |root|
+      origin, repo = build_projects_root(root)
+      pin = git(origin, "rev-parse", "accepted").strip
+      git(repo, "checkout", "--quiet", "-b", "late")
+      File.write(File.join(repo, "lib", "studio", "late.rb"), "# merged after the sweep\n")
+      git(repo, "add", "-A")
+      git(repo, "commit", "--quiet", "-m", "late merge")
+      git(repo, "push", "--quiet", "origin", "HEAD:refs/heads/accepted")
+      late = git(repo, "rev-parse", "HEAD").strip
+
+      out, ok = allocate(root, members: [member(kind: "feature")], setup: %(swept_shas["studio-engine"] = #{pin.inspect}))
+
+      assert ok, out
+      version_sha = out[/^PIN (\h+)$/, 1]
+      refute_nil version_sha, out
+      assert_equal pin, git(origin, "rev-parse", "#{version_sha}^").strip,
+                   "the version commit is built on the swept pin, not the moved head"
+      assert_includes git(origin, "show", "#{version_sha}:lib/studio/version.rb"), %(VERSION = "0.5.0")
+      _, late_in_version = Open3.capture2e("git", "-C", origin, "merge-base", "--is-ancestor", late, version_sha)
+      refute late_in_version.success?, "the late merge must not ride this release"
+      accepted = git(origin, "rev-parse", "accepted").strip
+      [late, version_sha].each do |sha|
+        _, contained = Open3.capture2e("git", "-C", origin, "merge-base", "--is-ancestor", sha, accepted)
+        assert contained.success?, "`accepted` keeps both the late merge and the version commit"
+      end
+      assert_includes out, "built on the pin"
     end
   end
 

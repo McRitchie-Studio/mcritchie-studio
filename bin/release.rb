@@ -226,6 +226,7 @@ require_relative "../app/models/release/merge_plan"
 # Rails-free.
 require_relative "../app/models/release/trains"
 require_relative "../app/models/release/sweep_plan"
+require_relative "../app/models/release/preflight" # every read-only refusal, before prepare's first write
 # PromotePlan decides fast-forward or batch PR for the promote, the carry of
 # `release` back onto `accepted`, and which branch a consumer lock bump lands on.
 require_relative "../app/models/release/promote_plan"
@@ -3826,7 +3827,9 @@ def sweep_detect_ruby(only_slugs)
   "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
   "#{held_repos_ruby}" \
-  "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen, held_repos: held }.to_json)"
+  "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state, " \
+  "repos: (r.respond_to?(:tasks) ? r.tasks.flat_map(&:release_repos).uniq : []) } : nil), " \
+  "screen: screen, held_repos: held }.to_json)"
 end
 
 # The one-shot SWEEP write for prepare: open the candidate if none is active
@@ -5372,6 +5375,103 @@ def qa_deploys_in_parallel(qa_groups, rel_slug, &job)
   qa_groups.map { |group| answers.fetch(group["repo"]) }
 end
 
+# --- THE RELEASE PREFLIGHT (task release-preflight-hardening; Release::Preflight) ----
+# Every refusal prepare can derive from reads, made before its first write. `detect`
+# is prepare's own detection read (sweep_detect_ruby), so the preflight costs no
+# second board call. Aborts with one line per finding; prints a ✓ line when clear.
+def release_preflight!(detect)
+  rows = detect["tasks"] || []
+  return if rows.empty? && detect["release"].nil? # the idempotent no-op: nothing to judge
+  plan = Release::SweepPlan.compute(rows, parked: Release::Ladder.parked(RELEASE_REPOS),
+                                          train: TRAIN, trains: RELEASE_TRAINS,
+                                          riding: detect.dig("release", "slug"),
+                                          held_repos: detect["held_repos"] || [])
+  repos = Release::Preflight.release_repos(rows, detect.dig("release", "repos"))
+  identity = preflight_identity
+  step("preflight (read-only): PR coverage of every candidate, #{identity}'s read of #{repos.size} " \
+       "repo(s), a free desk slot, the cwd")
+  unreadable = repos.empty? ? [] : ShipPrAccess.unreadable(repos, reader: ->(repo) { ship_pr_readable(repo) })
+  free = preflight_free_desk_slots
+  say("  ⚠ preflight: the free desk-slot count could not be read; not judged") if free.nil?
+  refusals = Release::Preflight.refusals(blocked: plan["blocked"], unreadable: unreadable, identity: identity,
+                                         free_slots: free, cwd: preflight_cwd, roots: preflight_roots)
+  abort!(Release::Preflight.message(refusals)) if refusals.any?
+
+  say("  ✓ preflight clear: #{repos.size} repo(s) readable as #{identity}, every multi-repo candidate has its " \
+      "PRs, #{free.nil? ? 'desk slots unread' : "#{free} desk slot(s) free"}, cwd is the hub")
+end
+
+def preflight_identity
+  identity = GhIdentity.item_for(GhIdentity.resolve.to_s) || ENV["GH_APP_ITEM"].to_s.strip
+  identity.to_s.empty? ? "github.mcritchie-agent" : identity
+rescue StandardError
+  ENV["GH_APP_ITEM"].to_s.strip.empty? ? "github.mcritchie-agent" : ENV["GH_APP_ITEM"].to_s.strip
+end
+
+# Free desk slots, from `bin/agent-worktree scale status` (its "free:" line), or nil
+# when it cannot be read. RELEASE_FREE_DESK_SLOTS is the test seam: set, it answers
+# ("" means unread), and no child runs (armed by test/support/outbound_seams.rb).
+def preflight_free_desk_slots
+  if ENV.key?("RELEASE_FREE_DESK_SLOTS")
+    value = ENV["RELEASE_FREE_DESK_SLOTS"].to_s.strip
+    return value.match?(/\A\d+\z/) ? value.to_i : nil
+  end
+
+  out, status = bounded_capture2e(hub_bin("agent-worktree"), "scale", "status")
+  return nil unless status.success?
+
+  found = out.to_s[/^\s*free:\s+(\d+)/, 1]
+  found&.to_i
+rescue StandardError
+  nil
+end
+
+def preflight_cwd
+  File.realpath(Dir.pwd)
+rescue SystemCallError
+  Dir.pwd
+end
+
+# A release stands in the hub: the checkout this script runs from, or the hub
+# primary at the projects root (the fixed-path install runs from neither, so its
+# runs must stand in the primary).
+def preflight_roots
+  [HUB_ROOT, repo_path(APP)].filter_map do |root|
+    File.realpath(root)
+  rescue SystemCallError
+    nil
+  end.uniq
+end
+
+# `bin/release refreeze`: re-freeze the active release after a fix lands on `release`.
+# It reads the release's `assembled` members and runs prepare with each as a --task:
+# prepare's re-freeze path (sweep_detect_ruby's refreeze rows) then promotes nothing,
+# re-gates, re-deploys QA and re-records qa_shas from each repo's `release` tip.
+# Before this, the operator had to name a member by hand (`prepare --task <slug>`).
+def refreeze
+  read = conductor("r = #{rel_current}; puts({ release: (r && r.slug), state: (r && r.state), " \
+                   "members: (r ? Task.where(release_slug: r.slug, stage: 'assembled').order(:position).pluck(:slug) : []) }.to_json)",
+                   read_only: true)
+  rel = read["release"].to_s
+  abort!("refreeze: no active release — nothing to re-freeze. Nothing was read further or written.") if rel.empty?
+  members = Array(read["members"]).map(&:to_s).reject(&:empty?)
+  if members.empty?
+    abort!("refreeze: #{rel} (#{read['state']}) has no `assembled` member — a re-freeze re-records an assembled " \
+           "release. Run `#{RELEASE_SELF_CMD} prepare` for a release still assembling. Nothing was written.")
+  end
+  say("Re-freeze #{rel}: #{members.size} assembled member(s) — #{members.join(', ')}")
+  members.each { |slug| ARGV.push("--task", slug) }
+  prepare
+end
+
+# `bin/release preflight [--task SLUG ...]`: the same read-only checks prepare makes
+# first, as a command of their own (the cycle runs it under the ship's identity).
+def preflight
+  task_slugs = opt_values("--task")
+  say("Release preflight — read-only#{PROD ? ' (PROD board)' : ' (local)'}")
+  release_preflight!(conductor(sweep_detect_ruby(task_slugs), read_only: true))
+end
+
 def prepare
   task_slugs = opt_values("--task")
   slug = opt_value("--slug")
@@ -5397,6 +5497,16 @@ def prepare
 
   say("Prepare release — Avi qa-release (self-healing)#{hub_train? ? '' : " · #{TRAIN} train"}#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
+
+  # 0. DETECT + PREFLIGHT, before every write below (task release-preflight-hardening):
+  #    the detection read (the reviewed queue + assembled stragglers with their
+  #    PR/merged state, the review-gate screen, the current release; `--task` narrows
+  #    it) feeds Release::Preflight, which refuses a candidate with a missing PR, a
+  #    repo the GitHub identity cannot read, a full desk band or a wrong cwd. The
+  #    morning cycle of 2026-11-10 met the first only at 3a, after its claim.
+  step("record (read-only): Release::Conductor.sweep_candidates + screen")
+  detect = conductor(sweep_detect_ruby(task_slugs), read_only: true)
+  release_preflight!(detect)
 
   # LOCAL PRESENCE — the twin of the board `assembler` claim taken further down, and it
   # answers a DIFFERENT question. The board claim says "a release is live" to every
@@ -5424,8 +5534,7 @@ def prepare
   # 1. DETECT (a read — runs even in --dry-run): the reviewed queue + assembled
   #    stragglers with their PR/merged state, the review-gate screen, and the
   #    current release. `--task` narrows the sweep (operator curation).
-  step("record (read-only): Release::Conductor.sweep_candidates + screen")
-  detect = conductor(sweep_detect_ruby(task_slugs), read_only: true)
+  # (The detection read itself ran at step 0, before the preflight.)
   cands  = detect["tasks"] || []
   active = detect["release"]
 
@@ -7484,7 +7593,7 @@ def push_failure_message(repo, sha, cause)
   when :diverged
     "could not fast-forward #{repo} origin/main to #{short(sha)} — git REFUSED the ref update as a " \
       "NON-FAST-FORWARD, which means origin/main has diverged from the frozen SHA (someone pushed to " \
-      "main). NOT forcing. Reconcile main, re-run `bin/release prepare` to re-freeze, then re-run " \
+      "main). NOT forcing. Reconcile main, re-freeze with `bin/release refreeze`, then re-run " \
       "`bin/release ship`."
   else
     "could not push #{repo} origin/main to #{short(sha)} — git refused, and the reason is NOT one this " \
@@ -8413,17 +8522,17 @@ def gem_allocation_plan(group, failures)
     return
   end
   tip = out.strip
-  # THE ONE PLACE THE PIN CANNOT HOLD (task release-pins-swept-sha). The version
-  # commit must land ON `accepted` (above), and a ref push can only extend the branch
-  # head, so a gem merge that reached `accepted` after the sweep rides this release
-  # under the version commit. Say so, name the SHAs, and advance the pin, so nothing
-  # downstream reads the tree as the swept one. The window is the minutes between the
-  # sweep and this read, on a gem repo only.
+  # THE PIN HOLDS FOR A GEM TOO (task release-preflight-hardening). A gem merge that
+  # reached `accepted` after the sweep is not this release's: the version commit is
+  # BUILT ON THE PIN, and commit_gem_version! lands it on `accepted` by merging it into
+  # the moved head (land_version_commit!), so the promote carries the pin plus the
+  # version and nothing else. Before this the pin advanced to the head and the newer
+  # merge rode along ("accepted moved past the swept 84b48b0 to b7db2fa", 2026-11-10).
   pin = swept_pin(repo)
   if !pin.empty? && pin != tip
-    say("  ⚠ gem #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pin)} to #{short(tip)}. The version " \
-        "commit has to land on the branch head, so those commits ride this release; the pin advances to #{short(tip)}.")
-    swept_shas[repo] = tip
+    say("  gem #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pin)} to #{short(tip)} — the version " \
+        "commit is built on the pin; the newer commits stay on `#{ACCEPTED_BRANCH}` for the next release")
+    tip = pin
   end
 
   # THE TAG BASELINE STAYS ON `release`, and that is not an oversight: publish tags sit
@@ -8619,24 +8728,64 @@ def commit_gem_version!(repo, tip, decision, failures)
       next
     end
 
-    # Fast-forward-checked (no --force): an `accepted` that moved under us fails closed
-    # HERE, before anything is published against a version this commit is not part of —
-    # and, on this rung, before it could ever displace a merge review just landed.
-    _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
-    unless pushed
-      failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH} (did #{ACCEPTED_BRANCH} move?)"
-      next
-    end
+    version_sha, read = git_capture("-C", workspace, "rev-parse", "HEAD")
+    version_sha = read ? version_sha.strip : ""
+    next unless land_version_commit!(repo, workspace, version, version_sha, failures)
+
     # The version commit is now what this release promotes for the gem: advance the
     # pin to it, or the promote below would land the pre-version tree (swept_ref).
-    unless swept_pin(repo).empty?
-      version_sha, read = git_capture("-C", workspace, "rev-parse", "HEAD")
-      swept_shas[repo] = version_sha.strip if read && !version_sha.strip.empty?
-    end
+    # The version commit itself, never a merge land_version_commit! made: that merge
+    # also carries the commits that wait for the next release.
+    swept_shas[repo] = version_sha unless swept_pin(repo).empty? || version_sha.empty?
 
     step("  gem #{repo}: allocated #{version} — #{decision.reason}; committed with its lockfile onto " \
          "origin/#{ACCEPTED_BRANCH}")
   end
+end
+
+# Land the version commit (HEAD of the ship workspace, built on the swept pin) on
+# origin/accepted. Fast-forward-checked (no --force): when `accepted` is still the
+# pin, the plain push lands it. When a merge reached `accepted` after the sweep, the
+# push is refused, and the version commit is MERGED into the live head instead, so
+# `accepted` keeps both and `release` (which the promote moves to the version commit)
+# still carries nothing `accepted` lacks. A merge that conflicts, or a push refused
+# again, fails closed with nothing published. Answers true when the commit landed.
+def land_version_commit!(repo, workspace, version, version_sha, failures)
+  _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+  return true if pushed
+
+  if swept_pin(repo).empty? || version_sha.empty?
+    failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH} (did #{ACCEPTED_BRANCH} move?)"
+    return false
+  end
+
+  _, fetched = sh("git", "-C", workspace, "fetch", "origin", ACCEPTED_BRANCH, "--quiet", capture: true)
+  head = fetched ? ref_sha(workspace, "origin/#{ACCEPTED_BRANCH}") : ""
+  if head.empty?
+    failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH}, and could not read its head to merge onto"
+    return false
+  end
+
+  sh("git", "-C", workspace, "checkout", "--quiet", "--detach", head, capture: true)
+  merge_out, merged = sh("git", "-C", workspace, "merge", "--no-ff", "--no-edit", "-m",
+                         "Merge Release #{version} onto #{ACCEPTED_BRANCH}", version_sha, capture: true)
+  unless merged
+    sh("git", "-C", workspace, "merge", "--abort", capture: true)
+    failures << "gem #{repo}: #{ACCEPTED_BRANCH} moved past the swept pin and Release #{version} does not merge onto " \
+                "#{short(head)} cleanly (git: #{merge_out.to_s.strip.lines.last(2).join(' ').strip}); nothing was " \
+                "published — re-run `bin/release prepare`, which pins the new head"
+    return false
+  end
+
+  _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+  unless pushed
+    failures << "gem #{repo}: could not push the merge of #{version} to origin/#{ACCEPTED_BRANCH} (did it move again?)"
+    return false
+  end
+
+  step("  gem #{repo}: #{ACCEPTED_BRANCH} moved past the swept pin, so #{version} (#{short(version_sha)}) was merged " \
+       "onto it; the promote carries #{short(version_sha)} alone")
+  true
 end
 
 CHANGELOG_FILE = "CHANGELOG.md"
@@ -9572,6 +9721,10 @@ def bump_producer_locks_for_accepted(published_gems)
   producers = RELEASE_REPOS.fetch("gems", {}).keys
   return if producers.empty?
 
+  # No lock push before RubyGems serves the version (task release-preflight-hardening).
+  # settle_producer_locks turns a wait that runs out into a warning.
+  await_published_gems!(published_gems, "bin/release ship") unless DRY
+
   step("bump PRODUCER locks for #{gem_names.join(', ')} on origin/#{ACCEPTED_BRANCH} — a gem repo is a " \
        "consumer too, and its PRs are based on `#{ACCEPTED_BRANCH}`, not `#{RELEASE_BRANCH}`")
 
@@ -9887,6 +10040,18 @@ def relock_cardless_consumers(app_groups, published_gems)
            "→ install any new engine migrations → commit + push origin #{ACCEPTED_BRANCH} " \
            "(idempotent; no-op when current)")
     end
+    return
+  end
+
+  # THE INDEX WAIT, HERE AS IN EVERY LOCK PUSH (task release-preflight-hardening): no
+  # lock bump is pushed before RubyGems serves the version (a memo hit when the ship
+  # already waited). Post-deploy, so a wait that runs out skips the re-lock with a
+  # warning instead of stopping a ship that has deployed.
+  begin
+    await_published_gems!(published_gems, "bin/release ship")
+  rescue SystemExit => e
+    say("  ⚠ cardless re-lock skipped — RubyGems does not serve #{published_gems.map { |g, v| "#{g} #{v}" }.join(', ')} " \
+        "yet (#{e.message.to_s.lines.first.to_s.strip[0, 200]}). The ship continues; re-lock those apps once it does.")
     return
   end
 
@@ -14060,6 +14225,13 @@ class ReleaseCycleDeps
     stream_child(env, argv)
   end
 
+  # `bin/release preflight` as a child under the SHIP's credentials (the deployer
+  # App), so its GitHub read check judges the identity the ship and its containment
+  # check run as. The exit status.
+  def ship_identity_preflight(argv)
+    run_step("ship", argv).first
+  end
+
   private
 
   # Runs the block with the agent lane's env (ReleaseCycle.step_env, as prepare
@@ -14198,6 +14370,8 @@ if __FILE__ == $PROGRAM_NAME
   # The step's moment card prints after prepare's own output on every way out
   # (a return, an abort); DreamBank.after_moment never raises in prepare's place.
   when "prepare"  then exit_after_prepare(DreamBank.after_moment(sop: "qa-release", step: "prepare") { prepare })
+  when "refreeze" then exit_after_prepare(DreamBank.after_moment(sop: "qa-release", step: "prepare") { refreeze })
+  when "preflight" then preflight
   when "eject"    then eject
   when "ship"     then ship
   when "finalize" then finalize(Release::Cli.positional_slugs(ARGV).first)

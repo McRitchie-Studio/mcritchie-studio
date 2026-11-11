@@ -777,6 +777,46 @@ class TaskBeginTest < Minitest::Test
                     "the announcement must name the stamp command"
   end
 
+  # --- a full desk band (task release-preflight-hardening) ---------------------
+  # `agent-worktree new` exits 75 when the Redis band is full. begin reclaims the
+  # desks `remove` would take (shipped/archived, claim not live, clean) and retries.
+  def slot_full_stub(path, retry_status:)
+    File.write(path, <<~RUBY)
+      #!#{RbConfig.ruby}
+      log = ENV.fetch("STUB_LOG")
+      File.open(log, "a") { |f| f.puts(["WORKTREE", *ARGV, Dir.pwd].join("\t")) }
+      if ARGV.first == "new"
+        tries = File.readlines(log).count { |l| l.start_with?("WORKTREE\tnew") }
+        exit(tries == 1 ? 75 : #{retry_status})
+      end
+      exit 0
+    RUBY
+    FileUtils.chmod("+x", path)
+    path
+  end
+
+  def test_unit_a_full_desk_band_reclaims_then_retries_the_desk_once
+    stub = slot_full_stub(File.join(sandbox_root, "slot-full-stub"), retry_status: 0)
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task,
+                                                             env: { "TASK_BEGIN_WORKTREE_BIN" => stub })
+
+    assert status.success?, err
+    calls = lines.select { |l| l[0] == "WORKTREE" }.map { |l| l[1] }
+    assert_equal %w[new cleanup new], calls.first(3), "new, reclaim, then new again"
+    assert_includes lines.find { |l| l[1] == "cleanup" }, "--reclaim"
+    assert_includes err, "the desk band is full"
+  end
+
+  def test_unit_a_band_still_full_after_the_reclaim_dies_with_the_resume_line
+    stub = slot_full_stub(File.join(sandbox_root, "slot-full-stub"), retry_status: 75)
+    _requests, _out, err, status, lines = run_begin([SLUG], existing: building_task,
+                                                             env: { "TASK_BEGIN_WORKTREE_BIN" => stub })
+
+    refute status.success?
+    assert_includes err, "2/5 worktree failed"
+    assert_equal 2, lines.count { |l| l[0] == "WORKTREE" && l[1] == "new" }, "one retry, never a loop"
+  end
+
   def test_a_failed_stamp_warns_and_begin_still_completes
     existing = building_task
     existing["metadata"]["devops"]["built_by"] = "shannon"

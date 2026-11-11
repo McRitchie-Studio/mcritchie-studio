@@ -744,6 +744,8 @@ already recorded:
 ```bash
 bin/task update <slug> --pr-url-for turf-monster=https://github.com/McRitchie-Studio/turf-monster/pull/305
 bin/task update <slug> --pr-url-for turf-monster=none    # remove one entry
+bin/task update <slug> --remove-repo turf-monster        # drop the repo and its PR entry
+bin/task update <slug> --add-repo voicebox               # add a repo; --repo replaces the list
 ```
 
 Over the JSON API, send `devops.pr_urls` as a `{ repo => url }` object — the

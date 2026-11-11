@@ -76,6 +76,8 @@
 #     for the repo it names. `--pr-url-for <repo>=none` removes one entry.
 #     RECORDING ONLY: nothing refuses an incomplete record yet — the sweep's
 #     refusal ships with /tasks/merge-promotes-every-repo. )
+#   ( update --add-repo R / --remove-repo R edit devops.repositories in place (--repo
+#     REPLACES it). --remove-repo also drops that repo's --pr-url-for entry. )
 #   ( --repo and --risk are REPEATABLE and take ONE value each — `--repo a --repo b`.
 #     A comma in either is REFUSED: `--repo a,b` used to store the single joined
 #     entry "a,b", which reads like the correct pair everywhere and resolves for
@@ -816,6 +818,12 @@ COMMA_FREE_LIST_FLAGS = DevopsListFlags::COMMA_FREE_FLAGS
 # Task#release_pr_urls — you do not repeat it here, and it WINS for the repo it
 # names (one repo, one authoritative PR).
 MAP_FLAGS = { "--pr-url-for" => "pr_urls" }.freeze
+# EDITS to devops.repositories (task release-preflight-hardening). `--repo` REPLACES
+# the list on update, so dropping one repo from a card meant retyping every other
+# one. --add-repo appends (no repeat); --remove-repo drops the repo AND its
+# pr_urls entry, since Task#release_repos also reads the PR links and would keep
+# planning the repo. Each rides `lists` under its own key; build_devops applies them.
+REPO_EDIT_FLAGS = { "--add-repo" => "+repositories", "--remove-repo" => "-repositories" }.freeze
 NOTE_FLAGS = {
   "--handoff" => "handoff",
   "--qa-feedback" => "qa_feedback",
@@ -897,7 +905,7 @@ TOP_SCALAR_FLAGS = { "--epic" => "epic_slug" }.freeze
 DEPENDENCY_SLUG = /\A[a-z0-9]+(?:[-_][a-z0-9]+)*\z/
 # Everything parse_flags (list/create/update) understands — the dictionary an
 # unknown flag is rejected against (and suggestion-matched, --pr → --pr-url).
-PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + MAP_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS +
+PARSE_FLAG_NAMES = (SCALAR_FLAGS.keys + LIST_FLAGS.keys + MAP_FLAGS.keys + REPO_EDIT_FLAGS.keys + SIZE_FLAGS.keys + TOP_FLAGS +
                     BOOL_FLAGS.keys + TOP_LIST_FLAGS.keys + TOP_SCALAR_FLAGS.keys).freeze
 HELP_FLAGS = %w[--help -h].freeze
 # Two-workflow status model. Stages move via PATCH stage (no named-transition
@@ -1555,6 +1563,10 @@ def parse_flags(argv, context: nil)
         lists[LIST_FLAGS[arg]] << value
       end
       i += 2
+    elsif REPO_EDIT_FLAGS.key?(arg)
+      value = argv[i + 1] || die!("#{arg} needs a value")
+      lists[REPO_EDIT_FLAGS[arg]].concat(value.split(",").map(&:strip).reject(&:empty?))
+      i += 2
     elsif MAP_FLAGS.key?(arg)
       # `<repo>=<url>`. Split on the FIRST `=` only — the url carries none, but a
       # query string could. A malformed pair dies here rather than writing half a
@@ -1687,7 +1699,14 @@ end
 
 def build_devops(base, scalars, lists)
   base = (base || {})
+  lists = lists.dup
+  adds = lists.delete("+repositories") || []
+  removes = lists.delete("-repositories") || []
+  if (adds.any? || removes.any?) && lists.key?("repositories")
+    die!("--repo replaces the whole repository list; use it alone, or edit the list with --add-repo / --remove-repo")
+  end
   devops = base.dup
+  apply_repo_edits!(devops, adds, removes)
   scalars.each do |k, v|
     # A MAP flag MERGES into the prior map (per-repo read-merge-write): recording
     # turf's PR must not wipe the hub's, or completing a task's PR record would be
@@ -1710,6 +1729,18 @@ def build_devops(base, scalars, lists)
     devops["checks_run"] = CertEvidence.preserve(prior: base["checks_run"], incoming: devops["checks_run"])
   end
   devops
+end
+
+# --add-repo / --remove-repo against the stored list. A removed repo also leaves
+# pr_urls; a repo both added and removed is removed.
+def apply_repo_edits!(devops, adds, removes)
+  return if adds.empty? && removes.empty?
+
+  repos = (Array(devops["repositories"]) + adds).uniq - removes
+  devops["repositories"] = repos
+  return unless devops["pr_urls"].is_a?(Hash) && removes.any?
+
+  devops["pr_urls"] = devops["pr_urls"].reject { |repo, _url| removes.include?(repo.to_s) }
 end
 
 def top_body(top)
@@ -2630,6 +2661,30 @@ def begin_step!(label, slug, *cmd, chdir: nil)
   die!("#{label} failed — fix what it printed above, then re-run: #{ClaimHolder::TASK_COMMAND} begin #{slug}   (it resumes).")
 end
 
+# bin/agent-worktree `new`'s status for a full Redis band (its NO_FREE_SLOT_EXIT).
+WORKTREE_NO_FREE_SLOT_EXIT = 75
+
+# begin 2/5: cut the desk. When the desk band is full (WORKTREE_NO_FREE_SLOT_EXIT),
+# reclaim every desk `bin/agent-worktree remove` would take — its task shipped or
+# archived, its claim not live, its git status clean — then retry ONCE (task
+# release-preflight-hardening: the 64-slot ceiling filled on 2026-11-10 with
+# shipped desks nobody had swept). Any other failure dies as before.
+def begin_worktree_step!(slug, worktree_bin, new_cmd)
+  warn!("begin 2/5 worktree — #{new_cmd.join(" ")}")
+  return if system(*new_cmd)
+
+  if $?.exitstatus == WORKTREE_NO_FREE_SLOT_EXIT
+    warn!("begin 2/5 worktree — the desk band is full; reclaiming shipped/archived desks that are clean and unclaimed")
+    reclaim = [worktree_bin, "cleanup", "--reclaim", "--yes"]
+    warn!("begin 2/5 reclaim — #{reclaim.join(" ")}")
+    system(*reclaim)
+    warn!("begin 2/5 worktree (retry) — #{new_cmd.join(" ")}")
+    return if system(*new_cmd)
+  end
+
+  die!("2/5 worktree failed — fix what it printed above, then re-run: #{ClaimHolder::TASK_COMMAND} begin #{slug}   (it resumes).")
+end
+
 cmd = ARGV.shift || "help"
 case cmd
 when "list"
@@ -3014,7 +3069,7 @@ when "begin"
   # below settles every other case from the recorded claim.
   new_cmd = [worktree_bin, "new", app, worktree_slug]
   new_cmd += ["--soul", builder] unless builder.empty?
-  begin_step!("2/5 worktree", slug, *new_cmd)
+  begin_worktree_step!(slug, worktree_bin, new_cmd)
   begin_step!("3/5 bind", slug, worktree_bin, "bind-task", app, worktree_slug, slug)
 
   # THE PREFLIGHT RUNS BEFORE THE CLAIM, AND AFTER IT BEGIN ONLY REPORTS (guard

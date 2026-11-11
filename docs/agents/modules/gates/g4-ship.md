@@ -237,7 +237,7 @@ The push output is now captured, echoed, and CLASSIFIED, the same way
 |---|---|---|
 | **NETWORK** | `Could not resolve host`, `getaddrinfo`, `no such host`, a timeout, a refused connection. Checked first: a credential helper that cannot reach its host also leaves `could not read Username`. | Restore the network, then re-run `bin/release ship`; it resumes. No token needs refreshing and nothing needs reconciling. |
 | **AUTH** | `Invalid username or token`, `Authentication failed`, `could not read Username`, `Permission denied (publickey)`, a 401/403 | `source ~/.zprofile.admin` and `export GH_APP_ITEM=github.mcritchie-admin` BEFORE the push — the ship pushes as the **deployer**, whose credential lives in `studio-agents-admin`, and it is never cached, so those two lines are the whole fix. Then re-run `bin/release ship`; it resumes. **Do NOT re-run `prepare`** — the freeze is still good. |
-| **DIVERGED** | `non-fast-forward`, `[rejected] … (fetch first)`, `Updates were rejected because…` | Reconcile `main`, re-freeze with `bin/release prepare --task <an assembled member of the release> --yes` (a plain `prepare` also sweeps every `reviewed` task), then re-run `bin/release ship`. |
+| **DIVERGED** | `non-fast-forward`, `[rejected] … (fetch first)`, `Updates were rejected because…` | Reconcile `main`, re-freeze with `bin/release refreeze --yes` (a plain `prepare` also sweeps every `reviewed` task), then re-run `bin/release ship`. |
 | **UNRECOGNISED** | anything else | Read git's output above before acting — **both** standard remedies may be the wrong errand. The ship says so rather than guessing. |
 
 `error: failed to push some refs to …` appears in **both** failures, so it is
