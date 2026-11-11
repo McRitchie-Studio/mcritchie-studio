@@ -67,6 +67,8 @@ module MarketingKit
 
     def write_slides(path) = draw("slides", slides_payload, path)
     def write_sheet(path) = draw("sheet", SheetTemplate.new(@spec).payload, path)
+    # Any sheet payload (a SheetRecipe's), drawn the same way as the template.
+    def write_sheet_payload(payload, path) = draw("sheet", payload, path)
     def write_tracker(inventory, path) = draw("tracker", tracker_payload(inventory), path)
 
     # The venv lives outside the tree so a desk and the primary share it; it is

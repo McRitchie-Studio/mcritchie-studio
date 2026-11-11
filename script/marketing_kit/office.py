@@ -337,7 +337,8 @@ def sheet(d, out):
                 cell = ws.cell(r, C(i), v if v != "" else None)
                 cell.font = font(size=10, color=col["ink"], bold=c["kind"] == "item")
                 cell.border = Border(bottom=rule)
-                cell.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
+                cell.alignment = Alignment(vertical="center", horizontal="center" if c["kind"] == "stamp"
+                                       else "right" if c["kind"] in RIGHT else "left", indent=0 if c["kind"] == "stamp" else 1)
                 if c["kind"] == "formula": cell.number_format = c.get("format") or FORMATS["money"]
                 elif fmt(c): cell.number_format = fmt(c)
 
@@ -347,13 +348,41 @@ def sheet(d, out):
             if not choices: continue
             dv = DataValidation(type="list", formula1='"' + ",".join(choices) + '"', allow_blank=True)
             ws.add_data_validation(dv); dv.add(f"{L(C(i))}{FIRST}:{L(C(i))}{LAST}")
+        # Conditional formats. Google ranks a row-wide rule above a cell rule on an overlapping range,
+        # so a column with its own rules (age_bands) is cut out of the row ranges, never overlapped.
+        solid = lambda h: PatternFill("solid", fgColor=h, bgColor=h)
+        whole = f"{L(X)}{FIRST}:{L(C(n - 1))}{LAST}"
+        aged = [i for i, c in enumerate(cols) if c.get("age_bands")]
+        if aged:
+            a = C(aged[0])
+            row_ranges = " ".join(r for r in (f"{L(X)}{FIRST}:{L(a - 1)}{LAST}" if a > X else "",
+                                               f"{L(a + 1)}{FIRST}:{L(C(n - 1))}{LAST}" if a < C(n - 1) else "") if r)
+        else:
+            row_ranges = whole
         # An archived row greys out across the table; the totals skip it (SUMIFS on the archive column).
         archive = [i for i, c in enumerate(cols) if c["kind"] == "archive"]
+        grey = dict(font=Font(color=col["grey"], italic=True), fill=solid(col["light"]), stopIfTrue=True)
         if archive:
             mark = f'${L(C(archive[0]))}{FIRST}="{d["archived"]}"'
-            ws.conditional_formatting.add(f"{L(X)}{FIRST}:{L(C(n - 1))}{LAST}",
-                                          FormulaRule(formula=[mark], font=Font(color=col["grey"], italic=True),
-                                                      fill=PatternFill("solid", fgColor=col["light"], bgColor=col["light"])))
+            for rng in ([row_ranges, f"{L(C(aged[0]))}{FIRST}:{L(C(aged[0]))}{LAST}"] if aged else [whole]):
+                ws.conditional_formatting.add(rng, FormulaRule(formula=[mark], **grey))
+        # age_bands: a date column's age colours the row and, louder, the cell itself.
+        # {"months": [fresh, neutral, warn], "fresh": ["💳"]}: within months[0] (or a fresh marker) is
+        # good, within months[1] neutral, within months[2] warn, older bad.
+        if aged:
+            bands = cols[aged[0]]["age_bands"]
+            m0, m1, m2 = bands["months"]
+            v = f"${L(C(aged[0]))}{FIRST}"
+            fresh = "".join(f'{v}="{x}",' for x in bands.get("fresh", []))
+            dated = lambda op, m: f"AND(ISNUMBER({v}),{v}{op}EDATE(TODAY(),-{m}))"
+            good = f"OR({fresh}{dated('>=', m0)})"
+            for formula, colour in ((good, "D9EAD3"), (dated(">=", m1), "FFFFFF"), (dated(">=", m2), "FFF2CC"), (dated("<", m2), "F4CCCC")):
+                ws.conditional_formatting.add(row_ranges, FormulaRule(formula=[formula], fill=solid(colour), stopIfTrue=True))
+            cell = f"{L(C(aged[0]))}{FIRST}:{L(C(aged[0]))}{LAST}"
+            for formula, f, fnt in ((dated("<", m2), solid("CC0000"), Font(color="FFFFFF", bold=True)),
+                                    (dated("<", m1), solid("F1C232"), Font(bold=True)),
+                                    (good, solid("D9EAD3"), None)):
+                ws.conditional_formatting.add(cell, FormulaRule(formula=[formula], fill=f, font=fnt, stopIfTrue=True))
         ws.auto_filter.ref = f"{L(X)}{HEAD_LOW}:{L(C(n - 1))}{FIRST + len(d['rows']) - 1}"
         ws.freeze_panes = f"{L(X + 1)}{FIRST}"
         ws.page_setup.orientation = "landscape"
