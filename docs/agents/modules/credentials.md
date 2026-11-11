@@ -306,10 +306,13 @@ behind a session that turned it off.
 
 Admin sessions (Steffon, Mason) are unscoped within the admin tier and expire after
 8 hours. `bin/agent-activity heartbeat steffon|mason` posts an admin login request
-with the shared token and prints its server-issued `login-…` slug. The board
-(`/tasks`, `/deployments`) shows an admin each open request with that slug: the
-operator answers only the row whose slug the agent printed, because the soul and
-the session id on a row are whatever the poster sent. He grants it one of two
+with the shared token and prints its server-issued `login-…` slug. While a
+request is open, an admin sees a bell with the count in the navbar on every hub
+page; it links to `/devops`. The board (`/devops`, `/devops/tasks`) shows an admin
+each open request with that slug, and says which session asks, its latest
+narrated work, what Approve grants, and when the request lapses: the operator
+answers only the row whose slug the agent printed, because the soul and the
+session id on a row are whatever the poster sent. He grants it one of two
 ways inside the ten-minute `admin_login` window (`config/release_builder.yml`):
 
 - **The launch code.** The row carries a one-time code. The operator puts the
@@ -318,7 +321,8 @@ ways inside the ten-minute `admin_login` window (`config/release_builder.yml`):
   to that request, is spent by one grant, and lapses with the window. A wrong
   code answers 403 with the attempts left; the fifth refuses the request. A
   phrase with no code grants nothing.
-- **The Approve tap** on the same row. `Decline` refuses the request.
+- **The Approve tap** on the same row, a plain form post. `Decline` refuses the
+  request. The board reloads with the outcome as a flash.
 
 One harness session holds one open request per soul: a second post under the
 same session id answers 409 unless it presents the open request's collect key. A

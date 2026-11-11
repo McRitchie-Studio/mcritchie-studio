@@ -7,9 +7,6 @@ app/components/task_card_component.html.erb:
 app/views/admin/model_pricing/show.html.erb:
   x_data: 1
   script: 0
-app/views/agent_login_requests/_pending.html.erb:
-  x_data: 0
-  script: 1
 app/views/agents/_activities_live_fx.html.erb:
   x_data: 0
   script: 1

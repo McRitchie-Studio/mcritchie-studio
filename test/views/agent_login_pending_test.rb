@@ -22,9 +22,29 @@ class AgentLoginPendingTest < ActionView::TestCase
       assert_select "[data-test='admin-login-code']", text: @login.display_code
       assert_select "[data-test='admin-login-slug']", text: @login.slug
       assert_select "[data-test='admin-login-requested'] time[datetime]"
-      assert_select "[data-test='admin-login-approve'][data-url='#{approve_agent_login_path(@login.slug)}']"
-      assert_select "[data-test='admin-login-refuse'][data-url='#{refuse_agent_login_path(@login.slug)}']"
+      assert_select "form[action='#{approve_agent_login_path(@login.slug)}'][method='post'] [data-test='admin-login-approve']"
+      assert_select "form[action='#{refuse_agent_login_path(@login.slug)}'][method='post'] [data-test='admin-login-refuse']"
+      assert_select "[onclick]", 0, "the taps are forms; an inline handler is what the enforcing CSP blocks"
     end
+  end
+
+  test "[component] the row says who asks, why, what Approve grants, and when it lapses" do
+    AgentActivity.open_activity!(session_id: "harness-one", category: "Edit",
+                                 reason_slug: "Rotate the R2 backup key", task_slug: nil)
+    render_for(true)
+
+    assert_select "#admin-login-#{@login.slug}" do
+      assert_select "[data-test='admin-login-who']", text: /Mason, from harness session …ness-one/
+      assert_select "[data-test='admin-login-why']", text: /Rotate the R2 backup key/
+      assert_select "[data-test='admin-login-grants']", text: /8-hour admin session as Mason/
+      assert_select "[data-test='admin-login-expires'] time[datetime='#{@login.window.ends_at.in_time_zone.iso8601}']"
+    end
+  end
+
+  test "[component] a session with no narrated work says so instead of guessing why" do
+    render_for(true)
+
+    assert_select "#admin-login-#{@login.slug} [data-test='admin-login-why']", text: /narrated no work yet/
   end
 
   test "[component] a non-admin render carries no request and no code" do

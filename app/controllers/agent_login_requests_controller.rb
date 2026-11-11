@@ -46,7 +46,10 @@ class AgentLoginRequestsController < ApplicationController
   def answer(body, status, notice: nil, alert: nil)
     respond_to do |format|
       format.json { render json: body, status: status }
-      format.html { redirect_to tasks_path, notice: notice, alert: alert }
+      # The board's taps are plain forms (agent_login_requests/_pending): land back
+      # on the board they were tapped from, with the outcome as the flash. 303, so
+      # Turbo follows the POST's redirect as a GET visit.
+      format.html { redirect_back_or_to deployments_path, notice: notice, alert: alert, status: :see_other }
     end
   end
 end
