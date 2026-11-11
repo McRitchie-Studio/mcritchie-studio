@@ -6,7 +6,7 @@
 Studio is our Google Sheets editor add-on. It gives every Sheet in our four
 Workspaces an **Extensions > Studio** menu and a `Used` tick-box behaviour. The
 code, the manifest and the full deploy guide live in
-[`addons/studio-sheets/`](../../../../../addons/studio-sheets/README.md). This SOP
+`addons/studio-sheets/README.md`. This SOP
 is how an agent changes it and gets the change to users.
 
 **This repo is public.** Never commit a script ID, a spreadsheet ID, card data or
