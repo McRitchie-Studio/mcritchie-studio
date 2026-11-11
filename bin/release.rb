@@ -8522,17 +8522,17 @@ def gem_allocation_plan(group, failures)
     return
   end
   tip = out.strip
-  # THE ONE PLACE THE PIN CANNOT HOLD (task release-pins-swept-sha). The version
-  # commit must land ON `accepted` (above), and a ref push can only extend the branch
-  # head, so a gem merge that reached `accepted` after the sweep rides this release
-  # under the version commit. Say so, name the SHAs, and advance the pin, so nothing
-  # downstream reads the tree as the swept one. The window is the minutes between the
-  # sweep and this read, on a gem repo only.
+  # THE PIN HOLDS FOR A GEM TOO (task release-preflight-hardening). A gem merge that
+  # reached `accepted` after the sweep is not this release's: the version commit is
+  # BUILT ON THE PIN, and commit_gem_version! lands it on `accepted` by merging it into
+  # the moved head (land_version_commit!), so the promote carries the pin plus the
+  # version and nothing else. Before this the pin advanced to the head and the newer
+  # merge rode along ("accepted moved past the swept 84b48b0 to b7db2fa", 2026-11-10).
   pin = swept_pin(repo)
   if !pin.empty? && pin != tip
-    say("  ⚠ gem #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pin)} to #{short(tip)}. The version " \
-        "commit has to land on the branch head, so those commits ride this release; the pin advances to #{short(tip)}.")
-    swept_shas[repo] = tip
+    say("  gem #{repo}: `#{ACCEPTED_BRANCH}` moved past the swept #{short(pin)} to #{short(tip)} — the version " \
+        "commit is built on the pin; the newer commits stay on `#{ACCEPTED_BRANCH}` for the next release")
+    tip = pin
   end
 
   # THE TAG BASELINE STAYS ON `release`, and that is not an oversight: publish tags sit
@@ -8728,24 +8728,64 @@ def commit_gem_version!(repo, tip, decision, failures)
       next
     end
 
-    # Fast-forward-checked (no --force): an `accepted` that moved under us fails closed
-    # HERE, before anything is published against a version this commit is not part of —
-    # and, on this rung, before it could ever displace a merge review just landed.
-    _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
-    unless pushed
-      failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH} (did #{ACCEPTED_BRANCH} move?)"
-      next
-    end
+    version_sha, read = git_capture("-C", workspace, "rev-parse", "HEAD")
+    version_sha = read ? version_sha.strip : ""
+    next unless land_version_commit!(repo, workspace, version, version_sha, failures)
+
     # The version commit is now what this release promotes for the gem: advance the
     # pin to it, or the promote below would land the pre-version tree (swept_ref).
-    unless swept_pin(repo).empty?
-      version_sha, read = git_capture("-C", workspace, "rev-parse", "HEAD")
-      swept_shas[repo] = version_sha.strip if read && !version_sha.strip.empty?
-    end
+    # The version commit itself, never a merge land_version_commit! made: that merge
+    # also carries the commits that wait for the next release.
+    swept_shas[repo] = version_sha unless swept_pin(repo).empty? || version_sha.empty?
 
     step("  gem #{repo}: allocated #{version} — #{decision.reason}; committed with its lockfile onto " \
          "origin/#{ACCEPTED_BRANCH}")
   end
+end
+
+# Land the version commit (HEAD of the ship workspace, built on the swept pin) on
+# origin/accepted. Fast-forward-checked (no --force): when `accepted` is still the
+# pin, the plain push lands it. When a merge reached `accepted` after the sweep, the
+# push is refused, and the version commit is MERGED into the live head instead, so
+# `accepted` keeps both and `release` (which the promote moves to the version commit)
+# still carries nothing `accepted` lacks. A merge that conflicts, or a push refused
+# again, fails closed with nothing published. Answers true when the commit landed.
+def land_version_commit!(repo, workspace, version, version_sha, failures)
+  _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+  return true if pushed
+
+  if swept_pin(repo).empty? || version_sha.empty?
+    failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH} (did #{ACCEPTED_BRANCH} move?)"
+    return false
+  end
+
+  _, fetched = sh("git", "-C", workspace, "fetch", "origin", ACCEPTED_BRANCH, "--quiet", capture: true)
+  head = fetched ? ref_sha(workspace, "origin/#{ACCEPTED_BRANCH}") : ""
+  if head.empty?
+    failures << "gem #{repo}: could not push #{version} to origin/#{ACCEPTED_BRANCH}, and could not read its head to merge onto"
+    return false
+  end
+
+  sh("git", "-C", workspace, "checkout", "--quiet", "--detach", head, capture: true)
+  merge_out, merged = sh("git", "-C", workspace, "merge", "--no-ff", "--no-edit", "-m",
+                         "Merge Release #{version} onto #{ACCEPTED_BRANCH}", version_sha, capture: true)
+  unless merged
+    sh("git", "-C", workspace, "merge", "--abort", capture: true)
+    failures << "gem #{repo}: #{ACCEPTED_BRANCH} moved past the swept pin and Release #{version} does not merge onto " \
+                "#{short(head)} cleanly (git: #{merge_out.to_s.strip.lines.last(2).join(' ').strip}); nothing was " \
+                "published — re-run `bin/release prepare`, which pins the new head"
+    return false
+  end
+
+  _, pushed = sh("git", "-C", workspace, "push", "origin", "HEAD:refs/heads/#{ACCEPTED_BRANCH}", capture: true)
+  unless pushed
+    failures << "gem #{repo}: could not push the merge of #{version} to origin/#{ACCEPTED_BRANCH} (did it move again?)"
+    return false
+  end
+
+  step("  gem #{repo}: #{ACCEPTED_BRANCH} moved past the swept pin, so #{version} (#{short(version_sha)}) was merged " \
+       "onto it; the promote carries #{short(version_sha)} alone")
+  true
 end
 
 CHANGELOG_FILE = "CHANGELOG.md"
