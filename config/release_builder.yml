@@ -33,3 +33,11 @@ operator_windows:
   escalation_minutes: 20
   production_minutes: 30
   admin_login_minutes: 10
+
+# A reviewed merge starts a QA release for that task when no release is active
+# (bin/lib/qa_on_merge.rb, task release-sub-hour-pipeline). It runs
+# `bin/release prepare --task <slug> --yes` and stops at QA; production still takes
+# Alex McRitchie's clearance. Off by default; RELEASE_QA_ON_MERGE=1 turns it on for
+# one shell.
+qa_on_merge:
+  enabled: false

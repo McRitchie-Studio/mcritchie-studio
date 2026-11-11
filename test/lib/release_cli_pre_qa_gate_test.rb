@@ -275,11 +275,11 @@ class ReleaseCliPreQaGateTest < ReleaseCliHarness
     end
   end
 
-  # [integration] NO FAST-FORWARD, NO SAME-SHA CREDIT — and diverged TREES refuse
-  # the tree credit too. The promote here minted a merge commit (origin/release !=
-  # origin/accepted) whose tree ALSO differs from accepted's, so NEITHER credit may
-  # engage: not the same-SHA one (the fast-forward discipline) and not the
-  # tree one (a different tree is different content — nothing vouches for it).
+  # [integration] A DIVERGED TREE gets no tree credit. The promote here minted a merge
+  # commit (origin/release != origin/accepted) whose tree ALSO differs from accepted's,
+  # and the SHA's own run is only in flight (no completed green), so nothing may
+  # engage: a different tree is different content, and nothing vouches for it. A
+  # completed same-SHA green credits from any ref (release_cli_gate_credit_test.rb).
   # With the poll window collapsed, the pending duplicates fail closed exactly as
   # before the credit existed. (The diverged-SHA-but-IDENTICAL-tree shape credits —
   # that is the live batch-PR case, asserted by the tree-credit tests below.)
@@ -290,7 +290,7 @@ class ReleaseCliPreQaGateTest < ReleaseCliHarness
                  %(  return ["1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a", true] if a.last.to_s == GATE_SHA + "^{tree}"\n) +
                  %(  return ["2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b", true] if a.last.to_s.end_with?("^{tree}")\n) +
                  %(  g = gate_git(a, k)\n  return g if g\n  ["", true]\nend\n)
-      out = run_cli(["--yes"], setup: ci_gate_stub(dir, CREDIT_PAYLOAD) + diverged,
+      out = run_cli(["--yes"], setup: ci_gate_stub(dir, '{"total_count":1,"check_runs":[{"name":"t","status":"queued"}]}') + diverged,
                     call: %{begin; pre_qa_gate([{ "repo" => "sibling" }], "rel-cli"); puts("PASSED"); rescue SystemExit => e; puts("ABORTED: " + e.message); end})
 
       refute_includes out, "crediting", "a diverged promote must never engage either credit"

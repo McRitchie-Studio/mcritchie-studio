@@ -71,6 +71,7 @@ require "open3"
 require "optparse"
 require "shellwords"
 require "time"
+require "tmpdir"
 require "yaml"
 require_relative "lib/ci_status"
 require_relative "lib/code_diff"
@@ -85,6 +86,7 @@ require_relative "lib/approval_request_notice"
 require_relative "lib/remedy"
 require_relative "lib/repo_checkout"
 require_relative "lib/upstream_misfile"
+require_relative "lib/qa_on_merge"
 require_relative "lib/reviewer_select_skip"
 
 ROOT = File.expand_path("..", __dir__)
@@ -942,10 +944,28 @@ def move_reviewed(slug, task, reviewers, reports, reviewed_head: nil, zap_head: 
          "(the sweep promotes accepted→release).#{zap_line}\n\n" \
          "Reports:\n#{reports.map { |r| "- #{report_summary(r)}" }.join("\n")}"
   handed_off = ok && task_write(["note", slug, "--handoff", note, "--agent", "avi"])
+  start_qa_on_merge(slug) if ok
   # LAST, and advisory: the merge above is exactly where an upstream changelog misfile
   # is created, and it cannot be un-made by failing this verdict.
   report_upstream_changelog_misfile(task&.dig("devops", "pr_url"), merged_head: zap_head || reviewed_head)
   handed_off
+end
+
+# The opt-in QA-on-merge trigger (bin/lib/qa_on_merge.rb, task release-sub-hour-pipeline):
+# with it on, the task just merged into `accepted` starts its own QA release in the
+# background (`bin/release qa-on-merge <slug>`, which runs prepare --task only when no
+# release is active). Off by default; it never ships, and a failure to start it only
+# says so: the merge and the move stand.
+def start_qa_on_merge(slug)
+  return unless QaOnMerge.enabled?
+
+  log = File.join(Dir.tmpdir, "qa-on-merge-#{slug}.log")
+  pid = Process.spawn(File.expand_path("release", __dir__), "qa-on-merge", slug, "--yes",
+                      in: File::NULL, out: log, err: [:child, :out], pgroup: true)
+  Process.detach(pid)
+  puts "  qa-on-merge: started for #{slug} in the background (pid #{pid}); log #{log}"
+rescue StandardError => e
+  puts "  qa-on-merge: not started (#{e.class}: #{e.message}); run `bin/release qa-on-merge #{slug}` by hand"
 end
 
 # TRUE when the two-bounce circuit breaker refuses another send-back on this task

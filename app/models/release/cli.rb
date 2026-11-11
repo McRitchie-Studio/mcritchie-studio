@@ -237,6 +237,14 @@ class Release
       # Take a lock-only app (Release::LockOnlyConsumers) out of the current
       # release by hand. Moves no branch and deploys nothing. It reads the repo
       # plan, so a repo a member names is refused.
+      # A reviewed merge starts a QA release for that task when the opt-in trigger is
+      # on and no release is active (bin/lib/qa_on_merge.rb). bin/pr-review starts it
+      # in the background after the merge. It stops at QA; it never ships.
+      "qa-on-merge" => {
+        synopsis: "bin/release qa-on-merge <task-slug>",
+        consequence: "no QA release was started",
+        bool: [], value: [], allow_positional: true
+      },
       "drop-lock-only" => {
         synopsis: "bin/release drop-lock-only <repo> [--reason \"…\"]",
         consequence: "no app was dropped from the release",
@@ -247,7 +255,7 @@ class Release
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
     USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|refreeze|preflight|eject <task-slug>|" \
-            "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]|announce <release> [--post]|drop-lock-only <repo>} " \
+            "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]|announce <release> [--post]|drop-lock-only <repo>|qa-on-merge <task-slug>} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex McRitchie's words>\"] " \
             "[--feedback …] [--clean-only] [--expedite] " \
             "[--worked …] [--friction …] [--followup …] [--file-tasks] [--train SLUG] [--wait-for-1password[=MINUTES]] [--local] [--dry-run] [--yes]"

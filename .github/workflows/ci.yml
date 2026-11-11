@@ -13,8 +13,12 @@ on:
   # commit in the pipeline CI never runs: the local G3 gate is its ONLY verdict, and a
   # local gate has no clean-env cross-check.
   #
-  # Every job runs on a release push — no lane is skipped for cost. A partial verdict on
-  # the release candidate is exactly the gap this closes.
+  # Every lane runs on a release push — no lane is skipped for cost. A partial verdict on
+  # the release candidate is exactly the gap this closes. The ONE exception is a commit
+  # CI has already passed whole: when a completed green PUSH run of this workflow sits on
+  # the same SHA (a fast-forwarded `release` is the `accepted` head; a ship fast-forwards
+  # `main` to the `release` SHA), reusable-ci.yml's `prior_green` job skips the lanes and
+  # the earlier run's checks stay on the SHA (task release-sub-hour-pipeline).
   #
   # `accepted` IS THE SAME ARGUMENT ONE RUNG EARLIER, and it was the hole. Review
   # merges several approved PRs onto `accepted`, producing exactly the kind of

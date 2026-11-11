@@ -8,6 +8,7 @@
 
 require "minitest/autorun"
 require "stringio"
+require "json"
 require_relative "../../bin/lib/release_cycle"
 
 class ReleaseCycleTest < Minitest::Test
@@ -620,5 +621,67 @@ class ReleaseCycleTest < Minitest::Test
 
     assert_equal [["mcritchie-studio", "https://qa.hub"], ["turf-monster", "https://qa.turf"]], qa
     assert_equal [["mcritchie-studio", "https://hub"], ["turf-monster", "https://turf.example"]], prod
+  end
+
+  # --- task release-sub-hour-pipeline: shipped before cleanup, timings, one result ---
+
+  test "[unit] the cycle reports SHIPPED and its one RESULT line before the archive starts" do
+    deps = FakeDeps.new(snapshots: [snap, snap(current: release("assembled")),
+                                    snap(last_shipped: release("shipped"), archivable: 3)])
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_operator out.index("✓ SHIPPED rel-x"), :<, out.index("5/5 archive"), "shipped is reported before the cleanup"
+    result_line = out.lines.find { |l| l.start_with?("RELEASE_RESULT ") }
+    assert result_line, out
+    assert_operator out.index("RELEASE_RESULT"), :<, out.index("5/5 archive")
+    result = JSON.parse(result_line.delete_prefix("RELEASE_RESULT "))
+    assert_equal "shipped", result["status"]
+    assert_equal "rel-x", result["release"]
+    assert_equal({ "mcritchie-studio" => "abc1234def" }, result["shipped"])
+    assert_empty result["holds"]
+    assert_equal %w[prepare qa_verify ship prod_verify], result["stages"].keys
+    assert_equal 1, out.scan("RELEASE_RESULT").size, "one result per release"
+  end
+
+  test "[unit] the result carries the step durations the acts printed" do
+    prepare_out = "→ sweep\nRELEASE_STEP_TIMINGS {\"sweep\":184,\"ci_gate\":660,\"qa_deploy\":721}\n"
+    ship_out = "RELEASE_STEP_TIMINGS {\"ship_gate\":12,\"deploy\":900}\n"
+    deps = FakeDeps.new(snapshots: [snap, snap(current: release("assembled"))],
+                        steps: { "prepare" => [[0, prepare_out]], "ship" => [[0, ship_out]] })
+    _, out = run_cycle(deps)
+
+    result = JSON.parse(out.lines.find { |l| l.start_with?("RELEASE_RESULT ") }.delete_prefix("RELEASE_RESULT "))
+    assert_equal({ "sweep" => 184, "ci_gate" => 660, "qa_deploy" => 721, "ship_gate" => 12, "deploy" => 900 },
+                 result["steps"])
+    assert_includes out, "(inside: sweep 3m 4s · ci gate 11m 0s · qa deploy 12m 1s · ship gate 12s · deploy 15m 0s)"
+  end
+
+  test "[unit] a failed archive leaves the release shipped and the cycle green" do
+    deps = FakeDeps.new(snapshots: [snap(last_shipped: release("shipped"), archivable: 2)],
+                        steps: { "archive" => [[1, "boom"]] })
+    status, out = run_cycle(deps)
+
+    assert_equal 0, status, out
+    assert_includes out, "archive exited 1; the release stands as shipped"
+  end
+
+  test "[unit] a stopped cycle records a stopped result naming the stage" do
+    deps = FakeDeps.new(snapshots: [snap], steps: { "prepare" => [[7, "red"]] })
+    status, out = run_cycle(deps)
+
+    assert_equal 7, status
+    result = JSON.parse(out.lines.find { |l| l.start_with?("RELEASE_RESULT ") }.delete_prefix("RELEASE_RESULT "))
+    assert_equal "stopped", result["status"]
+    assert_equal [{ "stage" => "prepare", "exit" => 7 }], result["holds"]
+  end
+
+  test "[unit] the deps record the result when they can" do
+    recorded = []
+    deps = FakeDeps.new(snapshots: [snap, snap(current: release("assembled"))])
+    deps.define_singleton_method(:record_result) { |summary| recorded << summary }
+    run_cycle(deps)
+
+    assert_equal ["shipped"], recorded.map { |r| r["status"] }
   end
 end

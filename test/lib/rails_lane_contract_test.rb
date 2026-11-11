@@ -102,7 +102,8 @@ class RailsLaneContractTest < Minitest::Test
 
     refute_nil plan, "reusable-ci.yml has no `rails_plan` job to read the shard matrix from config/rails_lane.yml"
     assert_includes plan.fetch("steps").map { |step| step["run"].to_s }.join("\n"), "bin/ci-shard --matrix"
-    assert_equal "rails_plan", ci.dig("jobs", "rails", "needs")
+    # rails also needs prior_green, whose skip every lane reads (task release-sub-hour-pipeline).
+    assert_equal %w[prior_green rails_plan], Array(ci.dig("jobs", "rails", "needs"))
     assert_equal "${{ fromJSON(needs.rails_plan.outputs.shards) }}", ci.dig("jobs", "rails", "strategy", "matrix", "shard"),
                  "the rails job's matrix must be the plan's output, not a second copy of the count"
   end

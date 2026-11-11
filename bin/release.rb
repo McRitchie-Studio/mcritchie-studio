@@ -195,6 +195,7 @@ require "yaml"
 require "tmpdir"
 require "shellwords"
 require "fileutils" # primary_checkout_lock_path mkdir_p's the fixed lock dir
+require_relative "lib/release_step_timings"
 
 # Pure release DECISION logic (adapter dispatch, hub-first ordering, gem
 # publish/repin) lives in the unit-tested Release::ShipSequence +
@@ -362,6 +363,7 @@ require_relative "lib/cli_arg_guard"
 # suite. Slice 4 of docs/agents/system/agent-presence.md.
 require_relative "lib/release_presence"
 require_relative "lib/release_cycle" # `bin/release cycle`: the whole release, resumable
+require_relative "lib/qa_on_merge" # `bin/release qa-on-merge`: a reviewed merge starts a QA release
 require_relative "lib/release_announce" # `bin/release announce`: smoke production, then post the release on Slack
 
 APP = "mcritchie-studio"
@@ -648,6 +650,48 @@ def say(msg) = puts(msg)
 def step(msg)
   puts("→ #{msg}")
   agent_action(msg) if $role_span_open
+end
+
+# THE ACT'S STEP CLOCK (bin/lib/release_step_timings.rb, task release-sub-hour-pipeline).
+# time_step opens a phase; the first call also arranges the at_exit report, so an act
+# that aborts mid-phase still prints what it spent where. A dry run times nothing.
+def step_clock = ($step_clock ||= ReleaseStepTimings::Clock.new)
+
+def time_step(name, release: nil)
+  return if DRY
+
+  unless $step_clock_reporting
+    $step_clock_reporting = true
+    at_exit { report_step_timings }
+  end
+  $step_clock_release = release.to_s unless release.to_s.empty?
+  step_clock.mark(name)
+end
+
+# Prints the act's two timing lines and RECORDS them: one JSON line appended to
+# <release results dir>/steps.jsonl ({release, steps, at}), the same dir the cycle's
+# RESULT summary lands in, so a prepare or ship run on its own leaves its durations too.
+def report_step_timings
+  return if $step_clock_reported || !$step_clock&.any?
+
+  $step_clock_reported = true
+  $step_clock.close
+  puts($step_clock.human_line)
+  puts($step_clock.machine_line)
+  $stdout.flush
+  record_step_timings($step_clock.seconds)
+rescue StandardError
+  nil
+end
+
+def record_step_timings(seconds)
+  dir = release_results_dir
+  FileUtils.mkdir_p(dir)
+  File.open(File.join(dir, "steps.jsonl"), "a") do |f|
+    f.puts(JSON.generate("release" => $step_clock_release, "steps" => seconds, "at" => Time.now.utc.iso8601))
+  end
+rescue StandardError
+  nil
 end
 
 # Loud banner printed at the top of prepare/ship when --local opted out of the
@@ -4693,6 +4737,8 @@ end
 def ci_poll_interval = ENV.fetch("RELEASE_CI_POLL_INTERVAL", "15").to_i
 def ci_poll_timeout  = ENV.fetch("RELEASE_CI_POLL_TIMEOUT", "1200").to_i
 def ci_poll_ceiling  = ENV.fetch("RELEASE_CI_POLL_CEILING", "7200").to_i
+# How often a held poll re-asks for a credit (poll_ci_verdict's `credit:` probe).
+def ci_credit_interval = ENV.fetch("RELEASE_CI_CREDIT_INTERVAL", "60").to_i
 
 # THE G3 + GEM-GATE POLL BUDGET for `repo` at `sha`, sized from the workflows that
 # produce its verdict (CiPollBudget) instead of the flat ci_poll_timeout. Observed
@@ -4761,7 +4807,7 @@ def monotonic_s = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 # token fault polling cannot fix — and a timeout returns the LAST still-pending verdict,
 # never a fabricated green. The caller runs ci_pass? on the returned Hash, so ONLY a
 # genuine :green certifies; every other outcome aborts the gate.
-def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + budget)
+def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + budget, credit: nil)
   timeout    = budget
   interval   = ci_poll_interval
   last_state = nil
@@ -4769,6 +4815,7 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   ci = nil
   rerun = nil # the run ids of the one infra re-run, once it is spent
   holding_red = false # said once: a red read while its run is still in progress
+  last_credit_probe = nil
   loop do
     ci = ci_verdict(repo, sha)
     refreshes = say_ci_token_refresh(repo, refreshes)
@@ -4799,6 +4846,20 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
       end
     end
     return ci unless action == :wait
+
+    # A held read asks the caller's credit probe first (resolve_release_ci_verdict's
+    # credit_on_poll): a green that concluded elsewhere for this content ends the hold.
+    # Only a green Hash carrying :credited counts; anything else keeps holding.
+    # Throttled to one probe per ci_credit_interval (the first read always asks): each
+    # probe costs a few GitHub reads per candidate, and a long hold must not spend the
+    # rate limit the other repos' gates share. A red already seen on THIS SHA (held, or
+    # spent on the infra re-run) is never credited away: only a pending/absent read asks.
+    if credit && !holding_red && !rerun && ci[:state] != :red &&
+       (last_credit_probe.nil? || monotonic_s - last_credit_probe >= ci_credit_interval)
+      last_credit_probe = monotonic_s
+      credited = credit.call
+      return credited if ci_pass?(credited) && credited[:credited]
+    end
 
     remaining = deadline - monotonic_s
     if remaining <= 0
@@ -4976,15 +5037,16 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   credit = nil
   diagnostic = nil
   diverged = false
-  if fast_forward_promote?(path, sha, repo: repo)
-    credit = ci_credit_verdict(repo, sha)
-    if credit
-      credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
-                          "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
-    else
-      diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
-                   "completed green to credit yet — polling its own run"
-    end
+  fast_forward = fast_forward_promote?(path, sha, repo: repo)
+  if (credit = ci_credit_verdict(repo, sha))
+    # SAME SHA, ANY BRANCH (task release-sub-hour-pipeline): a completed green on this
+    # exact commit certifies its content whichever push or PR earned it, so the credit
+    # no longer waits on the fast-forward precondition. The note still says which.
+    credit[:credited] = "#{credit[:credited]}; " +
+                        (fast_forward ? "fast-forward promote — origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built" : "same SHA, earned on another ref")
+  elsif fast_forward
+    diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
+                 "completed green to credit yet — polling its own run, re-checking for a credit on every read"
   elsif (promote = tree_identical_promote(path, sha, repo: repo))
     # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
     # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
@@ -5014,8 +5076,89 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   # replaces the single read that aborted every sweep's first run on a pending CI. The
   # poll shares the gate's deadline (see above) so the tree-credit wait + this poll
   # never exceed one window together.
-  ci = credit || poll_ci_verdict(repo, sha, budget: budget, deadline: deadline)
+  #
+  # THE CREDIT IS RE-CHECKED ON EVERY READ (task release-sub-hour-pipeline). Measured on
+  # rel-20261110-0123f9: the gate reached mcritchie-studio 2a2430c at 08:18 while the
+  # accepted push run was still in flight, so the one credit probe found nothing; the
+  # accepted run then concluded green at 08:22, but the poll waited on the duplicate
+  # release-push run until 08:29. The poll now asks credit_on_poll each time it would
+  # hold, so a green that concludes on the same SHA or on an identical tree ends the wait.
+  unless credit
+    probe = -> { credit_on_poll(repo, path, sha) }
+    ci = poll_ci_verdict(repo, sha, budget: budget, deadline: deadline, credit: probe)
+    if ci.is_a?(Hash) && ci[:credited]
+      say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — the duplicate run is no " \
+          "longer awaited (#{ci[:credited]})")
+      return { ci: ci, credited: true, diagnostic: nil, diverged: diverged }
+    end
+  end
+  ci = credit || ci
   { ci: ci, credited: !credit.nil?, diagnostic: (credit ? nil : diagnostic), diverged: diverged }
+end
+
+# The credit asked on each held poll read (task release-sub-hour-pipeline): a green
+# Hash carrying `:credited`, or nil to keep holding. Two sources, both fail-CLOSED
+# into "keep polling":
+#
+#   1. the SAME SHA: a completed green whose pending runs only duplicate it
+#      (CiStatus.credit_for_sha) — the accepted push run that concluded while the
+#      release push run of the same commit was still queued;
+#   2. an IDENTICAL TREE on another ref: the accepted head, the swept pin, or the PR
+#      head a merge commit joined (identical_tree_candidates), whose own verdict
+#      reads :green. CI checks out content, so an identical tree is the same test.
+#
+# A red, pending, missing or unreadable verdict on a candidate credits nothing, and
+# any fault answers nil. It never turns the polled SHA's own red into a pass: the
+# poll aborts on a red before it ever asks.
+def credit_on_poll(repo, path, sha)
+  same = ci_credit_verdict(repo, sha)
+  if same
+    same[:credited] = "#{same[:credited]}; same SHA — concluded while this gate was holding"
+    return same
+  end
+
+  identical_tree_candidates(path, sha, repo: repo).each do |candidate, tree|
+    ci = ci_verdict(repo, candidate)
+    next unless ci_pass?(ci)
+
+    return ci.merge(credited: "identical tree #{tree} — #{candidate} concluded green; " \
+                              "#{sha} re-runs the same content")
+  end
+  nil
+rescue StandardError
+  nil
+end
+
+# The commits on other refs that snapshot EXACTLY `sha`'s tree: the accepted head,
+# the swept pin, and the second parent of `sha` or of the accepted head (the PR head
+# a `--merge` joined). Answers [[candidate_sha, tree], ...] without `sha` itself.
+# Every git fault drops that candidate; an empty list means "no credit possible".
+def identical_tree_candidates(path, sha, repo: nil)
+  return [] if sha.to_s.empty?
+
+  tree, ok = sh("git", "-C", path, "rev-parse", "#{sha}^{tree}", capture: true)
+  tree = tree.to_s.strip
+  return [] unless ok && !tree.empty?
+
+  accepted, acc_ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
+  accepted = acc_ok ? accepted.to_s.strip : ""
+  heads = [accepted, (repo ? swept_pin(repo).to_s : "")]
+  [sha.to_s, accepted].reject(&:empty?).each do |merge|
+    parent, p_ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "#{merge}^2", capture: true)
+    # The PR head's green tested refs/pull/N/merge (head + base AT CI TIME): it is this tree
+    # only when the base it merged into was already in the head (a reverted base commit can
+    # leave the trees equal while the tested merge ref carried it).
+    _anc, anc_ok = sh("git", "-C", path, "merge-base", "--is-ancestor", "#{merge}^1", parent.to_s.strip, capture: true) if p_ok
+    heads << parent.to_s.strip if p_ok && anc_ok
+  end
+  heads.reject(&:empty?).uniq.filter_map do |candidate|
+    next if candidate == sha.to_s
+
+    cand_tree, c_ok = sh("git", "-C", path, "rev-parse", "#{candidate}^{tree}", capture: true)
+    [candidate, tree] if c_ok && cand_tree.to_s.strip == tree
+  end
+rescue StandardError
+  []
 end
 
 # ONE app's CI verdict for its origin/#{RELEASE_BRANCH} SHA, as the pre-QA gate and the
@@ -5531,6 +5674,7 @@ def prepare
   open_role_span("avi", "sweep → deploy RC to QA")
   avi_span = true
 
+  time_step("sweep")
   # 1. DETECT (a read — runs even in --dry-run): the reviewed queue + assembled
   #    stragglers with their PR/merged state, the review-gate screen, and the
   #    current release. `--task` narrows the sweep (operator curation).
@@ -5982,6 +6126,7 @@ def prepare
   #     gem repo's own lock.
   assert_no_lock_drift!(app_groups, published_gems, producers: false)
 
+  time_step("ci_gate", release: rel_slug)
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
   #    still `reviewed`; the rest of the RC rides on the re-run.
@@ -6017,6 +6162,7 @@ def prepare
     "puts({ intent: 'assembled', actor: 'avi', members: n.size }.to_json)"
   )
 
+  time_step("qa_deploy")
   # 6. Per-app: deploy origin/release to that app's QA. The branch is populated
   #    by PR merges, so there's NO branch-cut/member-merge here — and no
   #    merge-forward either: that moved to step 4c, above the gate, so this loop
@@ -6069,6 +6215,20 @@ def prepare
       next
     end
 
+    # QA ONLY WHAT THE RELEASE CARRIES (task release-sub-hour-pipeline). A memberless app
+    # whose origin/#{RELEASE_BRANCH} tree is exactly the tree production's origin/main runs
+    # brings nothing new to QA: deploying it spends a QA boot to re-prove live code.
+    # Freeze its SHA (it still ships, as a no-op) and skip the deploy. A Turf repo keeps
+    # its deploy: the devnet gauntlet is bound to this release's Turf SHAs, and the
+    # ship reads that binding.
+    unless release_carries_change?(group)
+      say("")
+      say("  #{repo}: origin/#{RELEASE_BRANCH} is the tree production already runs (origin/main) — nothing to QA; " \
+          "skipping its QA deploy")
+      qa_shas[repo] = release_tip_sha(repo)
+      next
+    end
+
     qa_groups << group
   end
 
@@ -6101,6 +6261,7 @@ def prepare
     conductor("Release::Conductor.record_qa_shas(release: #{rel_current}, shas: #{qa_shas.inspect}); puts({qa_shas: true}.to_json)")
   end
 
+  time_step("record")
   # 8. QA-GREEN FLIP — the flip lands only AFTER every QA app booted
   #    (wait_for_boot returned 200) AND every post-deploy hook ran green:
   #    Release::Conductor.qa_green! flips the swept members `reviewed →
@@ -7165,6 +7326,29 @@ def release_tip_sha(repo)
   sh("git", "-C", path, "fetch", "origin", "--quiet")
   out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
   ok ? out.strip : ""
+end
+
+# Does this app group bring anything production does not already run? A group with
+# a member task always does (its task is the change). A memberless group (it rides
+# because its `accepted` moved) carries nothing ONLY when origin/#{RELEASE_BRANCH} and
+# origin/main both resolve and snapshot the SAME tree, and the repo is not one the
+# devnet gauntlet binds. Every git fault, a dry run, a missing checkout and a Turf
+# repo answer true: when in doubt, QA it.
+def release_carries_change?(group)
+  repo = group["repo"].to_s
+  return true if DRY || Array(group["members"]).any? || Release::DevnetGauntlet.turf_repos([repo]).any?
+
+  path = repo_path(repo)
+  return true unless Dir.exist?(path)
+
+  release_tree, rel_ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}^{tree}", capture: true)
+  main_tree, main_ok = sh("git", "-C", path, "rev-parse", "origin/main^{tree}", capture: true)
+  return true unless rel_ok && main_ok
+
+  release_tree = release_tree.to_s.strip
+  release_tree.empty? || release_tree != main_tree.to_s.strip
+rescue StandardError
+  true
 end
 
 # The QA-frozen SHA to ship for a repo — the value `prepare` recorded under
@@ -11098,6 +11282,7 @@ end
 # — not a ref, not a checkout, not a lock — is touched before ship authority. A red
 # gate or a declined confirm leaves the entire machine exactly as it found it.
 def run_ship_gate(app_groups, ship_sha)
+  time_step("ship_gate")
   say("")
   step("Steffon ship gate: GitHub CI's settled verdict for each app's FROZEN ship SHA " \
        "(read, not run — before ship authority; nothing is mutated yet)")
@@ -12442,6 +12627,7 @@ def ship
   )
   record_release_event(rel_slug, "deploy_prod", "started", actor: by)
 
+  time_step("deploy", release: rel_slug)
   # 3. Gems FIRST (producer-first): publish each FINAL version. prepare published
   #    only a candidate, so this is the first and only push of x.y.z: built from the
   #    frozen SHA, compared with the candidate QA ran, pushed, tagged, then checked
@@ -12505,6 +12691,7 @@ def ship
   record_gate_close(rel_slug, "g4_ship", true, metadata: seal_status ? { "seal" => seal_status } : {})
   g4_gate = :closed
 
+  time_step("record")
   # 6. Record LAST — only after EVERY repo deployed. Stamp the hub's shipped SHA,
   #    promote the release card to Last Release immediately, then flip member
   #    tasks to `shipped` one second apart so live viewers see the deployment land
@@ -12546,6 +12733,7 @@ def ship
   say(Release::Cli.release_notes_line(shipped, rel_slug)) unless DRY
   say(announce_hint(rel_slug)) unless DRY
 
+  time_step("post_ship")
   # 7. Restore each app's PRIMARY checkout to a clean `main`, now fast-forwarded to
   #    what shipped — the COMPLEMENT of ship_preflight's ADVISORY. The ship itself
   #    never touches these trees any more, so this is pure courtesy for the next
@@ -14232,6 +14420,20 @@ class ReleaseCycleDeps
     run_step("ship", argv).first
   end
 
+  # The cycle's ONE result summary (ReleaseCycle.result_summary), kept where the next
+  # session can read it: <results dir>/<release>.json, and one line appended to
+  # results.jsonl. The dir is RELEASE_RESULTS_DIR, else ~/.release-results.
+  # Best-effort: a write that fails warns and the release stands.
+  def record_result(summary)
+    dir = release_results_dir
+    FileUtils.mkdir_p(dir)
+    name = summary["release"].to_s.empty? ? "no-release-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}" : summary["release"]
+    File.write(File.join(dir, "#{name.gsub(/[^A-Za-z0-9._-]/, '_')}.json"), "#{JSON.pretty_generate(summary)}\n")
+    File.open(File.join(dir, "results.jsonl"), "a") { |f| f.puts(JSON.generate(summary.merge("at" => Time.now.utc.iso8601))) }
+  rescue StandardError => e
+    warn("  ⚠ release result not written (#{e.class}: #{e.message})")
+  end
+
   private
 
   # Runs the block with the agent lane's env (ReleaseCycle.step_env, as prepare
@@ -14298,6 +14500,11 @@ class ReleaseCycleDeps
   end
 end
 
+def release_results_dir
+  explicit = ENV["RELEASE_RESULTS_DIR"].to_s.strip
+  explicit.empty? ? File.join(Dir.home, ".release-results") : explicit
+end
+
 # `caffeinate -is -w <this pid>`: the Mac stays awake exactly as long as the cycle
 # runs. Never under the test suite, a dry run, or a machine without it.
 def keep_awake!
@@ -14325,6 +14532,39 @@ def cycle
   keep_awake!
   ReleaseCycle::Runner.new(clearance: clearance, deps: ReleaseCycleDeps.new(wait_for_1password: WAIT_FOR_1PASSWORD),
                            assume_yes: ASSUME_YES, wait_for_1password: WAIT_FOR_1PASSWORD, extra_args: extra).run
+end
+
+# `bin/release qa-on-merge <slug>` (bin/lib/qa_on_merge.rb): started by bin/pr-review
+# in the background right after a reviewed merge into `accepted`. When the trigger is
+# on and no release is active, it runs `bin/release prepare --task <slug> --yes` as a
+# child with the agent lane's credentials (ReleaseCycleDeps#run_step, as the cycle
+# runs prepare), so the task reaches QA without waiting for a batch. It never ships.
+# Exits 0 on a skip; otherwise prepare's own exit status.
+def qa_on_merge(slug)
+  enabled = QaOnMerge.enabled?
+  active = enabled && !DRY ? active_release_slug : nil
+  verdict, detail = QaOnMerge.decide(slug: slug, enabled: enabled, active: active)
+  if verdict == :skip
+    say("qa-on-merge: not starting a QA release — #{detail}")
+    return 0
+  end
+
+  argv = detail + (hub_train? ? [] : ["--train", TRAIN.to_s]) + (PROD ? [] : ["--local"])
+  say("qa-on-merge: no release is active — starting a QA release for #{slug}: bin/release #{argv.join(' ')} " \
+      "(it stops at QA; production still takes Alex McRitchie's clearance)")
+  return 0 if DRY
+
+  status, = ReleaseCycleDeps.new.run_step("prepare", argv)
+  status
+end
+
+# The active release's slug, "" when none, nil when the board cannot be read (an
+# unread board is not a free lane: qa-on-merge then skips).
+def active_release_slug
+  read = conductor("r = #{rel_current}; puts({ slug: r&.slug }.to_json)", read_only: true)
+  read.is_a?(Hash) ? read["slug"].to_s : "unknown (the board could not be read)"
+rescue SystemExit, StandardError
+  "unknown (the board could not be read)"
 end
 
 # prepare's outcome as the process exit status: a NOT-green QA exits
@@ -14384,6 +14624,7 @@ if __FILE__ == $PROGRAM_NAME
   when "announce" then announce
   when "drop-lock-only" then drop_lock_only
   when "cycle"    then exit(cycle)
+  when "qa-on-merge" then exit(qa_on_merge(Release::Cli.positional_slugs(ARGV).first))
   else
     # The usage string moved to Release::Cli::USAGE so the guard's per-subcommand
     # help and this fall-through print the SAME text from one place.
