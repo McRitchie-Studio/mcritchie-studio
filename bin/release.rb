@@ -14225,6 +14225,13 @@ class ReleaseCycleDeps
     stream_child(env, argv)
   end
 
+  # `bin/release preflight` as a child under the SHIP's credentials (the deployer
+  # App), so its GitHub read check judges the identity the ship and its containment
+  # check run as. The exit status.
+  def ship_identity_preflight(argv)
+    run_step("ship", argv).first
+  end
+
   private
 
   # Runs the block with the agent lane's env (ReleaseCycle.step_env, as prepare

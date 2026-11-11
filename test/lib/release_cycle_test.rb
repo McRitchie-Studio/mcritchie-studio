@@ -56,6 +56,15 @@ class ReleaseCycleTest < Minitest::Test
       @snapshots.size > 1 ? @snapshots.shift : @snapshots.first
     end
 
+    # The ship identity's preflight (bin/release preflight under the deployer App).
+    attr_accessor :preflight_status
+    attr_reader :preflights
+
+    def ship_identity_preflight(argv)
+      (@preflights ||= []) << argv
+      @preflight_status || 0
+    end
+
     def run_step(name, argv)
       @calls << argv
       answers = @steps.fetch(name) { [[0, ""]] }
@@ -112,6 +121,26 @@ class ReleaseCycleTest < Minitest::Test
   # file-level require here defined a bare Release ahead of Rails in a combined
   # `bin/rails test` run, and Release::DevnetGauntletTest lost Release.create!.
   def gauntlet_rules = ReleaseCycle.gauntlet_rules
+
+  # --- the ship identity's preflight (task release-preflight-hardening) ----------
+
+  test "[unit] preflight refusals: the ship identity's preflight runs before any act and a refusal stops the cycle" do
+    deps = FakeDeps.new(snapshots: [snap])
+    deps.preflight_status = 1
+    status, out = run_cycle(deps)
+
+    assert_equal 1, status
+    assert_equal [["preflight"]], deps.preflights
+    assert_empty deps.calls, "nothing runs after a preflight refusal"
+    assert_includes out, "preflight (ship identity) refused"
+  end
+
+  test "[unit] a cycle resuming past the ship skips the ship identity's preflight" do
+    deps = FakeDeps.new(snapshots: [snap(last_shipped: release("shipped"), archivable: 3)])
+    run_cycle(deps)
+
+    assert_nil deps.preflights
+  end
 
   # --- resume from each stage ----------------------------------------------------
 

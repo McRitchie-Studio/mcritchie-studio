@@ -298,6 +298,20 @@ module ReleaseCycle
 
       stage = ReleaseCycle.entry_stage(snapshot)
       @repos = repos_of(snapshot, stage)
+
+      # THE SHIP IDENTITY'S PREFLIGHT, before any act (task release-preflight-hardening).
+      # prepare's own preflight reads GitHub as the agent App; the ship and its
+      # containment check read as the deployer App, which lacked voicebox on
+      # 2026-11-10 and failed only after production moved. `bin/release preflight`
+      # under the ship's credentials names that gap while nothing has been written.
+      if STAGES.index(stage) <= STAGES.index("ship")
+        status = @deps.ship_identity_preflight(["preflight", *common_flags])
+        unless status.zero?
+          say("✗ preflight (ship identity) refused (exit #{status}). Fix what it names, then re-run " \
+              "`bin/release cycle`. Nothing ran.")
+          return status
+        end
+      end
       say("Release cycle: #{describe(snapshot)} → starting at #{LABELS[stage]}" \
           "#{ReleaseCycle.eta_clause(snapshot)}")
 
