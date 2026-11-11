@@ -60,6 +60,11 @@ module MarketingKit
     # violet chest is its dark-ground icon); light, the plain mark, by default.
     def icon = @spec.logo_png(:icon, (@spec.sheet[:icon] || "light").to_sym)
 
+    # Where the title sits in row 2: centre, level with the icon's middle, unless
+    # a brand's icon reads better with the title on its baseline (MI's set
+    # square: sheet.title_align: bottom).
+    def title_align = (@spec.sheet[:title_align] || "center").to_s
+
     # The day the sheet is built, in Denver, where the businesses are.
     def today = Time.current.in_time_zone("America/Denver").to_date
 
@@ -73,6 +78,7 @@ module MarketingKit
         colours: { title: title_colour, headline: @spec.colour(:title), white: WHITE, ink: INK, grey: GREY, light: LIGHT, rule: RULE },
         icon: icon,
         title: "[Sheet Title]",
+        title_align: title_align,
         updated: self.class.stamp(today),
         sections: sections.each_with_index.map { |s, i| { label: "[Section #{%w[One Two Three][i]}]", top: s.top, low: s.low } },
         columns: COLUMNS,

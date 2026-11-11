@@ -69,7 +69,8 @@ module MarketingKit
     def proposal = data[:proposal] || {}
     def tracker = data[:tracker] || {}
     # The Sheet template's options: sections (three swatch names or palette keys) picks its head colours,
-    # title (a swatch name or key) its title colour, and icon (light or dark) which icon it shows.
+    # title (a swatch name or key) its title colour, icon (light or dark) which icon it shows, and
+    # title_align (center or bottom) where the title sits beside it.
     def sheet = data[:sheet] || {}
     def start_here = data[:start_here] || {}
     def brand_guide = data[:brand_guide] || {}
@@ -176,6 +177,9 @@ module MarketingKit
       sections = sheet[:sections]
       unless sections.nil? || (sections.is_a?(Array) && sections.size == 3)
         raise Error, "#{label}: sheet.sections takes exactly three swatch names or palette keys"
+      end
+      if sheet[:title_align] && !%w[center bottom].include?(sheet[:title_align].to_s)
+        raise Error, "#{label}: sheet.title_align is center or bottom, not #{sheet[:title_align].inspect}"
       end
       if sheet[:icon] && !%w[light dark].include?(sheet[:icon].to_s)
         raise Error, "#{label}: sheet.icon is light or dark, not #{sheet[:icon].inspect}"

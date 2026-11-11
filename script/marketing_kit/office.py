@@ -268,8 +268,8 @@ def sheet(d, out):
     # Row 2 is the title alone, so a long one runs on across the row. Under it in B3,
     # the date an agent last rebuilt the sheet.
     t = ws.cell(TITLE, X, d["title"]); t.font = font(size=16, bold=True, color=col["title"])
-    t.alignment = Alignment(vertical="center")  # level with the icon's middle, whatever its shape
-    u = ws.cell(UPDATED, X, f"Last Updated: {d['updated']}"); u.font = font(size=9, color=col["grey"])
+    t.alignment = Alignment(vertical=d.get("title_align", "center"))  # centre: level with the icon's middle
+    u = ws.cell(UPDATED, X, f"Last Updated: {d['updated']}"); u.font = font(size=6, color=col["grey"])  # small, so it never crowds the headline
     u.alignment = Alignment(vertical="top")
 
     def fmt(item):  # an item's own format wins over its kind's

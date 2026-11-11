@@ -84,6 +84,13 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "the title is centred unless sheet.title_align puts it on the baseline" do
+    load_kit { |spec| assert_equal "center", T.new(spec).payload[:title_align] }
+    load_kit(edit: ->(d) { d["sheet"] = { "title_align" => "bottom" } }) { |spec| assert_equal "bottom", T.new(spec).payload[:title_align] }
+    err = assert_raises(MarketingKit::Error) { load_kit(edit: ->(d) { d["sheet"] = { "title_align" => "top" } }) { flunk } }
+    assert_match(/sheet.title_align is center or bottom/, err.message)
+  end
+
   test "a bad sheet.icon fails when the spec loads" do
     err = assert_raises(MarketingKit::Error) { load_kit(edit: ->(d) { d["sheet"] = { "icon" => "colour" } }) { flunk } }
     assert_match(/sheet.icon is light or dark/, err.message)

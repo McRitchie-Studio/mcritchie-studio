@@ -38,6 +38,9 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         assert_no_match(/<c r="[C-Z]2"/, sheet, "row 2 is the title alone, so it can run across the row")
         assert_match(%r{<c r="B3"[^>]*><is><t>Last Updated: \w{3} \d+(st|nd|rd|th), \d{4}</t>}, sheet, "the build stamps Last Updated under the title")
         assert_match(%r{<c r="B4"[^>]*><is><t>TOTAL AMOUNT</t>}, sheet, "the headline sits under the title, in column B")
+        stamp_style = sheet[%r{<c r="B3" s="(\d+)"}, 1].to_i
+        stamp_font = xml.fetch("xl/styles.xml").scan(%r{<xf [^>]*?(?:/>|>.*?</xf>)}m).drop(1)[stamp_style][/fontId="(\d+)"/, 1].to_i
+        assert_includes xml.fetch("xl/styles.xml").scan(%r{<font>.*?</font>}m)[stamp_font], '<sz val="6"/>', "Last Updated is 6 pt"
         assert_match(%r{<c r="D4"[^>]*><is><t>DEFAULT RATE</t>}, sheet, "the other variables run from D, past the gutter")
         assert_match(%r{<col width="2.57"[^>]*min="3" max="3"/>}, sheet, "column C is a narrow gutter")
         assert_no_match(/<c r="C\d+"[^>]*><(is|f|v)>/, sheet, "the gutter holds no value")

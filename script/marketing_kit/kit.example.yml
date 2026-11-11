@@ -126,6 +126,7 @@ tracker:
 #   Left out: primary, accent, then the first other swatch white text reads on.
 #   title: Charcoal                    # the title's colour: a dark swatch name or key (primary by default)
 #   icon: dark                         # light (the default) or dark: pick the colourful icon where the brand has one
+#   title_align: bottom                # center (the default) or bottom: the title on the icon's baseline
 
 start_here:
   status: v1.
