@@ -4,8 +4,11 @@
 class GmailEditorFake
   attr_reader :calls, :labels
 
-  def initialize(ids: [], labels: [ { "id" => "Label_1", "name" => "Receipts", "type" => "user" } ], fail_with: nil)
+  # headers: { message id => { "From" => ..., "List-Unsubscribe" => ... } }
+  # for GmailEditor#unsubscribe's format=metadata reads.
+  def initialize(ids: [], labels: [ { "id" => "Label_1", "name" => "Receipts", "type" => "user" } ], fail_with: nil, headers: {})
     @ids = ids
+    @headers = headers
     @labels = labels.dup
     @calls = []
     @fail_with = fail_with
@@ -17,6 +20,10 @@ class GmailEditorFake
 
     case [ method, url ]
     in [ :get, /\/messages\?/ ] then list(url)
+    in [ :get, %r{/messages/[^/?]+\?format=metadata} ]
+      id = url[%r{/messages/([^/?]+)\?}, 1]
+      headers = @headers.fetch(id, {}).map { |name, value| { name:, value: } }
+      [ 200, { id:, payload: { headers: } }.to_json ]
     in [ :get, /\/labels\z/ ] then [ 200, { labels: @labels }.to_json ]
     in [ :post, /\/labels\z/ ]
       made = { "id" => "Label_#{@labels.size + 1}", "name" => JSON.parse(body)["name"], "type" => "user" }

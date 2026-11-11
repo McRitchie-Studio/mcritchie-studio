@@ -62,4 +62,22 @@ class MailExportOrganizeTest < ActiveSupport::TestCase
     filter = MailExport.call(base.merge("verb" => "filter", "query" => "from:a@example.com", "archive" => true, "apply" => true))["filter"]
     assert_equal "filter-1", filter["filter_id"]
   end
+
+  test "[integration] unsubscribe answers each sender's kind, dry, through the organize connection only" do
+    @gmail = GmailEditorFake.new(ids: %w[m1], headers: { "m1" => { "From" => "News <news@shop.example>",
+                                                                   "List-Unsubscribe" => "<https://shop.example/u/1>",
+                                                                   "List-Unsubscribe-Post" => "List-Unsubscribe=One-Click" } })
+    GoogleConnect::GmailEditor.http = @gmail
+    base = { "verb" => "unsubscribe", "mailbox" => "amcritchie@gmail.com", "by" => "pokemon", "query" => "category:promotions" }
+
+    connect("amcritchie@gmail.com", scope: GMAIL, abilities: %i[gmail])
+    assert_match(/has not turned on Gmail organize/, MailExport.call(base.merge("apply" => true))["error"])
+    assert_empty @gmail.calls
+
+    GoogleConnection.find_by(email: "amcritchie@gmail.com").destroy!
+    connect("amcritchie@gmail.com", scope: "#{GMAIL} #{ORGANIZE.join(' ')}", abilities: %i[gmail gmail_organize])
+    answer = MailExport.call(base)["unsubscribe"]
+    assert_equal [ 1, false ], answer.values_at("matched", "applied")
+    assert_equal [ { "kind" => "one-click", "address" => "news@shop.example", "name" => "News", "count" => 1 } ], answer["senders"]
+  end
 end

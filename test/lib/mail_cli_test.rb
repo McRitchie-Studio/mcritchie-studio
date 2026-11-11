@@ -195,4 +195,50 @@ class MailCliTest < Minitest::Test
     assert_equal "labels", MailCli.build_request("labels", [], opts)["verb"]
     assert_raises(MailCli::Error) { MailCli.build_request("labels", [ "extra" ], opts) }
   end
+
+  # --- unsubscribe (/tasks/gmail-one-click-unsubscribe) -------------------
+
+  def test_unsubscribe_refuses_without_an_explicit_mailbox_or_with_two_queries
+    code, _out, err = run_cli("unsubscribe", [ "category:promotions" ], {}, runner: ->(_) { flunk "nothing may run" })
+    assert_equal 2, code
+    assert_match(/need --mailbox/, err)
+
+    opts = MailCli.default_options.merge(mailbox: "a@example.com", mailbox_given: true)
+    assert_raises(MailCli::Error) { MailCli.build_request("unsubscribe", [], opts) }
+    assert_raises(MailCli::Error) { MailCli.build_request("unsubscribe", %w[a b], opts) }
+  end
+
+  def test_unsubscribe_sends_query_limit_apply_and_by
+    opts = MailCli.default_options.merge(mailbox: "a@example.com", mailbox_given: true, limit: 200, apply: true, by: "pokemon")
+    request = MailCli.build_request("unsubscribe", [ "category:promotions" ], opts)
+
+    assert_equal({ "mailbox" => "a@example.com", "by" => "pokemon", "verb" => "unsubscribe", "query" => "category:promotions",
+                   "limit" => 200, "apply" => true }, request)
+  end
+
+  def test_unsubscribe_dry_run_prints_one_row_per_sender
+    senders = [ { "kind" => "one-click", "address" => "news@shop.example", "name" => "News", "count" => 2 },
+                { "kind" => "email-only", "address" => "list@club.example", "name" => nil, "count" => 1 } ]
+    answer = { "unsubscribe" => { "query" => "category:promotions", "matched" => 3, "senders" => senders, "applied" => false, "capped" => false } }
+    code, out, = run_cli("unsubscribe", [ "category:promotions" ], { mailbox: "a@example.com", mailbox_given: true },
+                         runner: subprocess_runner(answer:))
+
+    assert_equal 0, code
+    assert_match(/Dry run: unsubscribe in a@example.com for "category:promotions": 3 message\(s\), 2 sender\(s\)/, out)
+    assert_match(/one-click\s+\tnews@shop.example\tNews\t2 msg$/, out)
+    assert_match(/email-only\s*\tlist@club.example\t-\t1 msg$/, out)
+    assert_match(/add --apply to unsubscribe the 1 one-click sender/, out)
+  end
+
+  def test_an_applied_unsubscribe_prints_each_outcome
+    senders = [ { "kind" => "one-click", "address" => "news@shop.example", "name" => "News", "count" => 2, "outcome" => "unsubscribed" },
+                { "kind" => "web-page", "address" => "hi@blog.example", "name" => "Blog", "count" => 1, "outcome" => "not unsubscribed (web-page)" } ]
+    answer = { "unsubscribe" => { "query" => "q", "matched" => 3, "senders" => senders, "applied" => true, "capped" => false } }
+    code, out, = run_cli("unsubscribe", [ "q" ], { mailbox: "a@example.com", mailbox_given: true, apply: true }, runner: subprocess_runner(answer:))
+
+    assert_equal 0, code
+    assert_match(/\tunsubscribed$/, out)
+    assert_match(/not unsubscribed \(web-page\)/, out)
+    assert_match(/1 unsubscribed; for the rest, add a filter/, out)
+  end
 end

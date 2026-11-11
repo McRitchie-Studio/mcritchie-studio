@@ -214,7 +214,7 @@ module GoogleConnect
       address = text[/<\s*([^<>\s]+@[^<>\s]+)\s*>/, 1] || text[/\A[^\s<>"]+@[^\s<>"]+\z/]
       return [ nil, nil ] if address.nil?
 
-      name = text.sub(/<[^>]*>\s*\z/, "").strip.delete_prefix('"').delete_suffix('"').strip
+      name = text.include?("<") ? text.sub(/<[^>]*>\s*\z/, "").strip.delete_prefix('"').delete_suffix('"').strip : nil
       [ address.downcase, name.presence ]
     end
 

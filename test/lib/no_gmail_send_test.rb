@@ -88,6 +88,16 @@ class NoGmailSendTest < ActiveSupport::TestCase
                     "app/services/workspace/gmail_client.rb"
   end
 
+  test "the one-click unsubscribe never touches a mailto or an SMTP path" do
+    # /tasks/gmail-one-click-unsubscribe: unsubscribe is an HTTPS POST to the
+    # sender's own URL; a mailto: List-Unsubscribe is reported, never mailed.
+    source = ROOT.join("app/services/google_connect/one_click_unsubscribe.rb").read
+    code = source.lines.reject { |line| line.lstrip.start_with?("#") }.join
+
+    assert_no_match(/Net::SMTP|ActionMailer|deliver_(?:now|later)|GmailClient/, code)
+    assert_includes code, 'raise Refused, "not an https URL" unless uri.is_a?(URI::HTTPS)'
+  end
+
   test "the detector FIRES on each forbidden shape" do
     # Proves the guard bites. Without this, a typo in a pattern would leave the
     # suite green and the ban unenforced.

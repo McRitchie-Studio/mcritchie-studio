@@ -541,4 +541,30 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
       assert_equal "none", organize_row["data-state"]
     end
   end
+
+  # /tasks/gmail-one-click-unsubscribe: a personal account CAN connect, past Google's unverified-app screen.
+  test "[component] the Gmail admin modal tells a personal @gmail.com account the two clicks past Google's warning" do
+    log_in_as users(:viewer)
+    with_connect_env do
+      get integrations_path
+
+      personal = css_select("[data-test='gmail-admin-modal'] [data-test='gmail-admin-personal']").sole.text.squish
+      assert_includes personal, "personal @gmail.com"
+      assert_includes personal, "Advanced"
+      assert_includes personal, "Go to McRitchie Studio (unsafe)"
+      assert_no_match(/can't connect/, personal)
+      assert_equal 4, css_select("[data-test='gmail-admin-modal'] [data-test='gmail-admin-step']").size, "the Workspace admin steps stay"
+    end
+  end
+
+  test "[component] organize's allows-line names one-click unsubscribe" do
+    log_in_as users(:viewer)
+    organize = GoogleConnection::WRITE_ABILITIES.fetch(:gmail_organize).join(" ")
+    store_google(email: "amcritchie@gmail.com", scope: "openid #{GMAIL} #{organize}", abilities: %i[gmail gmail_organize], user: users(:viewer))
+    with_connect_env do
+      get integrations_path
+
+      assert_match(/unsubscribe from one-click mailing lists, on your request/, organize_row.at_css("[data-test='google-write-allows']").text)
+    end
+  end
 end
