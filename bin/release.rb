@@ -4693,6 +4693,8 @@ end
 def ci_poll_interval = ENV.fetch("RELEASE_CI_POLL_INTERVAL", "15").to_i
 def ci_poll_timeout  = ENV.fetch("RELEASE_CI_POLL_TIMEOUT", "1200").to_i
 def ci_poll_ceiling  = ENV.fetch("RELEASE_CI_POLL_CEILING", "7200").to_i
+# How often a held poll re-asks for a credit (poll_ci_verdict's `credit:` probe).
+def ci_credit_interval = ENV.fetch("RELEASE_CI_CREDIT_INTERVAL", "60").to_i
 
 # THE G3 + GEM-GATE POLL BUDGET for `repo` at `sha`, sized from the workflows that
 # produce its verdict (CiPollBudget) instead of the flat ci_poll_timeout. Observed
@@ -4761,7 +4763,7 @@ def monotonic_s = Process.clock_gettime(Process::CLOCK_MONOTONIC)
 # token fault polling cannot fix — and a timeout returns the LAST still-pending verdict,
 # never a fabricated green. The caller runs ci_pass? on the returned Hash, so ONLY a
 # genuine :green certifies; every other outcome aborts the gate.
-def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + budget)
+def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + budget, credit: nil)
   timeout    = budget
   interval   = ci_poll_interval
   last_state = nil
@@ -4769,6 +4771,7 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
   ci = nil
   rerun = nil # the run ids of the one infra re-run, once it is spent
   holding_red = false # said once: a red read while its run is still in progress
+  last_credit_probe = nil
   loop do
     ci = ci_verdict(repo, sha)
     refreshes = say_ci_token_refresh(repo, refreshes)
@@ -4799,6 +4802,18 @@ def poll_ci_verdict(repo, sha, budget: ci_poll_timeout, deadline: monotonic_s + 
       end
     end
     return ci unless action == :wait
+
+    # A held read asks the caller's credit probe first (resolve_release_ci_verdict's
+    # credit_on_poll): a green that concluded elsewhere for this content ends the hold.
+    # Only a green Hash carrying :credited counts; anything else keeps holding.
+    # Throttled to one probe per ci_credit_interval (the first read always asks): each
+    # probe costs a few GitHub reads per candidate, and a long hold must not spend the
+    # rate limit the other repos' gates share.
+    if credit && (last_credit_probe.nil? || monotonic_s - last_credit_probe >= ci_credit_interval)
+      last_credit_probe = monotonic_s
+      credited = credit.call
+      return credited if ci_pass?(credited) && credited[:credited]
+    end
 
     remaining = deadline - monotonic_s
     if remaining <= 0
@@ -4976,15 +4991,16 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   credit = nil
   diagnostic = nil
   diverged = false
-  if fast_forward_promote?(path, sha, repo: repo)
-    credit = ci_credit_verdict(repo, sha)
-    if credit
-      credit[:credited] = "#{credit[:credited]}; fast-forward promote — " \
-                          "origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built"
-    else
-      diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
-                   "completed green to credit yet — polling its own run"
-    end
+  fast_forward = fast_forward_promote?(path, sha, repo: repo)
+  if (credit = ci_credit_verdict(repo, sha))
+    # SAME SHA, ANY BRANCH (task release-sub-hour-pipeline): a completed green on this
+    # exact commit certifies its content whichever push or PR earned it, so the credit
+    # no longer waits on the fast-forward precondition. The note still says which.
+    credit[:credited] = "#{credit[:credited]}; " +
+                        (fast_forward ? "fast-forward promote — origin/#{RELEASE_BRANCH} is the #{ACCEPTED_BRANCH} head CI already built" : "same SHA, earned on another ref")
+  elsif fast_forward
+    diagnostic = "origin/#{RELEASE_BRANCH} IS the #{ACCEPTED_BRANCH} head (fast-forward) but it carries no " \
+                 "completed green to credit yet — polling its own run, re-checking for a credit on every read"
   elsif (promote = tree_identical_promote(path, sha, repo: repo))
     # SAME-TREE: credit an accepted-head green, or WAIT on it while it is in flight —
     # the round-3 fix (credit-waits-accepted-ci). Whatever the outcome, it LOGS why.
@@ -5014,8 +5030,85 @@ def resolve_release_ci_verdict(repo, path, sha, budget: ci_poll_timeout)
   # replaces the single read that aborted every sweep's first run on a pending CI. The
   # poll shares the gate's deadline (see above) so the tree-credit wait + this poll
   # never exceed one window together.
-  ci = credit || poll_ci_verdict(repo, sha, budget: budget, deadline: deadline)
+  #
+  # THE CREDIT IS RE-CHECKED ON EVERY READ (task release-sub-hour-pipeline). Measured on
+  # rel-20261110-0123f9: the gate reached mcritchie-studio 2a2430c at 08:18 while the
+  # accepted push run was still in flight, so the one credit probe found nothing; the
+  # accepted run then concluded green at 08:22, but the poll waited on the duplicate
+  # release-push run until 08:29. The poll now asks credit_on_poll each time it would
+  # hold, so a green that concludes on the same SHA or on an identical tree ends the wait.
+  unless credit
+    probe = -> { credit_on_poll(repo, path, sha) }
+    ci = poll_ci_verdict(repo, sha, budget: budget, deadline: deadline, credit: probe)
+    if ci.is_a?(Hash) && ci[:credited]
+      say("  #{repo}: crediting the existing green conclusion for #{short(sha)} — the duplicate run is no " \
+          "longer awaited (#{ci[:credited]})")
+      return { ci: ci, credited: true, diagnostic: nil, diverged: diverged }
+    end
+  end
+  ci = credit || ci
   { ci: ci, credited: !credit.nil?, diagnostic: (credit ? nil : diagnostic), diverged: diverged }
+end
+
+# The credit asked on each held poll read (task release-sub-hour-pipeline): a green
+# Hash carrying `:credited`, or nil to keep holding. Two sources, both fail-CLOSED
+# into "keep polling":
+#
+#   1. the SAME SHA: a completed green whose pending runs only duplicate it
+#      (CiStatus.credit_for_sha) — the accepted push run that concluded while the
+#      release push run of the same commit was still queued;
+#   2. an IDENTICAL TREE on another ref: the accepted head, the swept pin, or the PR
+#      head a merge commit joined (identical_tree_candidates), whose own verdict
+#      reads :green. CI checks out content, so an identical tree is the same test.
+#
+# A red, pending, missing or unreadable verdict on a candidate credits nothing, and
+# any fault answers nil. It never turns the polled SHA's own red into a pass: the
+# poll aborts on a red before it ever asks.
+def credit_on_poll(repo, path, sha)
+  same = ci_credit_verdict(repo, sha)
+  if same
+    same[:credited] = "#{same[:credited]}; same SHA — concluded while this gate was holding"
+    return same
+  end
+
+  identical_tree_candidates(path, sha, repo: repo).each do |candidate, tree|
+    ci = ci_verdict(repo, candidate)
+    next unless ci_pass?(ci)
+
+    return ci.merge(credited: "identical tree #{tree} — #{candidate} concluded green; " \
+                              "#{sha} re-runs the same content")
+  end
+  nil
+rescue StandardError
+  nil
+end
+
+# The commits on other refs that snapshot EXACTLY `sha`'s tree: the accepted head,
+# the swept pin, and the second parent of `sha` or of the accepted head (the PR head
+# a `--merge` joined). Answers [[candidate_sha, tree], ...] without `sha` itself.
+# Every git fault drops that candidate; an empty list means "no credit possible".
+def identical_tree_candidates(path, sha, repo: nil)
+  return [] if sha.to_s.empty?
+
+  tree, ok = sh("git", "-C", path, "rev-parse", "#{sha}^{tree}", capture: true)
+  tree = tree.to_s.strip
+  return [] unless ok && !tree.empty?
+
+  accepted, acc_ok = sh("git", "-C", path, "rev-parse", "origin/#{ACCEPTED_BRANCH}", capture: true)
+  accepted = acc_ok ? accepted.to_s.strip : ""
+  heads = [accepted, (repo ? swept_pin(repo).to_s : "")]
+  [sha.to_s, accepted].reject(&:empty?).each do |merge|
+    parent, p_ok = sh("git", "-C", path, "rev-parse", "--verify", "--quiet", "#{merge}^2", capture: true)
+    heads << parent.to_s.strip if p_ok
+  end
+  heads.reject(&:empty?).uniq.filter_map do |candidate|
+    next if candidate == sha.to_s
+
+    cand_tree, c_ok = sh("git", "-C", path, "rev-parse", "#{candidate}^{tree}", capture: true)
+    [candidate, tree] if c_ok && cand_tree.to_s.strip == tree
+  end
+rescue StandardError
+  []
 end
 
 # ONE app's CI verdict for its origin/#{RELEASE_BRANCH} SHA, as the pre-QA gate and the
