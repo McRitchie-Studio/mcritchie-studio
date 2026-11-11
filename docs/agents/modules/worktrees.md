@@ -103,6 +103,10 @@ bin/agent-worktree scale --provision         # INFRA LANE: raises the Redis ceil
                                              # bounces every running stack
 ```
 
+When the band or the port range is full, `agent-worktree new` exits 75. `bin/task begin`
+reads that status, runs `cleanup --reclaim --yes` once, and retries the desk once. Any
+other failure stops begin as before.
+
 The reclaim withholds any desk bound to a task the board does not yet show at a stage in
 `bin/agent-worktree#RECLAIMABLE_STAGES`, so a band full of merged-but-unshipped desks reclaims
 nothing. Free one of those by hand, once you know its work is safe on `accepted`:

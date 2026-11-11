@@ -921,7 +921,8 @@ def allocate_port(app)
 
     return port
   end
-  abort "no free worktree port in #{app.fetch("range_start")}-#{app.fetch("range_end")}"
+  warn "no free worktree port in #{app.fetch("range_start")}-#{app.fetch("range_end")}"
+  exit NO_FREE_SLOT_EXIT # a full band: bin/task begin reclaims, then retries
 end
 
 # PostgreSQL truncates identifiers to NAMEDATALEN-1 = 63 bytes. A worktree's
