@@ -159,7 +159,7 @@ module AppContract
     end
     checks << Check.new(name: "ci on release rungs", ok: blind.empty?,
                         detail: blind.empty? ? "workflow \"CI\" builds pushes to accepted and release" : "no workflow named \"CI\" builds pushes to #{blind.join(', ')}",
-                        remedy: "name the suite workflow `CI`, give it `push: branches: [ main, release, accepted ]` with no path filter or branches-ignore, and merge it to accepted")
+                        remedy: "name the suite workflow `CI`, give it `push: branches: [ release, accepted ]` with no path filter or branches-ignore, and merge it to accepted (no `main`: a ship fast-forwards main to the release SHA CI already passed)")
     checks << Check.new(name: "ci test job", ok: !test_cmd.nil?, detail: test_cmd || "no single bin/rails step in jobs.test, and no reusable-ci.yml call with a bin/rails system-command",
                         remedy: "give .github/workflows/ci.yml a `test` job with one `bin/rails ...` step, or call the hub's reusable-ci.yml with a `system-command`")
 
