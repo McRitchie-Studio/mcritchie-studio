@@ -82,7 +82,8 @@ class CiLaneImageTest < Minitest::Test
     default = reusable_inputs.fetch("lane-image").fetch("default")
     built = jobs(MIRROR).fetch("lane-image").dig("env", "IMAGE")
     assert_equal built, default
-    assert_equal({ "contents" => "read", "packages" => "read" }, load(REUSABLE)["permissions"])
+    lane = load(REUSABLE).fetch("jobs").fetch("system")
+    assert_equal({ "contents" => "read", "packages" => "read" }, lane["permissions"], "the lane pulls the image with the run's token")
   end
 
   def test_the_image_builds_on_the_mirrored_base

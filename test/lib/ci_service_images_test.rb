@@ -78,9 +78,26 @@ class CiServiceImagesTest < Minitest::Test
     end
   end
 
-  def test_the_suite_token_may_read_packages
-    permissions = YAML.safe_load(File.read(WORKFLOW)).fetch("permissions")
-    assert_equal({ "contents" => "read", "packages" => "read" }, permissions)
+  # [unit] reusable-ci caller permissions guard (task devops-sub-hour-follow-ups).
+  # Every lane narrows its own token to the tree and the ghcr.io packages. prior_green
+  # alone inherits the caller's token, so a private caller's `actions: read` grant
+  # reaches its runs read; a workflow-level block would narrow it away.
+  LANE_PERMISSIONS = { "contents" => "read", "packages" => "read" }.freeze
+
+  def test_each_lane_may_read_packages_and_nothing_more
+    doc = YAML.safe_load(File.read(WORKFLOW))
+    refute doc.key?("permissions"), "a workflow-level permissions block narrows prior_green too, so no caller's actions: read reaches it"
+    lanes = doc.fetch("jobs").reject { |name, _| name == "prior_green" }
+    refute_empty lanes
+    lanes.each do |name, job|
+      assert_equal LANE_PERMISSIONS, job["permissions"], "#{name} must narrow its token to contents + packages read"
+    end
+  end
+
+  def test_prior_green_inherits_the_callers_grant
+    job = YAML.safe_load(File.read(WORKFLOW)).dig("jobs", "prior_green")
+    refute_nil job
+    assert_nil job["permissions"], "asking for actions: read here fails every caller that does not grant it"
   end
 
   def test_the_mirror_copies_the_image_the_suite_pulls_before_the_suite_needs_it
