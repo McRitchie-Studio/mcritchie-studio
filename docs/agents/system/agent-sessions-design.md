@@ -98,14 +98,17 @@ secret's token otherwise.
 `bin/agent-activity heartbeat steffon|mason` posts the request and prints its
 server-issued `login-…` slug. The board shows an admin each open request by that
 slug, because the soul and the harness session id on a row are whatever the
-poster sent.
+poster sent. A navbar bell on every hub page counts the open requests for an admin
+and links to `/devops`, where each row says who asks, why (the session's latest
+narrated work), what Approve grants and when the request lapses.
 
 - **The one-time code.** The row shows a code derived from the request; the table
   holds its digest. Alex McRitchie puts the code in his launch phrase and the agent posts
   it back (`heartbeat <soul> --code <code>`), with no tap. One grant spends the
   code, and the fifth wrong code refuses the request. A phrase with no code is
   words in a context and grants nothing.
-- **The Approve tap** on the same row. Decline refuses the request.
+- **The Approve tap** on the same row, a plain form post with its own
+  authenticity token. Decline refuses the request.
 
 A request is replaced only by a post that presents its collect key; any other
 post under the same harness session id answers 409. A soul gets three requests

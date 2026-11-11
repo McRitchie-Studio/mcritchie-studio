@@ -27,8 +27,16 @@ module ShellHelper
   def navbar_login_notice
     return nil unless logged_in? && admin?
 
-    count = AgentLoginRequest.awaiting.count
+    count = awaiting_admin_logins.size
     render("layouts/navbar_login_notice", count: count) if count.positive?
+  end
+
+  # The open admin login requests, read once per request: the board's rows
+  # (agent_login_requests/_pending) and the navbar notice share it. Admin only.
+  def awaiting_admin_logins
+    return [] unless admin?
+
+    @awaiting_admin_logins ||= AgentLoginRequest.awaiting.to_a
   end
 
   # The engine's switch (components/_user_nav): the name and avatar open the

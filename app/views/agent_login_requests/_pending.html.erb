@@ -15,7 +15,7 @@
     authenticity token, needs no page script to have run, posts even before
     Turbo loads, and lands back on this page with the outcome as a flash. It also
     stays working when the CSP flips to enforcing, which blocks inline handlers. %>
-<% logins = admin? ? AgentLoginRequest.awaiting.to_a : [] %>
+<% logins = awaiting_admin_logins %>
 <% if logins.any? %>
   <% admin_hours = (AgentSession::TTL.fetch("admin") / 1.hour).to_i %>
   <div class="mb-4 space-y-2" data-test="admin-login-requests" id="admin-login-requests">
