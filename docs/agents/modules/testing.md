@@ -983,9 +983,9 @@ nobody files it under "flaky". The system holds that line in five places:
   `lane-image` input above); the apt mirror stall was the top red-then-green cause.
   The container runs `--init --shm-size=2g --user 1001`, as close to the hosted VM as a
   container gets: a reaping PID 1, room for Chrome, and the runner's own user. The
-  `system` lane runs there too (task ci-system-lane-in-image): its step writes
-  `/usr/bin/google-chrome` as a wrapper that adds `--no-sandbox`, so no app's Selenium
-  driver changes. Guard: `test/lib/ci_lane_image_test.rb`.
+  `system` lane runs there too (task ci-system-lane-in-image): a step wraps
+  setup-chrome's binary in place with `--no-sandbox` and links `/usr/bin/google-chrome`
+  to it, so no app's Selenium driver changes. Guard: `test/lib/ci_lane_image_test.rb`.
 - **A cause card for every flip.** When a run goes green at a SHA where a run of the
   same workflow (or an earlier attempt of the same run, a re-run) went red,
   `GithubWorkflowRunIngestJob` enqueues `CiCauseCardJob`. It reads the red jobs' logs

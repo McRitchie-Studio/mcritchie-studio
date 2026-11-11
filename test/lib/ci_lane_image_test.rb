@@ -71,6 +71,19 @@ class CiLaneImageTest < Minitest::Test
     refute_match(/^\s*[^#\n]*apt-retry/, text, "reusable-ci.yml calls apt-retry")
   end
 
+  # Chrome in the container needs --no-sandbox, and no app passes it. The system lane
+  # wraps setup-chrome's binary in place, so a driver that finds Chrome on PATH
+  # (selenium-webdriver 4.46, mcritchie-industries) and one handed /usr/bin/google-chrome
+  # both reach the wrapper. Wrapping only /usr/bin/google-chrome failed 29 of 29 MI tests.
+  def test_the_system_lane_wraps_chrome_in_place_with_no_sandbox
+    step = jobs(REUSABLE).fetch("system").fetch("steps").find { |s| s["name"] == "Run Chrome without its sandbox" }
+    refute_nil step, "the system lane must wrap Chrome"
+    run = step["run"].to_s
+    assert_includes run, 'mv "$CHROME_BIN" "$CHROME_BIN.sandboxed"', "wrap setup-chrome's binary itself"
+    assert_includes run, "--no-sandbox"
+    assert_includes run, 'ln -sf "$CHROME_BIN" /usr/bin/google-chrome'
+  end
+
   def test_no_ci_error_text_tells_anyone_to_rerun
     texts = WORKFLOWS + Dir[File.join(ROOT, ".github/scripts/*")]
     offenders = texts.select { |path| File.read(path).match?(/::error::[^\n]*re-?run (this|the) job/i) }

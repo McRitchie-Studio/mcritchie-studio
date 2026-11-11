@@ -988,17 +988,23 @@ jobs:
           install-dependencies: false
 
       # NO SANDBOX IN A CONTAINER. Chrome's sandbox needs user namespaces, which a
-      # container job does not grant to uid 1001, so Chrome dies at launch. Each app's
-      # ApplicationSystemTestCase drives `:headless_chrome` with no binary of its own, and
-      # Selenium Manager looks for Chrome first at /usr/bin/google-chrome. That path is this
-      # wrapper, which adds --no-sandbox, so no satellite's driver changes. It appends
-      # Chrome's stderr to /tmp/chrome-stderr.log, which a failed run prints.
+      # container job does not grant to uid 1001, so Chrome aborts at launch. Each app's
+      # ApplicationSystemTestCase drives `:headless_chrome` with no flag of its own, so
+      # this step wraps the binary IN PLACE: setup-chrome's `chrome` becomes a script that
+      # runs the real binary with --no-sandbox, and /usr/bin/google-chrome links to it.
+      # Every way a driver finds Chrome reaches the wrapper. Newer selenium-webdriver
+      # passes Selenium Manager's /usr/bin/google-chrome; 4.46 passes no binary, and
+      # chromedriver finds `chrome` on setup-chrome's PATH entry (mcritchie-industries,
+      # 2026-11-11). The wrapper appends Chrome's stderr and each launch's arguments to
+      # /tmp/chrome-stderr.log, which a failed run prints.
       - name: Run Chrome without its sandbox
         env:
           CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
         run: |
-          printf '#!/bin/sh\nexec 2>>/tmp/chrome-stderr.log\necho "launch: $*" >&2\nexec "%s" --no-sandbox "$@"\n' "$CHROME_BIN" | sudo tee /usr/bin/google-chrome >/dev/null
-          sudo chmod 0755 /usr/bin/google-chrome
+          sudo mv "$CHROME_BIN" "$CHROME_BIN.sandboxed"
+          printf '#!/bin/sh\nexec 2>>/tmp/chrome-stderr.log\necho "launch: $*" >&2\nexec "%s.sandboxed" --no-sandbox "$@"\n' "$CHROME_BIN" | sudo tee "$CHROME_BIN" >/dev/null
+          sudo chmod 0755 "$CHROME_BIN"
+          sudo ln -sf "$CHROME_BIN" /usr/bin/google-chrome
           echo "google-chrome: $(command -v google-chrome) -> $(google-chrome --version)"
 
       - name: Evict any chromedriver on PATH so Selenium Manager fetches a matched one
