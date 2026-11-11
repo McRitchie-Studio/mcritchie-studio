@@ -1,0 +1,17 @@
+<%# locals: (count:) %>
+<%# The navbar notice for open admin login requests (AgentLoginRequest.awaiting),
+    for an admin only: a bell beside the theme toggle and the gear on every hub
+    page, with the count. It links to /devops, where each request's row
+    (agent_login_requests/_pending) says which session asks, why, what Approve
+    grants and when it lapses. ShellHelper#hub_navbar renders it only while a
+    request waits, so the bar is unchanged the rest of the time. It carries no
+    code and no slug: those stay on the board row. %>
+<% label = count == 1 ? "1 admin login request is waiting for you" : "#{count} admin login requests are waiting for you" %>
+<%= link_to deployments_path(anchor: "admin-login-requests"),
+      class: "relative inline-flex h-9 w-9 items-center justify-center rounded-md #{status_tone(:warning, :text)} hover:bg-surface-alt focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-ink transition",
+      title: label, aria: { label: label }, data: { test: "navbar-login-notice", count: count } do %>
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5" aria-hidden="true">
+    <path stroke-linecap="round" stroke-linejoin="round" d="M14.857 17.082a23.848 23.848 0 0 0 5.454-1.31A8.967 8.967 0 0 1 18 9.75V9A6 6 0 0 0 6 9v.75a8.967 8.967 0 0 1-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 0 1-5.714 0m5.714 0a3 3 0 1 1-5.714 0" />
+  </svg>
+  <span class="absolute -right-0.5 -top-0.5 inline-flex min-w-4 h-4 items-center justify-center rounded-full bg-primary px-1 text-3xs font-bold leading-none text-white" data-test="navbar-login-notice-count"><%= count %></span>
+<% end %>
