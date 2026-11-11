@@ -2234,6 +2234,40 @@ class TaskCliTest < Minitest::Test
     assert_nil requests.find { |r| r[:method] == "PATCH" }
   end
 
+  # --- EDITING the repository list: --add-repo / --remove-repo -----------------
+  # `--repo` REPLACES devops.repositories on update. Dropping one repo from a 9-repo
+  # card meant retyping eight. History: task release-preflight-hardening.
+
+  def patched_devops(argv, devops)
+    requests, = run_task(argv, stub_devops: devops)
+    JSON.parse(requests.find { |r| r[:method] == "PATCH" }[:body])["devops"]
+  end
+
+  def test_unit_add_repo_appends_without_repeating
+    devops = patched_devops(["update", "demo-task", "--add-repo", "voicebox", "--add-repo", "mcritchie-studio"],
+                            { "kind" => "bug", "repositories" => %w[mcritchie-studio turf-monster] })
+    assert_equal %w[mcritchie-studio turf-monster voicebox], devops["repositories"]
+  end
+
+  def test_unit_remove_repo_drops_the_repo_and_its_pr_link
+    devops = patched_devops(
+      ["update", "demo-task", "--remove-repo", "turf-monster"],
+      { "kind" => "bug", "repositories" => %w[mcritchie-studio turf-monster],
+        "pr_urls" => { "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1",
+                       "turf-monster" => "https://github.com/McRitchie-Studio/turf-monster/pull/2" } }
+    )
+    assert_equal %w[mcritchie-studio], devops["repositories"]
+    assert_equal({ "mcritchie-studio" => "https://github.com/McRitchie-Studio/mcritchie-studio/pull/1" }, devops["pr_urls"],
+                 "the release reads PR links too; a removed repo must leave them")
+  end
+
+  def test_unit_repo_edits_refuse_beside_a_replacing_repo
+    requests, _out, err, status = run_task(["update", "demo-task", "--repo", "a", "--add-repo", "b"])
+    refute status.success?
+    assert_match(/--add-repo/, err)
+    assert_nil requests.find { |r| r[:method] == "PATCH" }
+  end
+
   # --- the `maps = scalars` ALIASING INVARIANT --------------------------------
   # Map flags ride in the SAME hash as scalar flags so parse_flags' four-wide [positionals,
   # scalars, lists, top] contract survives. The cost: a map flag whose devops key collides with
