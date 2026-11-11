@@ -112,6 +112,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | Carl `pr-review-slow` SOP (the slow variant of pr-review) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
 | Carl `pr-review` SOP (the orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
 | `Mack Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mack/HEARTBEAT.md` |
+| Mack `card-hub-refresh` SOP (check or change McRitchie Studio Cards, the live total-credit hub over the MS, MI and personal card rosters) | `mcritchie-studio/docs/agents/agents/mack/sops/card-hub-refresh.md` |
 | Mack `close-the-month` SOP (file last month's bank statements, answer the lines no rule could classify, write the close to Drive) | `mcritchie-studio/docs/agents/agents/mack/sops/close-the-month.md` |
 | Mack `pay-benchmark-refresh` SOP (refresh the BLS wage percentiles behind /admin/pay, check them, and flag anyone below their role's target) | `mcritchie-studio/docs/agents/agents/mack/sops/pay-benchmark-refresh.md` |
 | `Mason Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
@@ -121,6 +122,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | Mason `grade-events` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/grade-events.md` |
 | Mason `share-insights` SOP | `mcritchie-studio/docs/agents/agents/mason/sops/share-insights.md` |
 | Mason `ship-clock` SOP (benchmark one easy task, prompt to production, from records) | `mcritchie-studio/docs/agents/agents/mason/sops/ship-clock.md` |
+| Pokemon `build-a-sheet` SOP (build or change a branded Google Sheet (a roster, register or tracker) from a recipe with bin/sheet) | `mcritchie-studio/docs/agents/agents/pokemon/sops/build-a-sheet.md` |
 | Pokemon `digest-video` SOP (download, store and record a music video; stage 1 of pipeline 3) | `mcritchie-studio/docs/agents/agents/pokemon/sops/digest-video.md` |
 | Pokemon `download-instagram` SOP (yt-dlp download of an Instagram reel or post; cookie path unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-instagram.md` |
 | Pokemon `download-tiktok` SOP (yt-dlp download of a TikTok video; unmeasured) | `mcritchie-studio/docs/agents/agents/pokemon/sops/download-tiktok.md` |
