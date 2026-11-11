@@ -93,6 +93,48 @@ permissions:
   packages: read
 
 jobs:
+  # TEST EACH SHA ONCE (task release-sub-hour-pipeline). A push to `main` or `release`
+  # carries a commit CI has usually run already: a fast-forwarded `release` IS the
+  # `accepted` head, and a ship fast-forwards `main` to the `release` SHA. This job asks
+  # GitHub whether a completed PUSH run of this same workflow concluded `success` on this
+  # exact commit, and every lane below skips when one did, so the run reads green in
+  # seconds while the earlier run's checks stay on the SHA. The rules live in
+  # .github/scripts/prior-green-run.rb; any doubt (a PR, an `accepted` push, an
+  # unreadable API, a pull_request run, a failure) answers skip=false and the suite runs.
+  # The script always exits 0, so this job cannot skip a lane by failing.
+  # test/lib/ci_workflow_triggers_test.rb pins this job and the one clause each lane adds;
+  # test/lib/prior_green_run_test.rb proves the rules.
+  prior_green:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      skip: ${{ steps.prior.outputs.skip }}
+    steps:
+      # The hub's script, from this workflow's own commit (job.workflow_sha), for the hub
+      # and for every caller in another repo alike.
+      - name: Fetch the prior-green rules
+        uses: actions/checkout@v7
+        with:
+          repository: McRitchie-Studio/mcritchie-studio
+          ref: ${{ job.workflow_sha }}
+          path: .hub-ci
+          sparse-checkout: .github/scripts/prior-green-run.rb
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Look for a completed green run on this commit
+        id: prior
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" > "$RUNNER_TEMP/runs.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/runs.json"
+          ruby .hub-ci/.github/scripts/prior-green-run.rb "$RUNNER_TEMP/runs.json" > "$RUNNER_TEMP/prior.out" || printf 'skip=false\nreason=the rules did not run\n' > "$RUNNER_TEMP/prior.out"
+          cat "$RUNNER_TEMP/prior.out"
+          cat "$RUNNER_TEMP/prior.out" >> "$GITHUB_OUTPUT"
+
   # THE STATIC LANE — brakeman, importmap audit and rubocop in ONE job.
   #
   # These were three jobs (`scan_ruby`, `scan_js`, `lint`) doing identical setup and then
@@ -122,6 +164,8 @@ jobs:
   # why test/lib/ci_workflow_triggers_test.rb permits it and refuses every event-context
   # condition.
   static:
+    needs: prior_green
+    if: ${{ needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04  # pinned, not the floating latest label: that moves to images Playwright cannot install chromium on (guard: test/lib/ci_runner_image_pin_test.rb)
     timeout-minutes: 45
 
@@ -202,7 +246,8 @@ jobs:
   # studio-engine's `studio:node:check` holds an app to); a caller with no
   # .tool-versions keeps 22, the ecosystem's major.
   javascript:
-    if: ${{ inputs.javascript }}
+    needs: prior_green
+    if: ${{ inputs.javascript && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -248,7 +293,8 @@ jobs:
         run: bin/test-js
 
   island_animator:
-    if: ${{ inputs.island-animator }}
+    needs: prior_green
+    if: ${{ inputs.island-animator && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
@@ -316,7 +362,8 @@ jobs:
   # server booted by Playwright's webServer), so nothing is shared across shards and the
   # serial in-shard model is preserved.
   playwright:
-    if: ${{ inputs.playwright }}
+    needs: prior_green
+    if: ${{ inputs.playwright && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
@@ -549,8 +596,8 @@ jobs:
   e2e_executed_set:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    needs: playwright
-    if: ${{ always() && inputs.playwright }}
+    needs: [prior_green, playwright]
+    if: ${{ always() && inputs.playwright && needs.prior_green.outputs.skip != 'true' }}
 
     steps:
       - name: Checkout code
@@ -603,7 +650,8 @@ jobs:
   # like four green shards over the whole suite, which is why `rails_executed_set` below
   # is a separate, unconditional job rather than a claim in this comment.
   rails_plan:
-    if: ${{ inputs.rails-shards }}
+    needs: prior_green
+    if: ${{ inputs.rails-shards && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     outputs:
@@ -635,8 +683,8 @@ jobs:
           echo "shards=${shards}" >> "$GITHUB_OUTPUT"
 
   rails:
-    needs: rails_plan
-    if: ${{ inputs.rails-shards }}
+    needs: [prior_green, rails_plan]
+    if: ${{ inputs.rails-shards && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     # IN THE LANE IMAGE, NOT ON THE BARE RUNNER. The apt mirror stalling in this job's
@@ -779,8 +827,8 @@ jobs:
   rails_executed_set:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-    needs: rails
-    if: ${{ always() && inputs.rails-shards }}
+    needs: [prior_green, rails]
+    if: ${{ always() && inputs.rails-shards && needs.prior_green.outputs.skip != 'true' }}
 
     steps:
       - name: Checkout code
@@ -815,7 +863,8 @@ jobs:
   # bin/rails-executed-set-check therefore does not expect those files in the receipts —
   # the two halves of that split are pinned together by test/lib/rails_lane_contract_test.rb.
   system:
-    if: ${{ inputs.system }}
+    needs: prior_green
+    if: ${{ inputs.system && needs.prior_green.outputs.skip != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     # THE ONE LANE STILL ON THE BARE RUNNER, and so the one apt step left (task

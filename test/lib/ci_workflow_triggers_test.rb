@@ -136,17 +136,47 @@ class CiWorkflowTriggersTest < Minitest::Test
   # EVERY JOB'S CONDITION, AS WRITTEN. A lane's only switch is its own lane input, and
   # an executed-set gate keeps `always()` beside it. A job absent from this map, or one
   # carrying any other condition, fails here by name.
+  #
+  # THE ONE ADDED CLAUSE: PRIOR_GREEN (task release-sub-hour-pipeline). Every lane also
+  # carries `needs.prior_green.outputs.skip != 'true'`, so a push to main or release whose
+  # exact commit already holds a completed green PUSH run of this workflow skips the
+  # suite instead of running it twice. That skip is safe only because the earlier run's
+  # checks stay on the same SHA, so the SHA-addressed fold still reads every lane's real
+  # result; test_integration_the_prior_green_job_is_pinned and prior_green_run_test.rb
+  # hold the rules that decide it.
+  PRIOR_GREEN = "prior_green"
+  PRIOR_GREEN_CLAUSE = "needs.prior_green.outputs.skip != 'true'"
   RAW_JOB_CONDITIONS = {
-    "static" => nil,
-    "javascript" => "${{ inputs.javascript }}",
-    "island_animator" => "${{ inputs.island-animator }}",
-    "playwright" => "${{ inputs.playwright }}",
-    "e2e_executed_set" => "${{ always() && inputs.playwright }}",
-    "rails_plan" => "${{ inputs.rails-shards }}",
-    "rails" => "${{ inputs.rails-shards }}",
-    "rails_executed_set" => "${{ always() && inputs.rails-shards }}",
-    "system" => "${{ inputs.system }}"
+    "prior_green" => nil,
+    "static" => "${{ #{PRIOR_GREEN_CLAUSE} }}",
+    "javascript" => "${{ inputs.javascript && #{PRIOR_GREEN_CLAUSE} }}",
+    "island_animator" => "${{ inputs.island-animator && #{PRIOR_GREEN_CLAUSE} }}",
+    "playwright" => "${{ inputs.playwright && #{PRIOR_GREEN_CLAUSE} }}",
+    "e2e_executed_set" => "${{ always() && inputs.playwright && #{PRIOR_GREEN_CLAUSE} }}",
+    "rails_plan" => "${{ inputs.rails-shards && #{PRIOR_GREEN_CLAUSE} }}",
+    "rails" => "${{ inputs.rails-shards && #{PRIOR_GREEN_CLAUSE} }}",
+    "rails_executed_set" => "${{ always() && inputs.rails-shards && #{PRIOR_GREEN_CLAUSE} }}",
+    "system" => "${{ inputs.system && #{PRIOR_GREEN_CLAUSE} }}"
   }.freeze
+
+  # A job condition with the PRIOR_GREEN clause taken out, so the lane guards judge what
+  # is left exactly as before: `${{ true && <clause> }}` reads `true`, a bare
+  # `${{ <clause> }}` reads nil (no condition), and `${{ always() && true && <clause> }}`
+  # reads `${{ always() && true }}`. Any other spelling is returned unchanged and fails.
+  def without_prior_green(job_if)
+    text = job_if&.to_s&.strip
+    return text if text.nil? || !text.include?(PRIOR_GREEN_CLAUSE)
+
+    return nil if text == "${{ #{PRIOR_GREEN_CLAUSE} }}"
+
+    rest = text.sub(" && #{PRIOR_GREEN_CLAUSE} }}", " }}")
+    rest == "${{ true }}" ? "true" : rest
+  end
+
+  # The PRIOR_GREEN clause reads `needs.prior_green`, which only a job that `needs:` it can see.
+  def needs_prior_green?(job)
+    Array(job["needs"]).include?(PRIOR_GREEN)
+  end
 
   # reusable-ci.yml as the hub's bare call runs it: each `inputs.<name>` replaced by its
   # declared default (CiSuiteWorkflow.as_called). `if: ${{ inputs.playwright }}` reads
@@ -1423,7 +1453,11 @@ class CiWorkflowTriggersTest < Minitest::Test
       lanes.each do |job_name, job, step|
         # DEFAULT-DENY, with ONE justified exception: `always()` FORCES execution, it cannot
         # exclude the lane. Everything else can, and is refused. See UNCONDITIONAL_IF.
-        job_if = job["if"]
+        job_if = without_prior_green(job["if"])
+        if job["if"].to_s.include?(PRIOR_GREEN_CLAUSE)
+          assert needs_prior_green?(job),
+                 "#{lane_label(job_name)} reads needs.prior_green but does not `needs:` prior_green"
+        end
         assert(job_if.nil? || UNCONDITIONAL_JOB_IF.include?(job_if.to_s.strip),
                "#{lane_label(job_name)} runs #{description} but carries " \
                "`if: #{job_if}`. The lane that IS the verdict must be UNCONDITIONAL " \
@@ -1676,7 +1710,10 @@ class CiWorkflowTriggersTest < Minitest::Test
   def test_integration_the_static_lane_runs_the_workflow_guards
     job = jobs_of(suite_as_run)["static"]
     refute_nil job, "no `static` job in reusable-ci.yml"
-    assert_nil job["if"], "the static lane must stay unconditional; it carries the workflow guards"
+    # Its one condition is the PRIOR_GREEN skip: a skip-run's commit already passed
+    # these guards in the run it credits, which ran the same tree.
+    assert_nil without_prior_green(job["if"]),
+               "the static lane may carry only the prior-green skip; it carries the workflow guards"
 
     steps = Array(job["steps"]).grep(Hash).select do |step|
       WORKFLOW_GUARDS.any? { |path| step["run"].to_s.include?(path) }
@@ -1853,31 +1890,39 @@ class CiWorkflowTriggersTest < Minitest::Test
         inputs:
           playwright: { type: boolean, default: true }
     jobs:
+      prior_green:
+        runs-on: ubuntu-latest
+        steps: [{ run: echo skip=false }]
       static:
+        needs: prior_green
+        if: ${{ #{"needs.prior_green.outputs.skip != 'true'"} }}
         runs-on: ubuntu-latest
         steps: [{ run: bin/rubocop }]
       playwright:
-        if: ${{ inputs.playwright }}
+        needs: prior_green
+        if: ${{ inputs.playwright && #{"needs.prior_green.outputs.skip != 'true'"} }}
         runs-on: ubuntu-latest
         steps: [{ run: npx playwright test }]
   YAML
+  PLAYWRIGHT_IF = "${{ inputs.playwright && #{"needs.prior_green.outputs.skip != 'true'"} }}"
+  STATIC_IF = "    if: ${{ #{"needs.prior_green.outputs.skip != 'true'"} }}\n"
 
   def test_unit_the_pinned_job_conditions_have_no_deviation
     assert_empty job_condition_deviations(LANES)
   end
 
   def test_unit_a_job_conditioned_on_anything_but_its_lane_input_is_a_deviation
-    on_event = LANES.sub("${{ inputs.playwright }}", "${{ inputs.playwright && github.event_name == 'pull_request' }}")
-    on_other = LANES.sub("${{ inputs.playwright }}", "${{ inputs.javascript }}")
-    gated_static = LANES.sub("  static:\n", "  static:\n    if: ${{ inputs.playwright }}\n")
+    on_event = LANES.sub(PLAYWRIGHT_IF, "${{ inputs.playwright && github.event_name == 'pull_request' && #{PRIOR_GREEN_CLAUSE} }}")
+    on_other = LANES.sub(PLAYWRIGHT_IF, "${{ inputs.javascript && #{PRIOR_GREEN_CLAUSE} }}")
+    gated_static = LANES.sub(STATIC_IF, "    if: ${{ inputs.playwright }}\n")
 
     assert_equal 1, job_condition_deviations(on_event).size
-    assert_equal ["job `playwright` carries `if: ${{ inputs.javascript }}`"], job_condition_deviations(on_other)
+    assert_equal ["job `playwright` carries `if: ${{ inputs.javascript && #{PRIOR_GREEN_CLAUSE} }}`"], job_condition_deviations(on_other)
     assert_equal ["job `static` carries `if: ${{ inputs.playwright }}`"], job_condition_deviations(gated_static)
   end
 
   def test_unit_a_lane_that_dropped_its_condition_and_an_unenrolled_job_are_deviations
-    bare = LANES.sub("    if: ${{ inputs.playwright }}\n", "")
+    bare = LANES.sub("    if: #{PLAYWRIGHT_IF}\n", "")
     grown = LANES + "  extra:\n    runs-on: ubuntu-latest\n    steps: [{ run: echo ok }]\n"
 
     assert_equal ["job `playwright` carries `if: `"], job_condition_deviations(bare)
@@ -1887,7 +1932,19 @@ class CiWorkflowTriggersTest < Minitest::Test
   def test_unit_a_lane_input_at_its_default_reads_as_an_unconditional_job
     as_run = CiSuiteWorkflow.as_called(LANES)
 
-    assert_includes UNCONDITIONAL_JOB_IF, jobs_of(as_run).dig("playwright", "if").to_s
+    assert_includes UNCONDITIONAL_JOB_IF, without_prior_green(jobs_of(as_run).dig("playwright", "if")).to_s
+    assert_nil without_prior_green(jobs_of(as_run).dig("static", "if")), "the bare clause reads as no condition"
+  end
+
+  # [unit] without_prior_green removes ONLY the exact clause. A look-alike clause, a
+  # clause joined with `||`, or a clause beside an event condition stays a condition.
+  def test_unit_without_prior_green_strips_only_the_exact_clause
+    assert_equal "${{ always() && true }}", without_prior_green("${{ always() && true && #{PRIOR_GREEN_CLAUSE} }}")
+    assert_equal "true", without_prior_green("${{ true && #{PRIOR_GREEN_CLAUSE} }}")
+    refute_includes UNCONDITIONAL_JOB_IF, without_prior_green("${{ true || #{PRIOR_GREEN_CLAUSE} }}").to_s
+    refute_includes UNCONDITIONAL_JOB_IF, without_prior_green("${{ needs.prior_green.outputs.skip == 'false' }}").to_s
+    refute_includes UNCONDITIONAL_JOB_IF,
+                    without_prior_green("${{ github.ref == 'refs/heads/main' && #{PRIOR_GREEN_CLAUSE} }}").to_s
   end
 
   def test_unit_a_lane_input_defaulting_off_reads_as_a_conditional_job
@@ -1953,5 +2010,47 @@ class CiWorkflowTriggersTest < Minitest::Test
                  "the workflow RUN, not just a job — a docs-only merge commit on release " \
                  "would get NO CI verdict at all while `branches: [main, release]` still " \
                  "reads correct. Every release tip is shipped; every release tip is run."
+  end
+
+  # ==== THE PRIOR-GREEN JOB ===========================================================
+  # The skip every lane reads is decided here, so this job is pinned whole: its two steps,
+  # its read-only token, and the exact script that fetches the runs and applies the rules.
+  # It carries no `if:`, no continue-on-error and no step condition, and the rules
+  # script always exits 0, so the job runs on every push and answers skip=false on any
+  # doubt. Edit PRIOR_GREEN_RUN deliberately, with prior_green_run_test.rb beside it.
+  PRIOR_GREEN_RUN = <<~SH
+    gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" > "$RUNNER_TEMP/runs.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/runs.json"
+    ruby .hub-ci/.github/scripts/prior-green-run.rb "$RUNNER_TEMP/runs.json" > "$RUNNER_TEMP/prior.out" || printf 'skip=false\\nreason=the rules did not run\\n' > "$RUNNER_TEMP/prior.out"
+    cat "$RUNNER_TEMP/prior.out"
+    cat "$RUNNER_TEMP/prior.out" >> "$GITHUB_OUTPUT"
+  SH
+
+  def test_integration_the_prior_green_job_is_pinned
+    job = jobs_of(File.read(SUITE_YML))[PRIOR_GREEN]
+    refute_nil job, "no `prior_green` job in reusable-ci.yml, yet lanes read its output"
+
+    assert_nil job["if"], "the prior-green job must run on every event"
+    assert_nil job["needs"], "the prior-green job runs first"
+    assert_nil job["continue-on-error"]
+    assert_equal({ "actions" => "read", "contents" => "read" }, job["permissions"], "a read-only token")
+    assert_equal({ "skip" => "${{ steps.prior.outputs.skip }}" }, job["outputs"])
+
+    steps = Array(job["steps"]).grep(Hash)
+    assert_equal 2, steps.size, "fetch the rules, then apply them"
+    steps.each do |step|
+      assert_nil step["if"], "a prior-green step may not be skipped"
+      assert_nil step["continue-on-error"]
+    end
+    assert_equal ".github/scripts/prior-green-run.rb", steps[0].dig("with", "sparse-checkout")
+    assert_equal "McRitchie-Studio/mcritchie-studio", steps[0].dig("with", "repository")
+    assert_equal "${{ job.workflow_sha }}", steps[0].dig("with", "ref"), "the rules come from this workflow's commit"
+    assert_equal "prior", steps[1]["id"]
+    assert_equal PRIOR_GREEN_RUN, steps[1]["run"], "the prior-green script changed; re-prove it and update the pin"
+    assert File.exist?(File.expand_path("../../.github/scripts/prior-green-run.rb", __dir__))
+
+    lanes = jobs_of(File.read(SUITE_YML)).reject { |name, _job| name == PRIOR_GREEN }
+    lanes.each do |name, lane|
+      assert needs_prior_green?(lane), "job `#{name}` must `needs:` prior_green to read its skip"
+    end
   end
 end
