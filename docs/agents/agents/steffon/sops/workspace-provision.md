@@ -372,7 +372,7 @@ never part of Connect Google; the person turns it on from the Gmail card's
 
 | Ability | Scopes | What uses it |
 |---------|--------|--------------|
-| `gmail_organize` | `gmail.modify` + `gmail.settings.basic` (both must be granted) | `GoogleConnect::GmailEditor` through `bin/mail organize\|filter\|labels\|filters --mailbox ADDR`: mark read or unread, archive, inbox, spam, not spam, label, unlabel, move, filters. Dry unless `--apply`; each run logs a `GmailChange` row. It never sends (Google's grant would allow it; `test/lib/no_gmail_send_test.rb` keeps the source from it), never trashes, never deletes. |
+| `gmail_organize` | `gmail.modify` + `gmail.settings.basic` (both must be granted) | `GoogleConnect::GmailEditor` through `bin/mail organize\|filter\|unsubscribe\|labels\|filters --mailbox ADDR`: mark read or unread, archive, inbox, spam, not spam, label, unlabel, move, filters, and one-click unsubscribe (RFC 8058 HTTPS POST to one-click senders only, never with a Google token; web-page, email-only and none senders are reported, not touched). Dry unless `--apply`; each run logs a `GmailChange` row. It never sends (Google's grant would allow it; `test/lib/no_gmail_send_test.rb` keeps the source from it), never trashes, never deletes. |
 
 Every sign-in also asks for `openid` and `email`, with
 `include_granted_scopes=true`, so connecting one ability adds it to what the
@@ -424,7 +424,10 @@ Connect Google or Connect the rest while Gmail is still missing, first open the
 Gmail admin-trust modal (`app/views/modals/_gmail_admin.html.erb`): Gmail read is
 a restricted scope Google will not verify for us, so the user's Workspace admin
 marks the OAuth client (`GOOGLE_CONNECT_CLIENT_ID`, shown with a copy button)
-Trusted under Security → API controls → Manage Third-Party App Access; its
+Trusted under Security → API controls → Manage Third-Party App Access. A
+personal @gmail.com account has no admin and still connects: Google shows its
+"Google hasn't verified this app" screen, and the person clicks Advanced, then
+Go to McRitchie Studio (unsafe); the modal says so. Its
 Continue goes on to the same connect route. `/admin/google` links straight. Both doors share one flow (`GoogleSignIn`) and
 **one callback**, `/admin/google_calendar/callback`, which admits the signed-in
 user who pressed Connect, carrying the OAuth state that Connect set, so the

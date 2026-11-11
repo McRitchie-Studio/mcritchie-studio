@@ -13,6 +13,7 @@
 #   bin/mail doctor
 #   bin/mail organize ACTION '<gmail query>' --mailbox ADDR [--label NAME] [--apply]
 #   bin/mail filter '<gmail query>' --mailbox ADDR [--label NAME] [--archive] [--mark-read] [--apply]
+#   bin/mail unsubscribe '<gmail query>' --mailbox ADDR [--limit N] [--apply]
 #   bin/mail labels|filters --mailbox ADDR
 #
 # Exit: 0 ok · 1 the run failed, or doctor found a problem · 2 usage.
@@ -37,11 +38,11 @@ OptionParser.new do |o|
     opts[:mailbox_given] = true
   end
   o.on("--label NAME", "organize/filter: the label to add, remove or move to") { |v| opts[:label] = v }
-  o.on("--limit N", Integer, "organize: the most messages one run changes (default 50000)") { |v| opts[:limit] = v }
-  o.on("--apply", "organize/filter: make the change (without it, a dry run)") { opts[:apply] = true }
+  o.on("--limit N", Integer, "organize: the most messages one run changes (default 50000); unsubscribe: messages read (default 500)") { |v| opts[:limit] = v }
+  o.on("--apply", "organize/filter/unsubscribe: make the change (without it, a dry run)") { opts[:apply] = true }
   o.on("--archive", "filter: skip the inbox") { opts[:archive] = true }
   o.on("--mark-read", "filter: mark read") { opts[:mark_read] = true }
-  o.on("--by NAME", "organize/filter: who asked, for the change log") { |v| opts[:by] = v }
+  o.on("--by NAME", "organize/filter/unsubscribe: who asked, for the change log") { |v| opts[:by] = v }
   o.on("--app NAME", "Heroku app (default #{MailCli::DEFAULT_APP})") { |v| opts[:app] = v }
   o.on("--local", "run bin/rails runner in this checkout instead of heroku") { opts[:local] = true }
   o.on("-h", "--help") do

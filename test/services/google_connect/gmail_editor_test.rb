@@ -16,7 +16,11 @@ class GoogleConnect::GmailEditorTest < ActiveSupport::TestCase
     @connection = store_google(email: "amcritchie@gmail.com", scope: SCOPE_ORGANIZE, abilities: %i[gmail gmail_organize], user: users(:viewer))
   end
 
-  teardown { GoogleConnect::GmailEditor.http = nil }
+  teardown do
+    GoogleConnect::GmailEditor.http = nil
+    GoogleConnect::OneClickUnsubscribe.http = nil
+    GoogleConnect::OneClickUnsubscribe.resolver = nil
+  end
 
   def editor_with(gmail)
     GoogleConnect::GmailEditor.http = gmail
@@ -172,5 +176,98 @@ class GoogleConnect::GmailEditorTest < ActiveSupport::TestCase
 
   test "[unit] a filter with nothing to do is refused" do
     assert_raises(GoogleConnect::GmailEditor::Error) { editor_with(GmailEditorFake.new).add_filter(query: "from:a@example.com") }
+  end
+
+  # --- unsubscribe (/tasks/gmail-one-click-unsubscribe) -------------------
+
+  ONE_CLICK = "List-Unsubscribe=One-Click".freeze
+
+  # m1 and m2 from the same one-click sender; one sender of each other kind.
+  def unsubscribe_mail
+    GmailEditorFake.new(ids: %w[m1 m2 m3 m4 m5], headers: {
+      "m1" => { "From" => "News <News@Shop.example>", "List-Unsubscribe" => "<mailto:u@shop.example>, <https://shop.example/u/1>", "List-Unsubscribe-Post" => ONE_CLICK },
+      "m2" => { "From" => "News <news@shop.example>", "List-Unsubscribe" => "<https://shop.example/u/0>", "List-Unsubscribe-Post" => ONE_CLICK },
+      "m3" => { "From" => "\"Blog\" <hi@blog.example>", "List-Unsubscribe" => "<https://blog.example/prefs>" },
+      "m4" => { "From" => "list@club.example", "List-Unsubscribe" => "<mailto:leave@club.example>" },
+      "m5" => { "From" => "Friend <friend@example.com>" }
+    })
+  end
+
+  def stub_unsubscribe_post(status: 200)
+    posts = []
+    GoogleConnect::OneClickUnsubscribe.resolver = ->(_host) { [ "93.184.216.34" ] }
+    GoogleConnect::OneClickUnsubscribe.http = lambda do |url, ip, body|
+      posts << [ url, ip, body ]
+      [ status, nil ]
+    end
+    posts
+  end
+
+  test "[unit] unsubscribe groups by sender, newest message first, and classifies each" do
+    stub_unsubscribe_post
+    gmail = unsubscribe_mail
+    result = editor_with(gmail).unsubscribe(query: "category:promotions")
+
+    rows = result.senders.map { _1.values_at("kind", "address", "name", "count") }
+    assert_equal [ [ "one-click", "news@shop.example", "News", 2 ], [ "web-page", "hi@blog.example", "Blog", 1 ],
+                   [ "email-only", "list@club.example", nil, 1 ], [ "none", "friend@example.com", "Friend", 1 ] ], rows
+    assert_equal "https://shop.example/u/1", result.senders.first["uri"], "the newest message's URI"
+    metadata = gmail.calls.select { _1[1].include?("format=metadata") }
+    assert_equal 5, metadata.size
+    assert_includes metadata.first[1], "metadataHeaders=List-Unsubscribe-Post"
+  end
+
+  test "[unit] an unsubscribe dry run sends no POST, writes nothing to Gmail and logs the run" do
+    posts = stub_unsubscribe_post
+    gmail = unsubscribe_mail
+    result = editor_with(gmail).unsubscribe(query: "category:promotions")
+
+    assert_not result.applied
+    assert_empty posts
+    assert_empty gmail.writes
+    assert(result.senders.none? { _1.key?("outcome") })
+    assert_equal [ [ "unsubscribe", "category:promotions", 5, 0, false ] ],
+                 GmailChange.pluck(:action, :query, :matched_count, :changed_count, :applied)
+  end
+
+  test "[unit] an applied unsubscribe posts to the one-click sender only and logs it" do
+    posts = stub_unsubscribe_post
+    gmail = unsubscribe_mail
+    result = editor_with(gmail).unsubscribe(query: "category:promotions", apply: true)
+
+    assert_equal [ [ "https://shop.example/u/1", "93.184.216.34", "List-Unsubscribe=One-Click" ] ], posts
+    assert_empty gmail.writes, "nothing is posted to Gmail, and no mail is sent"
+    assert_equal [ "unsubscribed", "not unsubscribed (web-page)", "not unsubscribed (email-only)", "not unsubscribed (none)" ],
+                 result.senders.map { _1["outcome"] }
+    assert_equal [ [ "unsubscribe", "from:news@shop.example", 2, 1, true, nil ] ],
+                 GmailChange.pluck(:action, :query, :matched_count, :changed_count, :applied, :error)
+  end
+
+  test "[unit] a failed one-click POST is logged with its status" do
+    stub_unsubscribe_post(status: 503)
+    result = editor_with(unsubscribe_mail).unsubscribe(query: "category:promotions", apply: true)
+
+    assert_equal "failed: answered 503", result.senders.first["outcome"]
+    assert_equal [ [ "from:news@shop.example", 0, true, "answered 503" ] ], GmailChange.pluck(:query, :changed_count, :applied, :error)
+  end
+
+  test "[unit] a one-click URI on a private address is refused and logged, never posted" do
+    posts = stub_unsubscribe_post
+    GoogleConnect::OneClickUnsubscribe.resolver = ->(_host) { [ "169.254.169.254" ] }
+    result = editor_with(unsubscribe_mail).unsubscribe(query: "category:promotions", apply: true)
+
+    assert_empty posts
+    assert_match(/\Afailed: refused: .* private address/, result.senders.first["outcome"])
+    assert_match(/private address/, GmailChange.sole.error)
+  end
+
+  test "[unit] unsubscribe needs a query and reads at most its limit" do
+    gmail = unsubscribe_mail
+    assert_raises(GoogleConnect::GmailEditor::Error) { editor_with(gmail).unsubscribe(query: " ") }
+    assert_empty gmail.calls
+
+    result = editor_with(gmail).unsubscribe(query: "category:promotions", limit: 2)
+    assert result.capped
+    assert_equal 2, result.matched
   end
 end

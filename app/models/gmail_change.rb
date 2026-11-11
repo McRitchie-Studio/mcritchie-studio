@@ -3,9 +3,12 @@
 # is logged too (applied false), so the log shows what was looked at before it
 # was changed. The row keeps the mailbox address, the action, the Gmail query,
 # the label and the counts, never a message id, subject or body. `mailbox` is a
-# string, not a key, so the record outlives a disconnect.
+# string, not a key, so the record outlives a disconnect. An `unsubscribe` row
+# (/tasks/gmail-one-click-unsubscribe) is one sender acted on: its query is
+# "from:<sender address>", matched_count the sender's messages, changed_count 1
+# when the one-click POST succeeded, and error the status or refusal when not.
 class GmailChange < ApplicationRecord
-  ACTIONS = %w[read unread archive inbox spam not_spam label unlabel move filter].freeze
+  ACTIONS = %w[read unread archive inbox spam not_spam label unlabel move filter unsubscribe].freeze
 
   validates :mailbox, :requested_by, presence: true
   validates :action, inclusion: { in: ACTIONS }

@@ -216,6 +216,9 @@ test("at 375px the Gmail modal is named, keeps Continue to Google in view, and i
   const link = await continueLink.boundingBox();
   expect(link.y + link.height).toBeLessThanOrEqual(card.bottom + 0.5);
 
+  // A personal account connects past Google's unverified-app screen (/tasks/gmail-one-click-unsubscribe).
+  await expect(modal.locator("[data-test='gmail-admin-personal']")).toContainText("click Advanced, then Go to McRitchie Studio (unsafe)");
+
   const href = await modal.locator("[data-test='gmail-admin-email']").getAttribute("href");
   const body = /[?&]body=([^&]*)/.exec(href)[1];
   expect(body).toContain("%0D%0A");
@@ -245,6 +248,7 @@ test("an admin turns Gmail organize on from the Gmail card, then off", async ({ 
   await expect(organize).toHaveAttribute("data-state", "connected");
   await expect(organize.locator("[data-test='google-write-account']")).toHaveText(/Organize on for\s+stand-in@example\.com/);
   await expect(organize.locator("[data-test='google-write-allows']")).toContainText("the hub never sends, never deletes.");
+  await expect(organize.locator("[data-test='google-write-allows']")).toContainText("unsubscribe from one-click mailing lists");
   expect(await page.content()).not.toMatch(/stand-in-(refresh|access)/);
 
   await organize.getByRole("button", { name: "Turn off" }).click();

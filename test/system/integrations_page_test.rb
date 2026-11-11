@@ -290,6 +290,7 @@ class IntegrationsPageTest < ApplicationSystemTestCase
         assert_selector "[data-test='gmail-admin-steps'] [data-test='gmail-admin-step']", count: 4
         assert_text "Manage Third-Party App Access"
         assert_text "personal @gmail.com"
+        assert_text "click Advanced, then Go to McRitchie Studio (unsafe)" # /tasks/gmail-one-click-unsubscribe
         assert_selector "[data-test='gmail-admin-client-id']", text: "test-connect-id"
         mailto = find("[data-test='gmail-admin-email']")["href"]
         assert mailto.start_with?("mailto:?subject="), mailto

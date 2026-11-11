@@ -1,4 +1,5 @@
-<%# Gmail needs a Google Workspace admin's OK. Mounted by the modal host's
+<%# Gmail needs a Google Workspace admin's OK (a personal account instead passes
+    Google's unverified-app screen; see the line at the foot). Mounted by the modal host's
     <template x-if="...id === 'gmail-admin'"> (layouts/application) — single root.
 
     Gmail read (gmail.readonly) is a RESTRICTED Google scope: Google lets an app
@@ -60,7 +61,8 @@
 
   <a :href="window.GmailAdmin.mailto(($store.modals.current().props || {}).clientId)" class="btn btn-neutral btn-sm w-full justify-center mt-4" data-test="gmail-admin-email">Email my admin</a>
 
-  <p class="text-xs text-muted mt-3" data-test="gmail-admin-personal">A personal @gmail.com account has no admin, so it can't connect Gmail yet.</p>
+  <%# A personal account has no admin, but it can still connect: Google shows its unverified-app warning, and two clicks usually pass it; Google caps an unverified app's users, so the line does not promise (/tasks/gmail-one-click-unsubscribe). %>
+  <p class="text-xs text-muted mt-3" data-test="gmail-admin-personal">A personal @gmail.com account has no admin step. Google will warn that it hasn't verified the app: click Advanced, then Go to McRitchie Studio (unsafe). Google may still refuse some personal accounts.</p>
 
   <div class="sticky -bottom-6 -mx-6 -mb-6 mt-5 flex flex-col-reverse gap-2 border-t border-subtle bg-surface px-6 pb-6 pt-4 sm:flex-row sm:justify-end" data-test="gmail-admin-actions">
     <button type="button" @click="$store.modals.close()" class="btn btn-neutral btn-lg justify-center" data-test="gmail-admin-not-now">Not now</button>

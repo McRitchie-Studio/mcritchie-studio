@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_062500) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_10_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1835,7 +1835,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_062500) do
     t.string "requested_by", null: false
     t.datetime "updated_at", null: false
     t.index ["mailbox", "created_at"], name: "index_gmail_changes_on_mailbox_and_created_at"
-    t.check_constraint "action::text = ANY (ARRAY['read'::character varying::text, 'unread'::character varying::text, 'archive'::character varying::text, 'inbox'::character varying::text, 'spam'::character varying::text, 'not_spam'::character varying::text, 'label'::character varying::text, 'unlabel'::character varying::text, 'move'::character varying::text, 'filter'::character varying::text])", name: "gmail_changes_action_known"
+    t.check_constraint "action::text = ANY (ARRAY['read'::character varying::text, 'unread'::character varying::text, 'archive'::character varying::text, 'inbox'::character varying::text, 'spam'::character varying::text, 'not_spam'::character varying::text, 'label'::character varying::text, 'unlabel'::character varying::text, 'move'::character varying::text, 'filter'::character varying::text, 'unsubscribe'::character varying::text])", name: "gmail_changes_action_known"
   end
 
   create_table "google_connections", force: :cascade do |t|
