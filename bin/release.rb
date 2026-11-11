@@ -6162,6 +6162,20 @@ def prepare
       next
     end
 
+    # QA ONLY WHAT THE RELEASE CARRIES (task release-sub-hour-pipeline). An app whose
+    # origin/#{RELEASE_BRANCH} tree is exactly the tree production's origin/main runs
+    # brings nothing new to QA: deploying it spends a QA boot to re-prove live code.
+    # Freeze its SHA (it still ships, as a no-op) and skip the deploy. A Turf repo keeps
+    # its deploy: the devnet gauntlet is bound to this release's Turf SHAs, and the
+    # ship reads that binding.
+    unless release_carries_change?(group)
+      say("")
+      say("  #{repo}: origin/#{RELEASE_BRANCH} is the tree production already runs (origin/main) — nothing to QA; " \
+          "skipping its QA deploy")
+      qa_shas[repo] = release_tip_sha(repo)
+      next
+    end
+
     qa_groups << group
   end
 
@@ -7258,6 +7272,27 @@ def release_tip_sha(repo)
   sh("git", "-C", path, "fetch", "origin", "--quiet")
   out, ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}", capture: true)
   ok ? out.strip : ""
+end
+
+# Does this app group bring anything production does not already run? False ONLY
+# when origin/#{RELEASE_BRANCH} and origin/main both resolve and snapshot the SAME tree,
+# and the repo is not one the devnet gauntlet binds. Every git fault, a dry run, a
+# missing checkout and a Turf repo answer true: when in doubt, QA it.
+def release_carries_change?(group)
+  repo = group["repo"].to_s
+  return true if DRY || Release::DevnetGauntlet.turf_repos([repo]).any?
+
+  path = repo_path(repo)
+  return true unless Dir.exist?(path)
+
+  release_tree, rel_ok = sh("git", "-C", path, "rev-parse", "origin/#{RELEASE_BRANCH}^{tree}", capture: true)
+  main_tree, main_ok = sh("git", "-C", path, "rev-parse", "origin/main^{tree}", capture: true)
+  return true unless rel_ok && main_ok
+
+  release_tree = release_tree.to_s.strip
+  release_tree.empty? || release_tree != main_tree.to_s.strip
+rescue StandardError
+  true
 end
 
 # The QA-frozen SHA to ship for a repo — the value `prepare` recorded under
