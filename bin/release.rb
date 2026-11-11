@@ -6193,8 +6193,8 @@ def prepare
       next
     end
 
-    # QA ONLY WHAT THE RELEASE CARRIES (task release-sub-hour-pipeline). An app whose
-    # origin/#{RELEASE_BRANCH} tree is exactly the tree production's origin/main runs
+    # QA ONLY WHAT THE RELEASE CARRIES (task release-sub-hour-pipeline). A memberless app
+    # whose origin/#{RELEASE_BRANCH} tree is exactly the tree production's origin/main runs
     # brings nothing new to QA: deploying it spends a QA boot to re-prove live code.
     # Freeze its SHA (it still ships, as a no-op) and skip the deploy. A Turf repo keeps
     # its deploy: the devnet gauntlet is bound to this release's Turf SHAs, and the
@@ -7306,13 +7306,15 @@ def release_tip_sha(repo)
   ok ? out.strip : ""
 end
 
-# Does this app group bring anything production does not already run? False ONLY
-# when origin/#{RELEASE_BRANCH} and origin/main both resolve and snapshot the SAME tree,
-# and the repo is not one the devnet gauntlet binds. Every git fault, a dry run, a
-# missing checkout and a Turf repo answer true: when in doubt, QA it.
+# Does this app group bring anything production does not already run? A group with
+# a member task always does (its task is the change). A memberless group (it rides
+# because its `accepted` moved) carries nothing ONLY when origin/#{RELEASE_BRANCH} and
+# origin/main both resolve and snapshot the SAME tree, and the repo is not one the
+# devnet gauntlet binds. Every git fault, a dry run, a missing checkout and a Turf
+# repo answer true: when in doubt, QA it.
 def release_carries_change?(group)
   repo = group["repo"].to_s
-  return true if DRY || Release::DevnetGauntlet.turf_repos([repo]).any?
+  return true if DRY || Array(group["members"]).any? || Release::DevnetGauntlet.turf_repos([repo]).any?
 
   path = repo_path(repo)
   return true unless Dir.exist?(path)
