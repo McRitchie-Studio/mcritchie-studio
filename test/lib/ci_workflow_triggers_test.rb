@@ -2015,7 +2015,8 @@ class CiWorkflowTriggersTest < Minitest::Test
   # script always exits 0, so the job runs on every push and answers skip=false on any
   # doubt. Edit PRIOR_GREEN_RUN deliberately, with prior_green_run_test.rb beside it.
   PRIOR_GREEN_RUN = <<~SH
-    gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" > "$RUNNER_TEMP/runs.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/runs.json"
+    url="repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100"
+    gh api "$url" > "$RUNNER_TEMP/runs.json" 2>/dev/null || curl -fsS --max-time 20 "https://api.github.com/$url" > "$RUNNER_TEMP/runs.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/runs.json"
     ruby .hub-ci/.github/scripts/prior-green-run.rb "$RUNNER_TEMP/runs.json" > "$RUNNER_TEMP/prior.out" || printf 'skip=false\\nreason=the rules did not run\\n' > "$RUNNER_TEMP/prior.out"
     cat "$RUNNER_TEMP/prior.out"
     cat "$RUNNER_TEMP/prior.out" >> "$GITHUB_OUTPUT"
@@ -2029,7 +2030,7 @@ class CiWorkflowTriggersTest < Minitest::Test
     assert_nil job["if"], "the prior-green job must run on every event"
     assert_nil job["needs"], "the prior-green job runs first"
     assert_nil job["continue-on-error"]
-    assert_equal({ "actions" => "read", "contents" => "read" }, job["permissions"], "a read-only token")
+    assert_nil job["permissions"], "a called workflow cannot widen the caller's restricted token: asking fails the run at startup"
     assert_equal({ "skip" => "${{ steps.prior.outputs.skip }}" }, job["outputs"])
 
     steps = Array(job["steps"]).grep(Hash)

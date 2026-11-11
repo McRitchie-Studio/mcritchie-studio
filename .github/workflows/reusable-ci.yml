@@ -107,9 +107,10 @@ jobs:
   prior_green:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      actions: read
-      contents: read
+    # NO `permissions:` here. A called workflow cannot widen the caller's token, and every
+    # caller's default is the restricted `read` (contents + packages): asking for
+    # `actions: read` fails the whole run at startup. So the runs read tries the run's
+    # token, then the anonymous API (public repos), and any refusal runs the suite.
     outputs:
       skip: ${{ steps.prior.outputs.skip }}
     steps:
@@ -130,7 +131,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100" > "$RUNNER_TEMP/runs.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/runs.json"
+          url="repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$GITHUB_SHA&per_page=100"
+          gh api "$url" > "$RUNNER_TEMP/runs.json" 2>/dev/null || curl -fsS --max-time 20 "https://api.github.com/$url" > "$RUNNER_TEMP/runs.json" 2>/dev/null || echo '{}' > "$RUNNER_TEMP/runs.json"
           ruby .hub-ci/.github/scripts/prior-green-run.rb "$RUNNER_TEMP/runs.json" > "$RUNNER_TEMP/prior.out" || printf 'skip=false\nreason=the rules did not run\n' > "$RUNNER_TEMP/prior.out"
           cat "$RUNNER_TEMP/prior.out"
           cat "$RUNNER_TEMP/prior.out" >> "$GITHUB_OUTPUT"
