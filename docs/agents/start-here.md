@@ -112,6 +112,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | Carl `pr-review-slow` SOP (the slow variant of pr-review) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review-slow.md` |
 | Carl `pr-review` SOP (the orchestrator) | `mcritchie-studio/docs/agents/agents/carl/sops/pr-review.md` |
 | `Mack Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mack/HEARTBEAT.md` |
+| Mack `card-hub-refresh` SOP (refresh McRitchie Studio Cards: snapshot the MI and personal card rosters through the Drive API and rebuild the hub) | `mcritchie-studio/docs/agents/agents/mack/sops/card-hub-refresh.md` |
 | Mack `close-the-month` SOP (file last month's bank statements, answer the lines no rule could classify, write the close to Drive) | `mcritchie-studio/docs/agents/agents/mack/sops/close-the-month.md` |
 | Mack `pay-benchmark-refresh` SOP (refresh the BLS wage percentiles behind /admin/pay, check them, and flag anyone below their role's target) | `mcritchie-studio/docs/agents/agents/mack/sops/pay-benchmark-refresh.md` |
 | `Mason Heartbeat` launcher | `mcritchie-studio/docs/agents/agents/mason/HEARTBEAT.md` |
