@@ -75,7 +75,7 @@ RubyGems await is the exception: an app without its own copy runs the hub's.
 | `gem-audit-command` | empty | `bin/bundler-audit`, as one more static check |
 | `importmap-audit-command` | `bin/importmap-audit-ci` | `bin/importmap audit` |
 | `lane-image` | `ghcr.io/mcritchie-studio/ci-rails:24.04` | Rarely changed. The image the `island_animator`, `playwright` and `rails` lanes run inside, every package pre-installed (`.github/ci-image/Dockerfile`, built weekly by `mirror-ci-images.yml`). Those lanes run no apt |
-| `system-packages` | the hub's apt list | The app's apt list. The `system` lane is the one lane still on the bare runner, with a bounded, retried apt step |
+| `system-packages` | the hub's apt list | Deprecated and unused: the `system` lane runs in the lane image with no apt step (task ci-system-lane-in-image). Drop it from callers |
 | `system-setup-command` | empty | An asset build before the suite (`bin/rails tailwindcss:build`) |
 | `system-command` | `bin/rails db:test:prepare test:system` | The app's whole suite when it is one command |
 

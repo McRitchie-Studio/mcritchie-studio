@@ -71,8 +71,8 @@ RUN for bin in convert ffmpeg ffprobe git node npm npx pg_dump psql rsvg-convert
 # directory system-wide, because the suites run git under their own sandboxed HOME,
 # where actions/checkout's per-user safe.directory does not reach. ruby/setup-ruby's
 # prebuilt Rubies install under /opt/hostedtoolcache (their fixed prefix), so runner owns it.
-# CI_LANE_IMAGE tells a suite it is inside this container (a Selenium Chrome would need
-# --no-sandbox here, which is why reusable-ci.yml's `system` lane stays on the VM).
+# CI_LANE_IMAGE tells a suite it is inside this container (a Selenium Chrome needs
+# --no-sandbox here; reusable-ci.yml's `system` lane adds it with a google-chrome wrapper).
 RUN useradd --uid 1001 --create-home --shell /bin/bash runner \
  && echo "runner ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/runner && chmod 0440 /etc/sudoers.d/runner \
  && git config --system --add safe.directory '*' \

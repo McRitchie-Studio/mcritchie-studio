@@ -353,7 +353,6 @@ test/lib/cert_database_reaper_test.rb: 0.17
 test/lib/cert_evidence_test.rb: 0.15
 test/lib/cert_failure_exit_contract_test.rb: 4.75
 test/lib/chrome_profiles_test.rb: 0.29
-test/lib/ci_apt_step_timeout_test.rb: 5.3
 test/lib/ci_asset_hook_routes_test.rb: 0.07
 test/lib/ci_bundle_retry_test.rb: 0.03
 test/lib/ci_job_timeout_test.rb: 0.03
