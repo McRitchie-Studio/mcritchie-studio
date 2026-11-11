@@ -89,9 +89,11 @@
 #
 # NOTE the DOUBLE RUN the trigger creates, so nobody "fixes" it into hole #5: a release
 # SHA gets its run from `push: release`, then `bin/release ship` fast-forwards main to
-# the byte-identical SHA and fires a SECOND full run (including the ~5min test +
-# test:system lane). Benign — the SHA-addressed auditor folds a pending duplicate as
-# no-data, never a block — and expected.
+# the byte-identical SHA and fires a SECOND run. Since task release-sub-hour-pipeline
+# that second run is cheap, not removed: reusable-ci.yml's `prior_green` job finds the
+# completed green PUSH run of the same workflow on the same SHA and every lane skips,
+# while the earlier run's checks stay on the SHA. The trigger stays; only the repeat
+# work goes (PRIOR_GREEN below pins the one clause that allows it).
 #
 # Two tiers (backend shape):
 #   [unit]        the trigger-extraction and skip-detection logic, over fixture YAML —
@@ -2023,6 +2025,7 @@ class CiWorkflowTriggersTest < Minitest::Test
     ruby .hub-ci/.github/scripts/prior-green-run.rb "$RUNNER_TEMP/runs.json" > "$RUNNER_TEMP/prior.out" || printf 'skip=false\\nreason=the rules did not run\\n' > "$RUNNER_TEMP/prior.out"
     cat "$RUNNER_TEMP/prior.out"
     cat "$RUNNER_TEMP/prior.out" >> "$GITHUB_OUTPUT"
+    cat "$RUNNER_TEMP/prior.out" >> "$GITHUB_STEP_SUMMARY"
   SH
 
   def test_integration_the_prior_green_job_is_pinned

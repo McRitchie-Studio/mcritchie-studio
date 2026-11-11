@@ -153,6 +153,9 @@ class ReleaseCliHarness < Minitest::Test
     env = OutboundSeams.env(
       "MCR_PRIMARY_LOCK_DIR" => self.class.lock_dir, "TMPDIR" => subprocess_tmpdir,
       "SEAL_RETRY_DELAY_SECONDS" => "0",
+      # The step timings and the cycle's RESULT summary record under this dir: never the
+      # operator's ~/.release-results (task release-sub-hour-pipeline).
+      "RELEASE_RESULTS_DIR" => File.join(subprocess_tmpdir, "release-results"),
       "TASK_API_BASE" => UNROUTABLE_API_BASE, "GH_AUTH_TOKEN_BIN" => ReleaseCliStubs.token_broker
     )
     last = nil

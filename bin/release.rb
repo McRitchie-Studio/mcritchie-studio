@@ -657,23 +657,39 @@ end
 # that aborts mid-phase still prints what it spent where. A dry run times nothing.
 def step_clock = ($step_clock ||= ReleaseStepTimings::Clock.new)
 
-def time_step(name)
+def time_step(name, release: nil)
   return if DRY
 
   unless $step_clock_reporting
     $step_clock_reporting = true
     at_exit { report_step_timings }
   end
+  $step_clock_release = release.to_s unless release.to_s.empty?
   step_clock.mark(name)
 end
 
+# Prints the act's two timing lines and RECORDS them: one JSON line appended to
+# <release results dir>/steps.jsonl ({release, steps, at}), the same dir the cycle's
+# RESULT summary lands in, so a prepare or ship run on its own leaves its durations too.
 def report_step_timings
-  return unless $step_clock&.any?
+  return if $step_clock_reported || !$step_clock&.any?
 
+  $step_clock_reported = true
   $step_clock.close
   puts($step_clock.human_line)
   puts($step_clock.machine_line)
   $stdout.flush
+  record_step_timings($step_clock.seconds)
+rescue StandardError
+  nil
+end
+
+def record_step_timings(seconds)
+  dir = release_results_dir
+  FileUtils.mkdir_p(dir)
+  File.open(File.join(dir, "steps.jsonl"), "a") do |f|
+    f.puts(JSON.generate("release" => $step_clock_release, "steps" => seconds, "at" => Time.now.utc.iso8601))
+  end
 rescue StandardError
   nil
 end
@@ -6104,7 +6120,7 @@ def prepare
   #     gem repo's own lock.
   assert_no_lock_drift!(app_groups, published_gems, producers: false)
 
-  time_step("ci_gate")
+  time_step("ci_gate", release: rel_slug)
   # 5. PRE-QA GATE — the prepare-owned test tier on origin/release, BEFORE any
   #    QA deploy. A regression aborts with eject guidance while every member is
   #    still `reviewed`; the rest of the RC rides on the re-run.
@@ -12605,7 +12621,7 @@ def ship
   )
   record_release_event(rel_slug, "deploy_prod", "started", actor: by)
 
-  time_step("deploy")
+  time_step("deploy", release: rel_slug)
   # 3. Gems FIRST (producer-first): publish each FINAL version. prepare published
   #    only a candidate, so this is the first and only push of x.y.z: built from the
   #    frozen SHA, compared with the candidate QA ran, pushed, tagged, then checked
