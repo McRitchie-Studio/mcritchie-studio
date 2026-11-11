@@ -187,8 +187,8 @@ if options[:launch]
   existing_log = read_log(log_path)
   if recorded && ShipWait.alive?(recorded["pid"]) && existing_log && !ShipWait.exited?(existing_log)
     die!("a submit for #{slug} is ALREADY RUNNING (pid #{recorded["pid"]}, started #{recorded["started_at"]}). " \
-         "Attach to it instead: bin/submit-wait #{slug}. Two concurrent ships on one task race the same " \
-         "branch and PR.", ShipWait::EXIT_USAGE)
+         "Attach to it instead: #{Remedy.command("submit-wait", __dir__, slug)}. Two concurrent ships " \
+         "on one task race the same branch and PR.", ShipWait::EXIT_USAGE)
   end
 
   FileUtils.mkdir_p(state_dir)
@@ -225,8 +225,8 @@ end
 
 if read_log(log_path).nil?
   die!("no log to watch at #{log_path}. Either start the submit through this script " \
-       "(bin/submit-wait #{slug} --launch -m \"…\") or point at the log you redirected to " \
-       "(bin/submit-wait #{slug} --log <path>).", ShipWait::EXIT_NO_LOG)
+       "(#{Remedy.command("submit-wait", __dir__, slug, "--launch", "-m", "\"…\"")}) or point at the log you " \
+       "redirected to (#{Remedy.command("submit-wait", __dir__, slug, "--log", "<path>")}).", ShipWait::EXIT_NO_LOG)
 end
 
 say "watching #{log_path}#{watch_pid ? " (pid #{watch_pid})" : " (no pid — log sentinel only)"}; " \
@@ -294,12 +294,17 @@ when :succeeded
 when :failed
   status = ShipWait.sentinel_status(text)
   say "FAILED — #{slug} did NOT reach the submitted seam (#{took}#{status ? ", ship exited #{status}" : ""})."
+  tail = ShipWait.failure_tail(text)
+  unless tail.empty?
+    say "failing tests (from the log):"
+    tail.each { |line| say line }
+  end
   say "last line: #{ShipWait.last_report(text)}"
   say "read the whole log: #{log_path} — then re-run #{Remedy.command("submit", __dir__, slug)} (it resumes)."
   exit ShipWait::EXIT_FAILED
 else
   say "TIMEOUT — #{slug} is STILL RUNNING after #{took}. This is not a failure; the budget ran out."
   say "last line: #{ShipWait.last_report(text)}"
-  say "keep waiting: bin/submit-wait #{slug} --timeout <seconds>"
+  say "keep waiting: #{Remedy.command("submit-wait", __dir__, slug, "--timeout", "<seconds>")}"
   exit ShipWait::EXIT_TIMEOUT
 end

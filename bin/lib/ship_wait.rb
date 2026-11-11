@@ -51,6 +51,8 @@
 # WHEN to stop waiting. An exit status is never consulted for the verdict — it is
 # relayed to the reader and nothing more. A log with no terminal line at all (a
 # killed process) ended without a verdict and reads :failed.
+require_relative "ci_failure_digest"
+
 module ShipWait
   # bin/submit's final stdout line, printed only after the read-back verify passes
   # (bin/submit's last `puts`). The one string that means "this ship reached the
@@ -187,13 +189,42 @@ module ShipWait
     false
   end
 
-  # The last thing ship said — its own `ship: …` warn line (both `die!` and
-  # `say` use that prefix, so this is a POINTER to the log, never a verdict).
-  # Falls back to the last non-blank line so a crash outside ship's own error
-  # path still reports something the reader can act on.
+  # The last thing submit said — its own `submit: …` warn line (`ship: …` before the
+  # rename; both `die!` and `say` use the prefix, so this is a POINTER to the log,
+  # never a verdict). Falls back to the last non-blank line that is not this
+  # waiter's own sentinel, so a crash outside submit's error path still reports
+  # something the reader can act on.
+  REPORT_PREFIXES = ["submit: ", "ship: "].freeze
+
   def last_report(text)
     lines = text.to_s.each_line.map(&:rstrip).reject(&:empty?)
-    lines.reverse.find { |line| line.start_with?("ship: ") } || lines.last
+    lines.reverse.find { |line| line.start_with?(*REPORT_PREFIXES) } ||
+      lines.reverse.find { |line| !line.start_with?(SENTINEL_PREFIX) } || lines.last
+  end
+
+  # THE FAILING TESTS, NOT ONLY THE LAST LINE (task devops-sub-hour-follow-ups). A red
+  # pre-flight or a red CI ends the log with one `submit:` line that says "fix it",
+  # and the tests that failed sit above it among hundreds of lines. This returns
+  # them, at most `max` lines: submit's own "what failed" digest of a red CI when the
+  # log carries one, else every Minitest or Playwright failure the log prints (the
+  # fast-check lanes), read by CiFailureDigest, the parser submit's CI digest uses.
+  # Empty when the log names no failing test. PURE.
+  DIGEST_HEAD = "what failed (from the failing jobs' logs"
+  TAIL_MAX_LINES = 30
+
+  def failure_tail(text, max: TAIL_MAX_LINES)
+    lines = text.to_s.each_line.map(&:rstrip)
+    head = lines.rindex { |line| line.include?(DIGEST_HEAD) }
+    if head
+      block = lines[(head + 1)..].take_while { |line| line.match?(/\A(?:submit|ship): {2,}|\A {2,}/) }
+      return block.map { |line| line.sub(/\A(?:submit|ship): /, "") }.first(max)
+    end
+
+    failures = CiFailureDigest.extract(text.to_s)[:failures]
+    failures.flat_map do |f|
+      where = f[:location] && !f[:name].to_s.include?(f[:location].to_s) ? "  [#{f[:location]}]" : ""
+      ["  ✗ #{f[:name]}#{where}"] + Array(f[:excerpt]).map { |e| "      #{e.to_s[0, 180]}" }
+    end.first(max)
   end
 
   # State-file names. Namespaced by SLUG, always — sibling agents share a

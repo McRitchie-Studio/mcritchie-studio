@@ -174,6 +174,24 @@ class SubmitWaitScriptTest < Minitest::Test
     end
   end
 
+  # task devops-sub-hour-follow-ups: a red pre-flight's failing tests reach the reader,
+  # not only submit's last "fix it" line.
+  def test_a_failed_ship_prints_the_failing_test_tail
+    with_state do |dir|
+      seed_log(dir, "== mapped-tests: bin/rails test test/lib/a_test.rb ==", "", "Failure:",
+               "ATest#test_it_adds [test/lib/a_test.rb:12]:", "Expected: 2", "  Actual: 3", "",
+               "   mapped-tests: FAIL", "submit: 2/8 pre-flight — RED; nothing was pushed",
+               "#{ShipWait::SENTINEL_PREFIX}1")
+      _out, err, code, = run_wait(dir, [SLUG, *BOUNDED])
+
+      assert_equal ShipWait::EXIT_FAILED, code
+      assert_match(/failing tests \(from the log\):/, err)
+      assert_match(%r{✗ ATest#test_it_adds  \[test/lib/a_test.rb:12\]}, err)
+      assert_match(/Expected: 2/, err)
+      assert_match(/last line: submit: 2\/8 pre-flight — RED/, err, "the last line is submit's own, not the sentinel")
+    end
+  end
+
   # --- 3. THE SELF-MATCH GUARD — a decoy sibling must not hold the wait open ---
 
   def test_a_sibling_process_carrying_the_ships_command_line_does_not_hold_the_wait
@@ -236,6 +254,7 @@ class SubmitWaitScriptTest < Minitest::Test
       assert_operator elapsed, :<, 15, "the bound must hold — took #{elapsed.round(2)}s"
       assert_match(/TIMEOUT/, err)
       assert_match(/not a failure/, err, "a timeout says so, so nobody re-runs a healthy ship")
+      assert_match(%r{keep waiting: /\S+/bin/submit-wait #{SLUG} --timeout}, err, "the remedy is absolute")
     end
   end
 
@@ -338,6 +357,9 @@ class SubmitWaitScriptTest < Minitest::Test
       assert_match(/no log to watch/, err)
       assert_match(/--launch/, err, "the refusal names both ways out")
       assert_match(/--log/, err)
+      assert_match(%r{\(/\S+/bin/submit-wait #{SLUG} --launch -m}, err, "the launch remedy is absolute")
+      assert_match(%r{\(/\S+/bin/submit-wait #{SLUG} --log <path>\)}, err, "the log remedy is absolute")
+      refute_match(/[ (]bin\/submit-wait /, err, "no bare bin/ remedy: it runs only from a hub checkout")
     end
   end
 
