@@ -226,6 +226,7 @@ require_relative "../app/models/release/merge_plan"
 # Rails-free.
 require_relative "../app/models/release/trains"
 require_relative "../app/models/release/sweep_plan"
+require_relative "../app/models/release/preflight" # every read-only refusal, before prepare's first write
 # PromotePlan decides fast-forward or batch PR for the promote, the carry of
 # `release` back onto `accepted`, and which branch a consumer lock bump lands on.
 require_relative "../app/models/release/promote_plan"
@@ -3826,7 +3827,9 @@ def sweep_detect_ruby(only_slugs)
   "repos: t.release_repos, pr_urls: (t.respond_to?(:derived_release_pr_urls) ? t.derived_release_pr_urls : t.release_pr_urls), release_slug: t.release_slug.to_s } }; " \
   "screen = Release::Conductor.screen_merge(rows.map { |x| x[:slug] }); " \
   "#{held_repos_ruby}" \
-  "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state } : nil), screen: screen, held_repos: held }.to_json)"
+  "puts({ tasks: rows, release: (r ? { slug: r.slug, state: r.state, " \
+  "repos: (r.respond_to?(:tasks) ? r.tasks.flat_map(&:release_repos).uniq : []) } : nil), " \
+  "screen: screen, held_repos: held }.to_json)"
 end
 
 # The one-shot SWEEP write for prepare: open the candidate if none is active
@@ -5372,6 +5375,103 @@ def qa_deploys_in_parallel(qa_groups, rel_slug, &job)
   qa_groups.map { |group| answers.fetch(group["repo"]) }
 end
 
+# --- THE RELEASE PREFLIGHT (task release-preflight-hardening; Release::Preflight) ----
+# Every refusal prepare can derive from reads, made before its first write. `detect`
+# is prepare's own detection read (sweep_detect_ruby), so the preflight costs no
+# second board call. Aborts with one line per finding; prints a ✓ line when clear.
+def release_preflight!(detect)
+  rows = detect["tasks"] || []
+  return if rows.empty? && detect["release"].nil? # the idempotent no-op: nothing to judge
+  plan = Release::SweepPlan.compute(rows, parked: Release::Ladder.parked(RELEASE_REPOS),
+                                          train: TRAIN, trains: RELEASE_TRAINS,
+                                          riding: detect.dig("release", "slug"),
+                                          held_repos: detect["held_repos"] || [])
+  repos = Release::Preflight.release_repos(rows, detect.dig("release", "repos"))
+  identity = preflight_identity
+  step("preflight (read-only): PR coverage of every candidate, #{identity}'s read of #{repos.size} " \
+       "repo(s), a free desk slot, the cwd")
+  unreadable = repos.empty? ? [] : ShipPrAccess.unreadable(repos, reader: ->(repo) { ship_pr_readable(repo) })
+  free = preflight_free_desk_slots
+  say("  ⚠ preflight: the free desk-slot count could not be read; not judged") if free.nil?
+  refusals = Release::Preflight.refusals(blocked: plan["blocked"], unreadable: unreadable, identity: identity,
+                                         free_slots: free, cwd: preflight_cwd, roots: preflight_roots)
+  abort!(Release::Preflight.message(refusals)) if refusals.any?
+
+  say("  ✓ preflight clear: #{repos.size} repo(s) readable as #{identity}, every multi-repo candidate has its " \
+      "PRs, #{free.nil? ? 'desk slots unread' : "#{free} desk slot(s) free"}, cwd is the hub")
+end
+
+def preflight_identity
+  identity = GhIdentity.item_for(GhIdentity.resolve.to_s) || ENV["GH_APP_ITEM"].to_s.strip
+  identity.to_s.empty? ? "github.mcritchie-agent" : identity
+rescue StandardError
+  ENV["GH_APP_ITEM"].to_s.strip.empty? ? "github.mcritchie-agent" : ENV["GH_APP_ITEM"].to_s.strip
+end
+
+# Free desk slots, from `bin/agent-worktree scale status` (its "free:" line), or nil
+# when it cannot be read. RELEASE_FREE_DESK_SLOTS is the test seam: set, it answers
+# ("" means unread), and no child runs (armed by test/support/outbound_seams.rb).
+def preflight_free_desk_slots
+  if ENV.key?("RELEASE_FREE_DESK_SLOTS")
+    value = ENV["RELEASE_FREE_DESK_SLOTS"].to_s.strip
+    return value.match?(/\A\d+\z/) ? value.to_i : nil
+  end
+
+  out, status = bounded_capture2e(hub_bin("agent-worktree"), "scale", "status")
+  return nil unless status.success?
+
+  found = out.to_s[/^\s*free:\s+(\d+)/, 1]
+  found&.to_i
+rescue StandardError
+  nil
+end
+
+def preflight_cwd
+  File.realpath(Dir.pwd)
+rescue SystemCallError
+  Dir.pwd
+end
+
+# A release stands in the hub: the checkout this script runs from, or the hub
+# primary at the projects root (the fixed-path install runs from neither, so its
+# runs must stand in the primary).
+def preflight_roots
+  [HUB_ROOT, repo_path(APP)].filter_map do |root|
+    File.realpath(root)
+  rescue SystemCallError
+    nil
+  end.uniq
+end
+
+# `bin/release refreeze`: re-freeze the active release after a fix lands on `release`.
+# It reads the release's `assembled` members and runs prepare with each as a --task:
+# prepare's re-freeze path (sweep_detect_ruby's refreeze rows) then promotes nothing,
+# re-gates, re-deploys QA and re-records qa_shas from each repo's `release` tip.
+# Before this, the operator had to name a member by hand (`prepare --task <slug>`).
+def refreeze
+  read = conductor("r = #{rel_current}; puts({ release: (r && r.slug), state: (r && r.state), " \
+                   "members: (r ? Task.where(release_slug: r.slug, stage: 'assembled').order(:position).pluck(:slug) : []) }.to_json)",
+                   read_only: true)
+  rel = read["release"].to_s
+  abort!("refreeze: no active release — nothing to re-freeze. Nothing was read further or written.") if rel.empty?
+  members = Array(read["members"]).map(&:to_s).reject(&:empty?)
+  if members.empty?
+    abort!("refreeze: #{rel} (#{read['state']}) has no `assembled` member — a re-freeze re-records an assembled " \
+           "release. Run `#{RELEASE_SELF_CMD} prepare` for a release still assembling. Nothing was written.")
+  end
+  say("Re-freeze #{rel}: #{members.size} assembled member(s) — #{members.join(', ')}")
+  members.each { |slug| ARGV.push("--task", slug) }
+  prepare
+end
+
+# `bin/release preflight [--task SLUG ...]`: the same read-only checks prepare makes
+# first, as a command of their own (the cycle runs it under the ship's identity).
+def preflight
+  task_slugs = opt_values("--task")
+  say("Release preflight — read-only#{PROD ? ' (PROD board)' : ' (local)'}")
+  release_preflight!(conductor(sweep_detect_ruby(task_slugs), read_only: true))
+end
+
 def prepare
   task_slugs = opt_values("--task")
   slug = opt_value("--slug")
@@ -5397,6 +5497,16 @@ def prepare
 
   say("Prepare release — Avi qa-release (self-healing)#{hub_train? ? '' : " · #{TRAIN} train"}#{PROD ? ' (PROD board)' : ' (local)'}#{DRY ? ' — DRY RUN' : ''}")
   warn_local!
+
+  # 0. DETECT + PREFLIGHT, before every write below (task release-preflight-hardening):
+  #    the detection read (the reviewed queue + assembled stragglers with their
+  #    PR/merged state, the review-gate screen, the current release; `--task` narrows
+  #    it) feeds Release::Preflight, which refuses a candidate with a missing PR, a
+  #    repo the GitHub identity cannot read, a full desk band or a wrong cwd. The
+  #    morning cycle of 2026-11-10 met the first only at 3a, after its claim.
+  step("record (read-only): Release::Conductor.sweep_candidates + screen")
+  detect = conductor(sweep_detect_ruby(task_slugs), read_only: true)
+  release_preflight!(detect)
 
   # LOCAL PRESENCE — the twin of the board `assembler` claim taken further down, and it
   # answers a DIFFERENT question. The board claim says "a release is live" to every
@@ -5424,8 +5534,7 @@ def prepare
   # 1. DETECT (a read — runs even in --dry-run): the reviewed queue + assembled
   #    stragglers with their PR/merged state, the review-gate screen, and the
   #    current release. `--task` narrows the sweep (operator curation).
-  step("record (read-only): Release::Conductor.sweep_candidates + screen")
-  detect = conductor(sweep_detect_ruby(task_slugs), read_only: true)
+  # (The detection read itself ran at step 0, before the preflight.)
   cands  = detect["tasks"] || []
   active = detect["release"]
 
@@ -14198,6 +14307,8 @@ if __FILE__ == $PROGRAM_NAME
   # The step's moment card prints after prepare's own output on every way out
   # (a return, an abort); DreamBank.after_moment never raises in prepare's place.
   when "prepare"  then exit_after_prepare(DreamBank.after_moment(sop: "qa-release", step: "prepare") { prepare })
+  when "refreeze" then exit_after_prepare(DreamBank.after_moment(sop: "qa-release", step: "prepare") { refreeze })
+  when "preflight" then preflight
   when "eject"    then eject
   when "ship"     then ship
   when "finalize" then finalize(Release::Cli.positional_slugs(ARGV).first)

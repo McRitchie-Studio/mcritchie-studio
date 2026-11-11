@@ -139,6 +139,20 @@ class Release
         consequence: "NOTHING was promoted onto `release`, merged, recorded on the board, or deployed to QA",
         bool: ["--expedite", "--skip-gauntlet"], value: ["--task", "--slug"], allow_positional: false
       },
+      # Re-freeze the active release after a fix lands on `release`: prepare's
+      # re-freeze path over every `assembled` member, no slug to name.
+      "refreeze" => {
+        synopsis: "bin/release refreeze [--skip-gauntlet]",
+        consequence: "NOTHING was re-gated, deployed to QA, or re-recorded",
+        bool: ["--skip-gauntlet"], value: [], allow_positional: false
+      },
+      # prepare's read-only first step, alone: coverage, GitHub read access, a free
+      # desk slot, the cwd (Release::Preflight).
+      "preflight" => {
+        synopsis: "bin/release preflight [--task SLUG ...]",
+        consequence: "nothing was read or written",
+        bool: [], value: ["--task"], allow_positional: false
+      },
       "eject" => {
         synopsis: "bin/release eject <task-slug> [--feedback \"…\"]",
         consequence: "no task was ejected from the candidate and no feedback was recorded",
@@ -232,7 +246,7 @@ class Release
 
     # The whole-CLI usage line — printed for a bare `bin/release`, an unknown
     # subcommand, and appended to every per-subcommand `--help`.
-    USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|eject <task-slug>|" \
+    USAGE = "usage: bin/release {init|merge <task-slug> [<task-slug>...]|prepare|refreeze|preflight|eject <task-slug>|" \
             "ship [--finalize-only [<release>]]|cycle --clearance \"<words>\"|finalize [<release>]|reseal <release>|rollback [<release>]|status|archive|retro|notes <release> [--post] [--force]|announce <release> [--post]|drop-lock-only <repo>} " \
             "[--task SLUG ...] [--slug REL] [--by NAME] [--mode ask|timed|auto|cleared] [--clearance \"<Alex McRitchie's words>\"] " \
             "[--feedback …] [--clean-only] [--expedite] " \
