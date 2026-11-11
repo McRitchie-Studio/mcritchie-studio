@@ -75,7 +75,8 @@ module MarketingKit
       }
     end
 
-    # The example table, drawn from column B (column A is the margin). key names a
+    # The example table, drawn from column B (column A is the margin; a narrow
+    # gutter, C, follows the item column). key names a
     # column in formulas; kind picks the number format and alignment; section is
     # the head section (0-2) the column sits under. The first column is the row's
     # item, which the freeze keeps in view.
@@ -92,7 +93,7 @@ module MarketingKit
       { key: "notes", section: 2, head: "[Notes]", width: 40, kind: "text" }
     ].freeze
 
-    # Label (row 3) over value (row 4), side by side from column C, under the
+    # Label (row 3) over value (row 4), side by side from column D (C is the gutter), under the
     # title and beside the Last Updated line. A column or variable may carry its
     # own number format (format: '"$"#,##0' for whole dollars), and a column its
     # own dropdown (choices: [...]). A variable may carry emphasis: true, the sheet's headline number,
@@ -100,9 +101,13 @@ module MarketingKit
     # card roster's credit limit). In a value or a formula: {r} is the row, {first}/{last} the table's
     # first and last data row, {col:key} a column's letter and {var:Label} that
     # variable's cell, made absolute.
+    # The first is the sheet's headline number (emphasis: true): large, in the
+    # title colour, in whole dollars, as McRitchie Industries Cards shows its
+    # total credit limit.
     VARIABLES = [
-      { label: "Default rate", value: 0.05, kind: "percent" },
-      { label: "Total amount", value: "=SUM({col:amount}{first}:{col:amount}{last})", kind: "money" }
+      { label: "Total amount", value: "=SUM({col:amount}{first}:{col:amount}{last})", kind: "money", format: '"$"#,##0',
+        emphasis: true },
+      { label: "Default rate", value: 0.05, kind: "percent" }
     ].freeze
 
     # The formula column reads each row's amount × its rate, or the Default rate
@@ -125,7 +130,7 @@ module MarketingKit
       "Keep the row's item (its name) in column B, so you always see which row you are on.",
       "Add a column: insert it inside a section and copy the head cells' format from a neighbour. " \
       "Add a row: insert it inside the table, so totals and dropdowns cover it.",
-      "Variables sit under the title, label over value. Formulas point at them with absolute references ($C$4), " \
+      "Variables sit under the title, label over value. Formulas point at them with absolute references ($E$4), " \
       "so a value changes in one place.",
       "Head colours come from the brand palette. Both head rows are dark enough for white text; " \
       "keep it that way if you recolour a section."

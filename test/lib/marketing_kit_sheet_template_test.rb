@@ -89,7 +89,8 @@ class MarketingKitSheetTemplateTest < ActiveSupport::TestCase
       assert_equal "RF Template — Sheet", t.name
       assert_equal spec.colour(:title), p.dig(:colours, :title)
       assert_equal spec.logo_png(:icon, :light), p[:icon]
-      assert_equal ["Default rate", "Total amount"], p[:variables].map { |v| v[:label] }
+      assert_equal ["Total amount", "Default rate"], p[:variables].map { |v| v[:label] }
+      assert_equal [true, nil], p[:variables].map { |v| v[:emphasis] }, "the first variable is the headline"
       assert_equal 3, p[:sections].size
       assert_equal [0, 1, 2], p[:columns].map { |c| c[:section] }.uniq, "every section has columns, in order"
       assert_equal "item", p[:columns].first[:kind], "column A is the row's item, which the freeze keeps"

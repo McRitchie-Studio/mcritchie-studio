@@ -233,7 +233,10 @@ def sheet(d, out):
     LAST = FIRST + 990  # the open range totals and dropdowns cover, so added rows count
     X = 2  # the table's first column (B); A is the margin
     cols, n = d["columns"], len(d["columns"])
-    C = lambda i: X + i  # sheet column of table column i
+    # A narrow gutter (C) parts the frozen item column from the rest, so the
+    # columns that scroll never butt against it. Table column i sits at C(i).
+    GUTTER = X + 1
+    C = lambda i: X + i + (1 if i > 0 else 0)
 
     # A2 is square: column A is as wide as row 2 is tall. Row heights are points
     # (4/3 px); a column width in characters draws at about 7 px each plus 5.
@@ -242,6 +245,7 @@ def sheet(d, out):
     ws.sheet_view.showGridLines = False
     ws.column_dimensions["A"].width = round((square - 5) / 7, 2)
     for i, c in enumerate(cols): ws.column_dimensions[L(C(i))].width = c["width"]
+    ws.column_dimensions[L(GUTTER)].width = 2.57
     # A variable marked emphasis (the sheet's headline number) draws larger, so row 3 grows to hold it.
     emphasis = any(v.get("emphasis") for v in d["variables"])
     heights = {MARGIN: 15, TITLE: square * 3 / 4, VAR_LABEL: 12, VAR_VALUE: 26 if emphasis else 20, GAP: 12, HEAD_TOP: 24, HEAD_LOW: 22}
@@ -296,6 +300,8 @@ def sheet(d, out):
         low.alignment = Alignment(vertical="center", horizontal="right" if c["kind"] in RIGHT else "left", indent=1)
         if first and i:
             top.border = Border(left=edge); low.border = Border(left=edge)
+    item_sec = d["sections"][cols[0]["section"]]  # the gutter wears the item column's section
+    ws.cell(HEAD_TOP, GUTTER).fill = fill(item_sec["top"]); ws.cell(HEAD_LOW, GUTTER).fill = fill(item_sec["low"])
 
     # Example rows. In a formula, {r} is the row, {col:key} a table column's letter
     # and {var:Label} that variable's cell, made absolute.
@@ -303,6 +309,7 @@ def sheet(d, out):
     letter = {c["key"]: L(C(i)) for i, c in enumerate(cols)}
     for r, row in enumerate(d["rows"], start=FIRST):
         ws.row_dimensions[r].height = 20
+        ws.cell(r, GUTTER).border = Border(bottom=rule)
         for i, v in enumerate(row):
             c = cols[i]
             if c["kind"] == "date" and v: v = datetime.date.fromisoformat(v)

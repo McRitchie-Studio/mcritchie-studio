@@ -26,9 +26,9 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         assert_match(/<pane [^>]*xSplit="2"[^>]*ySplit="7"[^>]*topLeftCell="C8"[^>]*state="frozen"/, sheet)
         assert_no_match(/<mergeCell/, sheet, "the template never merges a cell")
         assert_match(/showGridLines="0"/, sheet)
-        assert_match(/<autoFilter ref="B7:J11"/, sheet)
+        assert_match(/<autoFilter ref="B7:K11"/, sheet)
         assert_match(/<dataValidation [^>]*type="list"/, sheet)
-        assert_includes sheet, %(IF(H8="",$C$4,H8)), "the formula reads the Default rate variable"
+        assert_includes sheet, %(IF(I8="",$E$4,I8)), "the formula reads the Default rate variable"
 
         styles = xml.fetch("xl/styles.xml")
         MarketingKit::SheetTemplate.new(spec).sections.each do |s|
@@ -37,8 +37,11 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         assert_match(%r{<c r="B2"[^>]*><is><t>\[Sheet Title\]</t>}, sheet, "the title is in B2")
         assert_no_match(/<c r="[C-Z]2"/, sheet, "row 2 is the title alone, so it can run across the row")
         assert_match(%r{<c r="B3"[^>]*><is><t>Last Updated: \w{3} \d+(st|nd|rd|th), \d{4}</t>}, sheet, "the build stamps Last Updated under the title")
-        assert_match(%r{<c r="C3"[^>]*><is><t>DEFAULT RATE</t>}, sheet, "variable labels run on from C3")
-        assert_match(%r{<c r="D4"[^>]*><f>SUM\(F8:F998\)</f>}, sheet, "Total amount sums the Amount column")
+        assert_match(%r{<c r="D3"[^>]*><is><t>TOTAL AMOUNT</t>}, sheet, "the headline variable leads from D3, past the gutter")
+        assert_match(%r{<col width="2.57"[^>]*min="3" max="3"/>}, sheet, "column C is a narrow gutter")
+        assert_no_match(/<c r="C\d+"[^>]*><(is|f|v)>/, sheet, "the gutter holds no value")
+        assert_match(%r{<c r="D4"[^>]*><f>SUM\(G8:G998\)</f>}, sheet, "Total amount sums the Amount column")
+        assert_match(/<row r="4" ht="26"/, sheet, "the headline row is tall enough for it")
         assert_match(%r{<c r="B8"[^>]*><is><t>\[Example item one\]</t>}, sheet, "the table starts in column B")
         assert_no_match(/<c r="A\d+"/, sheet, "column A is a margin: no cell in it carries anything")
         assert_no_match(/<c r="[A-Z]+1"/, sheet, "row 1 is a margin")
@@ -81,8 +84,8 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
         path = MarketingKit::Office.new(spec).send(:draw, "sheet", payload, File.join(out, "choices.xlsx"))
         xml = Zip::File.open(path) { |z| z.entries.to_h { |e| [e.name, e.get_input_stream.read] } }
         sheet = xml.fetch("xl/worksheets/sheet1.xml")
-        assert_match(%r{<dataValidation sqref="C8:C998"[^>]*type="list"><formula1>"Alpha,Beta"</formula1>}, sheet)
-        assert_match(%r{<dataValidation sqref="G8:G998"[^>]*type="list"><formula1>"Active,Paused,Closed"</formula1>}, sheet, "Status keeps the sheet's statuses")
+        assert_match(%r{<dataValidation sqref="D8:D998"[^>]*type="list"><formula1>"Alpha,Beta"</formula1>}, sheet)
+        assert_match(%r{<dataValidation sqref="H8:H998"[^>]*type="list"><formula1>"Active,Paused,Closed"</formula1>}, sheet, "Status keeps the sheet's statuses")
         assert_includes xml.fetch("xl/styles.xml"), %(formatCode="&quot;$&quot;#,##0"/>)
       end
     end
