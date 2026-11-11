@@ -42,10 +42,11 @@ test("the Approve tap on a pending admin login grants the session, collected onc
   const pending = await api(page, `/api/v1/agent_login_requests/${slug}/collect`, proof);
   expect(pending.status).toBe(409);
 
+  // The tap is a plain form: it posts, the board comes back with the outcome as
+  // the flash, and the row is gone (task devops-admin-login-requests).
   await row.locator("[data-test='admin-login-approve']").click();
-  await expect(row.locator("[data-test='admin-login-result']")).toHaveText("Granted. The code is spent.");
-  await expect(row.locator("[data-test='admin-login-code']")).toHaveCount(0);
-  await expect(row.locator("button")).toHaveCount(0);
+  await expect(page.getByText("Admin session granted to mason")).toBeVisible();
+  await expect(page.locator(`#admin-login-${slug}`)).toHaveCount(0);
 
   const collected = await api(page, `/api/v1/agent_login_requests/${slug}/collect`, proof);
   expect(collected.status).toBe(200);
@@ -76,7 +77,8 @@ test("the code on the row grants with no tap, and Decline grants nothing", async
 
   const row = page.locator(`#admin-login-${declined.slug}`);
   await row.locator("[data-test='admin-login-refuse']").click();
-  await expect(row.locator("[data-test='admin-login-result']")).toHaveText("Declined. The code is spent.");
+  await expect(page.getByText("Admin login for mason declined.")).toBeVisible();
+  await expect(page.locator(`#admin-login-${declined.slug}`)).toHaveCount(0);
   const refused = await api(page, `/api/v1/agent_login_requests/${declined.slug}/collect`, declined.proof);
   expect(refused.status).toBe(410);
   expect(refused.body.error).toContain("declined by the operator");

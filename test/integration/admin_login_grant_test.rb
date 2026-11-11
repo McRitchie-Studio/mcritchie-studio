@@ -343,7 +343,8 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
       assert_select "#admin-login-#{login.slug} [data-test='admin-login-code']", text: code
       assert_select "#admin-login-#{login.slug} [data-test='admin-login-slug']", text: login.slug
       assert_select "#admin-login-#{login.slug} [data-test='admin-login-requested'] time"
-      assert_select "#admin-login-#{login.slug} [data-test='admin-login-approve'][data-url='#{approve_agent_login_path(login.slug)}']"
+      assert_select "#admin-login-#{login.slug} form[action='#{approve_agent_login_path(login.slug)}'][method='post'] [data-test='admin-login-approve']"
+      assert_select "#admin-login-#{login.slug} form[action='#{refuse_agent_login_path(login.slug)}'][method='post'] [data-test='admin-login-refuse']"
       assert_select "#admin-login-#{login.slug} [data-test='task-window-chip'][data-window-kind='admin_login']"
     end
 
@@ -371,4 +372,101 @@ class AdminLoginGrantTest < ActionDispatch::IntegrationTest
     assert_not_includes response.body.to_s, code
     assert_not_includes response.body.to_s, login.slug
   end
+
+  # ---- the board's taps are forms (task devops-admin-login-requests) ----------
+  #
+  # 2026-11-10: the operator's Approve on /devops/tasks ran in the browser and the
+  # server recorded no decision; the asking session polled 409 pending until the
+  # launch code granted it. The taps are now plain forms that carry their own
+  # authenticity token. These run with forgery protection ON, as production does.
+
+  def with_forgery_protection
+    was = ActionController::Base.allow_forgery_protection
+    ActionController::Base.allow_forgery_protection = true
+    yield
+  ensure
+    ActionController::Base.allow_forgery_protection = was
+  end
+
+  # The authenticity token the rendered form carries for `action`.
+  def form_token(action)
+    form = css_select("form[action='#{action}']").first
+    assert form, "no form posts to #{action}"
+    form.at_css("input[name='authenticity_token']")["value"]
+  end
+
+  test "the board's Approve form grants, lands back on the board, and the harness collects at once" do
+    login, key = posted
+    log_in_as(users(:alex))
+
+    with_forgery_protection do
+      get deployments_path
+      assert_response :ok
+      token = form_token(approve_agent_login_path(login.slug))
+
+      collect(login, key)
+      assert_response :conflict, "pending before the tap"
+
+      post approve_agent_login_path(login.slug), params: { authenticity_token: token },
+                                                 headers: { "Referer" => deployments_url }
+      assert_response :see_other
+      assert_redirected_to deployments_url
+      assert_equal "granted", login.reload.status
+      follow_redirect!
+      assert_match(/Admin session granted to mason/, response.body)
+      assert_select "#admin-login-#{login.slug}", 0
+    end
+
+    collect(login, key)
+    assert_response :ok
+    assert_equal login.agent_session, AgentSession.from_token(body.dig("data", "token"))
+  end
+
+  test "the board's Decline form refuses, and a tap without the form's token decides nothing" do
+    login, key = posted
+    log_in_as(users(:alex))
+
+    with_forgery_protection do
+      post approve_agent_login_path(login.slug)
+      assert_response :unprocessable_entity
+      assert_equal "pending", login.reload.status
+
+      get tasks_path
+      token = form_token(refuse_agent_login_path(login.slug))
+      post refuse_agent_login_path(login.slug), params: { authenticity_token: token }
+      assert_response :see_other
+      assert_equal "refused", login.reload.status
+    end
+
+    collect(login, key)
+    assert_response :gone
+  end
+
+  # ---- the navbar notice ---------------------------------------------------------
+
+  test "an admin sees the navbar notice on a non-board page while a request waits" do
+    log_in_as(users(:alex))
+    get triage_path
+    assert_select "[data-test='navbar-login-notice']", 0
+
+    login, = posted
+    get triage_path
+    assert_response :ok
+    assert_select "header [data-test='navbar-login-notice'][href='#{deployments_path(anchor: "admin-login-requests")}']" do
+      assert_select "[data-test='navbar-login-notice-count']", text: "1"
+    end
+    assert_not_includes response.body, login.display_code, "the notice carries no code"
+
+    login.refuse!(by: "alex@test.com", reason: "declined by the operator")
+    get triage_path
+    assert_select "[data-test='navbar-login-notice']", 0
+  end
+
+  test "no non-admin sees the navbar notice" do
+    posted
+    log_in_as(users(:viewer))
+    get root_path
+    assert_select "[data-test='navbar-login-notice']", 0
+  end
+
 end
