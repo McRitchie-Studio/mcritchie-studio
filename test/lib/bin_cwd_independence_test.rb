@@ -53,6 +53,6 @@ class BinCwdIndependenceTest < Minitest::Test
   # The fix, end to end: bin/devops-reconcile names bin/task by its own directory.
   def test_devops_reconcile_names_bin_task_by_its_own_directory
     source = File.read(File.join(ROOT, "bin", "devops-reconcile"))
-    assert_includes source, %(File.join(__dir__, "task"))
+    assert_includes source, %(BinHelpers.bin_for("DEVOPS_RECONCILE_TASK_BIN", "task", dir: __dir__))
   end
 end

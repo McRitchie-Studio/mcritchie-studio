@@ -306,7 +306,7 @@ if options[:heal]
   findings.select { |f| f.disposition == :heal }.each do |f|
     # The sibling by its own path, never "bin/task": a bare path resolves against the
     # caller's cwd (task release-preflight-hardening; test/lib/bin_cwd_independence_test.rb).
-    task_bin = File.join(__dir__, "task")
+    task_bin = BinHelpers.bin_for("DEVOPS_RECONCILE_TASK_BIN", "task", dir: __dir__)
     ok = sh(task_bin, "merged", f.slug, "accepted") &&
          sh(task_bin, "move", f.slug, "reviewed")
     # Read back rather than trusting the write — the whole point of the module.
