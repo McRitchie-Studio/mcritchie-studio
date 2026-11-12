@@ -16,6 +16,13 @@ own Google Drive. The hub keeps the token and a fetch log, never the records. On
 his own signed-in user can connect or fetch, and no agent chat context ever
 carries the data.
 
+**Who "the family" is, in hub terms.** The hub has no Family or Household
+model, and none is added. "The family" means three things here: Alex
+McRitchie's own signed-in `User`; the Google account that user connected
+(a `GoogleConnection` he owns, whose Drive is "the family's Drive"); and the
+child, who is **not a hub record at all**, only the patient a MyChart proxy
+grant names (a FHIR patient id held on the connection row, section 4).
+
 Sources are cited inline. **[EpicDoc]** means Epic's developer documentation
 at <https://fhir.epic.com/Documentation?docId=oauth2>, which serves the whole
 documentation set as one page; the quote was found in that text. Where a fact
@@ -49,7 +56,7 @@ The hub's registration:
 | Client profile | **Confidential, asymmetric** (a JWK Set URL the hub serves; the private key stays in the hub's credentials) | Refresh tokens need a confidential client [EpicDoc]; Epic recommends a JWK Set URL over a secret [EpicDoc] |
 | APIs | The read-only USCDI set in 2.3, nothing that writes | Auto-distribution requires read-only, patient-facing apps (2.5) |
 | FHIR version | R4 | Children's Colorado publishes an R4 endpoint (2.6) |
-| Redirect URI | `https://mcritchie.studio/integrations/mychart/callback` and its local twin | Same pattern as the Google and QuickBooks callbacks |
+| Redirect URI | `https://mcritchie.studio/admin/mychart/callback` and its local twin | Behind AdminWall, as the Egnyte callback is (section 5) |
 
 Once an app is marked "Ready for Production", "neither you nor Epic can make
 updates" except adding redirect URIs and changing the JWK Set URL; any other
@@ -134,7 +141,7 @@ specific form (a Certificate of Immunization or an official state registry
 printout) rather than any list of doses. Which form this preschool takes, and
 whether Colorado's immunization registry offers parents a printout, **was not
 researched here**. The first build files the FHIR-derived record; Alex
-McRitchie confirms with the school whether it suffices (decision 9.6).
+McRitchie confirms with the school whether it suffices (decision 6).
 
 ### 2.4 Proxy: choosing the child's record
 
@@ -198,7 +205,7 @@ So the expected wait is **about 12 hours after promotion, with no request to
 the hospital**, provided the hub uploads its public key for Children's
 Colorado under Epic's "Review & Manage Downloads" before that sync. If the
 organization has turned auto-download off, activation becomes a request to its
-IT team with no known timeline; that is the fallback in decision 9.4.
+IT team with no known timeline; that is the fallback in decision 4.
 
 ### 2.6 Children's Colorado's endpoint
 
@@ -225,33 +232,55 @@ The rule, in one line: **the hub holds a key, not the records.**
 - **Tokens.** One `MychartConnection` row per (organization, patient) pair: the
   refresh token encrypted at rest with Active Record Encryption (`encrypts
   :refresh_token`, masked in every inspect through `filter_attributes`), exactly
-  as `GoogleConnection` does. Without the app's encryption keys the sign-in
-  refuses before it asks Epic for anything; with them lost, the row is
-  unreadable and counts as not connected (the `GoogleConnection` header rule).
+  as `app/models/google_connection.rb`, `app/models/egnyte_connection.rb`,
+  `app/models/quickbooks_connection.rb` and `app/models/msgraph_connection.rb`
+  do. Without the app's encryption keys the sign-in refuses before it asks
+  Epic for anything; with them lost, the row is unreadable and counts as not
+  connected: `app/models/google_connection.rb#readable?` rescues
+  `ActiveRecord::Encryption::Errors::Base`, and the new model copies it.
   The row stores the organization key, the FHIR patient id, a display label,
   the granted scope and the token expiry. No access token is stored.
 - **Records.** Fetched on request, held in memory or a temp file for the
   length of the fetch, written to the family's Google Drive through the
-  `drive-filing` write path, then dropped. No table holds a FHIR resource, a
+  write path the `drive-filing` task lands (on the hub's Drive client,
+  `app/services/workspace/drive_client.rb#files_create`, or its successor), then
+  dropped. One master file per document; any second place it should appear
+  gets a Drive shortcut, not a copy (the one-master-and-shortcuts dream). No table holds a FHIR resource, a
   document, a diagnosis, a date of birth or a record number.
-- **The fetch log.** One `MychartFetch` row per request, like `GmailChange`:
-  who asked (user and agent), the connection, the resource types, the counts,
-  the Drive file ids written, dry run or applied, and an error. Never a
-  resource body, a vaccine name, a result or a file name that carries clinical
-  content.
+- **The fetch log.** One `MychartFetch` row per request, like `GmailChange`.
+  It holds exactly: who asked (the user id and the agent soul), when, the
+  connection id, the resource type, the count returned, the Drive file ids
+  written, dry run or applied, and a status (`ok`, `refused`, `failed`).
+  Never a clinical value: no resource body, vaccine name, result, date of
+  birth, record number, or a file name that carries clinical content.
 - **Who.** Only Alex McRitchie's own user can connect, fetch or see the card.
-  The household rule (`GoogleConnection.household`: every admin) is **too
-  wide** for a minor's health record, so the gate is an explicit owner list
-  (decision 9.2), checked in the controller, the CLI and the fetch service.
-  No client, no client app owner and no other admin reaches it, and a test
-  proves each refusal.
+  In the hub's access vocabulary, two walls stack. First, every route lives
+  under `/admin/mychart`, so AdminWall's default-deny (`app/controllers/application_controller.rb`,
+  walked by `test/integration/admin_wall_test.rb`) refuses every non-admin
+  by construction, and a future route cannot open by accident. Second, the
+  household rule (`GoogleConnection.household`: every admin) is **too wide**
+  for a minor's health record, so an explicit owner list (decision 2) is
+  checked in the controller, the CLI and the fetch service. Of the agent
+  session tiers in [the agent sessions design](agent-sessions-design.md),
+  only an `admin` session acting for that owner may fetch; a `studio`
+  session (one task) and a `client` session never can. No client, no client
+  app owner and no other admin reaches it, and a test proves each refusal.
+- **Credentials.** The client ID is public metadata and lives in config. The
+  client-assertion private key (or a client secret, if the registration only
+  offers one) is a 1Password item named per
+  [the credential inventory](../modules/credential-inventory.md) and read
+  through [credential access](../modules/credential-access.md): names in the
+  docs, never values. The public half is served at the JWK Set URL.
 - **No chat context.** MyChart data never enters an agent's memory bundle:
   nothing like `GoogleConnect::OwnerContext` reads it. An agent fetches only
   when asked, and its reply says what it filed and where, not what the record
   says.
-- **No errors that leak.** Exceptions from the FHIR client are logged with the
-  resource type and HTTP status only; the `ErrorLog` row never carries a
-  response body.
+- **Every failure is logged, and none leaks.** Every refused exchange,
+  refresh or read lands in `ErrorLog` through the engine's
+  `rescue_and_log(target:, parent:)` (studio-engine
+  `app/controllers/concerns/studio/error_handling.rb`), as the Egnyte
+  controller does, with the resource type and HTTP status only; the row never
+  carries a response body or a token.
 - **Disconnect.** Removing the connection deletes the row and its token, and
   the card says how to revoke the app at Epic as well (MyChart's linked-apps
   page). The fetch log stays, as `GmailChange` outlives a disconnect.
@@ -306,7 +335,8 @@ It follows the existing connectors, so a reviewer finds nothing new in kind:
 | `Mychart::Reader` (read-only FHIR searches for the one patient; no write method exists) | `Quickbooks::Reader`, `GoogleConnect::GmailReader` |
 | `Mychart::Filer` (render the record, hand it to the Drive writer, log a `MychartFetch`) | `GoogleConnect::GmailEditor` with `GmailChange` |
 | `bin/health fetch immunizations --patient LABEL --folder PATH` (dry run unless `--apply`) | `bin/mail organize`, `bin/drive upload` |
-| An owner-only card in `config/integrations.yml` (`dark: true`), never on the public page | The `dark` entries |
+| A connect-group entry in `config/integrations.yml` (the one place /integrations reads) with `dark: true` until Children's Colorado activates the app, and owner-only after that; never on the public page | The `dark` entries |
+| `Admin::MychartController`: show, connect, callback (state check, code exchange, store), disconnect; `before_action :require_admin` plus the owner gate | `app/controllers/admin/egnyte_controller.rb` |
 | JWK Set URL served by the hub, private key in credentials | New; a short route |
 
 ## 6. Build plan
@@ -330,9 +360,9 @@ request.
 | Risk | Answer |
 |------|--------|
 | The production registration freezes the API list | Prove every resource in sandbox (M1) before promotion; a missed API means a new app |
-| Children's Colorado has auto-download off | Fallback: request activation from its IT team (decision 9.4); manual MyChart stays available meanwhile |
+| Children's Colorado has auto-download off | Fallback: request activation from its IT team (decision 4); manual MyChart stays available meanwhile |
 | The patient chooses a short duration at sign-in | The card says "choose the longest option offered"; a lapsed grant is one reconnect |
-| The school wants an official form | Decision 9.6; the FHIR record may be a supplement, not the answer |
+| The school wants an official form | Decision 6; the FHIR record may be a supplement, not the answer |
 | A leak of the refresh token | Encrypted at rest, scoped read-only to one patient, revocable in MyChart; the private key for client assertion lives only in credentials |
 | Scope creep to clients | Out of scope by rule (4.1); a client offering needs its own legal review |
 
@@ -342,37 +372,18 @@ Writing anything to Epic (messages, appointments, forms); other family members'
 own records; any client-facing offering; keeping a copy of any record in the
 hub; summarizing records into agent memory.
 
-## 9. Decisions Alex McRitchie owes
+## 9. Decisions Alex McRitchie owes before any code (defaults stand on silence)
 
-Each has a default that stands on silence.
-
-1. **Go ahead with the SMART on FHIR route at all?** Default: **yes**, with the
-   build plan in section 6, starting with M1 in the sandbox.
-2. **Who may connect and fetch.** Default: **only Alex McRitchie's own user**,
-   named in an explicit owner list in config, not every admin. A spouse or
-   co-parent would be a second named user with their own MyChart sign-in, added
-   only on his word.
-3. **Register the app under which name and Epic account?** Default: **"McRitchie
-   Studio Family Records"** under a fhir.epic.com account owned by
-   `team@mcritchie.studio`, with the login in 1Password (the apps-send-from-team
-   rule).
-4. **If auto-distribution does not reach Children's Colorado within 48 hours of
-   promotion.** Default: **email Children's Colorado's MyChart support asking
-   them to activate the client ID**, drafted by an agent, sent by Alex
-   McRitchie.
-5. **Where records land in Drive.** Default:
-   **`Family/<child's first name>/Medical/<kind>/`** in the family Drive
-   account the `drive-filing` task connects, one file per fetch named
-   `<kind> <YYYY-MM-DD>.pdf`, JSON beside it.
-6. **What to send the preschool.** Default: **file the FHIR-derived immunization
-   PDF and ask the school whether it suffices**; if it needs an official
-   Colorado certificate, request that from the pediatrician through MyChart
-   messages, and the hub files the reply once it arrives.
-7. **Access duration to choose at sign-in.** Default: **the longest option
-   Children's Colorado offers**, so the connection rarely asks again.
-8. **Resources beyond immunizations.** Default: **ask for all eight read scopes
-   at registration** (cheap now, impossible after promotion) **but build only
-   the immunization fetch** until a second real request arrives.
+| # | Decision | Default |
+|---|----------|---------|
+| 1 | Take the SMART on FHIR route at all? | **Yes**, with the build plan in section 6, starting with M1 in Epic's sandbox |
+| 2 | Who may connect and fetch | **Only Alex McRitchie's own user**, named in an explicit owner list in config, not every admin. A co-parent would be a second named user with their own MyChart sign-in, added only on his word |
+| 3 | The app's name and the Epic developer account | **"McRitchie Studio Family Records"**, under a fhir.epic.com account owned by `team@mcritchie.studio`, its login in 1Password |
+| 4 | If auto-distribution has not reached Children's Colorado 48 hours after promotion | **An agent drafts a request to Children's Colorado's MyChart support to activate the client ID; Alex McRitchie sends it** |
+| 5 | Where records land in Drive | **`Family/<child's first name>/Medical/<kind>/`** in the Drive of his own `GoogleConnection`, one file per fetch named `<kind> <YYYY-MM-DD>.pdf`, the FHIR JSON beside it |
+| 6 | What to give the preschool | **File the FHIR-derived immunization PDF and ask the school whether it suffices**; if it needs an official Colorado certificate, request that from the pediatrician through MyChart messages and file the reply |
+| 7 | Access duration to pick at the MyChart sign-in | **The longest option Children's Colorado offers**, so the connection rarely asks again |
+| 8 | Resources beyond immunizations | **Ask for all eight read scopes at registration** (cheap now, impossible after promotion), **but build only the immunization fetch** until a second real request arrives |
 
 ## 10. Sources
 
