@@ -9,7 +9,7 @@ child who is a patient at Children's Hospital Colorado ("Children's Colorado"),
 an Epic organization. The hub registers its own patient-facing app with Epic and
 connects to his MyChart through **SMART on FHIR standalone patient launch**, the
 same "sign in once, the hub keeps an encrypted refresh token" shape as
-`GoogleConnection` and `QuickbooksConnection`. When he asks ("file her
+`GoogleConnection` and `QuickbooksConnection`. When he asks ("file the
 immunization record for the preschool"), an agent reads the child's record
 through Epic's read-only FHIR R4 API and files the document into the family's
 own Google Drive. The hub keeps the token and a fetch log, never the records. Only
@@ -249,10 +249,13 @@ The rule, in one line: **the hub holds a key, not the records.**
   document, a diagnosis, a date of birth or a record number.
 - **The fetch log.** One `MychartFetch` row per request, like `GmailChange`.
   It holds exactly: who asked (the user id and the agent soul), when, the
-  connection id, the resource type, the count returned, the Drive file ids
+  organization key and the connection's random hex slug as plain strings
+  (not a foreign key, so the log outlives a disconnect, as `GmailChange`
+  keeps `mailbox` as a string), the resource type, the count returned, the Drive file ids
   written, dry run or applied, and a status (`ok`, `refused`, `failed`).
   Never a clinical value: no resource body, vaccine name, result, date of
-  birth, record number, or a file name that carries clinical content.
+  birth, record number, the patient's name or the connection's display
+  label, or a file name that carries clinical content.
 - **Who.** Only Alex McRitchie's own user can connect, fetch or see the card.
   In the hub's access vocabulary, two walls stack. First, every route lives
   under `/admin/mychart`, so AdminWall's default-deny (`app/controllers/application_controller.rb`,
@@ -300,9 +303,10 @@ Stated carefully, and not legal advice:
   the page refused automated fetches, so this rests on search summaries of
   it). An app the guardian chose and that works for the family, not for the
   hospital, is not the hospital's business associate.
-- A parent is generally a minor child's personal representative under HIPAA;
-  a precise citation was not confirmed in this pass, and state law and the
-  child's age can narrow it (2.4).
+- A parent is generally a minor child's personal representative under HIPAA
+  (45 CFR 164.502(g)(3)), with exceptions where state law lets the minor
+  consent to the care or the parent agreed to confidentiality; the
+  organization's own age rule narrows it further (2.4).
 - So **HIPAA does not regulate the hub's handling of this data**, as far as
   this research shows. That does not make the data less sensitive. The hub
   holds itself to the rules in section 4 because it is a child's health
@@ -334,7 +338,7 @@ It follows the existing connectors, so a reviewer finds nothing new in kind:
 | `Mychart::OAuthClient` (discovery, PKCE, JWT client assertion, refresh) | `GoogleConnect::OAuthClient`, `Quickbooks::OAuthClient` |
 | `Mychart::Reader` (read-only FHIR searches for the one patient; no write method exists) | `Quickbooks::Reader`, `GoogleConnect::GmailReader` |
 | `Mychart::Filer` (render the record, hand it to the Drive writer, log a `MychartFetch`) | `GoogleConnect::GmailEditor` with `GmailChange` |
-| `bin/health fetch immunizations --patient LABEL --folder PATH` (dry run unless `--apply`) | `bin/mail organize`, `bin/drive upload` |
+| `bin/health fetch immunizations --patient LABEL --folder PATH` (dry run unless `--apply`) | `bin/mail organize` |
 | A connect-group entry in `config/integrations.yml` (the one place /integrations reads) with `dark: true` until Children's Colorado activates the app, and owner-only after that; never on the public page | The `dark` entries |
 | `Admin::MychartController`: show, connect, callback (state check, code exchange, store), disconnect; `before_action :require_admin` plus the owner gate | `app/controllers/admin/egnyte_controller.rb` |
 | JWK Set URL served by the hub, private key in credentials | New; a short route |
@@ -383,7 +387,7 @@ hub; summarizing records into agent memory.
 | 5 | Where records land in Drive | **`Family/<child's first name>/Medical/<kind>/`** in the Drive of his own `GoogleConnection`, one file per fetch named `<kind> <YYYY-MM-DD>.pdf`, the FHIR JSON beside it |
 | 6 | What to give the preschool | **File the FHIR-derived immunization PDF and ask the school whether it suffices**; if it needs an official Colorado certificate, request that from the pediatrician through MyChart messages and file the reply |
 | 7 | Access duration to pick at the MyChart sign-in | **The longest option Children's Colorado offers**, so the connection rarely asks again |
-| 8 | Resources beyond immunizations | **Ask for all eight read scopes at registration** (cheap now, impossible after promotion), **but build only the immunization fetch** until a second real request arrives |
+| 8 | Resources beyond immunizations | **Ask for all nine resource read scopes at registration** (cheap now, impossible after promotion), **but build only the immunization fetch** until a second real request arrives |
 
 ## 10. Sources
 
