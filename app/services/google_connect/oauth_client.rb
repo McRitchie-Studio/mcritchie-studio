@@ -26,7 +26,8 @@ module GoogleConnect
   # WHAT IT ASKS FOR: who the account is (openid, email) and one scope per
   # ability (GoogleConnection::ABILITIES): read-only calendar events and Gmail,
   # and Drive's drive.file, which reaches only the files the person picks (or
-  # the app creates). No reader holds a write path. The one opt-in write
+  # the app creates). No reader holds a write path; GoogleConnect::DriveFiler
+  # creates folders and files of its own under drive.file (/tasks/drive-filing). The one opt-in write
   # ability, gmail_organize (GoogleConnection::WRITE_ABILITIES), asks for
   # gmail.modify and gmail.settings.basic on its own Connect, and only
   # GoogleConnect::GmailEditor uses it (/tasks/gmail-organize-ability).

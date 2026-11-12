@@ -151,6 +151,9 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
     assert_includes drive, "we read only those files"
     assert_includes drive, "Google may keep listing the older permission", "true for a reconnected legacy token too"
     assert_includes drive, "older read-only permission, which covers every file in your Drive, until you reconnect"
+    # drive-filing: the same drive.file grant now creates folders and files, on request.
+    assert_includes drive, "your agents may create folders there and save documents into them"
+    assert_includes drive, "We never change, share or delete a file"
     refute_includes css_select("[data-test='google-user-data']").text.squish, "nothing we ask Google for can send, change or delete"
   end
 

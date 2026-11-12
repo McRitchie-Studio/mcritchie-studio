@@ -14,8 +14,8 @@ class IntegrationTest < ActiveSupport::TestCase
 
   test "[unit] every connect entry reads Free; a tile's line is its tagline, else its blurb" do
     Integration.groups.find { _1.key == "connect" }.entries.each { assert_equal "Free", _1.price_label, _1.key }
-    assert_equal "Your agents answer from the Drive files you pick. Read only.", Integration.find(:google_drive).line
-    assert_match(/Read only/, Integration.find(:google_drive).blurb, "the blurb keeps the full sentence")
+    assert_equal "Your agents answer from the Drive files you pick, and file documents for you.", Integration.find(:google_drive).line
+    assert_match(/never change, share or delete a file/, Integration.find(:google_drive).blurb, "the blurb keeps the full sentence")
     builds = Integration.find(:extra_builds)
     assert_nil builds.tagline
     assert_equal builds.blurb, builds.line
@@ -118,7 +118,7 @@ class IntegrationTest < ActiveSupport::TestCase
     refute google.method_soon?("admin_grant")
 
     # Gmail also lists its opt-in Organize (/tasks/gmail-organize-ability).
-    { google_calendar: %w[read_calendar], gmail: %w[read_email organize_email], google_drive: %w[read_drive] }.each do |key, abilities|
+    { google_calendar: %w[read_calendar], gmail: %w[read_email organize_email], google_drive: %w[read_drive file_drive] }.each do |key, abilities|
       entry = Integration.find(key)
       assert entry.live?, key
       assert_equal %w[sign_in], entry.connects, key

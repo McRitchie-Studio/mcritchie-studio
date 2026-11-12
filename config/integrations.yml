@@ -135,13 +135,15 @@ groups:
       - key: google_drive
         name: Google Drive
         icon: "📁"
-        tagline: "Your agents answer from the Drive files you pick. Read only."
-        blurb: Sign in with Google, then pick the Drive files your agents may read; they answer from those files and no others. Read only, so they cannot change, share or delete a file.
+        tagline: "Your agents answer from the Drive files you pick, and file documents for you."
+        blurb: Sign in with Google, then pick the Drive files your agents may read; they answer from those files and no others. On your request they also create folders and file documents there, and see only what they create. They never change, share or delete a file.
         status: live
         tier: pro
         connects: [sign_in]
         abilities:
           - { key: read_drive, name: Read the Drive files you pick to answer from them, via: [sign_in] }
+          # GoogleConnect::DriveFiler, under the same drive.file scope (/tasks/drive-filing).
+          - { key: file_drive, name: "Create folders and file documents in your Drive, on your request", via: [sign_in] }
 
       # One person's own Fathom sign-in (FathomConnection). Live on our own hub
       # (/admin/fathom); an admin sees the card's Connect or Disconnect
