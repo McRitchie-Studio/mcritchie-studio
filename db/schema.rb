@@ -1558,7 +1558,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_12_090000) do
     t.string "source"
     t.datetime "updated_at", null: false
     t.index ["mailbox", "created_at"], name: "index_drive_filings_on_mailbox_and_created_at"
-    t.check_constraint "action::text = ANY (ARRAY['mkdir'::character varying, 'upload'::character varying]::text[])", name: "drive_filings_action_known"
+    t.check_constraint "action::text = ANY (ARRAY['mkdir'::character varying::text, 'upload'::character varying::text])", name: "drive_filings_action_known"
   end
 
   create_table "egnyte_connections", force: :cascade do |t|
