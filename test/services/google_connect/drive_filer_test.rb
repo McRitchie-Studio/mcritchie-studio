@@ -15,7 +15,7 @@ class GoogleConnect::DriveFilerTest < ActiveSupport::TestCase
   MARK = { "mcritchieFiler" => "1" }.freeze
 
   setup do
-    @connection = store_google(email: "owner@example.com", scope: "openid email #{DRIVE} #{GMAIL}", abilities: %i[drive gmail], user: users(:viewer))
+    @connection = store_google(email: "owner@example.com", scope: "openid email #{DRIVE} #{GMAIL}", abilities: %i[drive gmail], user: users(:alex))
   end
 
   teardown { GoogleConnect::DriveFiler.http = nil }
@@ -80,6 +80,12 @@ class GoogleConnect::DriveFilerTest < ActiveSupport::TestCase
     filer_with(drive).mkdir("Bob's Records", apply: true)
     assert_includes drive.queries.first, "name = 'Bob\\'s Records'"
     assert_equal "Bob's Records", drive.folders.sole["name"]
+  end
+
+  test "[unit] a backslash is escaped before the quote, so it cannot end the string" do
+    drive = DriveFilerFake.new
+    filer_with(drive).mkdir("a\\'b", apply: true)
+    assert_includes drive.queries.first, "name = 'a\\\\\\'b'"
   end
 
   test "[unit] a blank, too deep or dotted path is refused before any call" do
@@ -206,7 +212,7 @@ class GoogleConnect::DriveFilerTest < ActiveSupport::TestCase
   end
 
   test "[unit] file_attachment is refused without the Gmail grant" do
-    drive_only = store_google(email: "driveonly@example.com", scope: "openid email #{DRIVE}", abilities: %i[drive], user: users(:viewer))
+    drive_only = store_google(email: "driveonly@example.com", scope: "openid email #{DRIVE}", abilities: %i[drive], user: users(:alex))
     drive = DriveFilerFake.new
     error = assert_raises(GoogleConnect::DriveFiler::Error) do
       filer_with(drive, connection: drive_only).file_attachment(message_id: "msg-1", folder: "Records", apply: true)
@@ -228,6 +234,13 @@ class GoogleConnect::DriveFilerTest < ActiveSupport::TestCase
     assert_match(/reconnect Drive/, error.message)
 
     assert_raises(GoogleConnect::DriveFiler::Error) { GoogleConnect::DriveFiler.new(@connection, requested_by: " ") }
+  end
+
+  test "[unit] a Drive no hub agent reads (a plain user's own row) is refused before any call" do
+    own = store_google(email: "viewer@example.com", scope: "openid email #{DRIVE} #{GMAIL}", abilities: %i[drive gmail], user: users(:viewer))
+    assert_equal :owner, own.reader
+    error = assert_raises(GoogleConnect::DriveFiler::Error) { GoogleConnect::DriveFiler.new(own, requested_by: "pokemon") }
+    assert_match(/not read by the hub's agents \(only you can see this\)/, error.message)
   end
 
   test "[unit] no token in an error, the log or the answer" do

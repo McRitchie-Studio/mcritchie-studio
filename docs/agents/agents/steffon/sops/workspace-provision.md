@@ -386,7 +386,9 @@ the mark, so it reuses only its own folders. A file whose md5 already sits in th
 folder is skipped. Dry unless `--apply`; each call logs a `DriveFiling` row
 (account, folder path, file name, size, md5, Drive id, never the bytes). A local
 file's bytes ride the `heroku run` STDIN as base64 with their md5, which the hub
-checks; the cap is 25 MB. It never deletes, trashes, shares or changes a file.
+checks; the cap is 25 MB. It never deletes, trashes, shares or changes a file. It files only
+into the household's Drive (an admin's row, `GoogleConnection#agents_file?`); a row
+whose card says no hub agent reads it is refused.
 
 Every sign-in also asks for `openid` and `email`, with
 `include_granted_scopes=true`, so connecting one ability adds it to what the

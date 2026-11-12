@@ -33,8 +33,8 @@
 # (GoogleConnect::DriveFiler through bin/drive, on request: make a folder path,
 # upload a document, file a Gmail attachment). Everything it makes carries an
 # appProperty mark and every lookup asks for it, so it reuses only its own
-# folders; it never changes, shares or deletes a file, and each write logs a
-# DriveFiling. No new scope: a connection made before drive-filing writes too. Each choice is a
+# folders; it never changes, shares or deletes a file, it writes only the
+# household's row (#agents_file?), and each write logs a DriveFiling. No new scope: a connection made before drive-filing writes too. Each choice is a
 # GoogleDrivePick on the connection (#drive_picks). A row connected before the
 # change still holds drive.readonly (LEGACY_SCOPES): it keeps reading as it did,
 # and its card says to reconnect to choose files. Reconnecting Drive swaps the
@@ -257,6 +257,13 @@ class GoogleConnection < ApplicationRecord
   DRIVE_FILING = "On your request, agents may also create folders in your Drive and file documents there. " \
                  "They see only what they create, and never change, share or delete a file.".freeze
   def drive_audience = DRIVE_AUDIENCE[reader]
+
+  # May the hub's agents file documents into this Drive (GoogleConnect::DriveFiler,
+  # bin/drive)? Only on the household's row (:agents), the one row hub souls
+  # read. A row only its owner sees (:owner), or one only an app's own agent
+  # reads (:app_agent), is never written by a hub soul, and its card does not
+  # show DRIVE_FILING.
+  def agents_file? = reader == :agents
 
   # Can the stored refresh token be decrypted with this app's keys?
   def readable?

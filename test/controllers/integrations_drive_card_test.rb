@@ -6,7 +6,7 @@ require "support/google_connect_fakes"
 # in data attributes, no key or token in the HTML), or says picking isn't set up
 # when the server has no Picker key; it says a folder must be shared instead. A
 # legacy drive.readonly connection offers no Picker, only the reconnect hint.
-# drive-filing: a drive.file connection also says agents may file documents there.
+# drive-filing: the household's drive.file connection also says agents may file documents there.
 class IntegrationsDriveCardTest < ActionDispatch::IntegrationTest
   include GoogleConnectFakes
 
@@ -36,10 +36,8 @@ class IntegrationsDriveCardTest < ActionDispatch::IntegrationTest
         assert_select "#{CARD} [data-test='google-who-reads'][data-reader='owner']", text: "Only you can see this"
         assert_select "#{CARD} [data-test='drive-pick-count']", text: /1 file picked:/
         assert_select "#{CARD} [data-test='drive-folder-hint']", text: /not what is inside a folder\.\z/
-        # drive-filing: the same drive.file grant files documents, on request, and says so.
-        assert_select "#{CARD} [data-test='drive-filing-allows']",
-                      text: "On your request, agents may also create folders in your Drive and file documents there. " \
-                            "They see only what they create, and never change, share or delete a file."
+        # drive-filing: no hub agent files into a row only its owner sees, so no filing line.
+        assert_select "#{CARD} [data-test='drive-filing-allows']", 0
         refute_match(/shared with your agents/, css_select(CARD).text)
         assert_select "#{CARD} [data-test='drive-legacy']", 0
         refute_includes response.body, "test-picker-key", "the key comes from the token endpoint only"
@@ -87,6 +85,10 @@ class IntegrationsDriveCardTest < ActionDispatch::IntegrationTest
         assert_select "#{CARD} [data-test='google-who-reads'][data-reader='agents']"
         assert_select "#{CARD} [data-test='drive-pick-count']", text: /1 file shared with your agents:/
         assert_select "#{CARD} [data-test='drive-folder-hint']", text: /To give your agents a whole folder, share it with your agent's email address/
+        # drive-filing: the household's Drive is the one hub agents file into, and the card says so.
+        assert_select "#{CARD} [data-test='drive-filing-allows']",
+                      text: "On your request, agents may also create folders in your Drive and file documents there. " \
+                            "They see only what they create, and never change, share or delete a file."
       end
     end
   end

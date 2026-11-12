@@ -60,11 +60,16 @@ module GoogleConnect
     def initialize(connection, requested_by:, oauth: OAuthClient)
       super(connection, oauth:)
       @requested_by = requested_by.to_s.presence || raise(Error, "a Drive write needs requested_by")
-      return if connection.drive_picked?
+      unless connection.drive_picked?
+        raise Error, "#{connection.email} has not connected Google Drive (/integrations)." unless connection.can?(:drive)
 
-      raise Error, "#{connection.email} has not connected Google Drive (/integrations)." unless connection.can?(:drive)
+        raise Error, "#{connection.email} holds Google's older Drive permission; reconnect Drive at /integrations to file documents."
+      end
+      # The consent rule (GoogleConnection#who_reads): hub agents file only into
+      # the household's Drive, never a row whose card says no agent reads it.
+      return if connection.agents_file?
 
-      raise Error, "#{connection.email} holds Google's older Drive permission; reconnect Drive at /integrations to file documents."
+      raise Error, "#{connection.email} is not read by the hub's agents (#{connection.who_reads.downcase}); nothing is filed there."
     end
 
     # Makes the folder path, reusing each folder the hub already made there.

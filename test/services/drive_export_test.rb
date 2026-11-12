@@ -22,7 +22,7 @@ class DriveExportTest < ActiveSupport::TestCase
   def oauth = Struct.new(:token) { def access_token(_) = token }.new(TOKEN)
 
   def connect(email = "owner@example.com", scope: DRIVE, abilities: %i[drive])
-    store_google(email:, scope: "openid email #{scope}", abilities:, user: users(:viewer))
+    store_google(email:, scope: "openid email #{scope}", abilities:, user: users(:alex))
   end
 
   def drive(verb, **over)
@@ -75,5 +75,17 @@ class DriveExportTest < ActiveSupport::TestCase
     assert_match(/md5 mismatch/, upload(apply: true, md5: "0" * 32)["error"])
     assert_match(/invalid base64/, upload(apply: true, content_base64: "not base64!")["error"])
     assert_empty @drive.calls
+  end
+
+  test "[integration] an unexpected fault lands in ErrorLog and answers an error" do
+    connect
+    @drive.define_singleton_method(:call) { |*| [ 200, "not json", {} ] }
+
+    assert_difference -> { ErrorLog.count }, 1 do
+      answer = drive("mkdir", folder: "Records", apply: true)
+      assert_match(/\AJSON::ParserError/, answer["error"])
+      refute_includes answer.to_json, TOKEN
+    end
+    refute_includes ErrorLog.last.message.to_s, TOKEN
   end
 end

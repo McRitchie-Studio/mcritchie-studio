@@ -32,6 +32,12 @@ module DriveExport
     end
   rescue GoogleConnect::DriveFiler::Error, GoogleConnect::OAuthClient::Error, ArgumentError => e
     { "error" => e.message }
+  rescue StandardError => e
+    # Anything else is a fault, not a refusal: it lands in ErrorLog (the
+    # backend discipline's rule one) before the CLI hears it. Refusals and
+    # Google's own answers above are logged as DriveFiling rows instead.
+    ErrorLog.capture!(e)
+    { "error" => "#{e.class}: #{e.message}" }
   end
 
   def filed(result) = { "filed" => result.to_h.transform_keys(&:to_s) }
