@@ -9,7 +9,8 @@ module GoogleConnect
   #                   the whole Drive, newest first, as it always read. #files
   #                   answers #newest for it until it reconnects.
   #
-  # Every call is a GET (Reader): nothing here can change a file.
+  # Every call is a GET (Reader): nothing here can change a file. Filing new
+  # documents is GoogleConnect::DriveFiler's (/tasks/drive-filing).
   class DriveReader < Reader
     LABEL = "Google Drive".freeze
     FILES_URL = "https://www.googleapis.com/drive/v3/files".freeze

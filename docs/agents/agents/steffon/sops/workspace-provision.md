@@ -374,6 +374,22 @@ never part of Connect Google; the person turns it on from the Gmail card's
 |---------|--------|--------------|
 | `gmail_organize` | `gmail.modify` + `gmail.settings.basic` (both must be granted) | `GoogleConnect::GmailEditor` through `bin/mail organize\|filter\|unsubscribe\|labels\|filters --mailbox ADDR`: mark read or unread, archive, inbox, spam, not spam, label, unlabel, move, filters, and one-click unsubscribe (RFC 8058 HTTPS POST to one-click senders only, never with a Google token; web-page, email-only and none senders are reported, not touched). Dry unless `--apply`; each run logs a `GmailChange` row. It never sends (Google's grant would allow it; `test/lib/no_gmail_send_test.rb` keeps the source from it), never trashes, never deletes. |
 
+Drive filing needs no write ability of its own (`/tasks/drive-filing`). The `drive`
+ability's `drive.file` scope already lets the app create folders and files and see
+only those it made, so a Drive connection made before this ships files documents
+too. `GoogleConnect::DriveFiler` does it through
+`bin/drive mkdir|upload|file-attachment|ls --mailbox ADDR`: make a folder path
+(`Insurance/Life Insurance`), upload a local file into it, or file a Gmail
+attachment from the same account (needs its Gmail read). Everything it makes
+carries an `appProperties` mark (`mcritchieFiler=1`), and every lookup asks for
+the mark, so it reuses only its own folders. A file whose md5 already sits in the
+folder is skipped. Dry unless `--apply`; each call logs a `DriveFiling` row
+(account, folder path, file name, size, md5, Drive id, never the bytes). A local
+file's bytes ride the `heroku run` STDIN as base64 with their md5, which the hub
+checks; the cap is 25 MB. It never deletes, trashes, shares or changes a file. It files only
+into the household's Drive (an admin's row, `GoogleConnection#agents_file?`); a row
+whose card says no hub agent reads it is refused.
+
 Every sign-in also asks for `openid` and `email`, with
 `include_granted_scopes=true`, so connecting one ability adds it to what the
 account already granted. One `GoogleConnection` row per Google account holds the

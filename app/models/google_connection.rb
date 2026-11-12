@@ -25,9 +25,16 @@
 # leave it. Each page says who reads a connection beside it (#who_reads). An account another user already connected is refused
 # (TakenByAnotherUser), never taken over.
 #
-# DRIVE IS FILES YOU PICK (/tasks/drive-files-you-pick). The drive ability
-# asks for drive.file, under which Google lets the app open only the files the
-# person chose in the Google Picker (or files the app made). Each choice is a
+# DRIVE IS FILES YOU PICK, AND FILES THE HUB MAKES (/tasks/drive-files-you-pick,
+# /tasks/drive-filing). The drive ability asks for drive.file, under which
+# Google lets the app open only the files the person chose in the Google
+# Picker, and the folders and files the app itself created. The hub READS the
+# picked files (DriveReader) and WRITES only new folders and files of its own
+# (GoogleConnect::DriveFiler through bin/drive, on request: make a folder path,
+# upload a document, file a Gmail attachment). Everything it makes carries an
+# appProperty mark and every lookup asks for it, so it reuses only its own
+# folders; it never changes, shares or deletes a file, it writes only the
+# household's row (#agents_file?), and each write logs a DriveFiling. No new scope: a connection made before drive-filing writes too. Each choice is a
 # GoogleDrivePick on the connection (#drive_picks). A row connected before the
 # change still holds drive.readonly (LEGACY_SCOPES): it keeps reading as it did,
 # and its card says to reconnect to choose files. Reconnecting Drive swaps the
@@ -52,7 +59,8 @@ class GoogleConnection < ApplicationRecord
   IDENTITY_SCOPES = %w[openid email].freeze
   # Each ability and the one scope a sign-in asks for to unlock it. Calendar
   # and Gmail are read-only scopes. Drive's is drive.file: the hub reads only
-  # the files the person picks (#drive_picks), and writes nothing.
+  # the files the person picks (#drive_picks), and writes only new folders and
+  # files of its own, on request (GoogleConnect::DriveFiler, /tasks/drive-filing).
   ABILITIES = {
     calendar: "https://www.googleapis.com/auth/calendar.events.readonly",
     gmail: "https://www.googleapis.com/auth/gmail.readonly",
@@ -244,7 +252,18 @@ class GoogleConnection < ApplicationRecord
   # Who a picked Drive file is shared with, in the Drive card's words, from the
   # same rule as #who_reads; nil when no agent reads this connection.
   DRIVE_AUDIENCE = { agents: "your agents", app_agent: "your app's agent" }.freeze
+  # What a drive.file connection lets agents write, on the Drive card
+  # (integrations/_drive_picks): GoogleConnect::DriveFiler's rules, in plain words.
+  DRIVE_FILING = "On your request, agents may also create folders in your Drive and file documents there. " \
+                 "They see only what they create, and never change, share or delete a file.".freeze
   def drive_audience = DRIVE_AUDIENCE[reader]
+
+  # May the hub's agents file documents into this Drive (GoogleConnect::DriveFiler,
+  # bin/drive)? Only on the household's row (:agents), the one row hub souls
+  # read. A row only its owner sees (:owner), or one only an app's own agent
+  # reads (:app_agent), is never written by a hub soul, and its card does not
+  # show DRIVE_FILING.
+  def agents_file? = reader == :agents
 
   # Can the stored refresh token be decrypted with this app's keys?
   def readable?

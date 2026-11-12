@@ -41,7 +41,7 @@ class IntegrationConnectionsComponentTest < ActionDispatch::IntegrationTest
     assert_empty google.css("[data-test='ability-via']"), "one way, so no 'via' line"
 
     # Gmail's card also lists its opt-in Organize (/tasks/gmail-organize-ability).
-    { "google_calendar" => %w[read_calendar], "gmail" => %w[read_email organize_email], "google_drive" => %w[read_drive] }.each do |key, abilities|
+    { "google_calendar" => %w[read_calendar], "gmail" => %w[read_email organize_email], "google_drive" => %w[read_drive file_drive] }.each do |key, abilities|
       entry = card(key)
       assert_equal "live", entry["data-status"], key
       method = entry.at_css("[data-test='entry-method']")

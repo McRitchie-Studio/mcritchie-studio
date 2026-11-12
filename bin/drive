@@ -1,0 +1,42 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# bin/drive — THE way an agent files a document into a connected account's
+# Google Drive (/tasks/drive-filing). One `heroku run` per call; every verb is
+# a dry run unless --apply. The logic is in bin/lib/drive_cli.rb (local half)
+# and app/services/drive_export.rb + GoogleConnect::DriveFiler (the dyno half).
+#
+#   bin/drive mkdir 'Insurance/Life Insurance' --mailbox ADDR [--apply]
+#   bin/drive upload ./policy.pdf --folder 'Insurance/Life Insurance' --mailbox ADDR [--as NAME] [--apply]
+#   bin/drive file-attachment MESSAGE_ID --folder PATH --mailbox ADDR [--name ATTACHMENT] [--as NAME] [--apply]
+#   bin/drive ls [PATH] --mailbox ADDR
+#
+# Exit: 0 ok · 1 the run failed · 2 usage.
+
+require "optparse"
+require_relative "lib/drive_cli"
+
+verb = ARGV.shift
+if verb.nil? || %w[-h --help help].include?(verb)
+  puts DriveCli::USAGE
+  exit(verb.nil? ? 2 : 0)
+end
+
+opts = DriveCli.default_options
+OptionParser.new do |o|
+  o.banner = DriveCli::USAGE
+  o.on("--mailbox ADDR", "the connected Google account (required)") { |v| opts[:mailbox] = v }
+  o.on("--folder PATH", "upload/file-attachment: the Drive folder path, made when missing") { |v| opts[:folder] = v }
+  o.on("--name ATTACHMENT", "file-attachment: which attachment, by its file name") { |v| opts[:name] = v }
+  o.on("--as NAME", "upload/file-attachment: the file's name in Drive") { |v| opts[:as] = v }
+  o.on("--apply", "make the change (without it, a dry run)") { opts[:apply] = true }
+  o.on("--by NAME", "who asked, for the log") { |v| opts[:by] = v }
+  o.on("--app NAME", "Heroku app (default #{DriveCli::DEFAULT_APP})") { |v| opts[:app] = v }
+  o.on("--local", "run bin/rails runner in this checkout instead of heroku") { opts[:local] = true }
+  o.on("-h", "--help") do
+    puts o
+    exit 0
+  end
+end.parse!(ARGV)
+
+exit DriveCli.run(verb, ARGV, opts)
