@@ -214,7 +214,7 @@ module GoogleConnect
 
     def create_folder(name, parent)
       body = { name:, mimeType: FOLDER_TYPE, parents: [ parent ], appProperties: MARK }.to_json
-      call_json(:post, "#{FILES_URL}?#{URI.encode_www_form(fields: FIELDS)}", body, "Content-Type" => "application/json")
+      call_json(:post, "#{FILES_URL}?#{URI.encode_www_form(fields: FIELDS)}", body, { "Content-Type" => "application/json" })
     end
 
     def send_file(name, content, folder_id)
@@ -229,19 +229,19 @@ module GoogleConnect
       body << "--#{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n#{metadata.to_json}\r\n".b
       body << "--#{boundary}\r\nContent-Type: #{type}\r\n\r\n".b << content << "\r\n--#{boundary}--".b
       call_json(:post, "#{UPLOAD_URL}?#{URI.encode_www_form(uploadType: 'multipart', fields: FIELDS)}", body,
-                "Content-Type" => "multipart/related; boundary=#{boundary}")
+                { "Content-Type" => "multipart/related; boundary=#{boundary}" })
     end
 
     # Opens a resumable session, then sends the bytes to it in one PUT.
     def resumable(metadata, content, type)
       status, text, headers = call(:post, "#{UPLOAD_URL}?#{URI.encode_www_form(uploadType: 'resumable', fields: FIELDS)}", metadata.to_json,
-                                   "Content-Type" => "application/json; charset=UTF-8", "X-Upload-Content-Type" => type,
-                                   "X-Upload-Content-Length" => content.bytesize.to_s)
+                                   { "Content-Type" => "application/json; charset=UTF-8", "X-Upload-Content-Type" => type,
+                                     "X-Upload-Content-Length" => content.bytesize.to_s })
       raise_unless_ok!(status, text)
       session = headers.to_h.transform_keys { _1.to_s.downcase }["location"].to_s
       raise OAuthClient::Error, "#{label} opened no upload session" unless google_url?(session) && session.start_with?(UPLOAD_URL)
 
-      call_json(:put, session, content, "Content-Type" => type)
+      call_json(:put, session, content, { "Content-Type" => type })
     end
 
     # The message's attachment parts: { filename:, attachment_id:, data: }.

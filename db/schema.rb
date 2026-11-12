@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_11_10_090000) do
+ActiveRecord::Schema[8.1].define(version: 2026_11_12_090000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -1540,6 +1540,25 @@ ActiveRecord::Schema[8.1].define(version: 2026_11_10_090000) do
     t.index ["approved_at"], name: "index_dream_swaps_on_approved_at"
     t.index ["created_at"], name: "index_dream_swaps_on_created_at"
     t.index ["session_id"], name: "index_dream_swaps_on_session_id", unique: true
+  end
+
+  create_table "drive_filings", force: :cascade do |t|
+    t.string "action", null: false
+    t.boolean "applied", default: false, null: false
+    t.bigint "byte_size"
+    t.datetime "created_at", null: false
+    t.string "drive_file_id"
+    t.boolean "duplicate", default: false, null: false
+    t.text "error"
+    t.string "file_name"
+    t.string "folder_path", null: false
+    t.string "mailbox", null: false
+    t.string "md5"
+    t.string "requested_by", null: false
+    t.string "source"
+    t.datetime "updated_at", null: false
+    t.index ["mailbox", "created_at"], name: "index_drive_filings_on_mailbox_and_created_at"
+    t.check_constraint "action::text = ANY (ARRAY['mkdir'::character varying, 'upload'::character varying]::text[])", name: "drive_filings_action_known"
   end
 
   create_table "egnyte_connections", force: :cascade do |t|
