@@ -324,6 +324,11 @@ class BinHelpFlagClassTest < Minitest::Test
     # help and exits before any run; an unknown flag raises unrescued, and
     # BooksCli.build_request refuses a stray positional for every verb.
     "books"                  => :optparse,
+    # Drive filing (/tasks/drive-filing) through one `heroku run`. The verb is
+    # shifted first, then OptionParser owns the rest, so `upload FILE --help`
+    # prints help and exits before any file is read or run started; an unknown
+    # flag raises unrescued, and DriveCli.build_request refuses a stray positional.
+    "drive"                  => :optparse,
     # bin/agent-setup: OptionParser answers --help/-h with usage and exits before
     # any run (no heroku, no op read); an unknown flag exits 2; and
     # AgentSetupCli refuses a stray positional for every verb before it acts.

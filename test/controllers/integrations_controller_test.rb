@@ -59,11 +59,15 @@ class IntegrationsControllerTest < ActionDispatch::IntegrationTest
   test "[component] the read-only tiles say Read only on the tile line, and crypto's line is not its blurb again" do
     get integrations_path
 
-    %w[google_calendar gmail google_drive fathom].each do |key|
+    %w[google_calendar gmail fathom].each do |key|
       line = css_select("#{entry(key)} [data-test='entry-line']").first.text.strip
       assert_match(/Read only\.\z/, line, "#{key}: read only shows on the tile, not only in Details")
       assert_operator line.length, :<=, TILE_LINE_LIMIT, key
     end
+    # drive-filing: Drive files documents on request, so its tile no longer says Read only.
+    drive = css_select("#{entry('google_drive')} [data-test='entry-line']").first.text.strip
+    assert_match(/file what you ask them to\.\z/, drive)
+    assert_no_match(/Read only/, drive)
     crypto = Integration.find(:crypto)
     assert_equal "Solana wallets and stablecoin payouts in your app.", crypto.line
     assert_not crypto.blurb.start_with?(crypto.line.delete_suffix(".")), "crypto: the tile line is not the blurb with a word cut"

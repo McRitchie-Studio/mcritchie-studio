@@ -258,8 +258,11 @@ class GoogleConnect::DriveFilerTest < ActiveSupport::TestCase
     assert_equal %i[get post put], drive.calls.map(&:first).uniq.sort
     assert drive.calls.none? { URI(_1[1]).path.match?(/permissions|trash|copy|delete/i) }, "no call reaches a share, trash, copy or delete endpoint"
 
-    code = Rails.root.join("app/services/google_connect/drive_filer.rb").read.lines.reject { _1.lstrip.start_with?("#") }.join
-    assert_no_match(/Net::HTTP::(?:Delete|Patch)|:delete\b|:patch\b|permissions|"trashed"\s*=>\s*true|trashed:\s*true|addParents|removeParents/, code)
+    %w[app/services/google_connect/drive_filer.rb app/services/drive_export.rb bin/lib/drive_cli.rb bin/drive].each do |path|
+      code = Rails.root.join(path).read.lines.reject { _1.lstrip.start_with?("#") }.join
+      assert_no_match(/Net::HTTP::(?:Delete|Patch)|:delete\b|:patch\b|permissions|"trashed"\s*=>\s*true|trashed:\s*true|addParents|removeParents|files_(?:trash|delete)/,
+                      code, "#{path} never deletes, trashes, shares or moves a file")
+    end
     assert_raises(ArgumentError) { filer.send(:call, :delete, "#{GoogleConnect::DriveFiler::FILES_URL}/f-1") }
     assert_raises(ArgumentError) { filer.send(:call, :get, "https://example.com/") }
   end

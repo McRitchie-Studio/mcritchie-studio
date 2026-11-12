@@ -135,7 +135,7 @@ groups:
       - key: google_drive
         name: Google Drive
         icon: "📁"
-        tagline: "Your agents answer from the Drive files you pick, and file documents for you."
+        tagline: "Agents read the files you pick and file what you ask them to."
         blurb: Sign in with Google, then pick the Drive files your agents may read; they answer from those files and no others. On your request they also create folders and file documents there, and see only what they create. They never change, share or delete a file.
         status: live
         tier: pro
