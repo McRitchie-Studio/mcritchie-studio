@@ -57,7 +57,7 @@ jobs:
       # --user 1001: the hosted runner's own user, who owns the mounted workspace.
       options: --init --shm-size=2g --user 1001
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The evaluator is plain Ruby (stdlib only), so no bundle install.
       - name: Set up Ruby
