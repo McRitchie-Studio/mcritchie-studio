@@ -578,7 +578,7 @@ jobs:
       # its receipt to count it. Uploading only on failure would mean the gate could only ever
       # audit the runs that were already red.
       - name: Upload this shard's executed-set receipt
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: e2e-report-shard-${{ matrix.shard }}
@@ -586,7 +586,7 @@ jobs:
           if-no-files-found: error
 
       - name: Keep the Playwright report from a failed shard
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report-shard-${{ matrix.shard }}
@@ -831,7 +831,7 @@ jobs:
       # see its receipt to count it. Uploading only on failure would mean the gate could
       # audit only the runs that were already red.
       - name: Upload this shard's executed-set receipt
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: rails-report-shard-${{ matrix.shard }}
@@ -1073,7 +1073,7 @@ jobs:
           ls -la "$HOME/.cache/selenium" "$HOME/.cache/selenium"/* 2>&1 | head -40
 
       - name: Keep screenshots from failed system tests
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: screenshots
