@@ -973,17 +973,24 @@ jobs:
       # Fix: install-chromedriver:false leaves NO driver on PATH, so Selenium
       # Manager resolves the driver that matches the installed Chrome from the CfT
       # known-good manifest (e.g. chrome 149.0.7827.200 -> chromedriver
-      # 149.0.7827.155). Self-healing across Chrome bumps -- nothing to pin/maintain.
+      # 149.0.7827.155). Self-healing across Chrome bumps (but see the pin below).
       # The eviction step below removes any chromedriver preinstalled on the runner
       # image that would otherwise shadow Selenium Manager's matched pick.
       #
       # install-dependencies: false — that option runs apt; the lane image already carries
       # Chromium's libraries (`playwright install-deps chromium` in its Dockerfile).
+      #
+      # PINNED TO 157 (task pin-ci-chrome-before-158, 2026-11-21). Chrome 158 rejects
+      # Capybara 3.40's teardown call, Storage.clearDataForOrigin with origin '*', as
+      # "invalid argument: * is not a valid URL", so every system test errors in
+      # teardown in every repo that calls this workflow. Selenium Manager still
+      # matches the driver to the pinned Chrome. Exit: drop the pin once Capybara
+      # stops sending '*' or Studio::SystemTestCase patches reset! for every app.
       - name: Install Chrome (Chrome for Testing), no bundled chromedriver
         id: chrome
         uses: browser-actions/setup-chrome@v2
         with:
-          chrome-version: stable
+          chrome-version: "157"
           install-chromedriver: false
           install-dependencies: false
 
