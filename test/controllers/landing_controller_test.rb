@@ -78,7 +78,7 @@ class LandingControllerTest < ActionDispatch::IntegrationTest
       assert_select "[data-test=get-in-touch-booking].xl\\:grid-rows-subgrid iframe[data-booking-frame]", 1
       assert_select "[data-test=get-in-touch-booking][class*='max-w-[610px]']", 1
       assert_select "[data-test=get-in-touch-chat].xl\\:grid-rows-subgrid [data-test=get-in-touch-chat-head].items-center" do
-        assert_select "img[src*='/agents/alex']", 1
+        assert_select "img[src='/agents/alex-4485.webp']", 1
         assert_select "h3", text: "Chat Now"
         assert_select "p", text: "AI Builder"
       end

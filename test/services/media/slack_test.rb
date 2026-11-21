@@ -75,6 +75,8 @@ class MediaSlackTest < ActiveSupport::TestCase
     custom = Media::Slack.new(config: Media::Config.new("souls" => { "avi" => { "icon" => "https://cdn.example/avi.png" } }))
     assert_equal "https://cdn.example/avi.png", custom.identity_for("avi")[:icon_url]
     assert_nil slack.identity_for("nobody_at_all")[:icon_url], "no portrait: Slack shows the app's own"
+    assert_equal "https://mcritchie.studio/slack-icons/alex-4485.png", slack.identity_for("alex")[:icon_url],
+                 "Alex's icon follows souls.yml's avatar basename (alex-wears-mad-lad-4485)"
   end
 
   test "[unit] capabilities: reply always (it records the skip); post only while SLACK_BOT_TOKEN is set; never typing" do
