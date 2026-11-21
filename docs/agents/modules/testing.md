@@ -986,6 +986,10 @@ nobody files it under "flaky". The system holds that line in five places:
   `system` lane runs there too (task ci-system-lane-in-image): a step wraps
   setup-chrome's binary in place with `--no-sandbox` and links `/usr/bin/google-chrome`
   to it, so no app's Selenium driver changes. Guard: `test/lib/ci_lane_image_test.rb`.
+  The lane pins Chrome to 157 (task pin-ci-chrome-before-158): Chrome 158 rejects
+  Capybara 3.40's teardown `Storage.clearDataForOrigin` with origin `*`. Drop the pin
+  once `Studio::SystemTestCase` patches `reset!` for every app. Guard:
+  `test/lib/ci_workflow_chrome_pin_test.rb`.
 - **A cause card for every flip.** When a run goes green at a SHA where a run of the
   same workflow (or an earlier attempt of the same run, a re-run) went red,
   `GithubWorkflowRunIngestJob` enqueues `CiCauseCardJob`. It reads the red jobs' logs

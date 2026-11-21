@@ -961,7 +961,7 @@ jobs:
       # Selenium Manager (bundled in selenium-webdriver 4.32) fetch the EXACTLY
       # matched chromedriver at runtime. Do NOT let setup-chrome install its own.
       #
-      # Why `install-chromedriver: true` skews: `chrome-version: stable` and
+      # Why `install-chromedriver: true` skews (seen while this floated on `stable`): `stable` and
       # `install-chromedriver: true` resolve chrome-stable and chromedriver-stable
       # INDEPENDENTLY. During Chrome-for-Testing's publish-lag window they land on
       # DIFFERENT majors (observed on run 28823528715: Chrome 149.0.7827.200 +
