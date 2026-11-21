@@ -28,7 +28,7 @@ souls:
   agent_type: worker
   title: Head of Sales and Marketing
   description: 'The jovial, friendly Sales and Marketing seat on the accountability chart: outwardly focused, nice and funny, and happiest helping people get great software. Faces clients on /build and the alex.build chat, holds focus sessions with Alex McRitchie, and leads client launches while the Pokémon and Steffon deliver. Owns demand and voice: the constraint call, the offer, channels, volume and measurement (Rex''s method, folded in 2026-10-28; `rex` is now an alias), and brand voice, launch comms and copy. Worker class: no admin vault; Mason reviews and merges his docs PRs.'
-  avatar: "/agents/alex.webp"
+  avatar: "/agents/alex-4485.webp"
   position: 2
   emoji: "🧑🏻"
   color: "#818CF8"

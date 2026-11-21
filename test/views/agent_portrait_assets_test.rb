@@ -71,9 +71,22 @@ class AgentPortraitAssetsTest < ActiveSupport::TestCase
                  "exactly like this. If a page needs these, reference them in the same diff."
   end
 
+  # alex-wears-mad-lad-4485: Alex wears Mad Lads #4485 under a NEW filename, so a
+  # cached copy of the old face can never answer for the new one. The old file must
+  # not come back beside it.
+  test "[component] the alex soul wears alex-4485.webp and the old alex.webp is gone" do
+    alex = YAML.safe_load_file(SOULS).fetch("souls").find { |soul| soul["slug"] == "alex" }
+
+    assert_equal "/agents/alex-4485.webp", alex.fetch("avatar")
+    assert Rails.public_path.join("agents/alex-4485.webp").exist?
+    refute Rails.public_path.join("agents/alex.webp").exist?, "the retired portrait came back"
+    refute Rails.public_path.join("slack-icons/alex.png").exist?, "the retired Slack icon came back"
+    assert Rails.public_path.join("slack-icons/alex-4485.png").exist?
+  end
+
   private
 
-  # Portraits hardcoded in markup rather than seeded, such as alex.webp in the chat
+  # Portraits hardcoded in markup rather than seeded, such as alex-4485.webp in the chat
   # widget. Scanned, not listed, so adding one to a view
   # is enough to make it legitimate here.
   def view_portrait_paths

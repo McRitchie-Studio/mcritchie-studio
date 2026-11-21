@@ -84,7 +84,7 @@ class AgentSetupsControllerTest < ActionDispatch::IntegrationTest
     log_in_as(admin)
     get agents_path
     assert_select "#agent-setup-#{setup.id}" do
-      assert_select "a[data-test='discord-avatar-download'][data-agent-avatar-png][href='/agents/alex.webp'][download='alex.png']"
+      assert_select "a[data-test='discord-avatar-download'][data-agent-avatar-png][href='/agents/alex-4485.webp'][download='alex.png']"
       assert_select "[data-test='op-item-missing']", /discord\.alex\.agents/
       assert_select "[data-key='done']", /DISCORD_BOT_TOKEN_ALEX and DISCORD_AGENT_BOT_TOKEN/
       assert_select "[data-test='discord-invite-waiting']"

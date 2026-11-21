@@ -117,7 +117,7 @@ module LinkTreeHelper
       { label: page.label, href: page.path(self), emoji: page.emoji, hover_emoji: page.hover_emoji, icon: page.icon, **(desc ? { desc: page.desc } : {}) }
     end
     chat = { label: "Chat", href: visitor_chat_path, hover_emoji: "💬", icon: "message-circle",
-             emoji: safe_image_tag("/agents/alex.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") }
+             emoji: safe_image_tag("/agents/alex-4485.webp", alt: "", class: "w-5 h-5 rounded-full object-cover") }
 
     { title: "Studio", header: true, links: [ row.call(:build), chat, row.call(:websites), row.call(:packages), row.call(:integrations) ] }
   end

@@ -76,7 +76,7 @@ alex = Agent.create!(
   agent_type: "worker",
   title: "Head of Sales and Marketing",
   description: "The client-facing persona: faces clients on /build and launches their builds.",
-  avatar: "/agents/alex.webp"
+  avatar: "/agents/alex-4485.webp"
 )
 # Mason holds the orchestrator seat (and the learning heartbeat's grader key) since
 # 2026-10-25; the demo rows below that orchestrate are his.
