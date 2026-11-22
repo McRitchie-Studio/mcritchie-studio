@@ -128,9 +128,6 @@ class AlexSeatTest < ActionDispatch::IntegrationTest
     end
   end
 
-  # rex-folds-into-alex (2026-10-28): Rex, the CMO, folded into Alex, so his page
-  # forwards to the seat that holds his method, not to Mason. Anchored: a slug that
-  # only starts with "rex" is not shimmed.
   test "the retired portrait URLs forward to Mad Lads #4485, so old Slack and Discord history keeps a face" do
     get "/agents/alex.webp"
     assert_redirected_to "/agents/alex-4485.webp"
@@ -141,6 +138,9 @@ class AlexSeatTest < ActionDispatch::IntegrationTest
     assert_equal 301, response.status
   end
 
+  # rex-folds-into-alex (2026-10-28): Rex, the CMO, folded into Alex, so his page
+  # forwards to the seat that holds his method, not to Mason. Anchored: a slug that
+  # only starts with "rex" is not shimmed.
   test "the retired /agents/rex page forwards to /agents/alex" do
     get "/agents/rex"
     assert_response :moved_permanently
