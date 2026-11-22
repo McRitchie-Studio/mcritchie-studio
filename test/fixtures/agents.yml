@@ -4,7 +4,7 @@ alex_agent:
   status: active
   agent_type: worker
   title: Head of Sales and Marketing
-  avatar: /agents/alex.webp
+  avatar: /agents/alex-4485.webp
 
 mack_agent:
   name: Mack

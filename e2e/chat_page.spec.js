@@ -20,6 +20,11 @@ async function chatPageIsOnlyTheChat(page, viewport) {
   await expect(page.locator("[data-test='agent-chat-empty']")).toHaveText("What brought you here today?");
   await expect(page.locator("[data-test='chat-heading']")).toHaveText("How Can I Help?");
   await expect(page.locator("[data-test='agent-chat-caption']")).toContainText("AI Builder");
+  // alex-wears-mad-lad-4485: Alex wears Mad Lads #4485, and the file really loads
+  // (a 404 would be silent: the avatar partial drops a broken <img>).
+  const portrait = page.locator("[data-test='agent-chat-portrait'] img[src='/agents/alex-4485.webp']");
+  await expect(portrait).toHaveCount(1);
+  expect(await portrait.evaluate((img) => img.complete && img.naturalWidth)).toBe(340);
   // The heading stands over an empty thread and leaves with the first turn.
   await page.locator("[data-agent-chat-log]").evaluate((log) => log.append(document.createElement("div")));
   await expect(page.locator("[data-test='chat-heading']")).toBeHidden();

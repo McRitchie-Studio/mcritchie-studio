@@ -18,7 +18,7 @@
 # docs route cannot serve, so this cannot come back quietly.
 #
 # Style: solid brand-color background + white initial(s) centered. Sized to match
-# alex.webp (340x340) so the agent grid renders evenly.
+# alex-4485.webp (340x340) so the agent grid renders evenly.
 #
 # Run from repo root:  ruby script/generate_agent_avatars.rb
 # Against a fixture root (this is how the test suite drives it):

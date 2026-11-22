@@ -614,6 +614,11 @@ Rails.application.routes.draw do
   # (rex-folds-into-alex); his page 301s to the seat that holds his method. Retire
   # alongside the `rex` entry in Task::SOUL_ALIASES.
   get "agents/:slug", to: redirect("/agents/alex"), constraints: { slug: /rex/ }
+  # RETIRED PORTRAITS — Alex wears Mad Lads #4485 under a new name since 2026-11-21
+  # (alex-wears-mad-lad-4485), for cache-busting. Slack/Teams history and Discord
+  # embeds hold the old absolute URLs, so they 301 to the new face, not a 404.
+  get "agents/alex.webp", to: redirect("/agents/alex-4485.webp", status: 301), format: false
+  get "slack-icons/alex.png", to: redirect("/slack-icons/alex-4485.png", status: 301), format: false
 
   # The Pending agents column of /agents (AgentSetupsController; SOP
   # docs/agents/agents/steffon/sops/agent-onboarding.md): an admin's writes on a

@@ -340,7 +340,7 @@ class LinkTreeHelperTest < ActiveSupport::TestCase
     assert_equal %w[Account Studio], sidebar_link_sections.map { |section| section.fetch(:title) }
     chat = sidebar_link_sections.last.fetch(:links).find { |link| link[:label] == "Chat" }
     assert_equal "/chat", chat.fetch(:href)
-    assert_includes chat.fetch(:emoji), "/agents/alex.webp"
+    assert_includes chat.fetch(:emoji), "/agents/alex-4485.webp"
     assert_equal "💬", chat.fetch(:hover_emoji)
     assert sidebar_link_sections.flat_map { |section| section.fetch(:links) }.none? { |link| link.key?(:desc) }, "a visitor's link is one line"
 

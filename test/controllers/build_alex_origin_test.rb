@@ -19,7 +19,7 @@ class BuildAlexOriginTest < ActionDispatch::IntegrationTest
     assert_response :success
     assert_select "[data-test='build-form'] label", text: "Tell Alex what you want to build"
     assert_includes response.body, "AI Builder"
-    assert_includes response.body, "/agents/alex.webp"
+    assert_includes response.body, "/agents/alex-4485.webp"
     refute_match(/\bRitch\b/, response.body)
   end
 
