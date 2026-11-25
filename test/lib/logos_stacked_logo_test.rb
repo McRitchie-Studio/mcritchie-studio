@@ -37,8 +37,8 @@ class LogosStackedLogoTest < Minitest::Test
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was 96644c91….
   # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
   # helmet (Alex McRitchie 2026-10-28); was d1307be4…; every other drawing in it is byte for byte as before (the per-brand pins say which).
-  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width; was e04bfca7….
-  TWO_LINE_DIGEST = "10cd6ac0e86eb2e4e63396e92d8a8624efe1f061dddcd47e5453d4dfba52c0f4"
+  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width and its peaks moved onto the midline; was e04bfca7….
+  TWO_LINE_DIGEST = "0ab38bf5ecd1c89188e4d2755610081641ff12903bd5abad8e105818c096fba6"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green); was b21a2b80….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was e2af15cd….
@@ -48,15 +48,15 @@ class LogosStackedLogoTest < Minitest::Test
   # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
   # helmet (Alex McRitchie 2026-10-28) and v1's tagline is Spark Orange, as the client's logo sets it; was 435ae8ae…;
   # every other drawing in it is byte for byte as before.
-  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width; was 190c7eda….
-  TAGLINE_DIGEST = "65f7fb527c013e09372fd77c9f9b87bc0ed995a2886f4f0d056ce4e7d1fbc516"
+  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width and its peaks moved onto the midline; was 190c7eda….
+  TAGLINE_DIGEST = "280098695ced2132b4bb829797d8807e0b8696b28accb6857c78d7c541616cde"
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head; was 4196eaad….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
   # 2026-10-14 12:16): Studio, Turf Monster and Commercial Welding moved, Industries did not; was c3b29586….
   # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark icon is its two-colour
   # helmet (Alex McRitchie 2026-10-28); was 45621d6a…; every other icon is byte for byte as before.
-  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width; was 570d5e38….
-  ICON_DIGEST = "b9e1e4d0c40b7764758b69b442f44a2936fc55713fbdd030221b1654da276472"
+  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width and its peaks moved onto the midline; was 570d5e38….
+  ICON_DIGEST = "b90ff2c374cfba971be49805058374a27a890f2fe883166c7bbd17a8148db543"
   # Width / height of the tagline form, measured (task stacked-tagline-and-ghost-grid). Each equals 3n / (1.8n + 8), n the
   # name's ink width in cap heights: the tagline form is as tall as the two-line form (icon 0.6W, then 2u, 3u, 2u, 1u).
   # Re-measured when task navbar-spacing-and-rotated-guides made the word gap half a cap height (it sets the name as

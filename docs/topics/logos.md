@@ -522,6 +522,16 @@ and its window cut clear (step 4): its `blue` layer is the silhouette with the
 window as a hole, its `white` layer the white half alone. Only welding_v2's
 Original pin moved for it (`test/lib/logos_brand_pins_test.rb`).
 
+**The even rim** (task welding-helmet-even-rim, Alex McRitchie 2026-11-25). The
+trace tapered the blue rim round the white half from about 34 units on the right
+side (Original scale) to about 12 at the midline. v1's three helmets were
+redrawn once, and v2 re-derived from them: the outline's top and bottom peaks
+moved onto the blue/white line (a horizontal warp, sides and width fixed); the
+white half's edge is the outline, ears trimmed, inset by the right side's width
+(34.70 Original, 16.26 Alt, 17.07 mono), cut at the midline and round the lens
+frame; the right ear keeps the trace's white ear. The redraw is in the data, not
+a rake step. `test/lib/logos_welding_rim_test.rb` holds it on all six helmets.
+
 `test/lib/logos_welding_v2_test.rb` measures each step again on the shipped
 data, for all three helmets: the helmet flush with its box on every side, the lens's
 shape unchanged and centred on the middle row, the spark and frame moved with

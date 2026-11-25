@@ -32,15 +32,15 @@ class LogosBrandPinsTest < Minitest::Test
     # and by task turf-two-lines-and-welding-blue (Alt on a dark page drew the Original's helmet,
     # its tagline took Spark Orange; was 4e2f0a55…). Each on Alex McRitchie's call.
     # History: task turf-two-lines-and-welding-blue.
-    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width; was 42dff7bd….
-    "welding" => "a8f2ae0ab76883bf5943e15cc1def714b4708ac9ca05ebed60f14720d7690e70",
+    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline; was 42dff7bd….
+    "welding" => "73733173cdf46975a2b9cbdaa0d6332fbef95d81ad9c10d32f772e58bc7be958",
     # Added by task welding-llc-and-v2-helmet: Commercial Welding v2 as it first shipped.
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 63a49eae…. Industries did not move.
     # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue, as v1 above (the dark drawings and icon only); was
     # 08ebb18f….
-    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width; was 683dd0cf….
-    "welding_v2" => "5b2142d8e7a6297b41711c68c9c3e9fbace0e7cb6a7046b879f0aecc4c3bfa04"
+    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline; was 683dd0cf….
+    "welding_v2" => "3f39b65ccb7ba521baf93bd74528ae924d9e468aac7e87a3a89d55289aeccd8b"
   }.freeze
 
   def self.drawings(brand)
@@ -74,15 +74,15 @@ class LogosBrandPinsTest < Minitest::Test
     "turf" => "7f23ccfc3622d45124f2520a32532f717c487ecda85f0f3a9bbfdad6fe13cffa",
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 0f1083dc…. Industries did not move.
-    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width; was 18303e01….
-    "welding" => "4078a5c15e83b0a2d8df5f78ebad64944d1a9fed35cfa57ca9bfdf249c85c2f7",
+    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline; was 18303e01….
+    "welding" => "34d48fba25f761147238283065f0c92fa375d8425ab6571a9240ea7a9046864a",
     # Re-taken DELIBERATELY by task kit-export-and-clear-lens, when v2's Original lens window became a hole in the
     # silhouette, not an opaque white shape (Alex McRitchie 2026-10-12: "remove the white of the lens so I can see it clear"); was
     # 7635ac2b…. Every other pin, Alt and Original, did not move by a byte.
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was da4a25d2…. Industries did not move.
-    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width; was c7edf77b….
-    "welding_v2" => "6558abf3bfab37a905f9e635d08114a188008d290cefe6830136d6134f2fa476"
+    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline; was c7edf77b….
+    "welding_v2" => "3e2170fc510221b1cfc91ed3a172e3c02d611c35a11f67f8c6c67c320e98fa9b"
   }.freeze
 
   def self.original_drawings(brand)
