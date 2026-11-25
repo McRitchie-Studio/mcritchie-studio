@@ -42,18 +42,21 @@ class LogosNavbarLogoTest < Minitest::Test
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 4d95d341…. Turf Monster's head lost about 54 units of margin top and bottom.
   # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
   # helmet (Alex McRitchie 2026-10-28); was 8c05ea24…; every other drawing in it is byte for byte as before (the per-brand pins say which).
-  ADDED_BRANDS_DIGEST = "5a2bbb2cf6cd733060f741cccd0ac0affc666e5fb8846b54a2e5e55dd054f52a"
+  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width; was 5a2bbb2c….
+  ADDED_BRANDS_DIGEST = "50209f343d6591aca6d20ce62c4604e51fba91e1f80fccdde5e046251738088f"
   # Every watermark logo of all four brands, without guides ("<key>\n<svg>" each: brand, then rule and text).
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); was 69c5428f….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was 817c912e….
-  WATERMARK_DIGEST = "6d335ca995477a9b2c5b400ce87e9e9d9726a99255cc1494ce77e3a417782576"
+  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width; was 6d335ca9….
+  WATERMARK_DIGEST = "046fbf617357da6fc0d362fc0418621905a1cbb4a961ef4c097933baf3dc6795"
   # Every rule-of-6 logo of all four brands, light, dark and watermark, without guides (task navbar-spacing-and-rotated-guides).
   # Re-taken DELIBERATELY by task welding-llc-and-v2-helmet, when Commercial Welding v1 took its whole name, COMMERCIAL WELDING LLC (Alex McRitchie, item 5); was c16934f5….
   # Re-taken DELIBERATELY by task logo-original-and-alt, when Turf Monster's Alt became its single-colour head (turf_mono in the brand green) so Alt is one solid colour per part for every brand; the three-colour head is now its Original; was 2581fbeb….
   # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk: Alex McRitchie 2026-10-14 12:16, "the icons need to have the margins cleaned up"); was cb6f5e75….
   # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue: Commercial Welding's dark drawings draw the two-colour
   # helmet (Alex McRitchie 2026-10-28); was 8a5c41b6…; every other drawing in it is byte for byte as before (the per-brand pins say which).
-  RULE_6_DIGEST = "a2dca3ce75d889ed59fd8527c6b3aa144888f689f5ede4e9215ae6da7e2735cd"
+  # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the Commercial Welding helmet's rim became one width; was a2dca3ce….
+  RULE_6_DIGEST = "d7149e90afc371197fbb2cbf9b656fac026048876b1d98224e9ba183fb4b5731"
   # The brands the combined digests below were taken over. A brand added later (welding_v2) is pinned on its own in
   # logos_brand_pins_test.rb, so it cannot move these.
   PINNED = %w[studio industries turf welding].freeze

@@ -82,7 +82,8 @@ class LogosWeldingV2Test < Minitest::Test
       assert_equal shifted(outer, dx, 0), new_outer, "#{key}: the outer helmet does not move"
       assert_equal shifted(lens, dx, dy), new_lens, "#{key}: the window moves across and down"
       frame, rest = hole.zip(new_hole).partition { |(x, y), _| from.frame?(x, y) }
-      assert_operator frame.size, :>, ALT.include?(key) ? 30 : 15, "#{key}: the frame's notch in the white half (the Original's cleaner trace has fewer points)"
+      # The white half is a polygon since task welding-helmet-even-rim (its rim one width), so its notch has fewer points.
+      assert_operator frame.size, :>, 10, "#{key}: the frame's notch in the white half"
       assert_equal shifted(frame.map(&:first), dx, dy), frame.map(&:last), "#{key}: the frame moves with the window, so its band keeps its width"
       assert_equal shifted(rest.map(&:first), dx, 0), rest.map(&:last), "#{key}: the rest of the white half does not move"
     end
