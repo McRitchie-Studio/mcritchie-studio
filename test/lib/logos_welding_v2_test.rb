@@ -56,43 +56,50 @@ class LogosWeldingV2Test < Minitest::Test
                  "was 443.75 x 483 (both Alt) and 892.3 x 975, widened to centre the midline"
   end
 
-  def test_each_v2_lens_is_centred_on_the_rule_of_3s_middle_row
+  # Task welding-helmet-even-rim (Alex McRitchie 2026-11-25: "the icon should be equally weighted into thirds"): the frame's
+  # outer edges are the rule of 3's row lines, so the white above it, the frame with the lens, and the white below it
+  # are one row each. Until then the lens alone was centred on the middle row, its frame taller than the row.
+  def test_each_v2_frame_is_the_rule_of_3s_middle_row
     PAIRS.each_key do |key|
       row = v2(key).fetch("h") / 3.0
-      _, top, _, bottom = helmet(key).window
+      top, bottom = helmet(key).frame
+      assert_in_delta row, top, 0.02, "#{key}: the frame's top edge is the first row line"
+      assert_in_delta 2 * row, bottom, 0.02, "#{key}: the frame's bottom edge is the second row line"
+      _, w_top, _, w_bottom = helmet(key).window
       _, was_top, _, was_bottom = source(key).window
-      assert_in_delta was_bottom - was_top, bottom - top, 0.01, "#{key}: the lens keeps its shape"
-      assert_operator bottom - top, :<, row, "#{key}: the lens is shorter than one row (#{(bottom - top).round(2)} of #{row.round(2)}), so it is centred"
-      assert_in_delta 1.5 * row, (top + bottom) / 2, 0.01, "#{key}: the lens's centre is the middle row's centre"
-      assert_in_delta top - row, 2 * row - bottom, 0.02, "#{key}: equal space above and below it inside the row"
-      assert_operator top, :>, row
-      assert_operator bottom, :<, 2 * row
-      assert_operator top - was_top, :>, 0, "#{key}: the lens moved DOWN"
+      assert_in_delta source(key).scale * (was_bottom - was_top), w_bottom - w_top, 0.02, "#{key}: the lens scales with its frame"
+      assert_operator source(key).scale, :<, 1, "#{key}: the frame was taller than a row, so the lens shrinks"
+      assert_operator w_top, :>, row
+      assert_operator w_bottom, :<, 2 * row
     end
   end
 
-  def test_the_spark_moves_with_the_window_and_the_frame_follows
+  def test_the_spark_scales_with_the_window_and_the_frame_follows
     PAIRS.each_key do |key|
       from = source(key)
-      dx = 0
-      dy = from.dy
+      place = ->(points) { points.map { |x, y| from.send(:place, x, y).map { |v| v.round(2) } } }
       outer, hole, lens = parts(v1(key), PAIRS.fetch(key)).map { |sub| on_curve(sub) }
       new_outer, new_hole, new_lens = parts(v2(key), key).map { |sub| on_curve(sub) }
 
-      assert_equal shifted(outer, dx, 0), new_outer, "#{key}: the outer helmet does not move"
-      assert_equal shifted(lens, dx, dy), new_lens, "#{key}: the window moves across and down"
+      assert_equal shifted(outer, 0, 0), new_outer, "#{key}: the outer helmet does not move"
+      assert_equal place.(lens), new_lens, "#{key}: the window scales about the midline onto the middle row"
       frame, rest = hole.zip(new_hole).partition { |(x, y), _| from.frame?(x, y) }
-      # The white half is a polygon since task welding-helmet-even-rim (its rim one width), so its notch has fewer points.
-      assert_operator frame.size, :>, 10, "#{key}: the frame's notch in the white half"
-      assert_equal shifted(frame.map(&:first), dx, dy), frame.map(&:last), "#{key}: the frame moves with the window, so its band keeps its width"
-      assert_equal shifted(rest.map(&:first), dx, 0), rest.map(&:last), "#{key}: the rest of the white half does not move"
+      assert_operator frame.size, :>, 5, "#{key}: the frame's notch in the white half"
+      assert_equal place.(frame.map(&:first)), frame.map(&:last), "#{key}: the frame scales with the window"
+      assert_equal shifted(rest.map(&:first), 0, 0), rest.map(&:last), "#{key}: the rest of the white half does not move"
     end
     spark = ->(icon) { V2.subpaths(icon.fetch("layers").find { |l| l["role"] == "accent" }.fetch("d")).map { |sub| V2.bbox(sub) } }
     %w[welding_v2 welding_v2_original].each do |key|
       from = source(key)
       offset = V2.offset(v1(key)["transform"], key)
-      expected = spark.(v1(key)).map { |l, t, r, b| [l + offset[0], t + offset[1] + from.dy, r + offset[0], b + offset[1] + from.dy] }
-      spark.(v2(key)).flatten.zip(expected.flatten).each { |got, want| assert_in_delta want, got, 0.011, "#{key}: the orange spark moves with the window" }
+      expected = spark.(v1(key)).map do |l, t, r, b|
+        from.send(:place, l + offset[0], t + offset[1]) + from.send(:place, r + offset[0], b + offset[1])
+      end
+      spark.(v2(key)).flatten.zip(expected.flatten).each { |got, want| assert_in_delta want, got, 0.011, "#{key}: the orange spark scales with the window" }
+      _, top, _, bottom = spark.(v2(key)).first
+      midline = V2.bbox(parts(v2(key), key)[1])[0]
+      assert_in_delta midline, (spark.(v2(key)).first[0] + spark.(v2(key)).first[2]) / 2, 2.0 * v2(key).fetch("h") / 483.0, "#{key}: the spark stays centred on the midline"
+      assert_operator bottom - top, :>, 0
     end
   end
 
@@ -115,7 +122,8 @@ class LogosWeldingV2Test < Minitest::Test
     assert_equal %w[blue white accent], [blue, white, accent].map { |layer| layer["role"] }
     assert_equal 2, V2.subpaths(blue.fetch("d")).size, "the silhouette, with the window cut out of it"
     assert_equal 1, V2.subpaths(white.fetch("d")).size, "the white half alone: the window is no longer white"
-    assert_in_delta 47.44, from.dy, 0.01, "about twice v1's Alt move (23.42): the Original is traced at about twice the scale"
+    assert_in_delta 0.8822, source("welding_v2").scale, 0.0001, "the Alt frame shrinks to one row"
+    assert_in_delta 0.8823, from.scale, 0.0001, "the Original's frame shrinks as Alt's does: one helmet at two scales"
   end
 
   def test_curve_turning_points_count_in_a_bounding_box
@@ -164,7 +172,10 @@ class LogosWeldingV2Test < Minitest::Test
   def test_the_cleared_original_reads_back
     from = source("welding_v2_original")
     again = helmet("welding_v2_original")
-    assert_equal from.window.zip([0, from.dy] * 2).map { |v, d| (v + d).round(2) }, again.window.map { |v| v.round(2) }
-    assert_in_delta 0, again.dy, 0.01, "read back, the lens is already centred on the middle row"
+    left, top, right, bottom = from.window
+    placed = from.send(:place, left, top) + from.send(:place, right, bottom)
+    placed.zip(again.window).each { |want, got| assert_in_delta want, got, 0.02 }
+    assert_in_delta 0, again.dy, 0.01, "read back, the frame is already the middle row"
+    assert_in_delta 1, again.scale, 0.0001, "read back, the frame is already one row tall"
   end
 end

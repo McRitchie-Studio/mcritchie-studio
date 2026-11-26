@@ -532,6 +532,13 @@ white half's edge is the outline, ears trimmed, inset by the right side's width
 frame; the right ear keeps the trace's white ear. The redraw is in the data, not
 a rake step. `test/lib/logos_welding_rim_test.rb` holds it on all six helmets.
 
+**v2 in thirds** (same task). v2's lens frame is the rule of 3's middle row: its
+outer edges are the row lines, so the white above it, the frame with the lens,
+and the white below it are one row each. The lens, frame and spark scale
+together about the midline (0.8822 Alt, 0.8823 Original, 0.8859 mono). This
+replaces step 2's "lens centred on the middle row"; `Logos::WeldingV2#place`
+does it, and `test/lib/logos_welding_v2_test.rb` measures it.
+
 `test/lib/logos_welding_v2_test.rb` measures each step again on the shipped
 data, for all three helmets: the helmet flush with its box on every side, the lens's
 shape unchanged and centred on the middle row, the spark and frame moved with

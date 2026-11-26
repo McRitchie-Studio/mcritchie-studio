@@ -39,8 +39,8 @@ class LogosBrandPinsTest < Minitest::Test
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was 63a49eae…. Industries did not move.
     # Re-taken DELIBERATELY by task turf-two-lines-and-welding-blue, as v1 above (the dark drawings and icon only); was
     # 08ebb18f….
-    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline; was 683dd0cf….
-    "welding_v2" => "3f39b65ccb7ba521baf93bd74528ae924d9e468aac7e87a3a89d55289aeccd8b"
+    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline, and v2's lens frame became the middle third; was 683dd0cf….
+    "welding_v2" => "83b592a322ae29ed065887d13843a5f2ff6a8b748aa371ffb42c84ebf4ec2d7b"
   }.freeze
 
   def self.drawings(brand)
@@ -81,8 +81,8 @@ class LogosBrandPinsTest < Minitest::Test
     # 7635ac2b…. Every other pin, Alt and Original, did not move by a byte.
     # Re-taken DELIBERATELY by task stacked-rule-of-three, when every icon's box became its ink (Logos::IconInk; Alex McRitchie
     # 2026-10-14 12:16: "the icons need to have the margins cleaned up"); was da4a25d2…. Industries did not move.
-    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline; was c7edf77b….
-    "welding_v2" => "3e2170fc510221b1cfc91ed3a172e3c02d611c35a11f67f8c6c67c320e98fa9b"
+    # Re-taken DELIBERATELY by task welding-helmet-even-rim, when the helmet's rim became one width and its peaks moved onto the midline, and v2's lens frame became the middle third; was c7edf77b….
+    "welding_v2" => "b40aa5b7f319bf8c406d11da736a86cf1548859da169376167ca165744365b09"
   }.freeze
 
   def self.original_drawings(brand)
