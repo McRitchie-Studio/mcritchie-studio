@@ -47,7 +47,7 @@
 #                     own test:prepare whenever an argument looks like a path.
 #   mapped-tests    : bin/rails test <mapped files>   (skipped when none map)
 #   spine           : bin/rails test <spine entries>
-#   rubocop-changed : bin/rubocop <changed lintable files> (skipped when none)
+#   rubocop-changed : bin/rubocop --force-exclusion <changed lintable files> (skipped when none)
 #   <ci guard>      : a whole-tree guard CI runs that no mapping selects, one lane
 #                     each, only when the diff touches what it reads
 #                     (bin/lib/ci_guard_lanes.rb): template-ratchets (views,
@@ -433,7 +433,7 @@ else
     if lintable.empty?
       skip_lane("rubocop-changed", "no lintable files in the diff")
     else
-      run_lane("rubocop-changed", "#{rubocop_cmd} #{lintable.map(&:shellescape).join(' ')}", root)
+      run_lane("rubocop-changed", FastCert.rubocop_command(rubocop_cmd, lintable), root)
     end
 
   # One lane per CI-only guard the diff touches, run as CI runs it: whole tree.
