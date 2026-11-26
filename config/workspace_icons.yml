@@ -94,11 +94,12 @@ workspaces:
   commercial-welding:
     name: Commercial Welding
     domain: commercialwelding.llc
-    # The welding helmet, commercial-welding-llc-icon.png from the brand files.
+    # The welding helmet: v2's Original (welding_v2_original), rasterised by script/brand_png.cjs (task
+    # welding-helmet-even-rim, Alex McRitchie 2026-11-25: "lock this in" as Commercial Welding's v2 icon).
     badge: lib/workspace_icons/badges/commercial-welding.png
     accent: "#2D5E8E"
-    # v1, the kit's branding; welding_v2 is the redraw under comparison on /logos.
-    logo: { brand: welding }
+    # v2, the branding the commercial-welding app draws (its public/brand/kit.json); v1 stays on /logos.
+    logo: { brand: welding_v2 }
     vaults: [Commercial Welding]
   # Clients with no Google workspace of ours and no vault yet: here so /stack
   # can show them (a stack_clients slug must be a workspace). Both have no

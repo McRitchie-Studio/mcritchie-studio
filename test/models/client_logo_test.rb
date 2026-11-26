@@ -20,7 +20,7 @@ class ClientLogoTest < ActiveSupport::TestCase
   end
 
   test "a client with a logo-studio brand draws that brand's kit icon in both tones" do
-    { "studio" => "studio", "industries" => "industries", "turf-monster" => "turf", "commercial-welding" => "welding" }.each do |slug, brand|
+    { "studio" => "studio", "industries" => "industries", "turf-monster" => "turf", "commercial-welding" => "welding_v2" }.each do |slug, brand|
       logo = ClientLogo.for(slug)
 
       assert_equal :brand, logo.source, slug

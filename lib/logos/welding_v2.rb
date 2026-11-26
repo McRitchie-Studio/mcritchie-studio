@@ -9,10 +9,11 @@ module Logos
   #   1. Its box is its ink (Logos::IconInk; task stacked-rule-of-three, Alex McRitchie 2026-10-14 12:16). Until then the box
   #      was widened so the helmet's midline (where its blue half meets its white half) was the box's centre, which
   #      left a margin of about 17 units on one side; that step is gone, and the helmet is centred on its ink.
-  #   2. Lens down: the lens (the window, with the spark in it, as one unit) moves down so it sits on the rule of 3's
-  #      middle row of the ink box: its top and bottom on the row lines if it were one row tall; it is shorter, so it
-  #      is centred on that row. The blue frame around the window moves with it: its outer edge is the notch the white
-  #      half's contour makes around the frame, and the points of that notch move by the same amount.
+  #   2. Thirds (task welding-helmet-even-rim, Alex McRitchie 2026-11-25; until then the lens alone was centred on the
+  #      middle row): the lens (the window, with the spark in it, as one unit) and its blue frame scale together about
+  #      the midline so the frame's outer edges are the rule of 3's row lines of the ink box. The white above the frame,
+  #      the frame with the lens, and the white below it are one row each. The frame's outer edge is the notch the
+  #      white half's contour makes around it, and the points of that notch are placed the same way (#place).
   #   3. Clear lens (task kit-export-and-clear-lens): the window is a hole in the outer helmet, so the page shows
   #      through it. Alt's helmets always drew it so; the Original's trace filled it white (#clear_lens).
   #
@@ -47,8 +48,9 @@ module Logos
     # The data file's contents, exactly as `rake logos:welding_v2` writes them.
     def self.json(icons = NavbarLogo.icons) = JSON.generate(self.icons(icons))
 
-    # `window` is the lens's box and `dy` how far the lens moves, both in the source's box.
-    attr_reader :window, :dy, :height
+    # `window` is the lens's box, `frame` the frame's outer [top, bottom] on the midline, `scale` how much the lens, its
+    # frame and the spark are scaled, and `dy` how far the frame's centre moves, all in the source's box.
+    attr_reader :window, :frame, :scale, :dy, :height
 
     def initialize(icon, from)
       @from = from
@@ -72,12 +74,23 @@ module Logos
       @hole, @lens = holes.sort_by { |sub| self.class.bbox(sub)[1] - self.class.bbox(sub)[3] }       # tallest first
       @window = self.class.bbox(@lens)
       _, top, _, bottom = self.class.bbox(@outer)   # the helmet's ink, top to bottom: the box once trimmed
-      @dy = ((top + bottom) / 2 - (window[1] + window[3]) / 2).round(2)
+      # THIRDS (task welding-helmet-even-rim; Alex McRitchie 2026-11-25: "the icon should be equally weighted into
+      # thirds"): the frame's outer edges sit on the rule of 3's row lines, so the white above it, the frame with the
+      # lens, and the white below it are one row each. The lens, its frame and the spark scale together about the
+      # midline (so the frame's corners stay on it and the spark stays centred on it) and move to the middle row.
+      @midline = self.class.bbox(@hole)[0]
+      # The frame's top and bottom edges: its points off the midline (the midline's own points run past it).
+      ys = @hole.flat_map { |_, points| points }.select { |x, y| x > @midline + 0.5 && frame?(x, y) }.map(&:last)
+      @frame = [ys.min, ys.max]
+      row = (bottom - top) / ROWS
+      @scale = (row / (frame[1] - frame[0])).round(6)
+      @frame_to = top + row
+      @dy = ((@frame_to + row / 2) - (frame[0] + frame[1]) / 2).round(2)
     end
 
     # The v2 icon: the v1 icon's data with the lens, its frame and the spark moved down, in the box trimmed to its ink.
     def icon
-      shapes = { @outer => ->(*) { [0, 0] }, @hole => ->(x, y) { frame?(x, y) ? [0, dy] : [0, 0] }, @lens => ->(*) { [0, dy] } }
+      shapes = { @outer => ->(*) { [0, 0] }, @hole => ->(x, y) { frame?(x, y) ? shift(x, y) : [0, 0] }, @lens => ->(x, y) { shift(x, y) } }
       layers = @layers.map do |layer, subpaths|
         # A layer holding the outer helmet, the white half or the window is written in that order (v1's primary was
         # written so), and every other sub-path (the spark) moves with the lens.
@@ -85,9 +98,9 @@ module Logos
         raise Error, "#{@from}: the #{layer['role']} layer mixes the helmet's halves with other shapes" if found.any? && found.size != subpaths.size
 
         d = if found.any?
-              clear_lens(found).map { |shape| moved(shape, &shapes.fetch(shape)) }.join
+              clear_lens(found).map { |shape| shape.equal?(@lens) ? mapped(shape) : moved(shape, &shapes.fetch(shape)) }.join
             else
-              subpaths.map { |sub| moved(sub) { [0, dy] } }.join
+              subpaths.map { |sub| mapped(sub) }.join
             end
         layer.merge("d" => d)
       end
@@ -172,6 +185,15 @@ module Logos
 
     private
 
+    # Where the thirds step puts a point of the lens, its frame or the spark: scaled about the midline and the frame's
+    # top, then set on the middle row.
+    def place(x, y) = [@midline + (scale * (x - @midline)), @frame_to + (scale * (y - frame[0]))]
+
+    def shift(x, y) = place(x, y).zip([x, y]).map { |to, was| to - was }
+
+    # A sub-path with every point, control points too, placed by #place: exact, as the whole shape scales.
+    def mapped(subpath) = self.class.serialise(subpath.map { |command, points| [command, points.map { |x, y| place(x, y) }] })
+
     # A measure in v1's units at this helmet's scale: exactly itself for v1's own helmets.
     def scaled(measure) = measure * height / REFERENCE_HEIGHT
 
@@ -194,8 +216,8 @@ module Logos
     def clear_note = @halves_role == "white" ? "; the lens window is cut out of the white layer into a hole in the silhouette, so it is see-through" : ""
 
     def source_note
-      "derived from '#{@from}' by Logos::WeldingV2: the lens and its frame moved down #{self.class.number(dy)} to centre the lens " \
-        "on the rule of 3's middle row of the helmet's ink; the box is the ink (Logos::IconInk)#{clear_note}"
+      "derived from '#{@from}' by Logos::WeldingV2: the lens, its frame and the spark scaled by #{format('%.4f', scale)} about the midline " \
+        "and set so the frame's outer edges are the rule of 3's row lines of the helmet's ink; the box is the ink (Logos::IconInk)#{clear_note}"
     end
   end
 end
