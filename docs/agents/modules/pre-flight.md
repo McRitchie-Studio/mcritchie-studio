@@ -138,9 +138,9 @@ first, at the cost of a full submit cycle:
 - **Prose that widens the mapped lane.** The grep rung matches a config by its full
   path or its quoted basename, in comments too. Name a config the file does not
   read by its bare basename, or it counts toward the cap.
-- **Lint by the wrapper.** Run `bin/rubocop <paths>`, the command this lane runs.
-  `rubocop --force-exclusion` drops excluded paths without a word; compare
-  "Inspecting N files" with the number you passed.
+- **Lint by the wrapper.** Run `bin/rubocop --force-exclusion <paths>`, as the lane
+  does. It drops a path the repo's `.rubocop.yml` excludes (`db/schema.rb`) without a
+  word, as CI does; "Inspecting N files" below your count is that, not a fault.
 
 ## Background — not needed to execute
 
