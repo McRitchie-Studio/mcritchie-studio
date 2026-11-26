@@ -57,8 +57,10 @@ Lanes, in order:
   the spine alone, and says so; near the cap it warns one run early.
 - `spine` — `config/fast_cert_spine.yml`, the always-run core (~10-20s). It is
   anchored in the hub, so a satellite checkout resolves none of it.
-- `rubocop-changed` — `bin/rubocop <changed lintable files>`, never the whole
-  repo.
+- `rubocop-changed` — `bin/rubocop --force-exclusion <changed lintable files>`,
+  never the whole repo. The flag makes rubocop obey the repo's `.rubocop.yml`
+  `AllCops: Exclude` (for example `db/schema.rb`) for a file named on the command
+  line, as CI's whole-repo run does.
 - **The CI-only guards**, one lane each, only when the diff touches what the
   guard reads (`bin/lib/ci_guard_lanes.rb`). They read the whole tree, so no
   mapping ever selected them, and each cost a full CI cycle on 2026-10-10/11:
