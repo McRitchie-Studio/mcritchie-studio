@@ -197,6 +197,14 @@ class FastCertTest < Minitest::Test
 
   # --- rubocop scope ---------------------------------------------------------------
 
+  # [unit] rubocop ignores .rubocop.yml AllCops: Exclude for a file named on the
+  # command line unless told --force-exclusion. Task: fast-check-force-exclusion.
+  def test_rubocop_command_forces_the_repos_exclusions_onto_named_files
+    cmd = FastCert.rubocop_command("bin/rubocop", ["db/schema.rb", "app/models/a b.rb"])
+    assert_equal "bin/rubocop --force-exclusion db/schema.rb app/models/a\\ b.rb", cmd
+    assert_equal %w[bin/rubocop --force-exclusion db/schema.rb], cmd.shellsplit.first(3)
+  end
+
   def test_lintable_files_keeps_ruby_and_ruby_shebang_bin_scripts_only
     with_tree(
       "app/models/widget.rb" => "class Widget; end\n",

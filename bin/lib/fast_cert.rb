@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "yaml"
+require "shellwords"
 require_relative "code_diff"
 require_relative "fast_lane"
 
@@ -899,6 +900,16 @@ module FastCert
 
       path.start_with?("bin/") && ruby_shebang?(full)
     end
+  end
+
+  # The rubocop-changed lane's command line. It names the changed files, and rubocop
+  # LINTS A FILE NAMED ON THE COMMAND LINE even when the target repo's .rubocop.yml
+  # lists it under AllCops: Exclude (db/schema.rb is the usual one) — unless it is
+  # told --force-exclusion. Without the flag a diff touching a generated, excluded
+  # file went red locally while CI (which lints the whole repo) stayed green, and
+  # builders reached for --skip-preflight. Task: fast-check-force-exclusion.
+  def rubocop_command(prefix, files)
+    [prefix, "--force-exclusion", *Array(files).map(&:shellescape)].join(" ")
   end
 
   def ruby_shebang?(full)

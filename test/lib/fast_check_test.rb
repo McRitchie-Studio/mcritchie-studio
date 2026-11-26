@@ -230,7 +230,52 @@ class FastCheckTest < Minitest::Test
       assert_equal 0, code
       lint = lane_calls(lines, "RUBOCOP")
       assert_equal 1, lint.size
-      assert_equal ["app/models/widget.rb"], lint[0], "rubocop runs on the CHANGED file only"
+      assert_equal ["--force-exclusion", "app/models/widget.rb"], lint[0],
+                   "rubocop runs on the CHANGED file only, with the repo's excludes forced"
+    end
+  end
+
+  # [integration] A REAL rubocop over a temp repo whose .rubocop.yml excludes
+  # db/schema.rb: a badly-styled schema in the diff stays green, because the lane
+  # passes --force-exclusion; the same bad style in a model still reddens, which
+  # proves the lane really linted. Task: fast-check-force-exclusion.
+  BAD_STYLE = "puts( 'x' )\n"
+  HUB_GEMFILE = File.expand_path("../../Gemfile", __dir__)
+
+  def real_rubocop_env
+    { "FAST_CHECK_RUBOCOP_CMD" => "bundle exec rubocop --cache false",
+      "BUNDLE_GEMFILE" => HUB_GEMFILE }
+  end
+
+  def write_rubocop_config(write)
+    write.call(".rubocop.yml", <<~YAML)
+      AllCops:
+        NewCops: disable
+        SuggestExtensions: false
+        Exclude:
+          - "db/schema.rb"
+    YAML
+  end
+
+  def test_a_real_rubocop_honours_the_repos_exclude_for_a_named_schema
+    with_repo do |dir, write|
+      write_rubocop_config(write)
+      write.call("app/models/widget.rb", "# frozen_string_literal: true\n\nclass Widget; end\n")
+      write.call("db/schema.rb", BAD_STYLE)
+      out, code, = run_check(dir, extra_env: real_rubocop_env)
+      assert_match(/== rubocop-changed: .*--force-exclusion.*db\/schema\.rb/, out)
+      assert_match(/rubocop-changed: PASS/, out)
+      assert_equal 0, code, out
+    end
+  end
+
+  def test_a_real_rubocop_still_reddens_a_badly_styled_file_it_does_not_exclude
+    with_repo do |dir, write|
+      write_rubocop_config(write)
+      write.call("app/models/widget.rb", BAD_STYLE)
+      out, code, = run_check(dir, extra_env: real_rubocop_env)
+      assert_equal 1, code, out
+      assert_match(/lane\(s\) RED: rubocop-changed/, out)
     end
   end
 
