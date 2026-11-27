@@ -5,7 +5,8 @@
 //   [data-agent-setup-toggle]   a row's disclosure button: shows its steps row
 //                               (aria-controls) and closes any other open one, so
 //                               at most one checklist is open at a time
-//   [data-copy-clip]            copies the button's text to the clipboard
+//   [data-copy-clip]            copies its value to the clipboard, on any page
+//                               (/agents and /devops/sessions use it)
 //                               (window.copyText, components/_copy_text_script)
 //                               and says "Copied" for a moment
 //   [data-agent-avatar-png]     the avatar download: the hub keeps souls'
@@ -82,7 +83,7 @@ document.addEventListener("click", (event) => {
   if (toggleButton) { toggle(toggleButton); return; }
 
   const copyButton = event.target.closest("[data-copy-clip]");
-  if (copyButton && copyButton.closest("[data-test='pending-agents']")) { copy(copyButton); return; }
+  if (copyButton) { copy(copyButton); return; }
 
   const avatar = event.target.closest("[data-agent-avatar-png]");
   if (avatar) {

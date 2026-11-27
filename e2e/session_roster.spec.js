@@ -21,3 +21,16 @@ test("the Not wrapped filter keeps only sessions that never wrapped", async ({ p
   await expect(wrapped).toHaveCount(0);
   await expect(page.locator("[data-test='session-roster-filter'][data-ending='not_wrapped']")).toHaveAttribute("aria-current", "page");
 });
+
+// [e2e] EACH ROW CARRIES ITS RESUME COMMAND. The wrapped fixture ran in ~/projects,
+// so its row offers the exact `cd … && claude --resume <id>` to copy.
+test("a session row offers its resume command to copy", async ({ page }) => {
+  await page.goto("/devops/sessions");
+  const copy = page.locator("[data-test='session-roster-row'][data-session='e2e-roster-wrapped'] [data-test='session-roster-resume-copy']");
+  await expect(copy).toBeVisible();
+  await expect(copy).toHaveText("cd /Users/alex/projects && claude --resume e2e-roster-wrapped");
+  await expect(copy).toHaveAttribute("data-copy-clip", "cd /Users/alex/projects && claude --resume e2e-roster-wrapped");
+  // The seed has no mailbox session, so the background toggle stays hidden.
+  await expect(page.locator("[data-test='session-roster-background']")).toHaveCount(0);
+  await expect(copy).toHaveAttribute("aria-label", "Copy resume command for session e2e-rost");
+});

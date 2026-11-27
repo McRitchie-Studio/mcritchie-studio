@@ -1960,7 +1960,8 @@ puts "Seeded: books review lines (industries)"
 # One session /wrap sealed and one that never wrapped and still holds an open
 # task, so the roster's Not wrapped filter provably drops a row.
 AgentActivity.create!(session_id: "e2e-roster-wrapped", category: "Explore", reason_slug: "roster wrapped session",
-                      opened_at: 3.days.ago, closed_at: 3.days.ago + 1.hour, outcome_slug: "session wrapped")
+                      opened_at: 3.days.ago, closed_at: 3.days.ago + 1.hour, outcome_slug: "session wrapped",
+                      transcript_path: "/Users/alex/.claude/projects/-Users-alex-projects/e2e-roster-wrapped.jsonl")
 AgentActivity.create!(session_id: "e2e-roster-chase", category: "Explore", reason_slug: "roster unwrapped session",
                       opened_at: 4.days.ago, closed_at: 4.days.ago + 1.hour, outcome_slug: "session ended")
 Task.create!(title: "Roster chase demo", slug: "e2e-roster-chase-demo", stage: "designed", priority: 1,
