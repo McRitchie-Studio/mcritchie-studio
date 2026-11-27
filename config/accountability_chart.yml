@@ -25,8 +25,10 @@
 #   roles         about five; the seat's top responsibilities
 #
 # Off the chart on purpose: Hank (Commercial Welding's agent: another company's
-# chart). Rex is no longer a soul: ruling 3 folded him into Alex on 2026-10-28
-# (rex-folds-into-alex), and `rex` is an alias of `alex`.
+# chart) and McRitchie (McRitchie Industries' agent, likewise). Ray is an open seat,
+# not a soul: docs/agents/agents/mcritchie/soul.md. Rex is no longer a soul:
+# ruling 3 folded him into Alex on 2026-10-28 (rex-folds-into-alex), and `rex` is
+# an alias of `alex`.
 humans:
   alex-mcritchie: Alex McRitchie
 

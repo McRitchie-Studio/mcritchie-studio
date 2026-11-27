@@ -84,6 +84,16 @@ class AgentPortraitAssetsTest < ActiveSupport::TestCase
     assert Rails.public_path.join("slack-icons/alex-4485.png").exist?
   end
 
+  # mcritchie-soul-wears-4374: McRitchie wears Mad Lads #4374, numbered in the
+  # filename like Alex's, with the Slack icon Media::Slack derives from that name.
+  test "[component] the mcritchie soul wears mcritchie-4374.webp and its Slack icon exists" do
+    mcritchie = YAML.safe_load_file(SOULS).fetch("souls").find { |soul| soul["slug"] == "mcritchie" }
+
+    assert_equal "/agents/mcritchie-4374.webp", mcritchie.fetch("avatar")
+    assert Rails.public_path.join("agents/mcritchie-4374.webp").exist?
+    assert Rails.public_path.join("slack-icons/mcritchie-4374.png").exist?
+  end
+
   private
 
   # Portraits hardcoded in markup rather than seeded, such as alex-4485.webp in the chat

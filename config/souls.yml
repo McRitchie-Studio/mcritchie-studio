@@ -258,3 +258,20 @@ souls:
   metadata:
     review_role:
     reviewer: false
+- slug: mcritchie
+  name: McRitchie
+  status: active
+  agent_type: worker
+  title: McRitchie Industries Agent
+  description: 'The voice of McRitchie Industries, the holding company: lenders, the acquisition and owner-level correspondence. Not yet launched. Wears Mad Lads #4374; Alex wears #4485. Never the human: Alex McRitchie is always named in full.'
+  avatar: "/agents/mcritchie-4374.webp"
+  position: 10
+  emoji: "🏛"
+  color: "#0F766E"
+  metadata:
+    review_role:
+    reviewer: false
+# RESERVED, NOT A SOUL: Ray is an open seat (Alex McRitchie, 2026-11-27), brought in
+# at a pinch. Mad Lads #8317 (the topknot, Alex's portrait before #4485) is held for
+# him. Until he is seated, `ray` stays an alias of `alex` (Task::SOUL_ALIASES), so do
+# not add a `ray` record here without retiring that alias in the same change.

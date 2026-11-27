@@ -79,10 +79,11 @@ class AccountabilityChartTest < ActiveSupport::TestCase
     assert_equal %w[jasper shannon], chart.seat("architecture-review").lights.sort
   end
 
-  test "Rex and Hank are off the chart" do
+  test "Rex, Hank and McRitchie are off the chart" do
     owners = AccountabilityChart.load.seats.flat_map { |s| [s.owner, *s.lights] }
     refute_includes owners, "rex", "ruling 3: Rex folded into Alex (rex-folds-into-alex); alex owns Sales/Marketing"
     refute_includes owners, "hank", "Hank sits on Commercial Welding's chart"
+    refute_includes owners, "mcritchie", "McRitchie sits on McRitchie Industries' chart"
   end
 
   # --- the checks bite ---------------------------------------------------------

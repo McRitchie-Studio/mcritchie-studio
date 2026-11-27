@@ -21,6 +21,8 @@ Alex McRitchie is the human owner: the Visionary and CEO on the accountability c
 | Tyrion | Cyvasse's house player: plays and chats with visitors; client-facing, holds no credentials | `docs/agents/agents/tyrion/` |
 | Tywin | The Cyvasse app's operator and admin: internal, holds the keys | `docs/agents/agents/tywin/` |
 | Hank | The Commercial Welding business agent (books, suppliers); not yet launched | `docs/agents/agents/hank/` |
+| McRitchie | The voice of McRitchie Industries (lenders, the acquisition, owner-level letters); not yet launched. "McRitchie" alone is the agent; the owner is always Alex McRitchie in full | `docs/agents/agents/mcritchie/` |
+| Ray | Open seat, not a soul: brought in at a pinch, Mad Lads #8317 held for him; `ray` stays an alias of `alex` until then | `docs/agents/agents/mcritchie/soul.md` |
 | Alex | Sales/Marketing: faces clients, runs focus sessions and the `/build` queue, leads client launches; demand (Rex's CMO method, folded in 2026-10-28; `rex` is an alias), brand voice and launches; Worker class | `docs/agents/agents/alex/` |
 | Mack | CFO (Finance/Admin): the books and `close-the-month`, the financials, reports, the financial watchdog | `docs/agents/agents/mack/` |
 
