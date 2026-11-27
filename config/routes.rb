@@ -150,6 +150,8 @@ Rails.application.routes.draw do
     # grouped by stage on the board's own card (EpicsController).
     get "epics", to: "epics#index", as: :epics
     get "epics/:slug", to: "epics#show", as: :epic
+    # Every agent session of the last 60 days and whether it ran /wrap (SessionRoster).
+    get "sessions", to: "session_roster#index", as: :session_roster
     get "review_events", to: "tasks#review_events_hub", as: :review_events_hub
     # Task-development trends (stage speed, cycle time, tokens, cost,
     # estimate-vs-actual).

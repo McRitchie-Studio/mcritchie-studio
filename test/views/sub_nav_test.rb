@@ -15,9 +15,9 @@ class SubNavTest < ActionView::TestCase
     render_nav :board_sections, current: :tasks
 
     assert_select %(nav[aria-label="Board sections"][data-sub-nav="board_sections"]), 1
-    assert_equal [ admin_dashboard_path, stages_path, epics_path, intelligence_path, activities_agents_path, pokedex_path ],
+    assert_equal [ admin_dashboard_path, stages_path, epics_path, session_roster_path, intelligence_path, activities_agents_path, pokedex_path ],
                  hrefs
-    assert_equal [ "← Admin dashboard", "Stages", "Epics", "Intelligence", "🎭 Activities", "Pokédex" ],
+    assert_equal [ "← Admin dashboard", "Stages", "Epics", "Sessions", "Intelligence", "🎭 Activities", "Pokédex" ],
                  css_select("nav a").map { |link| link.text.strip }
     assert_select "nav a[aria-current]", 0, "the Tasks board has no entry in its own link row"
   end
@@ -30,7 +30,7 @@ class SubNavTest < ActionView::TestCase
     assert_includes current.first["class"].split, "text-heading"
     assert_includes current.first["class"].split, "underline"
     assert_equal "board-link-epics", current.first["data-test"]
-    assert_select "nav a.text-muted", 5
+    assert_select "nav a.text-muted", 6
   end
 
   test "[component] the Deploy board swaps Stages for the learning-loop links" do

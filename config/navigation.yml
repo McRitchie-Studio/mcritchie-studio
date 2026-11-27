@@ -191,6 +191,7 @@ pages:
   # ── The board family under /devops, and the heartbeat (reached from the sub-navs) ──
   stages:                   { page: "tasks#stages",             audience: admin, label: Stages, parent: deployments }
   epics:                    { page: "epics#index",              audience: admin, label: Epics, parent: deployments }
+  session_roster:           { page: "session_roster#index",     audience: admin, label: Sessions, parent: deployments }
   triage:                   { page: "triage#index",             audience: admin, label: Triage, parent: deployments }
   intelligence:             { page: "intelligence#index",       audience: admin, label: Intelligence, parent: deployments }
   # The Pokédex is an agent page, its own section beside DevOps, so its trail is Admin's.
@@ -239,6 +240,7 @@ sub_navs:
       # The Deploy board carries Stages in its header menu instead.
       - { page: stages, except: [deployments] }
       - { page: epics, test_id: board-link-epics }
+      - { page: session_roster, test_id: board-link-sessions }
       - { page: intelligence }
       - { page: activities_agents, icon: true }
       - { page: pokedex }

@@ -28,6 +28,7 @@ printed link still works. Print the new address.
 | Triage | `/devops/triage` | `/triage` |
 | Stages · the SOP | `/devops/stages` · `/devops/stages/sop` | `/stages` · `/stages/sop` |
 | Epics · one epic | `/devops/epics` · `/devops/epics/<slug>` | `/epics` · `/epics/<slug>` |
+| Sessions (every agent session of the last 60 days and whether it ran `/wrap`) | `/devops/sessions` | new |
 | Review hub | `/devops/review_events` | `/review_events` |
 | Intelligence | `/devops/intelligence` | `/intelligence` |
 | Insight Bank | `/devops/insights` | `/mason/insights` |
