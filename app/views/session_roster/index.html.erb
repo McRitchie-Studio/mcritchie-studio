@@ -1,0 +1,116 @@
+<%# /devops/sessions — every agent session of the last 60 days (SessionRoster), one
+    row each, with how it ended. "Chase" rows never ran /wrap and still hold open
+    tasks, so they lead the work of tidying up. Read-only; the ending filter is a
+    plain ?ending= link. %>
+<% content_for(:title, "Sessions") %>
+<% endings = [
+     ["all", "All", @counts[:sessions]],
+     ["not_wrapped", "Not wrapped", @counts[:not_wrapped]],
+     ["chase", "Chase", @counts[:chase]],
+     ["wrapped", "Wrapped", @counts[:wrapped]],
+     ["live", "Live", @counts[:live]]
+   ] %>
+<% pill = {
+     "wrapped" => ["Wrapped", :success],
+     "chase" => ["Chase", :danger],
+     "not_wrapped" => ["Not wrapped", :warning],
+     "live" => ["Live", :primary]
+   } %>
+<section class="space-y-6" data-test="session-roster">
+  <% description = capture do %>
+    Every agent session of the last 60 days, with its Pokémon and tasks. A session is
+    wrapped when <code class="text-xs">/wrap</code> sealed it. Chase means it never
+    wrapped and still holds open tasks.
+  <% end %>
+  <%= render "components/page_header", title: "Sessions", description: description,
+        sub_nav: { nav: :board_sections, current: :session_roster } %>
+
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3" data-test="session-roster-counts">
+    <% [["Sessions", @counts[:sessions]], ["Wrapped", @counts[:wrapped]],
+        ["Not wrapped", @counts[:not_wrapped]], ["Chase", @counts[:chase]]].each do |label, n| %>
+      <div class="rounded-lg border border-subtle bg-surface px-3 py-3">
+        <p class="text-3xs uppercase tracking-wide text-muted font-semibold"><%= label %></p>
+        <p class="mt-1 font-mono text-xl font-bold text-heading tabular-nums"><%= n %></p>
+      </div>
+    <% end %>
+  </div>
+
+  <nav class="flex flex-wrap items-center gap-2" aria-label="Filter by ending" data-test="session-roster-filters">
+    <% endings.each do |key, label, n| %>
+      <% current = @ending == key %>
+      <%= link_to session_roster_path({ ending: (key == "all" ? nil : key), background: (@background ? "1" : nil) }.compact),
+            class: "rounded-full border px-3 py-1 text-sm #{current ? "border-primary bg-primary/10 text-primary-ink font-semibold" : "border-subtle text-body hover:bg-surface-alt"}",
+            aria: { current: (current ? "page" : nil) },
+            data: { test: "session-roster-filter", ending: key } do %>
+        <%= label %> <span class="tabular-nums text-muted"><%= n %></span>
+      <% end %>
+    <% end %>
+    <%= link_to (@background ? "Hide background sessions" : "Show #{@counts[:background]} background sessions"),
+          session_roster_path({ ending: (@ending == "all" ? nil : @ending), background: (@background ? nil : "1") }.compact),
+          class: "ml-auto text-xs text-muted hover:underline", data: { test: "session-roster-background" } %>
+  </nav>
+
+  <% if @rows.any? %>
+    <div class="overflow-x-auto rounded-lg border border-subtle bg-surface">
+      <table class="min-w-full text-sm" data-test="session-roster-table">
+        <thead class="bg-surface-alt text-left text-xs uppercase tracking-wide text-muted">
+          <tr>
+            <th class="px-4 py-3 font-semibold">Pokémon</th>
+            <th class="px-4 py-3 font-semibold">Ending</th>
+            <th class="px-4 py-3 font-semibold">First</th>
+            <th class="px-4 py-3 font-semibold">Last</th>
+            <th class="px-4 py-3 font-semibold text-right">Tasks</th>
+            <th class="px-4 py-3 font-semibold text-right">Open</th>
+            <th class="px-4 py-3 font-semibold">Latest task</th>
+            <th class="px-4 py-3 font-semibold">Goal</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-subtle">
+          <% @rows.each do |row| %>
+            <% ending = row.ending(@roster.now) %>
+            <% mon = @pokemon[row.mascot_slug] %>
+            <tr class="hover:bg-surface-alt/70" data-test="session-roster-row" data-session="<%= row.session_id %>" data-ending="<%= ending %>">
+              <td class="px-4 py-3 align-top">
+                <div class="flex items-center gap-2 min-w-0">
+                  <% if mon %>
+                    <img src="<%= safe_image_src(mon.display_sprite) %>" alt="" class="w-8 h-8 object-contain shrink-0" loading="lazy">
+                  <% end %>
+                  <div class="min-w-0">
+                    <div class="font-semibold text-heading capitalize" data-test="session-roster-mascot"><%= mon&.name || row.mascot_slug || "No Pokémon" %></div>
+                    <%= link_to row.short_id, mason_heartbeat_path(session_id: row.session_id), title: "Heartbeat for #{row.session_id}", class: "font-mono text-2xs text-muted hover:underline", data: { test: "session-roster-heartbeat" } %>
+                  </div>
+                </div>
+              </td>
+              <td class="px-4 py-3 align-top" data-test="session-roster-ending">
+                <%= render Studio::BadgeComponent.new(text: pill[ending][0], tone: pill[ending][1]) %>
+              </td>
+              <td class="px-4 py-3 align-top whitespace-nowrap tabular-nums text-muted">
+                <time datetime="<%= row.started_at&.iso8601 %>"><%= row.started_at && l(row.started_at.in_time_zone("America/Denver"), format: "%b %-d") %></time>
+              </td>
+              <td class="px-4 py-3 align-top whitespace-nowrap tabular-nums">
+                <time datetime="<%= row.last_at&.iso8601 %>"><%= row.last_at && l(row.last_at.in_time_zone("America/Denver"), format: "%b %-d %-l:%M%P") %></time>
+              </td>
+              <td class="px-4 py-3 align-top text-right tabular-nums"><%= row.task_count %></td>
+              <td class="px-4 py-3 align-top text-right tabular-nums <%= "font-semibold text-danger-ink" if row.open_task_count.positive? %>" data-test="session-roster-open"><%= row.open_task_count %></td>
+              <td class="px-4 py-3 align-top">
+                <% if row.last_task_slug %>
+                  <%= link_to row.last_task_slug, task_path(row.last_task_slug), class: "font-mono text-xs text-primary hover:underline break-all" %>
+                <% end %>
+              </td>
+              <td class="px-4 py-3 align-top max-w-md">
+                <div class="text-body"><%= row.first_reason %></div>
+                <% if row.last_reason.present? && row.last_reason != row.first_reason %>
+                  <div class="mt-0.5 text-xs text-muted">Last: <%= row.last_reason %></div>
+                <% end %>
+              </td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <p class="rounded-xl border border-dashed border-subtle p-6 text-sm text-muted" data-test="session-roster-empty">
+      No session matches this filter in the last 60 days.
+    </p>
+  <% end %>
+</section>
