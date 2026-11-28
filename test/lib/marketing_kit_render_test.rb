@@ -32,25 +32,6 @@ class MarketingKitRenderTest < ActiveSupport::TestCase
     end
   end
 
-  test "the proposal carries the brand's terms only when the spec has them" do
-    load_kit do |spec|
-      html = MarketingKit::DocTemplates.new(spec).proposal
-      refute_includes html, "TERMS OF SERVICE"
-      refute_includes html, "Terms of Service that follow"
-      assert_includes html, "ABOUT US"
-      assert_includes html, "WHY CHOOSE US?"
-      assert_includes html, "RF-YYYY-000"
-      refute_includes html, "CLIENTS", "no clients page without clients"
-    end
-    terms = ->(d) { d["proposal"]["terms_of_service"] = { "intro" => ["These terms apply."], "items" => [["Payment", "Due on receipt."]] } }
-    load_kit(edit: terms) do |spec|
-      html = MarketingKit::DocTemplates.new(spec).proposal
-      assert_includes html, "TERMS OF SERVICE"
-      assert_includes html, "<b>Payment.</b> Due on receipt."
-      assert_includes html, "Terms of Service that follow"
-    end
-  end
-
   test "the Doc templates embed their images and use the brand colours" do
     load_kit do |spec|
       general = MarketingKit::DocTemplates.new(spec).general
@@ -111,7 +92,7 @@ class MarketingKitRenderTest < ActiveSupport::TestCase
                       "RF_logo_horizontal_dark.png", "RF_logo_icon_512.png", "RF_photo_shop-floor.jpg", "RF_photo_stair-install.jpg"],
                      by_folder[""]
         assert_equal ["Brand Guide"], by_folder["01 Brand"]
-        assert_equal ["RF Doc Template", "RF Proposal Template"], by_folder["05 Templates"]
+        assert_equal ["RF Doc Template"], by_folder["05 Templates"], "the Proposal, like Slides and Sheet, is an Office file (office: false)"
         assert_equal ["RF Kit Spec.yml", "messaging.html"], by_folder["01 Brand/Kit source"]
         assert_includes by_folder["01 Brand/Logos/SVG — print and web"], "RF_logo_horizontal_dark.svg"
         assert_equal 7, by_folder["01 Brand/Logos/PNG — Office and social"].size

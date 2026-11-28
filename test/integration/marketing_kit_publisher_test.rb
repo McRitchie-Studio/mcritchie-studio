@@ -226,7 +226,7 @@ class MarketingKitPublisherTest < ActiveSupport::TestCase
       drive.writes.clear
       result = publish(spec, out, drive, replace: :all)
       assert_equal result.results.count { |r| r.action == :update }, drive.writes.size
-      assert_operator drive.writes.size, :>=, 5, "every Doc is overwritten"
+      assert_operator drive.writes.size, :>=, 4, "every Doc is overwritten (the Proposal is an Office file, not built with office: false)"
     end
   end
 

@@ -11,12 +11,13 @@ module MarketingKit
   #   build = MarketingKit::Build.new(spec, out: "tmp/kit").run
   #   build.entries.map(&:name)  # => ["00 Start Here", "Brand Guide", …]
   class Build
-    # kind: "doc" (HTML → Google Doc), "sheet" (xlsx → Google Sheet),
+    # kind: "doc" (HTML → Google Doc), "word" (docx → Google Doc), "sheet" (xlsx → Google Sheet),
     # "slides" (pptx → Google Slides) or "file" (uploaded as it is).
     Entry = Data.define(:local, :name, :folder, :kind, :type, :about)
 
     MIME = { ".svg" => "image/svg+xml", ".png" => "image/png", ".jpg" => "image/jpeg", ".jpeg" => "image/jpeg",
-             ".pdf" => "application/pdf", ".yml" => "text/plain", ".yaml" => "text/plain", ".html" => "text/html" }.freeze
+             ".pdf" => "application/pdf", ".yml" => "text/plain", ".yaml" => "text/plain", ".html" => "text/html",
+             ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }.freeze
 
     TRACKER = "Marketing Kit Tracker"
 
@@ -64,11 +65,16 @@ module MarketingKit
       t = DocTemplates.new(spec)
       add(write("templates", t.general_name, t.general), t.general_name, Layout::TEMPLATES, "doc", "Template",
           "General branded document: logo, title, photo, sections, call-to-action button, footer. File, then Make a copy")
-      add(write("templates", t.proposal_name, t.proposal), t.proposal_name, Layout::TEMPLATES, "doc", "Template",
-          "Customer proposal: cover, about us, details, pricing, why us, acceptance. Fill the orange [fields]")
       return unless @office
 
       o = Office.new(spec)
+      tones = spec.proposal[:dark] ? %i[light dark] : %i[light]
+      tones.each do |tone|
+        pr = ProposalTemplate.new(spec, tone: tone)
+        add(o.write_proposal(File.join(out, "templates", "#{pr.name}.docx"), tone: tone), pr.name, Layout::TEMPLATES, "word", "Template",
+            "Customer proposal#{', dark (for screens; print the light one)' if tone == :dark}, one section per page: cover, about us, " \
+            "details, investment, clients, why us, terms, signatures. Fill the orange [fields]")
+      end
       add(o.write_slides(File.join(out, "templates", "#{o.slides_name}.pptx")), o.slides_name, Layout::TEMPLATES, "slides", "Template",
           "12-slide branded deck. Duplicate the slides you need; right-click a photo, then Replace image")
       sheet = SheetTemplate.new(spec)
@@ -116,7 +122,7 @@ module MarketingKit
 
     def tracker
       inventory = entries.map do |e|
-        format = { "doc" => "Google Doc", "sheet" => "Google Sheet", "slides" => "Google Slides" }.fetch(e.kind) { File.extname(e.local).delete(".").upcase }
+        format = { "doc" => "Google Doc", "word" => "Google Doc", "sheet" => "Google Sheet", "slides" => "Google Slides" }.fetch(e.kind) { File.extname(e.local).delete(".").upcase }
         [e.type, e.folder.presence || "(root)", e.name, format, e.about, "Approved", spec.owner, spec.updated, ""]
       end
       inventory.unshift(["Guide", "(root)", TRACKER, "Google Sheet", "This tracker", "Approved", spec.owner, spec.updated, ""])

@@ -7,9 +7,9 @@ require "fileutils"
 
 module MarketingKit
   # The Office files: the 12-slide template (.pptx, which Drive converts to
-  # Google Slides), the Sheet template and the tracker workbook (.xlsx,
+  # Google Slides), the Proposal template (.docx, converted to a Google Doc), the Sheet template and the tracker workbook (.xlsx,
   # converted to Google Sheets). Ruby decides every word and colour here and writes a JSON payload;
-  # script/marketing_kit/office.py only draws it (python-pptx and openpyxl,
+  # script/marketing_kit/office.py only draws it (python-pptx, python-docx and openpyxl,
   # which have no Ruby equivalent good enough for Drive's import).
   class Office
     SCRIPT = File.expand_path("../../script/marketing_kit/office.py", __dir__)
@@ -67,6 +67,7 @@ module MarketingKit
 
     def write_slides(path) = draw("slides", slides_payload, path)
     def write_sheet(path) = draw("sheet", SheetTemplate.new(@spec).payload, path)
+    def write_proposal(path, tone: :light) = draw("proposal", ProposalTemplate.new(@spec, tone: tone).payload, path)
     # Any sheet payload (a SheetRecipe's), drawn the same way as the template.
     def write_sheet_payload(payload, path) = draw("sheet", payload, path)
     def write_tracker(inventory, path) = draw("tracker", tracker_payload(inventory), path)
