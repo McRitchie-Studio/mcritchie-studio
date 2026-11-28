@@ -634,15 +634,13 @@ def proposal(d, out):
         # Each credential: its body's logo (one tone, when the spec gives one), then a green tick, the credential and who
         # holds it. Without a logo the tick leads.
         def tick():
-            """A hollow tick: a green ring and a green check, filled with the page colour so the logo under it
-            does not show through."""
+            """A hollow tick: a green ring and a green check, transparent inside so the logo shows through."""
             from PIL import ImageDraw
             n = 320; im = Image.new("RGBA", (n, n), (0, 0, 0, 0)); dr = ImageDraw.Draw(im)
             green = (46, 168, 96, 255)
-            paper = tuple(int((d.get("page") or "#FFFFFF")[i:i + 2], 16) for i in (1, 3, 5)) + (255,)
-            dr.ellipse((10, 10, n - 10, n - 10), fill=paper, outline=green, width=26)
-            dr.line([(92, 168), (142, 218), (232, 116)], fill=green, width=30, joint="curve")
-            for x, y in ((92, 168), (142, 218), (232, 116)): dr.ellipse((x - 15, y - 15, x + 15, y + 15), fill=green)
+            dr.ellipse((14, 14, n - 14, n - 14), outline=green, width=38)
+            dr.line([(88, 168), (140, 220), (236, 112)], fill=green, width=42, joint="curve")
+            for x, y in ((88, 168), (140, 220), (236, 112)): dr.ellipse((x - 21, y - 21, x + 21, y + 21), fill=green)
             small = im.resize((160, 160), Image.LANCZOS)
             out_p = os.path.join(tmp, "tick.png"); small.save(out_p); return out_p
         tick_p = tick()
@@ -650,7 +648,7 @@ def proposal(d, out):
         def ticked(path):
             """The logo with the green tick over its bottom-right corner, on a canvas just big enough for both."""
             logo = Image.open(path).convert("RGBA")
-            t = Image.open(tick_p).convert("RGBA"); side = int(min(logo.size) * 0.52)
+            t = Image.open(tick_p).convert("RGBA"); side = int(min(logo.size) * 0.72)
             t = t.resize((side, side), Image.LANCZOS)
             canvas = Image.new("RGBA", (logo.width + side // 3, logo.height + side // 3), (0, 0, 0, 0))
             canvas.alpha_composite(logo, (0, 0))
