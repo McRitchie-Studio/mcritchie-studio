@@ -48,6 +48,13 @@ class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "a one-row details list gets its Pricing row at the end, with no gap" do
+    load_kit(edit: ->(d) { d["proposal"]["details"] = [["Project", "x"]] }) do |spec|
+      rows = MarketingKit::ProposalTemplate.new(spec).payload[:details]
+      assert_equal ["Project", "Pricing"], rows.map { |r| r[:label] }
+    end
+  end
+
   test "terms ride only when the spec has them; the signature block always does" do
     load_kit do |spec|
       p = MarketingKit::ProposalTemplate.new(spec).payload

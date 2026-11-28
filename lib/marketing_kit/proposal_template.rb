@@ -117,7 +117,7 @@ module MarketingKit
       rows = Array(pr[:details].presence || DEFAULT_DETAILS).map { |label, value| { label: label, lines: Array(value), bullets: value.is_a?(Array) } }
       at = rows.index { |r| r[:label].to_s.match?(/pricing/i) }
       unless at
-        at = (rows.index { |r| r[:label].to_s.match?(/scope/i) } || 1) + 1
+        at = [(rows.index { |r| r[:label].to_s.match?(/scope/i) } || 1) + 1, rows.size].min # a short list must not pad with nil
         rows.insert(at, { label: "Pricing", lines: [], bullets: false })
       end
       rows[at][:pricing] = { breakdown: breakdown(pr), total_label: pr[:total_label] || "With applicable taxes included:" }
