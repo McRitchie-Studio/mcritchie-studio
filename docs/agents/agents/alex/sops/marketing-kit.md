@@ -268,7 +268,7 @@ Doc. Like the Slides and Sheet templates, it is built only with Office on.
   the dark version, a mid grey for the light one) on a transparent background,
   in an even grid. The Commercial Welding app keeps these files and their
   sources (`commercial-welding/config/client_logos.yml`).
-- **Claims:** `proposal.certifications_field` puts a field on the cover for a
+- **Claims:** `proposal.certifications_field` puts a field on the about page for a
   claim to confirm on each proposal, such as an ownership certification. Do not
   write such a claim into the template as fixed text.
 
