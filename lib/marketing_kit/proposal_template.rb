@@ -2,8 +2,9 @@
 
 module MarketingKit
   # The Proposal template (task cw-proposal-page-layout; Alex McRitchie 2026-11-27, from Commercial Welding's IPA-ENG
-  # proposal): one section per page, the brand's two-tone bar across the top and bottom of every page, details that
-  # price the job by category with sub-items, the client logos, and a signature block after the terms.
+  # proposal, then redrawn quieter: "a bit more elegant"): one section per page, each opened by a numbered label and
+  # a title; a running header with the logo; details, then an investment page pricing the job by category with
+  # sub-items; the client logos; and a signature page after the terms.
   #
   # Drive's HTML import drops page breaks, headers and footers, so this template is a Word file that Drive converts to a
   # Google Doc, drawn by script/marketing_kit/office.py (`proposal`). Ruby decides every word and colour here; the
@@ -34,6 +35,7 @@ module MarketingKit
         colours: { primary: c(:primary), accent: c(:accent), dark: c(:dark), ink: INK, grey: GREY, line: LINE, white: "#FFFFFF" },
         images: images(pr),
         legal_name: @spec.legal_name,
+        headings: headings(pr),
         tagline: @spec.tagline.delete_suffix(".").upcase,
         motto: pr[:motto]&.upcase,
         cover: cover(pr),
@@ -51,9 +53,18 @@ module MarketingKit
     def c(key) = @spec.colour(key)
 
     def images(pr)
-      { logo_box: @spec.logo_png(:full, :dark), icon: @spec.logo_png(:icon, :light), cover: @spec.slot(:proposal_cover),
+      { logo: @spec.logo_png(:horizontal, :light), icon: @spec.logo_png(:icon, :light), cover: @spec.slot(:proposal_cover),
         about: @spec.slot(:proposal_about), why: @spec.slot(:proposal_why),
         clients: pr[:clients_logos].presence && @spec.photo_path(pr[:clients_logos]) }
+    end
+
+    # Each section opens with a small label over a title. The about title is the tagline; the rest read as a
+    # proposal reads to a client.
+    def headings(pr)
+      { about: ["About us", @spec.tagline.delete_suffix(".")], details: ["Proposal details", "The project"],
+        investment: ["Investment", "Pricing"], clients: ["Clients", "Who we work with"],
+        why: ["Why choose us", pr[:why_title] || "Why #{@spec.name}"], terms: ["Terms of service", "Terms and conditions"],
+        acceptance: ["Acceptance", "Agreement to proceed"] }
     end
 
     def cover(pr)

@@ -232,11 +232,14 @@ What a publish does to what is already there:
 ## The Proposal template
 
 `<SHORT> Proposal Template` follows the proposal Commercial Welding sent IPA-ENG
-on 2026-11-25 (Alex McRitchie, 2026-11-27). It has one section per page:
-cover, about us, details and pricing, clients, why choose us, terms of service,
-then acceptance with a signature block for each party. The brand's two-tone bar
-(a third accent, two thirds primary) runs edge to edge across the top and bottom
-of every page.
+on 2026-11-25, then redrawn quieter at Alex McRitchie's request ("a bit more
+elegant", 2026-11-27). It has one section per page: cover, about us, details,
+investment (the pricing), clients, why choose us, terms of service, then
+acceptance with a signature line for each party. Each section opens with a
+small numbered label in the accent, a large title in the primary colour and a
+short accent rule. Rules are hairlines; the accent marks only labels, that rule
+and the fields. Every page after the cover carries the horizontal logo and the
+proposal number in its header, and the motto and page number in its footer.
 
 Drive's HTML import drops page breaks, headers and footers. So the proposal is a
 Word file (`lib/marketing_kit/proposal_template.rb`, drawn by
@@ -246,9 +249,9 @@ Doc. Like the Slides and Sheet templates, it is built only with Office on.
 - **Details:** `proposal.details` is `[[label, value], …]`. A value is one line
   or a list of bullets. A `[bracketed]` part is a field, drawn in the accent
   colour. A single line with no brackets is one whole field.
-- **Pricing:** the row whose label names pricing (`Scope / Pricing`) carries
-  `proposal.pricing_breakdown`: categories with sub-items, each priced `[$0]`,
-  then the total.
+- **Pricing:** the row whose label names pricing (`Scope / Pricing`) holds the
+  scope line, and the investment page draws `proposal.pricing_breakdown`:
+  categories with sub-items, each priced `[$0]` on the right, then the total.
 - **Clients:** `proposal.clients_logos` names one image in `photos/` for the
   clients page. With no image, the page lists `proposal.clients` by name.
 - **Claims:** `proposal.certifications_field` puts a field on the cover for a

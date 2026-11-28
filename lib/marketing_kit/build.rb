@@ -70,7 +70,7 @@ module MarketingKit
       o = Office.new(spec)
       pr = ProposalTemplate.new(spec)
       add(o.write_proposal(File.join(out, "templates", "#{pr.name}.docx")), pr.name, Layout::TEMPLATES, "word", "Template",
-          "Customer proposal, one section per page: cover, about us, details and pricing, clients, why us, terms and signatures. Fill the orange [fields]")
+          "Customer proposal, one section per page: cover, about us, details, investment, clients, why us, terms, signatures. Fill the orange [fields]")
       add(o.write_slides(File.join(out, "templates", "#{o.slides_name}.pptx")), o.slides_name, Layout::TEMPLATES, "slides", "Template",
           "12-slide branded deck. Duplicate the slides you need; right-click a photo, then Replace image")
       sheet = SheetTemplate.new(spec)

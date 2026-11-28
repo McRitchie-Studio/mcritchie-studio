@@ -78,25 +78,26 @@ class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
     end
   end
 
-  test "the cover's logo box is the dark full logo on the dark colour, and the template is named by kind" do
+  test "the cover and running header use the horizontal logo; each section has a label and a title" do
     load_kit do |spec|
       t = MarketingKit::ProposalTemplate.new(spec)
-      assert_equal spec.logo_png(:full, :dark), t.payload.dig(:images, :logo_box)
-      assert_equal spec.colour(:dark), t.payload.dig(:colours, :dark)
+      assert_equal spec.logo_png(:horizontal, :light), t.payload.dig(:images, :logo)
+      assert_equal ["About us", "Built to last"], t.payload.dig(:headings, :about), "the about title is the tagline"
+      assert_equal %i[about details investment clients why terms acceptance], t.payload[:headings].keys
       assert_equal "RF Proposal Template", t.name
       assert_equal "RF-YYYY-000", t.payload.dig(:cover, :number)
     end
   end
 end
 
-# [component] office.py draws the payload as a Word file: a page break before every section after the cover, the bar
-# image in the header and the footer, and the details as a table. Runs Python (the kit's shared venv).
+# [component] office.py draws the payload as a Word file: a page break before every section after the cover, the logo
+# in the running header, the page number in the footer, and a cover with no header. Runs Python (the kit's shared venv).
 class MarketingKitProposalDocxTest < ActiveSupport::TestCase
   include MarketingKitFixtures
 
   PNG = Base64.decode64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
 
-  test "the drawn proposal has one section per page and the bar on every page" do
+  test "the drawn proposal has one section per page, a running header and a numbered footer" do
     terms = ->(d) {
       d["proposal"]["terms_of_service"] = { "intro" => ["These terms apply."], "items" => [["Payment", "Due on receipt."]] }
       d["proposal"]["clients"] = %w[Acme Beta]
@@ -109,13 +110,14 @@ class MarketingKitProposalDocxTest < ActiveSupport::TestCase
       MarketingKit::Office.new(spec).write_proposal(out)
 
       xml = Zip::File.open(out) { |z| z.read("word/document.xml") }
-      # cover | about | details | clients | why | terms | acceptance
-      assert_equal 6, xml.scan('w:type="page"').size, "a page break before each of the six sections after the cover"
-      %w[PROPOSAL ABOUT\ US PROPOSAL\ DETAILS CLIENTS WHY TERMS\ OF\ SERVICE ACCEPTANCE].each { |t| assert_includes xml, t }
-      assert_includes xml, "Total amount: "
-      headers = Zip::File.open(out) { |z| z.entries.map(&:name).grep(%r{\Aword/(header|footer)\d*\.xml\z}).map { |n| z.read(n) } }
-      assert(headers.any? { |h| h.include?("<w:hdr") && h.include?("r:embed") }, "the header carries the bar image")
-      assert(headers.any? { |h| h.include?("<w:ftr") && h.include?("r:embed") }, "the footer carries the bar image")
+      # cover | about | details | investment | clients | why | terms | acceptance
+      assert_equal 7, xml.scan('w:type="page"').size, "a page break before each of the seven sections after the cover"
+      ["PROPOSAL", "ABOUT US", "PROPOSAL DETAILS", "INVESTMENT", "CLIENTS", "WHY CHOOSE US", "TERMS OF SERVICE", "ACCEPTANCE"].each { |t| assert_includes xml, t }
+      assert_includes xml, ">Total<"
+      assert_includes xml, "w:titlePg", "the cover has its own (empty) header and footer"
+      parts = Zip::File.open(out) { |z| z.entries.map(&:name).grep(%r{\Aword/(header|footer)\d*\.xml\z}).map { |n| z.read(n) } }
+      assert(parts.any? { |h| h.include?("<w:hdr") && h.include?("r:embed") }, "the running header carries the logo")
+      assert(parts.any? { |h| h.include?("<w:ftr") && h.include?("PAGE") }, "the footer numbers the pages")
     end
   end
 end
