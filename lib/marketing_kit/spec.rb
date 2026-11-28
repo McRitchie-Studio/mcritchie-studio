@@ -222,8 +222,10 @@ module MarketingKit
       absent = named.reject { |f| File.file?(photo_path(f)) }
       raise Error, "#{label}: missing photo files #{absent.join(', ')}" if absent.any?
 
-      logos = proposal[:clients_logos].presence
-      raise Error, "#{label}: proposal.clients_logos #{logos} is not in #{photos_dir}" if logos && !File.file?(photo_path(logos))
+      %i[clients_logos clients_logos_dark].each do |key|
+        logos = proposal[key].presence
+        raise Error, "#{label}: proposal.#{key} #{logos} is not in #{photos_dir}" if logos && !File.file?(photo_path(logos))
+      end
     end
 
     def label = path ? File.basename(path) : "kit spec"

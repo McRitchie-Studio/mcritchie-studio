@@ -154,7 +154,8 @@ class MarketingKitSheetTemplateBuildTest < ActiveSupport::TestCase
     load_kit do |spec|
       office = Class.new do
         def slides_name = "RF Slides Template"
-        %i[write_slides write_sheet write_proposal].each { |m| define_method(m) { |path| File.write(path, "x") && path } }
+        %i[write_slides write_sheet].each { |m| define_method(m) { |path| File.write(path, "x") && path } }
+        define_method(:write_proposal) { |path, **| File.write(path, "x") && path }
         def write_tracker(_inventory, path) = File.write(path, "x") && path
       end.new
       MarketingKit::Office.stub(:new, office) do

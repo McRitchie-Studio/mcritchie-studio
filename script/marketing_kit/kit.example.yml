@@ -107,6 +107,7 @@ proposal:                              # every key optional; generic placeholder
   #   breakdown and the total.
   # pricing_breakdown: [{category: Labor, items: [Welding, Travel]}, …]   total_label: text above the total
   # clients: [names]  clients_logos: one image in photos/ (logos page; else the names)   clients_note: text
+  # dark: true also builds '<SHORT> Proposal Template (Dark)' (dark pages, photo cover); clients_logos_dark: its logo image
   # certifications_field: a cover field for claims to confirm per proposal   motto: text   number_format: RF-YYYY-000
   # terms_of_service: { intro: [paragraphs], items: [[title, text], …] }   the brand's own terms, verbatim
 

@@ -22,15 +22,25 @@ module MarketingKit
                        ["Payment terms", ["[Deposit / progress billing / due on receipt]"]]].freeze
     DEFAULT_BREAKDOWN = [{ category: "Materials", items: [] }, { category: "Labor", items: [] }, { category: "Equipment and supplies", items: [] }].freeze
 
-    def initialize(spec)
+    # The dark tone (Alex McRitchie, 2026-11-27): the same pages on the brand's dark colour, titles in white, the
+    # on-dark accent, the dark horizontal logo, and a cover that sets the title over the shaded photo. A kit builds it
+    # beside the light one when its spec sets proposal.dark.
+    DARK = { ink: "#DCE3EA", grey: "#8E9DAE", hair: "#24364A" }.freeze
+
+    def initialize(spec, tone: :light)
+      raise Error, "unknown proposal tone #{tone.inspect}" unless %i[light dark].include?(tone)
+
       @spec = spec
+      @tone = tone
     end
 
-    def name = Layout.template_name(@spec.short, :proposal)
+    def dark? = @tone == :dark
+
+    def name = dark? ? "#{Layout.template_name(@spec.short, :proposal)} (Dark)" : Layout.template_name(@spec.short, :proposal)
 
     def payload
       pr = @spec.proposal
-      {
+      base = {
         font: @spec.fonts[:family],
         colours: { primary: c(:primary), accent: c(:accent), dark: c(:dark), ink: INK, grey: GREY, line: LINE, white: "#FFFFFF" },
         images: images(pr),
@@ -46,11 +56,20 @@ module MarketingKit
         terms: pr[:terms_of_service] && { intro: Array(pr.dig(:terms_of_service, :intro)), items: Array(pr.dig(:terms_of_service, :items)) },
         acceptance: { email: @spec.contact[:proposals_email] || @spec.contact[:email], terms: pr[:terms_of_service].present? }
       }
+      dark? ? darken(base, pr) : base
     end
 
     private
 
     def c(key) = @spec.colour(key)
+
+    def darken(base, pr)
+      base.merge(page: c(:dark), hair: DARK[:hair], cover_photo: true,
+                 colours: base[:colours].merge(primary: "#FFFFFF", accent: c(:accent_on_dark), ink: DARK[:ink], grey: DARK[:grey]),
+                 images: base[:images].merge(logo: @spec.logo_png(:horizontal, :dark),
+                                             clients: (pr[:clients_logos_dark].presence && @spec.photo_path(pr[:clients_logos_dark])) ||
+                                                      base.dig(:images, :clients)))
+    end
 
     def images(pr)
       { logo: @spec.logo_png(:horizontal, :light), icon: @spec.logo_png(:icon, :light), cover: @spec.slot(:proposal_cover),

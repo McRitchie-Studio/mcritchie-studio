@@ -67,7 +67,7 @@ module MarketingKit
 
     def write_slides(path) = draw("slides", slides_payload, path)
     def write_sheet(path) = draw("sheet", SheetTemplate.new(@spec).payload, path)
-    def write_proposal(path) = draw("proposal", ProposalTemplate.new(@spec).payload, path)
+    def write_proposal(path, tone: :light) = draw("proposal", ProposalTemplate.new(@spec, tone: tone).payload, path)
     # Any sheet payload (a SheetRecipe's), drawn the same way as the template.
     def write_sheet_payload(payload, path) = draw("sheet", payload, path)
     def write_tracker(inventory, path) = draw("tracker", tracker_payload(inventory), path)

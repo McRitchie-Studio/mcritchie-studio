@@ -88,6 +88,28 @@ class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
       assert_equal "RF-YYYY-000", t.payload.dig(:cover, :number)
     end
   end
+
+  test "the dark tone darkens the pages, uses the dark logo and on-dark accent, and puts the title over the photo" do
+    edit = ->(d) { d["proposal"]["clients_logos"] = "light.png"; d["proposal"]["clients_logos_dark"] = "dark.png" }
+    with_kit(edit: edit) do |path|
+      %w[light dark].each { |n| File.write(File.join(File.dirname(path), "photos", "#{n}.png"), "png") }
+      spec = MarketingKit::Spec.load(path)
+      light = MarketingKit::ProposalTemplate.new(spec).payload
+      dark = MarketingKit::ProposalTemplate.new(spec, tone: :dark)
+      p = dark.payload
+      assert_equal "RF Proposal Template (Dark)", dark.name
+      assert_equal spec.colour(:dark), p[:page]
+      assert p[:cover_photo]
+      assert_nil light[:page], "the light tone has no page colour"
+      refute light[:cover_photo]
+      assert_equal "#FFFFFF", p.dig(:colours, :primary), "titles are white on the dark page"
+      assert_equal spec.colour(:accent_on_dark), p.dig(:colours, :accent)
+      assert_equal spec.logo_png(:horizontal, :dark), p.dig(:images, :logo)
+      assert_equal spec.photo_path("dark.png"), p.dig(:images, :clients)
+      assert_equal spec.photo_path("light.png"), light.dig(:images, :clients)
+      assert_raises(MarketingKit::Error) { MarketingKit::ProposalTemplate.new(spec, tone: :sepia) }
+    end
+  end
 end
 
 # [component] office.py draws the payload as a Word file: a page break before every section after the cover, the logo
@@ -118,6 +140,20 @@ class MarketingKitProposalDocxTest < ActiveSupport::TestCase
       parts = Zip::File.open(out) { |z| z.entries.map(&:name).grep(%r{\Aword/(header|footer)\d*\.xml\z}).map { |n| z.read(n) } }
       assert(parts.any? { |h| h.include?("<w:hdr") && h.include?("r:embed") }, "the running header carries the logo")
       assert(parts.any? { |h| h.include?("<w:ftr") && h.include?("PAGE") }, "the footer numbers the pages")
+    end
+  end
+
+  test "the dark proposal sets the page colour and floats the cover photo behind the title" do
+    with_kit do |path|
+      dir = File.dirname(path)
+      Dir.glob(File.join(dir, "{logos/png,photos}/*")).each { |f| File.binwrite(f, PNG) }
+      spec = MarketingKit::Spec.load(path)
+      out = File.join(dir, "dark.docx")
+      MarketingKit::Office.new(spec).write_proposal(out, tone: :dark)
+      xml = Zip::File.open(out) { |z| z.read("word/document.xml") }
+      assert_includes xml, %(<w:background w:color="#{spec.colour(:dark).delete('#')}"/>)
+      assert_includes xml, 'behindDoc="1"', "the cover photo sits behind the title"
+      assert_includes xml, "<wp:wrapNone/>"
     end
   end
 end

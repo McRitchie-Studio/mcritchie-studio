@@ -254,6 +254,16 @@ Doc. Like the Slides and Sheet templates, it is built only with Office on.
   categories with sub-items, each priced `[$0]` on the right, then the total.
 - **Clients:** `proposal.clients_logos` names one image in `photos/` for the
   clients page. With no image, the page lists `proposal.clients` by name.
+- **Dark version:** `proposal.dark: true` also builds `<SHORT> Proposal
+  Template (Dark)`. It has the same pages on the brand's dark colour, with
+  white titles, the on-dark accent and the dark logo. Its cover sets the title
+  over the cover photo, which is shaded in the dark colour and placed behind
+  the text. `proposal.clients_logos_dark` names its logo image. It is for
+  screens: print and sign the light one.
+- **Client logos:** draw each client's own logo file in one colour (white for
+  the dark version, a mid grey for the light one) on a transparent background,
+  in an even grid. The Commercial Welding app keeps these files and their
+  sources (`commercial-welding/config/client_logos.yml`).
 - **Claims:** `proposal.certifications_field` puts a field on the cover for a
   claim to confirm on each proposal, such as an ownership certification. Do not
   write such a claim into the template as fixed text.

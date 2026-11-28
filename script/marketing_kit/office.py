@@ -418,7 +418,8 @@ def proposal(d, out):
     """The Proposal template (lib/marketing_kit/proposal_template.rb), as a Word file Drive converts to a Google Doc.
 
     Letter pages with one section each: cover, about us, details, investment, clients, why choose us, terms, and the
-    signature page. Quiet by design: white space, hairline rules, the primary colour for titles and the accent only for
+    signature page. The dark tone (payload `page`) colours every page; its cover (`cover_photo`) sets the title over the
+    photo, shaded in the dark colour and floated behind the text. Quiet by design: white space, hairline rules, the primary colour for titles and the accent only for
     small marks (section labels, a short rule, fields). Every page after the cover carries the horizontal logo and the
     proposal number in its header, and the motto and page number in its footer. Nothing is positioned absolutely, so
     the Doc stays editable.
@@ -434,7 +435,7 @@ def proposal(d, out):
     from docx.shared import Inches, Pt, RGBColor
 
     col, img, FONT, H = d["colours"], d["images"], d["font"], d["headings"]
-    HAIR = "#D9DEE5"
+    HAIR = d.get("hair", "#D9DEE5")
     rgb = lambda h: RGBColor.from_string(h.lstrip("#"))
     tmp = tempfile.mkdtemp(prefix="kit-proposal-")
     PAGE_W, MARGIN = 8.5, 1.0
@@ -534,8 +535,12 @@ def proposal(d, out):
         p = doc.add_paragraph(); p.paragraph_format.space_after = Pt(0); p.add_run().add_break(WD_BREAK.PAGE)
 
     doc = Document()
+    if d.get("page"):
+        bg = OxmlElement("w:background"); bg.set(qn("w:color"), d["page"].lstrip("#")); doc.element.insert(0, bg)
+        doc.settings.element.append(OxmlElement("w:displayBackgroundShape"))
     normal = doc.styles["Normal"]
     normal.font.name, normal.font.size, normal.font.color.rgb = FONT, Pt(10), rgb(col["ink"])
+    for name in ("List Bullet", "List Number"): doc.styles[name].font.color.rgb = rgb(col["ink"])
     normal.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
     sec = doc.sections[0]
     sec.page_width, sec.page_height = Inches(PAGE_W), Inches(11)
@@ -558,11 +563,51 @@ def proposal(d, out):
 
     # ---- Cover
     p = para(doc, after=0); p.add_run().add_picture(img["logo"], height=Inches(0.42))
-    para(doc, after=40)
-    para(doc, "PROPOSAL", size=9, bold=True, colour=col["accent"], track=4, after=6)
-    fields(para(doc, after=4, line=1.0), "[Project name]", size=30, colour=col["primary"])
-    fields(para(doc, after=18), "Prepared for [Company]", size=12, colour=col["grey"])
-    p = para(doc, after=0); p.add_run().add_picture(crop(img["cover"], BODY_W, 3.6), width=Inches(BODY_W))
+    if not d.get("cover_photo"):
+        para(doc, after=40)
+        para(doc, "PROPOSAL", size=9, bold=True, colour=col["accent"], track=4, after=6)
+        fields(para(doc, after=4, line=1.0), "[Project name]", size=30, colour=col["primary"])
+        fields(para(doc, after=18), "Prepared for [Company]", size=12, colour=col["grey"])
+        p = para(doc, after=0); p.add_run().add_picture(crop(img["cover"], BODY_W, 3.6), width=Inches(BODY_W))
+    else:
+        para(doc, after=24)
+
+        def shaded(path, w_in, h_in):
+            """The cover photo under a navy shade, deepest at the top where the title sits."""
+            base = Image.open(crop(path, w_in, h_in)).convert("RGB")
+            navy = tuple(int(d["colours"].get("dark", "#0B1824")[i:i + 2], 16) for i in (1, 3, 5))
+            shade = Image.new("RGB", base.size, navy)
+            mask = Image.new("L", base.size)
+            w, h = base.size
+            for y in range(h):
+                a = int(255 * (0.88 - 0.5 * (y / h) ** 0.9))  # 88% at the top, behind the title, easing to 38%
+                mask.paste(a, (0, y, w, y + 1))
+            out_p = os.path.join(tmp, "cover-shaded.jpg"); Image.composite(shade, base, mask).save(out_p, quality=88)
+            return out_p
+
+        COVER_H = 3.9
+        anchor_p = para(doc, after=0)
+        anchor_p.add_run().add_picture(shaded(img["cover"], BODY_W, COVER_H), width=Inches(BODY_W))
+        # Float the photo behind the text: swap the inline drawing for an anchor at the paragraph's top-left.
+        inline = anchor_p._p.xpath(".//wp:inline")[0]
+        anchor = OxmlElement("wp:anchor")
+        for k, v in (("distT", "0"), ("distB", "0"), ("distL", "0"), ("distR", "0"), ("simplePos", "0"), ("relativeHeight", "0"),
+                     ("behindDoc", "1"), ("locked", "0"), ("layoutInCell", "1"), ("allowOverlap", "1")):
+            anchor.set(k, v)
+        sp = OxmlElement("wp:simplePos"); sp.set("x", "0"); sp.set("y", "0"); anchor.append(sp)
+        for axis, rel in (("H", "column"), ("V", "paragraph")):
+            pos = OxmlElement(f"wp:position{axis}"); pos.set("relativeFrom", rel)
+            off = OxmlElement("wp:posOffset"); off.text = "0"; pos.append(off); anchor.append(pos)
+        for child in list(inline):
+            if child.tag == qn("wp:docPr"): anchor.append(OxmlElement("wp:wrapNone"))
+            anchor.append(child)
+        inline.getparent().replace(inline, anchor)
+        # The title block over the photo's upper part, inset from its left edge.
+        over = lambda p: (setattr(p.paragraph_format, "left_indent", Inches(0.4)), p)[1]
+        over(para(doc, "PROPOSAL", size=9, bold=True, colour=col["accent"], track=4, before=46, after=6))
+        over(fields(para(doc, after=4, line=1.0), "[Project name]", size=32, colour="#FFFFFF"))
+        over(fields(para(doc, after=0), "Prepared for [Company]", size=13, colour="#DCE3EA"))
+        para(doc, size=10, after=COVER_H * 72 - 96)
     cv = d["cover"]
     if cv.get("credentials"): para(doc, cv["credentials"], size=8, bold=True, colour=col["primary"], track=2, before=12, after=2)
     if cv.get("certifications"): fields(para(doc, after=0), f"[{cv['certifications']}]", size=7.5)
