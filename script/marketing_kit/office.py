@@ -3,6 +3,7 @@
 #   office.py slides  payload.json  out.pptx   the 12-slide template (16:9), for Drive to convert to Google Slides
 #   office.py tracker payload.json  out.xlsx   the tracker workbook, for Drive to convert to a Google Sheet
 #   office.py sheet   payload.json  out.xlsx   the Sheet template (lib/marketing_kit/sheet_template.rb), for Drive to convert
+#   office.py proposal payload.json out.docx   the Proposal template (lib/marketing_kit/proposal_template.rb), for Drive to convert to a Google Doc
 # Every word and colour comes from the payload; this script only lays it out.
 import json, os, sys, tempfile
 
@@ -413,7 +414,286 @@ def sheet(d, out):
     wb.save(out)
     print(f"wrote {out} ({len(drawn)} table tab(s), freeze {ws.freeze_panes}, {n} columns)")
 
+def proposal(d, out):
+    """The Proposal template (lib/marketing_kit/proposal_template.rb), as a Word file Drive converts to a Google Doc.
+
+    Letter pages with one section each: cover, about us, details and pricing, clients, why choose us, then the terms
+    and the signature block. The brand's two-tone bar runs edge to edge in every page's header and footer. Nothing is
+    positioned absolutely, so the Doc stays editable: bands, boxes and the details grid are table cells.
+    """
+    import re
+    from PIL import Image
+    from docx import Document
+    from docx.enum.table import WD_TABLE_ALIGNMENT, WD_CELL_VERTICAL_ALIGNMENT
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_BREAK
+    from docx.oxml import OxmlElement
+    from docx.oxml.ns import qn
+    from docx.shared import Inches, Pt, RGBColor
+
+    col, img, FONT = d["colours"], d["images"], d["font"]
+    rgb = lambda h: RGBColor.from_string(h.lstrip("#"))
+    tmp = tempfile.mkdtemp(prefix="kit-proposal-")
+    PAGE_W, MARGIN = 8.5, 0.75
+    BODY_W = PAGE_W - 2 * MARGIN
+
+    def crop(path, w_in, h_in):
+        im = Image.open(path).convert("RGB"); want = w_in / h_in; iw, ih = im.size
+        if iw / ih > want:
+            nw = max(1, int(ih * want)); im = im.crop(((iw - nw) // 2, 0, (iw - nw) // 2 + nw, ih))
+        else:
+            nh = max(1, int(iw / want)); im = im.crop((0, (ih - nh) // 2, iw, (ih - nh) // 2 + nh))
+        p = os.path.join(tmp, f"{len(os.listdir(tmp))}.jpg"); im.save(p, quality=85)
+        return p
+
+    def bar():
+        """The two-tone bar: a third accent, two thirds primary, as the IPA-ENG proposal's grey and blue."""
+        w, h = 2550, 72
+        im = Image.new("RGB", (w, h), tuple(int(col["primary"][i:i + 2], 16) for i in (1, 3, 5)))
+        im.paste(tuple(int(col["accent"][i:i + 2], 16) for i in (1, 3, 5)), (0, 0, w // 3, h))
+        p = os.path.join(tmp, "bar.png"); im.save(p); return p
+
+    doc = Document()
+    normal = doc.styles["Normal"]
+    normal.font.name, normal.font.size, normal.font.color.rgb = FONT, Pt(10.5), rgb(col["ink"])
+    normal.element.rPr.rFonts.set(qn("w:eastAsia"), FONT)
+    normal.paragraph_format.space_after = Pt(4)
+    sec = doc.sections[0]
+    sec.page_width, sec.page_height = Inches(PAGE_W), Inches(11)
+    sec.left_margin = sec.right_margin = Inches(MARGIN)
+    sec.top_margin, sec.bottom_margin = Inches(0.85), Inches(0.75)
+    sec.header_distance = sec.footer_distance = Inches(0)
+    strip = bar()
+    for part in (sec.header, sec.footer):
+        p = part.paragraphs[0]; p.paragraph_format.left_indent = Inches(-MARGIN)
+        p.paragraph_format.space_after = Pt(0)
+        p.add_run().add_picture(strip, width=Inches(PAGE_W))
+
+    def shade(cell, hexcol):
+        tc = cell._tc.get_or_add_tcPr(); sh = OxmlElement("w:shd")
+        sh.set(qn("w:val"), "clear"); sh.set(qn("w:color"), "auto"); sh.set(qn("w:fill"), hexcol.lstrip("#")); tc.append(sh)
+
+    def borders(table, hexcol=None, size=8):
+        tbl = table._tbl.tblPr; b = OxmlElement("w:tblBorders")
+        for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+            e = OxmlElement(f"w:{edge}")
+            e.set(qn("w:val"), "single" if hexcol else "nil")
+            if hexcol: e.set(qn("w:sz"), str(size)); e.set(qn("w:color"), hexcol.lstrip("#"))
+            b.append(e)
+        tbl.append(b)
+
+    def widths(table, inches):
+        """Fixed column widths. Google's import reads the table grid and width, not only each cell's own width."""
+        table.autofit = False
+        tbl = table._tbl; pr = tbl.tblPr
+        for tag in ("w:tblW", "w:tblLayout"):
+            for e in pr.findall(qn(tag)): pr.remove(e)
+        tw = OxmlElement("w:tblW"); tw.set(qn("w:w"), str(int(sum(inches) * 1440))); tw.set(qn("w:type"), "dxa"); pr.append(tw)
+        lay = OxmlElement("w:tblLayout"); lay.set(qn("w:type"), "fixed"); pr.append(lay)
+        grid = tbl.tblGrid
+        for gc, w in zip(grid.findall(qn("w:gridCol")), inches): gc.set(qn("w:w"), str(int(w * 1440)))
+        for row in table.rows:
+            for cell, w in zip(row.cells, inches): cell.width = Inches(w)
+
+    def pad(cell, top=0.08, side=0.12):
+        tc = cell._tc.get_or_add_tcPr(); m = OxmlElement("w:tcMar")
+        for edge, v in (("top", top), ("bottom", top), ("left", side), ("right", side)):
+            e = OxmlElement(f"w:{edge}"); e.set(qn("w:w"), str(int(v * 1440))); e.set(qn("w:type"), "dxa"); m.append(e)
+        tc.append(m)
+
+    def runs(p, text, size=None, bold=False, colour=None, spacing=None, field_bold=True, whole=False):
+        """Writes text; a [bracketed] part is a field, in the accent colour. With whole=True, text with no brackets at
+        all is one field (a detail row's single placeholder)."""
+        parts = re.split(r"(\[[^\]]*\])", text) if "[" in text or not whole else [f"[{text}]"]
+        for part in parts:
+            if not part: continue
+            r = p.add_run(part); r.font.name = FONT
+            if size: r.font.size = Pt(size)
+            is_field = part.startswith("[") and part.endswith("]")
+            r.bold = bold or (is_field and field_bold)
+            r.font.color.rgb = rgb(col["accent"] if is_field else (colour or col["ink"]))
+            if spacing: r.font._element.get_or_add_rPr().append(_spacing(spacing))
+        return p
+
+    def _spacing(pt):
+        e = OxmlElement("w:spacing"); e.set(qn("w:val"), str(int(pt * 20))); return e
+
+    def text(container, t, size=10.5, bold=False, colour=None, align=None, spacing=None, after=4, before=0):
+        p = container.add_paragraph(); p.paragraph_format.space_after = Pt(after); p.paragraph_format.space_before = Pt(before)
+        if align == "center": p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        if align == "right": p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        if align == "justify": p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        r = p.add_run(t); r.font.name = FONT; r.font.size = Pt(size); r.bold = bold
+        r.font.color.rgb = rgb(colour or col["ink"])
+        if spacing: r.font._element.get_or_add_rPr().append(_spacing(spacing))
+        return p
+
+    def picture(container, path, w):
+        p = container.add_paragraph(); p.paragraph_format.space_after = Pt(0); p.add_run().add_picture(path, width=Inches(w)); return p
+
+    def page_break():
+        doc.add_paragraph().add_run().add_break(WD_BREAK.PAGE)
+
+    def band(title, size=22):
+        """A primary band with the title in white and an accent square beside it."""
+        t = doc.add_table(rows=1, cols=3); borders(t); widths(t, [5.0, 0.55, BODY_W - 5.55])
+        a, b, _ = t.rows[0].cells
+        shade(a, col["primary"]); shade(b, col["accent"]); pad(a, 0.16, 0.3)
+        a.paragraphs[0].paragraph_format.space_after = Pt(0)
+        runs(a.paragraphs[0], title, size=size, bold=True, colour=col["white"], spacing=3) if "[" in title else None
+        if "[" not in title:
+            r = a.paragraphs[0].add_run(title); r.font.name = FONT; r.font.size = Pt(size); r.bold = True
+            r.font.color.rgb = rgb(col["white"]); r.font._element.get_or_add_rPr().append(_spacing(3))
+        text(doc, "", size=4, after=8)
+
+    def motto():
+        if d.get("motto"): text(doc, d["motto"], size=10, bold=True, colour="#A0B3C4", align="center", spacing=2.5, before=14)
+
+    def logo_box(container_cell):
+        shade(container_cell, col["dark"]); pad(container_cell, 0.18, 0.25)
+        container_cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        p = container_cell.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p.add_run().add_picture(img["logo_box"], height=Inches(1.35))
+
+    # ---- Cover
+    head = doc.add_table(rows=1, cols=2); borders(head); widths(head, [3.4, BODY_W - 3.4])
+    logo_box(head.rows[0].cells[0])
+    text(doc, "", size=2, after=2)
+    band("PROPOSAL", size=36)
+    picture(doc, crop(img["cover"], BODY_W, 2.9), BODY_W)
+    cv = d["cover"]
+    if cv.get("credentials"): text(doc, cv["credentials"], size=11, bold=True, colour=col["primary"], spacing=2, before=12)
+    if cv.get("certifications"): runs(doc.add_paragraph(), f"[{cv['certifications']}]", size=9)
+    foot = doc.add_table(rows=1, cols=2); borders(foot); widths(foot, [BODY_W / 2, BODY_W / 2])
+    left, right = foot.rows[0].cells
+    left.paragraphs[0].add_run().add_picture(img["icon"], width=Inches(0.55))
+    text(left, "PREPARED FOR:", size=11, bold=True, colour=col["ink"], spacing=2, before=6)
+    for f in ("Contact name", "Company", "Address"): runs(left.add_paragraph(), f"[{f}]", size=10)
+    right.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.BOTTOM
+    runs(right.paragraphs[0], "[PROJECT NAME]", size=11, bold=True).alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    for line in (f"Proposal no. [{cv['number']}]", "Date: [Month D, YYYY]", "Prepared by: [Your name]"):
+        runs(right.add_paragraph(), line, size=10, field_bold=True).alignment = WD_ALIGN_PARAGRAPH.RIGHT
+
+    # ---- About us
+    page_break()
+    picture(doc, crop(img["about"], BODY_W, 3.2), BODY_W)
+    text(doc, "", size=4, after=4)
+    band("ABOUT US", size=28)
+    text(doc, d["about"]["text"], size=10.5, align="justify", after=10)
+    text(doc, d["tagline"], size=11.5, bold=True, colour=col["ink"], spacing=1.5, before=6, after=8)
+    cols = d["about"]["columns"]
+    if cols:
+        t = doc.add_table(rows=1, cols=3); borders(t); widths(t, [0.7, (BODY_W - 0.7) / 2, (BODY_W - 0.7) / 2])
+        icon_cell, *cells = t.rows[0].cells
+        icon_cell.paragraphs[0].add_run().add_picture(img["icon"], width=Inches(0.5))
+        for cell, c in zip(cells, cols):
+            pad(cell, 0.02, 0.1)
+            cell.paragraphs[0].paragraph_format.space_after = Pt(3)
+            r = cell.paragraphs[0].add_run(c["title"].upper()); r.font.name = FONT; r.font.size = Pt(10.5); r.font.color.rgb = rgb(col["ink"])
+            r.font._element.get_or_add_rPr().append(_spacing(1.5))
+            text(cell, c["text"], size=10, align="justify")
+    motto()
+
+    # ---- Proposal details
+    page_break()
+    band("PROPOSAL DETAILS")
+    t = doc.add_table(rows=0, cols=2); borders(t, col["primary"], 10)
+    for row in d["details"]:
+        cells = t.add_row().cells
+        for cell in cells: pad(cell, 0.09, 0.1)
+        lp = cells[0].paragraphs[0]; r = lp.add_run(row["label"]); r.bold = True; r.font.size = Pt(10); r.font.name = FONT
+        vc = cells[1]; first = True
+        for line in row["lines"]:
+            p = vc.paragraphs[0] if first else vc.add_paragraph(); first = False
+            if row["bullets"]: p.style = doc.styles["List Bullet"]
+            runs(p, line, size=10, field_bold=False, whole=not row["bullets"])
+        pr = row.get("pricing")
+        if pr:
+            for b in pr["breakdown"]:
+                p = vc.add_paragraph(style="List Bullet"); runs(p, f"{b['category']}: [$0]", size=10, field_bold=False)
+                for item in b["items"]:
+                    runs(vc.add_paragraph(style="List Bullet 2"), f"{item}: [$0]", size=10, field_bold=False)
+            text(vc, pr["total_label"], size=10, before=8)
+            tp = vc.add_paragraph(); tp.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            r = tp.add_run("Total amount: "); r.bold = True; r.font.size = Pt(10.5); r.font.name = FONT
+            runs(tp, "[$0]", size=10.5, bold=True)
+    widths(t, [1.45, BODY_W - 1.45])
+    motto()
+
+    # ---- Clients
+    cl = d["clients"]
+    if img.get("clients") or cl["names"]:
+        page_break()
+        band("CLIENTS")
+        if img.get("clients"):
+            p = picture(doc, img["clients"], BODY_W); p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        else:
+            names = cl["names"]; per = 4
+            t = doc.add_table(rows=0, cols=per); borders(t, col["line"], 6)
+            for i in range(0, len(names), per):
+                cells = t.add_row().cells
+                for cell, n in zip(cells, names[i:i + per]):
+                    pad(cell, 0.12, 0.08); cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    r = cell.paragraphs[0].add_run(n); r.bold = True; r.font.size = Pt(10); r.font.color.rgb = rgb(col["primary"])
+            widths(t, [BODY_W / per] * per)
+        if cl.get("note"): text(doc, cl["note"], size=8.5, colour=col["grey"], before=6)
+        motto()
+
+    # ---- Why choose us
+    why = d["why"]
+    if why["columns"]:
+        page_break()
+        t = doc.add_table(rows=1, cols=2); borders(t); widths(t, [3.4, BODY_W - 3.4])
+        logo_box(t.rows[0].cells[0])
+        ph = t.rows[0].cells[1]; pad(ph, 0, 0)
+        ph.paragraphs[0].add_run().add_picture(crop(img["why"], BODY_W - 3.4, 3.4), width=Inches(BODY_W - 3.4))
+        text(doc, "", size=6, after=10)
+        t = doc.add_table(rows=1, cols=2); borders(t); widths(t, [3.0, BODY_W - 3.0])
+        big, side = t.rows[0].cells
+        big.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+        for w in ("WHY", "CHOOSE", "US?"):
+            text(big, w, size=36, bold=True, colour=col["ink"], after=0)
+        big.paragraphs[0].paragraph_format.space_after = Pt(0)
+        text(big, "▬▬▬", size=14, colour=col["primary"], before=6)
+        tc = side._tc.get_or_add_tcPr(); b = OxmlElement("w:tcBorders"); e = OxmlElement("w:left")
+        e.set(qn("w:val"), "single"); e.set(qn("w:sz"), "24"); e.set(qn("w:color"), col["primary"].lstrip("#")); b.append(e); tc.append(b)
+        pad(side, 0.05, 0.25)
+        first = True
+        for c in why["columns"]:
+            p = side.paragraphs[0] if first else side.add_paragraph(); first = False
+            p.paragraph_format.space_before = Pt(0 if p is side.paragraphs[0] else 10)
+            r = p.add_run(c["title"].upper()); r.font.name = FONT; r.font.size = Pt(10.5); r.font._element.get_or_add_rPr().append(_spacing(1.5))
+            text(side, c["text"], size=9.5, align="justify")
+        if why.get("contact"): text(doc, why["contact"], size=11, colour=col["ink"], align="center", spacing=1, before=18)
+
+    # ---- Terms of service, then the signature block on the last page
+    page_break()
+    terms = d.get("terms")
+    if terms:
+        band("TERMS OF SERVICE")
+        for t_ in terms["intro"]: text(doc, t_, size=8.5, after=5)
+        for k, v in terms["items"]:
+            p = doc.add_paragraph(style="List Number"); p.paragraph_format.space_after = Pt(2)
+            r = p.add_run(f"{k}. "); r.bold = True; r.font.size = Pt(8.5); r.font.name = FONT
+            r = p.add_run(v); r.font.size = Pt(8.5); r.font.name = FONT
+        page_break()
+    acc = d["acceptance"]
+    band("ACCEPTANCE")
+    p = doc.add_paragraph(); p.paragraph_format.space_after = Pt(8)
+    runs(p, "By signing below, the Client accepts this proposal ([Proposal no.]) for [Project name] in the amount of [$0]"
+            + (", and the Terms of Service above." if acc["terms"] else "."), size=9.5, field_bold=True)
+    t = doc.add_table(rows=1, cols=2); borders(t, col["line"], 6); widths(t, [BODY_W / 2, BODY_W / 2])
+    for cell, who in zip(t.rows[0].cells, ("CLIENT", d["legal_name"].upper())):
+        pad(cell, 0.1, 0.14)
+        r = cell.paragraphs[0].add_run(who); r.bold = True; r.font.size = Pt(9.5); r.font.color.rgb = rgb(col["primary"])
+        for label in ("Signature", "Name", "Title", "Date"):
+            text(cell, f"{label}: ______________________________", size=9.5, before=8, after=0)
+    if acc.get("email"): text(doc, f"Please return a signed copy to {acc['email']}.", size=9.5, before=8)
+    motto()
+
+    doc.save(out)
+    print(f"wrote {out} (proposal, {len(d['details'])} detail rows)")
+
 
 if __name__ == "__main__":
     kind, payload, out = sys.argv[1:4]
-    {"slides": slides, "tracker": tracker, "sheet": sheet}[kind](json.load(open(payload)), out)
+    {"slides": slides, "tracker": tracker, "sheet": sheet, "proposal": proposal}[kind](json.load(open(payload)), out)

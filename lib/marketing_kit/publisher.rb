@@ -28,6 +28,7 @@ module MarketingKit
   class Publisher
     FOLDER = "application/vnd.google-apps.folder"
     NATIVE = { "doc" => ["application/vnd.google-apps.document", "text/html"],
+               "word" => ["application/vnd.google-apps.document", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
                "sheet" => ["application/vnd.google-apps.spreadsheet", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"],
                "slides" => ["application/vnd.google-apps.presentation", "application/vnd.openxmlformats-officedocument.presentationml.presentation"] }.freeze
 

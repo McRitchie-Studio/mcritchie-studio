@@ -101,9 +101,13 @@ proposal:                              # every key optional; generic placeholder
   why:
     - { title: Experienced, text: Our team is fully insured and our welders are certified. }
     - { title: Careful, text: Every job is measured on site and checked before it leaves the shop. }
-  # details: [[label, placeholder], …]   schedule: [{phase, steps: […]}, …]
-  # pricing: [[item, detail], …]         pricing_terms: [[label, text], …]   pricing_model: placeholder text
-  # clients: [names]  clients_note: text   motto: text   number_format: RF-YYYY-000
+  # The proposal is a Word file Drive converts to a Google Doc: one section per page, the two-tone bar on every page.
+  # details: [[label, value], …]  a value is one line or a list of bullets; [bracketed] parts are fields, and a single
+  #   line with no brackets is one whole field. The row whose label names pricing ("Scope / Pricing") carries the
+  #   breakdown and the total.
+  # pricing_breakdown: [{category: Labor, items: [Welding, Travel]}, …]   total_label: text above the total
+  # clients: [names]  clients_logos: one image in photos/ (logos page; else the names)   clients_note: text
+  # certifications_field: a cover field for claims to confirm per proposal   motto: text   number_format: RF-YYYY-000
   # terms_of_service: { intro: [paragraphs], items: [[title, text], …] }   the brand's own terms, verbatim
 
 slides:                                # every key optional; [bracketed] placeholders fill the gaps

@@ -1,0 +1,121 @@
+# frozen_string_literal: true
+
+require "test_helper"
+require "zip"
+require_relative "../support/marketing_kit_fixtures"
+
+# [unit] MarketingKit::ProposalTemplate (task cw-proposal-page-layout): the Proposal is a Word file Drive converts to
+# a Google Doc, because Drive's HTML import drops page breaks. The payload carries every word: detail rows with one
+# pricing row holding the breakdown, the client logos image when the spec names one, the brand's terms only when the
+# spec has them, and the signature block. The drawn file has one section per page and the two-tone bar in its header
+# and footer.
+class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
+  include MarketingKitFixtures
+
+  BREAKDOWN = ->(d) {
+    d["proposal"]["details"] = [["Project", "Project name"], ["Scope / Pricing", "One line of scope"],
+                                ["Payment terms", ["Payment of [50%] up front.", "The rest on completion."]]]
+    d["proposal"]["pricing_breakdown"] = [{ "category" => "Travel", "items" => %w[Flights Hotel] }, { "category" => "Labor", "items" => [] }]
+  }
+
+  test "the default details carry one Pricing-labelled row holding the default breakdown" do
+    load_kit do |spec|
+      rows = MarketingKit::ProposalTemplate.new(spec).payload[:details]
+      priced = rows.select { |r| r[:pricing] }
+      assert_equal 1, priced.size
+      assert_equal "Scope / Pricing", priced.first[:label]
+      assert_equal %w[Materials Labor], priced.first.dig(:pricing, :breakdown).map { |b| b[:category] }.first(2)
+      assert_equal "With applicable taxes included:", priced.first.dig(:pricing, :total_label)
+    end
+  end
+
+  test "the spec's breakdown rides the pricing row; a list value is bullets, a string is one line" do
+    load_kit(edit: BREAKDOWN) do |spec|
+      rows = MarketingKit::ProposalTemplate.new(spec).payload[:details].index_by { |r| r[:label] }
+      assert_equal [{ category: "Travel", items: %w[Flights Hotel] }, { category: "Labor", items: [] }],
+                   rows["Scope / Pricing"].dig(:pricing, :breakdown)
+      assert rows["Payment terms"][:bullets]
+      refute rows["Project"][:bullets]
+      assert_equal ["Project name"], rows["Project"][:lines]
+    end
+  end
+
+  test "with no row naming pricing, a Pricing row goes in after the scope" do
+    edit = ->(d) { d["proposal"]["details"] = [["Project", "x"], ["Scope of work", "y"], ["Payment terms", "z"]] }
+    load_kit(edit: edit) do |spec|
+      labels = MarketingKit::ProposalTemplate.new(spec).payload[:details].map { |r| r[:label] }
+      assert_equal ["Project", "Scope of work", "Pricing", "Payment terms"], labels
+    end
+  end
+
+  test "terms ride only when the spec has them; the signature block always does" do
+    load_kit do |spec|
+      p = MarketingKit::ProposalTemplate.new(spec).payload
+      assert_nil p[:terms]
+      refute p.dig(:acceptance, :terms)
+      assert_equal "quotes@ridgeline.example", p.dig(:acceptance, :email)
+    end
+    terms = ->(d) { d["proposal"]["terms_of_service"] = { "intro" => ["These terms apply."], "items" => [["Payment", "Due on receipt."]] } }
+    load_kit(edit: terms) do |spec|
+      p = MarketingKit::ProposalTemplate.new(spec).payload
+      assert_equal [["Payment", "Due on receipt."]], p.dig(:terms, :items)
+      assert p.dig(:acceptance, :terms)
+    end
+  end
+
+  test "the clients page takes the spec's logo image when it names one, else the names" do
+    load_kit(edit: ->(d) { d["proposal"]["clients"] = %w[Acme Beta] }) do |spec|
+      p = MarketingKit::ProposalTemplate.new(spec).payload
+      assert_nil p.dig(:images, :clients)
+      assert_equal %w[Acme Beta], p.dig(:clients, :names)
+    end
+    with_kit(edit: ->(d) { d["proposal"]["clients_logos"] = "clients.png" }) do |path|
+      error = assert_raises(MarketingKit::Error) { MarketingKit::Spec.load(path) }
+      assert_match(/proposal.clients_logos clients.png is not in/, error.message, "a missing logo image fails at load, not mid-render")
+      File.write(File.join(File.dirname(path), "photos", "clients.png"), "png")
+      spec = MarketingKit::Spec.load(path)
+      assert_equal File.join(spec.photos_dir, "clients.png"), MarketingKit::ProposalTemplate.new(spec).payload.dig(:images, :clients)
+    end
+  end
+
+  test "the cover's logo box is the dark full logo on the dark colour, and the template is named by kind" do
+    load_kit do |spec|
+      t = MarketingKit::ProposalTemplate.new(spec)
+      assert_equal spec.logo_png(:full, :dark), t.payload.dig(:images, :logo_box)
+      assert_equal spec.colour(:dark), t.payload.dig(:colours, :dark)
+      assert_equal "RF Proposal Template", t.name
+      assert_equal "RF-YYYY-000", t.payload.dig(:cover, :number)
+    end
+  end
+end
+
+# [component] office.py draws the payload as a Word file: a page break before every section after the cover, the bar
+# image in the header and the footer, and the details as a table. Runs Python (the kit's shared venv).
+class MarketingKitProposalDocxTest < ActiveSupport::TestCase
+  include MarketingKitFixtures
+
+  PNG = Base64.decode64("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+
+  test "the drawn proposal has one section per page and the bar on every page" do
+    terms = ->(d) {
+      d["proposal"]["terms_of_service"] = { "intro" => ["These terms apply."], "items" => [["Payment", "Due on receipt."]] }
+      d["proposal"]["clients"] = %w[Acme Beta]
+    }
+    with_kit(edit: terms) do |path|
+      dir = File.dirname(path)
+      Dir.glob(File.join(dir, "{logos/png,photos}/*")).each { |f| File.binwrite(f, PNG) } # real images for Pillow
+      spec = MarketingKit::Spec.load(path)
+      out = File.join(dir, "proposal.docx")
+      MarketingKit::Office.new(spec).write_proposal(out)
+
+      xml = Zip::File.open(out) { |z| z.read("word/document.xml") }
+      # cover | about | details | clients | why | terms | acceptance
+      assert_equal 6, xml.scan('w:type="page"').size, "a page break before each of the six sections after the cover"
+      %w[PROPOSAL ABOUT\ US PROPOSAL\ DETAILS CLIENTS WHY TERMS\ OF\ SERVICE ACCEPTANCE].each { |t| assert_includes xml, t }
+      assert_includes xml, "Total amount: "
+      headers = Zip::File.open(out) { |z| z.entries.map(&:name).grep(%r{\Aword/(header|footer)\d*\.xml\z}).map { |n| z.read(n) } }
+      assert(headers.any? { |h| h.include?("<w:hdr") && h.include?("r:embed") }, "the header carries the bar image")
+      assert(headers.any? { |h| h.include?("<w:ftr") && h.include?("r:embed") }, "the footer carries the bar image")
+    end
+  end
+end

@@ -5,7 +5,7 @@
 
 This is Alex's `marketing-kit` SOP. It gives any brand the kit Commercial Welding
 got in October 2026: one Drive folder with the logos and photos at hand, a
-four-page brand guidelines PDF, General and Proposal Google Doc templates, a
+four-page brand guidelines PDF, Doc and Proposal Google Doc templates, a
 12-slide Google Slides template, a branded Google Sheets template, a Brand
 Guide, 00 Start Here and a tracker sheet. One YAML spec drives all of it, and `bin/marketing-kit` turns the spec
 into files and puts them in Drive.
@@ -228,6 +228,32 @@ What a publish does to what is already there:
   edited it since. Drive's version history can restore it.
 - Two files with the same name in one folder are reported and skipped; merge
   them in Drive first.
+
+## The Proposal template
+
+`<SHORT> Proposal Template` follows the proposal Commercial Welding sent IPA-ENG
+on 2026-11-25 (Alex McRitchie, 2026-11-27). It has one section per page:
+cover, about us, details and pricing, clients, why choose us, terms of service,
+then acceptance with a signature block for each party. The brand's two-tone bar
+(a third accent, two thirds primary) runs edge to edge across the top and bottom
+of every page.
+
+Drive's HTML import drops page breaks, headers and footers. So the proposal is a
+Word file (`lib/marketing_kit/proposal_template.rb`, drawn by
+`script/marketing_kit/office.py proposal`), and Drive converts it to a Google
+Doc. Like the Slides and Sheet templates, it is built only with Office on.
+
+- **Details:** `proposal.details` is `[[label, value], …]`. A value is one line
+  or a list of bullets. A `[bracketed]` part is a field, drawn in the accent
+  colour. A single line with no brackets is one whole field.
+- **Pricing:** the row whose label names pricing (`Scope / Pricing`) carries
+  `proposal.pricing_breakdown`: categories with sub-items, each priced `[$0]`,
+  then the total.
+- **Clients:** `proposal.clients_logos` names one image in `photos/` for the
+  clients page. With no image, the page lists `proposal.clients` by name.
+- **Claims:** `proposal.certifications_field` puts a field on the cover for a
+  claim to confirm on each proposal, such as an ownership certification. Do not
+  write such a claim into the template as fixed text.
 
 ## The Sheet template
 

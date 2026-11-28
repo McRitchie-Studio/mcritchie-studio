@@ -28,9 +28,6 @@ class MarketingKitTitleColourBuildTest < ActiveSupport::TestCase
 
         general = read.call("templates", "RF Doc Template.html")
         assert_includes general, "font-weight:700;color:#{TITLE};font-size:30pt"
-        proposal = read.call("templates", "RF Proposal Template.html")
-        assert_includes proposal, "font-weight:700;color:#{TITLE};font-size:40pt"
-        assert_includes proposal, "background-color:#{PRIMARY};padding:12pt 18pt"
 
         guide = read.call("docs", "Brand Guide.html")
         assert_match(/<h1 style="[^"]*color:#{TITLE}/, guide)

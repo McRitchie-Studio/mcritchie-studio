@@ -25,7 +25,6 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
   BEFORE = {
     guidelines: "bbedcc32ab3ab442dd77177b1fbb58ba1884b2530dbf1bc7c6847274a0547d0d",
     general: "f81b67db3f05d5a2392ec9f5d396cebea71b690691c133a6169a75235ee9b9ae",
-    proposal: "a98d0b3e01162acb765a370d2ded11a1ef8556bef7fcb59f8f5566136665319f",
     start_here: "b33fcbe8ec02b8913a0455eea29ca61fea5cb98bd983a77e50e3b2e25a396285",
     brand_guide: "52a96780cdc54b5644650d182fb2ef0a588158f29b399e2e8fdcdafa596d919b",
     slides: "4dd098e4b39323a0aa16f05459248ac807252d7de6f8d9daf564204d8f08e180"
@@ -39,7 +38,7 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
       payload = MarketingKit::Office.new(spec).slides_payload
       assert_equal PRIMARY, payload[:colours].delete(:title), "slides fall back to primary for titles"
       renders = {
-        guidelines: MarketingKit::Guidelines.new(spec).html, general: templates.general, proposal: templates.proposal,
+        guidelines: MarketingKit::Guidelines.new(spec).html, general: templates.general,
         start_here: docs.start_here.html.sub(">#{spec.root_name}<", ">Ridgeline Fabrication — Marketing Kit<"),
         brand_guide: docs.brand_guide.html.sub(">Stacked<", ">STACKED_LABEL<"),
         slides: JSON.generate(payload)
@@ -60,7 +59,7 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
     end
   end
 
-  test "the Doc templates set titles in title, and keep bands, tables and the accent button" do
+  test "the General Doc template sets titles in title, and keeps the accent button" do
     load_kit(edit: WITH_TITLE) do |spec|
       t = MarketingKit::DocTemplates.new(spec)
       general = t.general
@@ -68,11 +67,7 @@ class MarketingKitTitleColourTest < ActiveSupport::TestCase
       assert_includes general, "color:#{TITLE};font-size:12pt;font-weight:700;letter-spacing:2px" # SECTION TITLE
       assert_includes general, "font-weight:700;color:#{TITLE};font-size:18pt" # item headings
       assert_includes general, "background-color:#C8702E", "the button stays accent"
-      proposal = t.proposal
-      assert_includes proposal, "font-weight:700;color:#{TITLE};font-size:40pt" # PROPOSAL
-      assert_includes proposal, "color:#{TITLE};font-weight:700;letter-spacing:2px;font-size:10pt", "column titles"
-      assert_includes proposal, "background-color:#{PRIMARY};padding:12pt 18pt", "section bands stay primary"
-      refute_includes proposal, "background-color:#{TITLE}", "no bar or table takes the title colour"
+      # The Proposal is a Word file now (task cw-proposal-page-layout): marketing_kit_proposal_template_test.rb.
     end
   end
 
