@@ -98,6 +98,7 @@ module MarketingKit
 
     def cover(pr)
       { credentials: pr[:credentials_line]&.upcase, certifications: pr[:certifications_field],
+        badges: Array(pr[:credential_badges]).map { |b| [b[:title].to_s, b[:holder].to_s] },
         number: pr[:number_format] || "#{@spec.short}-YYYY-000" }
     end
 

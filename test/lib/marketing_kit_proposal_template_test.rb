@@ -104,6 +104,14 @@ class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
     end
   end
 
+  test "credential badges are the spec's own words, title and holder; none by default" do
+    edit = ->(d) { d["proposal"]["credential_badges"] = [{ "title" => "Certified pipe", "holder" => "ASME-certified welders" }] }
+    load_kit(edit: edit) do |spec|
+      assert_equal [["Certified pipe", "ASME-certified welders"]], MarketingKit::ProposalTemplate.new(spec).payload.dig(:cover, :badges)
+    end
+    load_kit { |spec| assert_empty MarketingKit::ProposalTemplate.new(spec).payload.dig(:cover, :badges) }
+  end
+
   test "the dark tone darkens the pages and uses the dark logo and the on-dark accent" do
     edit = ->(d) { d["proposal"]["clients_logos"] = "light.png"; d["proposal"]["clients_logos_dark"] = "dark.png" }
     with_kit(edit: edit) do |path|

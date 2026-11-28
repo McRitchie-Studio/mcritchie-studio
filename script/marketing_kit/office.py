@@ -603,7 +603,7 @@ def proposal(d, out):
             over(para(doc, f"{n:02d}   {label.upper()}", size=8.5, bold=True, colour=col["accent"], track=2.5, before=40, after=4))
             over(para(doc, title, size=26, colour="#FFFFFF", after=6, line=1.05))
             if blurb: over(para(doc, blurb, size=11, colour="#DCE3EA", after=0, line=1.35))
-            return 40 + 16 + 36 + (34 if blurb else 0) + 20  # the words' height, in points, and the drawing's slack
+            return 40 + 16 + 36 + (18 if blurb else 0) + 20  # the words' height (one line of blurb), in points, and slack
         hero(path, h_in, words, focus)
 
     # ---- Cover
@@ -616,9 +616,7 @@ def proposal(d, out):
         return 96
     hero(img["cover"], 4.7, cover_words, d.get("focus", {}).get("cover", 0.5))
     cv = d["cover"]
-    if cv.get("credentials"): para(doc, cv["credentials"], size=8, bold=True, colour=col["primary"], track=2, before=12, after=2)
-    if cv.get("certifications"): fields(para(doc, after=0), f"[{cv['certifications']}]", size=7.5)
-    para(doc, after=22)
+    para(doc, after=10)
     meta = table(2, 4, [BODY_W / 4] * 4)
     labels = ("PREPARED FOR", "PROPOSAL NO.", "DATE", "PREPARED BY")
     values = ("[Contact name], [Company]", f"[{cv['number']}]", "[Month D, YYYY]", "[Your name]")
@@ -630,6 +628,32 @@ def proposal(d, out):
 
     # ---- 01 About us
     page_break(); section_hero(1, "about", img["about"], 3.4, d.get("focus", {}).get("about", 0.5))
+    # The credentials (and any ownership certification, confirmed per proposal) lead the about page.
+    badges = cv.get("badges") or []
+    if badges:
+        # Our own badges, never another body's logo: a small accent seal with a tick, the credential, and who holds it.
+        def seal():
+            from PIL import ImageDraw
+            n = 240; im = Image.new("RGBA", (n, n), (0, 0, 0, 0)); dr = ImageDraw.Draw(im)
+            acc = tuple(int(col["accent"][i:i + 2], 16) for i in (1, 3, 5))
+            dr.ellipse((8, 8, n - 8, n - 8), outline=acc + (255,), width=14)
+            dr.line([(70, 125), (105, 160), (172, 88)], fill=acc + (255,), width=20, joint="curve")
+            out_p = os.path.join(tmp, "seal.png"); im.save(out_p); return out_p
+        mark_p = seal()
+        para(doc, size=4, after=8)
+        t = table(1, len(badges) * 2, [0.5, BODY_W / len(badges) - 0.5] * len(badges), rules=False)
+        cells = t.rows[0].cells
+        for i, (title, sub) in enumerate(badges):
+            icon, words = cells[2 * i], cells[2 * i + 1]
+            icon.vertical_alignment = words.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            cell_pad(icon, 0.0); first(icon).add_run().add_picture(mark_p, width=Inches(0.38))
+            run(first(words), title.upper(), size=9.5, bold=True, colour=col["primary"], track=1.5)
+            para(words, sub, size=8.5, colour=col["grey"], after=0)
+        para(doc, size=4, after=0).paragraph_format.space_before = Pt(0)
+    elif cv.get("credentials"):
+        para(doc, cv["credentials"], size=8.5, bold=True, colour=col["primary"], track=2, before=14, after=2)
+    if cv.get("certifications"): fields(para(doc, before=6 if badges else 0, after=0), f"[{cv['certifications']}]", size=7.5)
+    para(doc, size=6, after=10)
     para(doc, d["about"]["text"], size=11, colour=col["ink"], after=22, line=1.45)
     cols = d["about"]["columns"]
     if cols:

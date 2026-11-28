@@ -110,6 +110,8 @@ proposal:                              # every key optional; generic placeholder
   # dark: true also builds '<SHORT> Proposal Template (Dark)' (dark pages); clients_logos_dark: its logo image
   # The cover, about and why open on their photo slots, shaded, with words over them. about_line, why_line: one line
   # each on what the section is for. photo_focus: { cover: 0-1, about: 0-1, why: 0-1 } where each crop sits (0 top).
+  # credential_badges: [{title: Certified pipe, holder: ASME-certified welders}, …] drawn as our own badges on the about
+  #   page (never another body's logo); credentials_line is the plain-text fallback
   # certifications_field: a cover field for claims to confirm per proposal   motto: text   number_format: RF-YYYY-000
   # terms_of_service: { intro: [paragraphs], items: [[title, text], …] }   the brand's own terms, verbatim
 
