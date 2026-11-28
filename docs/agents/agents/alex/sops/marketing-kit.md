@@ -256,10 +256,14 @@ Doc. Like the Slides and Sheet templates, it is built only with Office on.
   clients page. With no image, the page lists `proposal.clients` by name.
 - **Dark version:** `proposal.dark: true` also builds `<SHORT> Proposal
   Template (Dark)`. It has the same pages on the brand's dark colour, with
-  white titles, the on-dark accent and the dark logo. Its cover sets the title
-  over the cover photo, which is shaded in the dark colour and placed behind
-  the text. `proposal.clients_logos_dark` names its logo image. It is for
-  screens: print and sign the light one.
+  white titles, the on-dark accent and the dark logo.
+  `proposal.clients_logos_dark` names its logo image. It is for screens: print
+  and sign the light one.
+- **Photo openers:** the cover, about us and why choose us open on their photo
+  slots (`proposal_cover`, `proposal_about`, `proposal_why`). Each photo is
+  shaded in the dark colour and placed behind the text. The section's label,
+  title and one line (`proposal.about_line`, `why_line`) sit over it.
+  `proposal.photo_focus` places each crop (0 keeps the top, 1 the bottom).
 - **Client logos:** draw each client's own logo file in one colour (white for
   the dark version, a mid grey for the light one) on a transparent background,
   in an even grid. The Commercial Welding app keeps these files and their

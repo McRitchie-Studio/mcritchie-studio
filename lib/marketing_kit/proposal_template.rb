@@ -23,7 +23,7 @@ module MarketingKit
     DEFAULT_BREAKDOWN = [{ category: "Materials", items: [] }, { category: "Labor", items: [] }, { category: "Equipment and supplies", items: [] }].freeze
 
     # The dark tone (Alex McRitchie, 2026-11-27): the same pages on the brand's dark colour, titles in white, the
-    # on-dark accent, the dark horizontal logo, and a cover that sets the title over the shaded photo. A kit builds it
+    # on-dark accent and the dark horizontal logo. A kit builds it
     # beside the light one when its spec sets proposal.dark.
     DARK = { ink: "#DCE3EA", grey: "#8E9DAE", hair: "#24364A" }.freeze
 
@@ -46,6 +46,7 @@ module MarketingKit
         images: images(pr),
         legal_name: @spec.legal_name,
         headings: headings(pr),
+        focus: photo_focus(pr),
         tagline: @spec.tagline.delete_suffix(".").upcase,
         motto: pr[:motto]&.upcase,
         cover: cover(pr),
@@ -64,7 +65,7 @@ module MarketingKit
     def c(key) = @spec.colour(key)
 
     def darken(base, pr)
-      base.merge(page: c(:dark), hair: DARK[:hair], cover_photo: true,
+      base.merge(page: c(:dark), hair: DARK[:hair],
                  colours: base[:colours].merge(primary: "#FFFFFF", accent: c(:accent_on_dark), ink: DARK[:ink], grey: DARK[:grey]),
                  images: base[:images].merge(logo: @spec.logo_png(:horizontal, :dark),
                                              clients: (pr[:clients_logos_dark].presence && @spec.photo_path(pr[:clients_logos_dark])) ||
@@ -78,12 +79,21 @@ module MarketingKit
     end
 
     # Each section opens with a small label over a title. The about title is the tagline; the rest read as a
-    # proposal reads to a client.
+    # proposal reads to a client. About and why open on a photo, with one line (proposal.about_line, why_line) saying
+    # what the section is for.
     def headings(pr)
-      { about: ["About us", @spec.tagline.delete_suffix(".")], details: ["Proposal details", "The project"],
+      { about: ["About us", @spec.tagline.delete_suffix("."), pr[:about_line]].compact, details: ["Proposal details", "The project"],
         investment: ["Investment", "Pricing"], clients: ["Clients", "Who we work with"],
-        why: ["Why choose us", pr[:why_title] || "Why #{@spec.name}"], terms: ["Terms of service", "Terms and conditions"],
-        acceptance: ["Acceptance", "Agreement to proceed"] }
+        why: ["Why choose us", pr[:why_title] || "Why #{@spec.name}", pr[:why_line]].compact,
+        terms: ["Terms of service", "Terms and conditions"], acceptance: ["Acceptance", "Agreement to proceed"] }
+    end
+
+    # Where each opening photo's crop sits: 0 keeps its top (or left), 1 its bottom (proposal.photo_focus).
+    PHOTOS = %i[cover about why].freeze
+
+    def photo_focus(pr)
+      given = pr[:photo_focus] || {}
+      PHOTOS.to_h { |k| [k, Float(given.fetch(k, 0.5)).clamp(0.0, 1.0)] }
     end
 
     def cover(pr)

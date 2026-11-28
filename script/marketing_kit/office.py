@@ -418,8 +418,9 @@ def proposal(d, out):
     """The Proposal template (lib/marketing_kit/proposal_template.rb), as a Word file Drive converts to a Google Doc.
 
     Letter pages with one section each: cover, about us, details, investment, clients, why choose us, terms, and the
-    signature page. The dark tone (payload `page`) colours every page; its cover (`cover_photo`) sets the title over the
-    photo, shaded in the dark colour and floated behind the text. Quiet by design: white space, hairline rules, the primary colour for titles and the accent only for
+    signature page. The cover, about us and why choose us open on a photo shaded in the dark colour and floated behind
+    the text, with the section's label, title and one line over it (`focus` places each crop). The dark tone (payload
+    `page`) colours every page. Quiet by design: white space, hairline rules, the primary colour for titles and the accent only for
     small marks (section labels, a short rule, fields). Every page after the cover carries the horizontal logo and the
     proposal number in its header, and the motto and page number in its footer. Nothing is positioned absolutely, so
     the Doc stays editable.
@@ -441,12 +442,13 @@ def proposal(d, out):
     PAGE_W, MARGIN = 8.5, 1.0
     BODY_W = PAGE_W - 2 * MARGIN
 
-    def crop(path, w_in, h_in):
+    def crop(path, w_in, h_in, focus=0.5):
+        """Crops to the slot's shape. focus is where the kept band sits, 0 the top (or left) and 1 the bottom."""
         im = Image.open(path).convert("RGB"); want = w_in / h_in; iw, ih = im.size
         if iw / ih > want:
-            nw = max(1, int(ih * want)); im = im.crop(((iw - nw) // 2, 0, (iw - nw) // 2 + nw, ih))
+            nw = max(1, int(ih * want)); x = int((iw - nw) * focus); im = im.crop((x, 0, x + nw, ih))
         else:
-            nh = max(1, int(iw / want)); im = im.crop((0, (ih - nh) // 2, iw, (ih - nh) // 2 + nh))
+            nh = max(1, int(iw / want)); y = int((ih - nh) * focus); im = im.crop((0, y, iw, y + nh))
         p = os.path.join(tmp, f"{len(os.listdir(tmp))}.jpg"); im.save(p, quality=88)
         return p
 
@@ -526,7 +528,7 @@ def proposal(d, out):
 
     def opener(n, key):
         """A section opens with a small numbered label in the accent, a large title in the primary and a short rule."""
-        label, title = H[key]
+        label, title = H[key][:2]
         para(doc, f"{n:02d}   {label.upper()}", size=8.5, bold=True, colour=col["accent"], track=2.5, after=4)
         para(doc, title, size=26, colour=col["primary"], after=6, line=1.05)
         p = para(doc, after=18); p.add_run().add_picture(mark(), width=Inches(0.6))
@@ -561,34 +563,22 @@ def proposal(d, out):
     if d.get("motto"): run(fp, d["motto"] + "      ", size=7, colour=col["grey"], track=2)
     page_field(fp)
 
-    # ---- Cover
-    p = para(doc, after=0); p.add_run().add_picture(img["logo"], height=Inches(0.42))
-    if not d.get("cover_photo"):
-        para(doc, after=40)
-        para(doc, "PROPOSAL", size=9, bold=True, colour=col["accent"], track=4, after=6)
-        fields(para(doc, after=4, line=1.0), "[Project name]", size=30, colour=col["primary"])
-        fields(para(doc, after=18), "Prepared for [Company]", size=12, colour=col["grey"])
-        p = para(doc, after=0); p.add_run().add_picture(crop(img["cover"], BODY_W, 3.6), width=Inches(BODY_W))
-    else:
-        para(doc, after=24)
+    def shaded(path, w_in, h_in, focus=0.5):
+        """A photo under the dark colour, deepest at the top where the words sit, easing toward the bottom."""
+        base = Image.open(crop(path, w_in, h_in, focus)).convert("RGB")
+        navy = tuple(int(d["colours"].get("dark", "#0B1824")[i:i + 2], 16) for i in (1, 3, 5))
+        mask = Image.new("L", base.size); w, h = base.size
+        for y in range(h):
+            mask.paste(int(255 * (0.88 - 0.5 * (y / h) ** 0.9)), (0, y, w, y + 1))  # 88% at the top, 38% at the foot
+        out_p = os.path.join(tmp, f"shaded{len(os.listdir(tmp))}.jpg")
+        Image.composite(Image.new("RGB", base.size, navy), base, mask).save(out_p, quality=90)
+        return out_p
 
-        def shaded(path, w_in, h_in):
-            """The cover photo under a navy shade, deepest at the top where the title sits."""
-            base = Image.open(crop(path, w_in, h_in)).convert("RGB")
-            navy = tuple(int(d["colours"].get("dark", "#0B1824")[i:i + 2], 16) for i in (1, 3, 5))
-            shade = Image.new("RGB", base.size, navy)
-            mask = Image.new("L", base.size)
-            w, h = base.size
-            for y in range(h):
-                a = int(255 * (0.88 - 0.5 * (y / h) ** 0.9))  # 88% at the top, behind the title, easing to 38%
-                mask.paste(a, (0, y, w, y + 1))
-            out_p = os.path.join(tmp, "cover-shaded.jpg"); Image.composite(shade, base, mask).save(out_p, quality=88)
-            return out_p
-
-        COVER_H = 3.9
+    def hero(path, h_in, words, focus=0.5):
+        """A shaded photo floated behind the text, with `words` (a function that writes paragraphs) over its upper
+        part, inset from its left edge. Returns once the page has moved past the photo's foot."""
         anchor_p = para(doc, after=0)
-        anchor_p.add_run().add_picture(shaded(img["cover"], BODY_W, COVER_H), width=Inches(BODY_W))
-        # Float the photo behind the text: swap the inline drawing for an anchor at the paragraph's top-left.
+        anchor_p.add_run().add_picture(shaded(path, BODY_W, h_in, focus), width=Inches(BODY_W))
         inline = anchor_p._p.xpath(".//wp:inline")[0]
         anchor = OxmlElement("wp:anchor")
         for k, v in (("distT", "0"), ("distB", "0"), ("distL", "0"), ("distR", "0"), ("simplePos", "0"), ("relativeHeight", "0"),
@@ -602,12 +592,29 @@ def proposal(d, out):
             if child.tag == qn("wp:docPr"): anchor.append(OxmlElement("wp:wrapNone"))
             anchor.append(child)
         inline.getparent().replace(inline, anchor)
-        # The title block over the photo's upper part, inset from its left edge.
-        over = lambda p: (setattr(p.paragraph_format, "left_indent", Inches(0.4)), p)[1]
+        used = words(lambda p: (setattr(p.paragraph_format, "left_indent", Inches(0.4)),
+                                setattr(p.paragraph_format, "right_indent", Inches(0.6)), p)[2])
+        para(doc, size=10, after=max(12, h_in * 72 - used))
+
+    def section_hero(n, key, path, h_in, focus=0.5):
+        """A section that opens on a photo: its numbered label, title and one line on what the section is for."""
+        label, title, blurb = (H[key] + [None])[:3]
+        def words(over):
+            over(para(doc, f"{n:02d}   {label.upper()}", size=8.5, bold=True, colour=col["accent"], track=2.5, before=40, after=4))
+            over(para(doc, title, size=26, colour="#FFFFFF", after=6, line=1.05))
+            if blurb: over(para(doc, blurb, size=11, colour="#DCE3EA", after=0, line=1.35))
+            return 40 + 16 + 36 + (34 if blurb else 0) + 20  # the words' height, in points, and the drawing's slack
+        hero(path, h_in, words, focus)
+
+    # ---- Cover
+    p = para(doc, after=0); p.add_run().add_picture(img["logo"], height=Inches(0.42))
+    para(doc, after=24)
+    def cover_words(over):
         over(para(doc, "PROPOSAL", size=9, bold=True, colour=col["accent"], track=4, before=46, after=6))
         over(fields(para(doc, after=4, line=1.0), "[Project name]", size=32, colour="#FFFFFF"))
         over(fields(para(doc, after=0), "Prepared for [Company]", size=13, colour="#DCE3EA"))
-        para(doc, size=10, after=COVER_H * 72 - 96)
+        return 96
+    hero(img["cover"], 4.7, cover_words, d.get("focus", {}).get("cover", 0.5))
     cv = d["cover"]
     if cv.get("credentials"): para(doc, cv["credentials"], size=8, bold=True, colour=col["primary"], track=2, before=12, after=2)
     if cv.get("certifications"): fields(para(doc, after=0), f"[{cv['certifications']}]", size=7.5)
@@ -622,9 +629,8 @@ def proposal(d, out):
         fields(first(bottom), val, size=9.5)
 
     # ---- 01 About us
-    page_break(); opener(1, "about")
-    para(doc, d["about"]["text"], size=11, colour=col["ink"], after=18, line=1.45)
-    p = para(doc, after=18); p.add_run().add_picture(crop(img["about"], BODY_W, 2.9), width=Inches(BODY_W))
+    page_break(); section_hero(1, "about", img["about"], 3.4, d.get("focus", {}).get("about", 0.5))
+    para(doc, d["about"]["text"], size=11, colour=col["ink"], after=22, line=1.45)
     cols = d["about"]["columns"]
     if cols:
         t = table(1, 3, [(BODY_W - 0.4) / 2, 0.4, (BODY_W - 0.4) / 2], rules=False)
@@ -688,8 +694,7 @@ def proposal(d, out):
     # ---- Why choose us
     why = d["why"]
     if why["columns"]:
-        page_break(); opener(n, "why"); n += 1
-        p = para(doc, after=20); p.add_run().add_picture(crop(img["why"], BODY_W, 3.0), width=Inches(BODY_W))
+        page_break(); section_hero(n, "why", img["why"], 3.6, d.get("focus", {}).get("why", 0.5)); n += 1
         for i, c in enumerate(why["columns"], start=1):
             t = table(1, 2, [0.6, BODY_W - 0.6], rules=False)
             num, body = t.rows[0].cells

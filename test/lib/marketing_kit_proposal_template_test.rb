@@ -89,7 +89,22 @@ class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
     end
   end
 
-  test "the dark tone darkens the pages, uses the dark logo and on-dark accent, and puts the title over the photo" do
+  test "about and why carry the spec's one-line explanations; each photo's crop sits where the spec puts it" do
+    edit = ->(d) { d["proposal"].merge!("about_line" => "Who we are.", "why_line" => "Why hire us.", "photo_focus" => { "cover" => 1, "about" => 0.1, "why" => 7 }) }
+    load_kit(edit: edit) do |spec|
+      p = MarketingKit::ProposalTemplate.new(spec).payload
+      assert_equal ["About us", "Built to last", "Who we are."], p.dig(:headings, :about)
+      assert_equal "Why hire us.", p.dig(:headings, :why).last
+      assert_equal({ cover: 1.0, about: 0.1, why: 1.0 }, p[:focus], "a focus past the edge is held to it")
+    end
+    load_kit do |spec|
+      p = MarketingKit::ProposalTemplate.new(spec).payload
+      assert_equal 2, p.dig(:headings, :about).size, "no line, no third entry"
+      assert_equal({ cover: 0.5, about: 0.5, why: 0.5 }, p[:focus])
+    end
+  end
+
+  test "the dark tone darkens the pages and uses the dark logo and the on-dark accent" do
     edit = ->(d) { d["proposal"]["clients_logos"] = "light.png"; d["proposal"]["clients_logos_dark"] = "dark.png" }
     with_kit(edit: edit) do |path|
       %w[light dark].each { |n| File.write(File.join(File.dirname(path), "photos", "#{n}.png"), "png") }
@@ -99,9 +114,7 @@ class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
       p = dark.payload
       assert_equal "RF Proposal Template (Dark)", dark.name
       assert_equal spec.colour(:dark), p[:page]
-      assert p[:cover_photo]
       assert_nil light[:page], "the light tone has no page colour"
-      refute light[:cover_photo]
       assert_equal "#FFFFFF", p.dig(:colours, :primary), "titles are white on the dark page"
       assert_equal spec.colour(:accent_on_dark), p.dig(:colours, :accent)
       assert_equal spec.logo_png(:horizontal, :dark), p.dig(:images, :logo)
@@ -152,7 +165,7 @@ class MarketingKitProposalDocxTest < ActiveSupport::TestCase
       MarketingKit::Office.new(spec).write_proposal(out, tone: :dark)
       xml = Zip::File.open(out) { |z| z.read("word/document.xml") }
       assert_includes xml, %(<w:background w:color="#{spec.colour(:dark).delete('#')}"/>)
-      assert_includes xml, 'behindDoc="1"', "the cover photo sits behind the title"
+      assert_equal 3, xml.scan('behindDoc="1"').size, "the cover, about and why photos sit behind their words"
       assert_includes xml, "<wp:wrapNone/>"
     end
   end
