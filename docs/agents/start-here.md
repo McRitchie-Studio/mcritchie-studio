@@ -18,6 +18,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | Gem release flow (decided 2026-10-28: publish the final at prepare, no ship re-lock; the measured saving and the burned-version story) | `mcritchie-studio/docs/agents/system/gem-release-flow.md` |
 | Guard catalog (decided, with deviations awaiting Alex McRitchie's call; every refusal with delete, by construction or keep, and a mark per row) | `mcritchie-studio/docs/agents/system/guard-catalog.md` |
 | Knowledge layer design (proposed, awaiting Alex McRitchie's review; five tiers, the Drive shelf, the walker, who reads what) | `mcritchie-studio/docs/agents/system/knowledge-layer-design.md` |
+| MyChart connection design (proposed, awaiting Alex McRitchie's decisions; SMART on FHIR patient access to a child's Epic record as proxy, filed to the family's Drive, the hub keeps a token and a fetch log only) | `mcritchie-studio/docs/agents/system/mychart-connection-design.md` |
 | Context layers design (proposed; general, situational and specific context, when to re-pull, must-do is mechanical and judgment is a dream, SOP-step moment cards next) | `mcritchie-studio/docs/agents/system/context-layers-design.md` |
 | Ecosystem build script | `mcritchie-studio/docs/agents/system/ecosystem-build.md` |
 | Agent culture | `mcritchie-studio/docs/agents/modules/culture.md` |
