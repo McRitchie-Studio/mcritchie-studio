@@ -22,12 +22,45 @@ class SessionRoster
   BACKGROUND_PATH = /agents-mailbox/
   DONE_STAGES = %w[shipped archived].freeze
   ENDINGS = %w[wrapped not_wrapped chase live].freeze
+  # Claude Code keeps a session's transcript under ~/.claude/projects/<dir>/, where
+  # <dir> is the session's working directory with "/" and "." turned into "-". The
+  # decode holds only under ~/projects: a single "-" stays (repo names hold
+  # dashes), and "--name-" is "/.name/" (a dot folder such as .worktrees, whose
+  # name has no dash, then the desk inside it). Only plain
+  # path characters match, so the copied command is safe to paste into a shell.
+  PROJECT_DIR = %r{/\.claude/projects/-Users-(?<user>[A-Za-z0-9_]+)-projects(?<rest>[A-Za-z0-9._-]*)/}
+  SAFE_SESSION_ID = /\A[A-Za-z0-9_-]+\z/
 
   Row = Struct.new(:session_id, :mascot_slug, :started_at, :last_at, :activity_count,
                    :wrapped, :background, :first_reason, :last_reason,
                    :task_count, :open_task_count, :first_task_slug, :last_task_slug,
-                   keyword_init: true) do
+                   :transcript_path, keyword_init: true) do
     def short_id = session_id.to_s.first(8)
+
+    # The folder the session ran in, decoded from its transcript path, or nil
+    # when the path is not a Claude Code transcript under ~/projects.
+    def project_dir
+      m = transcript_path.to_s.match(PROJECT_DIR) or return nil
+      home = "/Users/#{m[:user]}/projects"
+      rest = m[:rest]
+      return home if rest.empty?
+      return nil if rest.start_with?("--") || !rest.start_with?("-")
+
+      dir = rest.delete_prefix("-")
+                .gsub("--claude-worktrees-", "/.claude/worktrees/")
+                .gsub(/--([A-Za-z0-9_]+)(-|\z)/) { "/.#{Regexp.last_match(1)}#{"/" if Regexp.last_match(2) == "-"}" }
+      "#{home}/#{dir}"
+    end
+
+    # The terminal command that reopens the session: `claude --resume <id>`, run
+    # from the folder the session ran in (resume finds a session only there).
+    # Nil when the session is not a Claude Code one or the folder cannot be read.
+    def resume_command
+      dir = project_dir
+      return nil unless dir && session_id.to_s.match?(SAFE_SESSION_ID)
+
+      "cd #{dir} && claude --resume #{session_id}"
+    end
 
     def live?(now = Time.current) = !wrapped && last_at && last_at > now - LIVE_FOR
 
@@ -109,7 +142,8 @@ class SessionRoster
         task_count: t[:total].to_i,
         open_task_count: t[:open].to_i,
         first_task_slug: t[:first_slug],
-        last_task_slug: t[:last_slug]
+        last_task_slug: t[:last_slug],
+        transcript_path: s[:path]
       )
     end.sort_by { |r| r.last_at || Time.at(0) }.reverse
   end
@@ -129,21 +163,22 @@ class SessionRoster
                    Arel.sql("MAX(mascot)")
                  ).to_h do |sid, started, last, count, wrapped, path, mascot|
       [sid, { started_at: started, last_at: last, count: count.to_i, wrapped: wrapped == true,
-              background: path.to_s.match?(BACKGROUND_PATH), mascot: mascot }]
+              background: path.to_s.match?(BACKGROUND_PATH), mascot: mascot, path: path }]
     end
   end
 
   # session_id => { first:, last: } — the reason of the session's first and latest
-  # activity in the window.
+  # activity in the window. DISTINCT ON keeps one row per session in SQL, so the
+  # page never loads the window's every activity row.
   def reason_ends(ids)
     out = Hash.new { |h, k| h[k] = {} }
-    AgentActivity.where(session_id: ids, opened_at: since..)
-                 .order(:session_id, :opened_at, :seq)
-                 .pluck(:session_id, :reason_slug)
-                 .each do |sid, reason|
-      out[sid][:first] ||= reason
-      out[sid][:last] = reason
-    end
+    scope = AgentActivity.where(session_id: ids, opened_at: since..)
+    scope.reorder(Arel.sql("session_id, opened_at ASC, seq ASC"))
+         .pluck(Arel.sql("DISTINCT ON (session_id) session_id"), :reason_slug)
+         .each { |sid, reason| out[sid][:first] = reason }
+    scope.reorder(Arel.sql("session_id, opened_at DESC, seq DESC"))
+         .pluck(Arel.sql("DISTINCT ON (session_id) session_id"), :reason_slug)
+         .each { |sid, reason| out[sid][:last] = reason }
     out
   end
 
