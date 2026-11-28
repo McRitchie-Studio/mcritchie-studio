@@ -116,8 +116,7 @@
                       copies data-copy-clip and flashes "Copied". %>
                   <button type="button" data-copy-clip="<%= command %>"
                           class="rounded-md border border-subtle bg-inset px-2 py-1 text-left font-mono text-3xs text-body break-all hover:border-primary/40 transition"
-                          aria-label="Copy resume command for session <%= row.short_id %>"
-                          title="Copy resume command"
+                          title="Copy resume command for session <%= row.short_id %>"
                           data-test="session-roster-resume-copy"><%= command %></button>
                 <% else %>
                   <span class="text-xs text-muted">—</span>

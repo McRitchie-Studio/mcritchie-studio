@@ -32,5 +32,7 @@ test("a session row offers its resume command to copy", async ({ page }) => {
   await expect(copy).toHaveAttribute("data-copy-clip", "cd /Users/alex/projects && claude --resume e2e-roster-wrapped");
   // The seed has no mailbox session, so the background toggle stays hidden.
   await expect(page.locator("[data-test='session-roster-background']")).toHaveCount(0);
-  await expect(copy).toHaveAttribute("aria-label", "Copy resume command for session e2e-rost");
+  // The visible command is the button's name (label in name); the title describes it.
+  await expect(copy).not.toHaveAttribute("aria-label", /.*/);
+  await expect(copy).toHaveAttribute("title", "Copy resume command for session e2e-rost");
 });
