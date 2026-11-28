@@ -104,10 +104,18 @@ class MarketingKitProposalTemplateTest < ActiveSupport::TestCase
     end
   end
 
-  test "credential badges are the spec's own words, title and holder; none by default" do
-    edit = ->(d) { d["proposal"]["credential_badges"] = [{ "title" => "Certified pipe", "holder" => "ASME-certified welders" }] }
-    load_kit(edit: edit) do |spec|
-      assert_equal [["Certified pipe", "ASME-certified welders"]], MarketingKit::ProposalTemplate.new(spec).payload.dig(:cover, :badges)
+  test "credential badges carry the spec's title, holder and per-tone logo; a missing logo file fails at load" do
+    badges = [{ "title" => "Certified pipe", "holder" => "ASME-certified welders", "logo" => "asme.png", "logo_dark" => "asme-white.png" },
+              { "title" => "Certified structural", "holder" => "AWS-certified welders" }]
+    with_kit(edit: ->(d) { d["proposal"]["credential_badges"] = badges }) do |path|
+      assert_raises(MarketingKit::Error) { MarketingKit::Spec.load(path) }
+      %w[asme asme-white].each { |n| File.write(File.join(File.dirname(path), "photos", "#{n}.png"), "png") }
+      spec = MarketingKit::Spec.load(path)
+      light = MarketingKit::ProposalTemplate.new(spec).payload.dig(:cover, :badges)
+      dark = MarketingKit::ProposalTemplate.new(spec, tone: :dark).payload.dig(:cover, :badges)
+      assert_equal({ title: "Certified pipe", holder: "ASME-certified welders", logo: spec.photo_path("asme.png") }, light.first)
+      assert_equal spec.photo_path("asme-white.png"), dark.first[:logo]
+      assert_nil light.last[:logo], "a badge with no logo leads with the tick"
     end
     load_kit { |spec| assert_empty MarketingKit::ProposalTemplate.new(spec).payload.dig(:cover, :badges) }
   end

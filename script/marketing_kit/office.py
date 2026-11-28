@@ -631,28 +631,51 @@ def proposal(d, out):
     # The credentials (and any ownership certification, confirmed per proposal) lead the about page.
     badges = cv.get("badges") or []
     if badges:
-        # Our own badges, never another body's logo: a small accent seal with a tick, the credential, and who holds it.
-        def seal():
+        # Each credential: its body's logo (one tone, when the spec gives one), then a green tick, the credential and who
+        # holds it. Without a logo the tick leads.
+        def tick():
+            """A hollow tick: a green ring and a green check, filled with the page colour so the logo under it
+            does not show through."""
             from PIL import ImageDraw
-            n = 240; im = Image.new("RGBA", (n, n), (0, 0, 0, 0)); dr = ImageDraw.Draw(im)
-            acc = tuple(int(col["accent"][i:i + 2], 16) for i in (1, 3, 5))
-            dr.ellipse((8, 8, n - 8, n - 8), outline=acc + (255,), width=14)
-            dr.line([(70, 125), (105, 160), (172, 88)], fill=acc + (255,), width=20, joint="curve")
-            out_p = os.path.join(tmp, "seal.png"); im.save(out_p); return out_p
-        mark_p = seal()
+            n = 320; im = Image.new("RGBA", (n, n), (0, 0, 0, 0)); dr = ImageDraw.Draw(im)
+            green = (46, 168, 96, 255)
+            paper = tuple(int((d.get("page") or "#FFFFFF")[i:i + 2], 16) for i in (1, 3, 5)) + (255,)
+            dr.ellipse((10, 10, n - 10, n - 10), fill=paper, outline=green, width=26)
+            dr.line([(92, 168), (142, 218), (232, 116)], fill=green, width=30, joint="curve")
+            for x, y in ((92, 168), (142, 218), (232, 116)): dr.ellipse((x - 15, y - 15, x + 15, y + 15), fill=green)
+            small = im.resize((160, 160), Image.LANCZOS)
+            out_p = os.path.join(tmp, "tick.png"); small.save(out_p); return out_p
+        tick_p = tick()
+
+        def ticked(path):
+            """The logo with the green tick over its bottom-right corner, on a canvas just big enough for both."""
+            logo = Image.open(path).convert("RGBA")
+            t = Image.open(tick_p).convert("RGBA"); side = int(min(logo.size) * 0.52)
+            t = t.resize((side, side), Image.LANCZOS)
+            canvas = Image.new("RGBA", (logo.width + side // 3, logo.height + side // 3), (0, 0, 0, 0))
+            canvas.alpha_composite(logo, (0, 0))
+            canvas.alpha_composite(t, (canvas.width - side, canvas.height - side))
+            out_p = os.path.join(tmp, f"ticked{len(os.listdir(tmp))}.png"); canvas.save(out_p); return out_p
         para(doc, size=4, after=8)
-        t = table(1, len(badges) * 2, [0.5, BODY_W / len(badges) - 0.5] * len(badges), rules=False)
+        per = BODY_W / len(badges)
+        def wide(b): return b.get("logo") and Image.open(b["logo"]).width / Image.open(b["logo"]).height >= 1.6
+        logo_ws = [(1.3 if wide(b) else 0.7) if b.get("logo") else 0.05 for b in badges]
+        t = table(1, len(badges) * 2, [w for lw in logo_ws for w in (lw, per - lw)], rules=False)
         cells = t.rows[0].cells
-        for i, (title, sub) in enumerate(badges):
-            icon, words = cells[2 * i], cells[2 * i + 1]
-            icon.vertical_alignment = words.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-            cell_pad(icon, 0.0); first(icon).add_run().add_picture(mark_p, width=Inches(0.38))
-            run(first(words), title.upper(), size=9.5, bold=True, colour=col["primary"], track=1.5)
-            para(words, sub, size=8.5, colour=col["grey"], after=0)
-        para(doc, size=4, after=0).paragraph_format.space_before = Pt(0)
+        for i, b in enumerate(badges):
+            lc, wc = cells[2 * i], cells[2 * i + 1]
+            lc.vertical_alignment = wc.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
+            cell_pad(lc, 0.0); cell_pad(wc, 0.0, 0.08)
+            p = first(wc)
+            if b.get("logo"):
+                first(lc).add_run().add_picture(ticked(b["logo"]), **({"width": Inches(1.25)} if wide(b) else {"height": Inches(0.6)}))
+            else:
+                p.add_run().add_picture(tick_p, height=Inches(0.18)); run(p, "  ")
+            run(p, b["title"].upper(), size=9.5, bold=True, colour=col["primary"], track=1.5)
+            para(wc, b["holder"], size=8.5, colour=col["grey"], after=0)
     elif cv.get("credentials"):
         para(doc, cv["credentials"], size=8.5, bold=True, colour=col["primary"], track=2, before=14, after=2)
-    if cv.get("certifications"): fields(para(doc, before=6 if badges else 0, after=0), f"[{cv['certifications']}]", size=7.5)
+    if cv.get("certifications"): fields(para(doc, before=12 if badges else 0, after=0), f"[{cv['certifications']}]", size=7.5)
     para(doc, size=6, after=10)
     para(doc, d["about"]["text"], size=11, colour=col["ink"], after=22, line=1.45)
     cols = d["about"]["columns"]

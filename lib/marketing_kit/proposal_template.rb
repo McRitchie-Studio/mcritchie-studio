@@ -88,6 +88,15 @@ module MarketingKit
         terms: ["Terms of service", "Terms and conditions"], acceptance: ["Acceptance", "Agreement to proceed"] }
     end
 
+    # The credentials as badges: a title, who holds it, and the credential body's logo when the spec gives one (logo, and
+    # logo_dark for the dark tone: one-tone files in photos/, as the client logos are).
+    def badges(pr)
+      Array(pr[:credential_badges]).map do |b|
+        file = (dark? && b[:logo_dark].presence) || b[:logo].presence
+        { title: b[:title].to_s, holder: b[:holder].to_s, logo: file && @spec.photo_path(file) }
+      end
+    end
+
     # Where each opening photo's crop sits: 0 keeps its top (or left), 1 its bottom (proposal.photo_focus).
     PHOTOS = %i[cover about why].freeze
 
@@ -98,7 +107,7 @@ module MarketingKit
 
     def cover(pr)
       { credentials: pr[:credentials_line]&.upcase, certifications: pr[:certifications_field],
-        badges: Array(pr[:credential_badges]).map { |b| [b[:title].to_s, b[:holder].to_s] },
+        badges: badges(pr),
         number: pr[:number_format] || "#{@spec.short}-YYYY-000" }
     end
 

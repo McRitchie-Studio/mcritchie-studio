@@ -226,6 +226,11 @@ module MarketingKit
         logos = proposal[key].presence
         raise Error, "#{label}: proposal.#{key} #{logos} is not in #{photos_dir}" if logos && !File.file?(photo_path(logos))
       end
+      Array(proposal[:credential_badges]).each do |badge|
+        badge.values_at(:logo, :logo_dark).compact_blank.each do |file|
+          raise Error, "#{label}: credential badge logo #{file} is not in #{photos_dir}" unless File.file?(photo_path(file))
+        end
+      end
     end
 
     def label = path ? File.basename(path) : "kit spec"
