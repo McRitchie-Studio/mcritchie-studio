@@ -56,6 +56,7 @@ by `bin/sop-registry` from the SOP files, so each row names its invocation exact
 | Tyrion soul (Cyvasse's house player: character, game style, five setups, voice) | `mcritchie-studio/docs/agents/agents/tyrion/soul.md` |
 | Tyrion runtime design (isolated runner, bot API, threat model; not built) | `mcritchie-studio/docs/agents/agents/tyrion/runtime.md` |
 | Hank soul (Commercial Welding business agent, renamed from Dawn; badger; not yet launched) | `mcritchie-studio/docs/agents/agents/hank/soul.md` |
+| McRitchie soul (McRitchie Industries agent; Mad Lads #4374; the three Mad Lads; Ray's open seat; not yet launched) | `mcritchie-studio/docs/agents/agents/mcritchie/soul.md` |
 | DevOps task-board handoff | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane (`bin/task begin` / `bin/submit`) | `mcritchie-studio/docs/agents/modules/devops-task-board.md` |
 | Fast lane entry rules (where each command runs, author set, submit-wait, long form) | `mcritchie-studio/docs/agents/modules/fast-lane.md` |
